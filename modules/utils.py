@@ -1,35 +1,56 @@
-import torch
-import os
-import subprocess
-import shutil
-import sys
+import atexit
+import collections
 import datetime
-from pathlib import Path
+import os
 import re
+import shutil
+import signal
+import subprocess
+import sys
 import threading
 import time
-import collections
-import soundfile as sf
-import atexit
-import signal
+from pathlib import Path
 from typing import Set
 
-# Import config constants
-from .config import LOG_FILE, DEBUG_LOGGING, EXTS
+try:
+    import soundfile as sf
+except ImportError:
+    sf = None
 
+try:
+    import torch
+except ImportError:
+    torch = None
+
+# Import config constants
+from .config import DEBUG_LOGGING, LOG_FILE
+from .hardware import get_nvidia_paths
 
 # === AUTO-CONFIGURE PATH ===
 project_dir = Path(__file__).parent.parent.resolve()  # modules/..
-venv_scripts = project_dir / "venv" / "Scripts"
+
+
+def _get_scripts_dirs(base_dir):
+    candidates = [
+        base_dir / ".venv" / "Scripts",
+        base_dir / "venv" / "Scripts",
+    ]
+    return [p for p in candidates if p.exists()]
+
+
+scripts_dirs = _get_scripts_dirs(project_dir)
+primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / ".venv" / "Scripts")
 
 # 1. Base Binary Paths
 FFMPEG_BIN = "ffmpeg"
-if (venv_scripts / "ffmpeg.exe").exists():
-    FFMPEG_BIN = str(venv_scripts / "ffmpeg.exe")
+for scripts_dir in scripts_dirs:
+    ffmpeg_candidate = scripts_dir / "ffmpeg.exe"
+    if ffmpeg_candidate.exists():
+        FFMPEG_BIN = str(ffmpeg_candidate)
+        break
 
 # 2. NVIDIA / CUDA Library Injection (Critical for Hybrid GPUs)
-from .hardware import get_nvidia_paths
-extra_paths = [str(venv_scripts)]
+extra_paths = [str(p) for p in scripts_dirs]
 extra_paths.extend(get_nvidia_paths())
 
 current_path = os.environ.get("PATH", "")
@@ -44,7 +65,7 @@ for p in extra_paths:
 if added_any:
     os.environ["PATH"] = os.pathsep.join(path_list)
 
-_venv_scripts_missing = not venv_scripts.exists()
+_venv_scripts_missing = not scripts_dirs
 
 
 def log_msg(message, is_error=False, console=True, level="INFO"):
@@ -86,7 +107,7 @@ def log_msg(message, is_error=False, console=True, level="INFO"):
 
 
 if _venv_scripts_missing:
-    log_msg(f"Venv Scripts not found at: {project_dir / 'venv' / 'Scripts'}", level="DEBUG")
+    log_msg(f"Venv Scripts not found at: {primary_scripts_dir}", level="DEBUG")
 
 
 # === SUBPROCESS MANAGEMENT ===
@@ -153,6 +174,9 @@ def is_valid_audio(file_path):
     if path.stat().st_size < 1024:
         return False
 
+    if sf is None:
+        return False
+
     try:
         # Quick header check using SoundFile
         with sf.SoundFile(str(path)) as f:
@@ -188,7 +212,7 @@ def format_time(seconds):
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}".replace('.', ',')
+    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}".replace(".", ",")
 
 
 def parse_ffmpeg_time(line):
@@ -198,6 +222,7 @@ def parse_ffmpeg_time(line):
         h, m, s, ms = map(int, match.groups())
         return h * 3600 + m * 60 + s + ms / 100.0
     return None
+
 
 # Import drawing from UI - WAIT, UI depends on Utils for time/etc.
 # Circular dependency risk if UI needs format_time and Utils needs draw_progress_bar.
@@ -269,7 +294,7 @@ def _get_terminal_columns(default=79):
 def _adjust_bar_layout(width, info_str, label, columns):
     """Adjusts bar width and truncates label to fit terminal."""
     overhead = 8  # Indent(4) + [] + Space + Safety(1)
-    clean_label = re.sub(r'[\r\n]', '', label).strip()
+    clean_label = re.sub(r"[\r\n]", "", label).strip()
 
     label_len = len(clean_label) if clean_label else 0
     total_len = overhead + width + len(info_str) + label_len + 3  # +3 for '   ' padding
@@ -284,7 +309,7 @@ def _adjust_bar_layout(width, info_str, label, columns):
             shrink_label = min(excess, label_can_give)
             label_len -= shrink_label
             clean_label = clean_label[:label_len] + "..."
-            total_len -= (shrink_label - 3)  # account for ellipsis
+            total_len -= shrink_label - 3  # account for ellipsis
 
         if total_len > columns:
             # Strategy 2: Shrink Bar
@@ -319,7 +344,7 @@ def _draw_bar_line(width, filled_length, info_str, label=""):
     # Terminal width safety
     cols = _get_terminal_columns()
     if len(line_content) >= cols:
-        line_content = line_content[:cols - 1]
+        line_content = line_content[: cols - 1]
 
     with _print_lock:
         # \r to start, \033[K to clear, then content. NO trailing newline.
@@ -327,9 +352,7 @@ def _draw_bar_line(width, filled_length, info_str, label=""):
         sys.stdout.flush()
 
 
-def draw_progress_bar(
-    percent, label="", width=20, elapsed_sec=None, media_sec=None, total_duration=None
-):
+def draw_progress_bar(percent, label="", width=20, elapsed_sec=None, media_sec=None, total_duration=None):
     """
     Draws a modern visual progress bar with rate-limiting.
     """
@@ -351,7 +374,7 @@ def draw_progress_bar(
     info_str = _build_progress_info(percent, elapsed_sec, media_sec, total_duration)
 
     # Clean label and ensure it has spacing if present
-    clean_label = re.sub(r'[\r\n]', '', label).strip()
+    clean_label = re.sub(r"[\r\n]", "", label).strip()
 
     # Layout Adjustment
     width, info_str, final_label = _adjust_bar_layout(width, info_str, clean_label, columns)
@@ -390,11 +413,7 @@ def _monitor_process_output(process, start_time, duration, description, tqdm_re)
             if current_time is not None and duration:
                 percent = (current_time / duration) * 100
                 elapsed = time.time() - start_time
-                draw_progress_bar(
-                    percent, description,
-                    elapsed_sec=elapsed, media_sec=current_time,
-                    total_duration=duration
-                )
+                draw_progress_bar(percent, description, elapsed_sec=elapsed, media_sec=current_time, total_duration=duration)
                 continue
 
             # 2. Check for TQDM '%'
@@ -408,22 +427,14 @@ def _monitor_process_output(process, start_time, duration, description, tqdm_re)
 
                 # Filter updates - only print if percent changed by at least 0.1%
                 # or if it's the 100% or 0% mark
-                if (not hasattr(process, '_last_pc') or
-                    abs(percent - process._last_pc) >= 0.1 or
-                        percent in [0, 100]):
-
+                if not hasattr(process, "_last_pc") or abs(percent - process._last_pc) >= 0.1 or percent in [0, 100]:
                     process._last_pc = percent
                     label = f"{description} {tqdm_info}" if tqdm_info else description
-                    draw_progress_bar(
-                        percent, label,
-                        elapsed_sec=elapsed, media_sec=media_sec
-                    )
+                    draw_progress_bar(percent, label, elapsed_sec=elapsed, media_sec=media_sec)
     return output_buffer
 
 
-def run_command_with_progress(
-    cmd, env=None, description="Running...", total_duration=None
-):
+def run_command_with_progress(cmd, env=None, description="Running...", total_duration=None):
     """
     Runs a subprocess and parses progress from its output.
     Supports FFmpeg and TQDM-style output.
@@ -438,24 +449,27 @@ def run_command_with_progress(
     env["PYTHONIOENCODING"] = "utf-8"
 
     process = subprocess.Popen(
-        cmd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        encoding="utf-8",
-        errors="replace"
+        cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding="utf-8", errors="replace"
     )
     _active_processes.add(process)
 
     duration = max(0.1, total_duration) if total_duration else None
     # Stricter TQDM regex to avoid false positives and handle both | and : styles
-    tqdm_re = re.compile(r'(\d+)%\s*[|:]')
+    tqdm_re = re.compile(r"(\d+)%\s*[|:]")
+    output_buffer = []
 
     try:
-        output_buffer = _monitor_process_output(
-            process, start_time, duration, description, tqdm_re
-        )
+        try:
+            output_buffer = _monitor_process_output(process, start_time, duration, description, tqdm_re)
+        except Exception:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+            raise
     finally:
         _active_processes.discard(process)
 
@@ -463,10 +477,7 @@ def run_command_with_progress(
 
     if process.returncode == 0:
         elapsed = time.time() - start_time
-        draw_progress_bar(
-            100.0, description,
-            elapsed_sec=elapsed, media_sec=duration
-        )
+        draw_progress_bar(100.0, description, elapsed_sec=elapsed, media_sec=duration)
         sys.stdout.write("\n")
     else:
         sys.stdout.write("\n")
@@ -477,10 +488,7 @@ def run_command_with_progress(
         raise subprocess.CalledProcessError(process.returncode, cmd)
 
 
-def attempt_run_with_retry(
-    command_builder_func, initial_batch_size, description="Running...",
-    total_duration=None
-):
+def attempt_run_with_retry(command_builder_func, initial_batch_size, description="Running...", total_duration=None):
     """
     Retries a command with reduced GPU batch sizes on OOM.
     command_builder_func: Accepts 'batch_size' (int), returns [cmd, args...].
@@ -491,32 +499,23 @@ def attempt_run_with_retry(
         try:
             cmd = command_builder_func(current_batch_size)
             # Use run_command_with_progress to get %, ETA, and Speed
-            run_command_with_progress(
-                cmd,
-                description=f"{description} (BS:{current_batch_size})",
-                total_duration=total_duration
-            )
+            run_command_with_progress(cmd, description=f"{description} (BS:{current_batch_size})", total_duration=total_duration)
             return True  # Success
 
         except subprocess.CalledProcessError as e:
             if current_batch_size > 1:
-                log_msg(
-                    "    [Warning] GPU failed. Retrying with reduced batch...",
-                    is_error=True
-                )
-                if torch.cuda.is_available():  # pragma: no cover
+                log_msg("    [Warning] GPU failed. Retrying with reduced batch...", is_error=True)
+                if torch is not None and torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                import gc  # pragma: no cover
+                import gc
+
                 gc.collect()
                 current_batch_size = max(1, current_batch_size // 2)
             else:
                 raise e
 
 
-def attempt_cpu_run_with_retry(
-    command_builder_func, initial_threads, description="Running...",
-    total_duration=None
-):
+def attempt_cpu_run_with_retry(command_builder_func, initial_threads, description="Running...", total_duration=None):
     """
     Retries a CPU-bound command with reduced threads on RAM OOM.
     command_builder_func: Accepts 'threads' (int), returns [cmd, args...].
@@ -530,30 +529,24 @@ def attempt_cpu_run_with_retry(
             if total_duration is None:
                 print(f"      {description} (Threads: {current_threads})")
 
-            run_command_with_progress(
-                cmd,
-                description=description,
-                total_duration=total_duration
-            )
+            run_command_with_progress(cmd, description=description, total_duration=total_duration)
 
             return True  # Success
 
         except subprocess.CalledProcessError as e:
             if current_threads > 1:
-                log_msg(
-                    "    [Warning] CPU failed. Retrying with fewer threads...",
-                    is_error=True
-                )
+                log_msg("    [Warning] CPU failed. Retrying with fewer threads...", is_error=True)
                 current_threads = max(1, current_threads // 2)
 
                 # Cleanup RAM
-                import gc  # pragma: no cover
+                import gc
+
                 gc.collect()
             else:
                 raise e
 
 
-def _save_audio_atomic(file_path, data, sample_rate, subtype='FLOAT'):
+def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):
     """
     Saves audio to a temporary file, then renames it to the final path.
     This prevents corrupted partial files if the process is interrupted.
@@ -561,6 +554,10 @@ def _save_audio_atomic(file_path, data, sample_rate, subtype='FLOAT'):
     path = Path(file_path)
     # Use .tmp.wav to ensure soundfile and is_valid_audio recognize the format
     temp_path = path.with_suffix(f".tmp{path.suffix}")
+
+    if sf is None:
+        log_msg(f"[Error] Failed to save audio {path}: soundfile is not installed.", is_error=True)
+        return False
 
     try:
         sf.write(str(temp_path), data, sample_rate, subtype=subtype)
@@ -593,20 +590,16 @@ def check_dependencies():
     missing = []
 
     try:
-        subprocess.run(
-            [FFMPEG_BIN, "-version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        ffmpeg_result = subprocess.run([FFMPEG_BIN, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        if ffmpeg_result.returncode != 0:
+            missing.append("FFmpeg")
     except FileNotFoundError:
         missing.append("FFmpeg")
 
     try:
-        subprocess.run(
-            ["audio-separator", "--help"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        separator_result = subprocess.run(["audio-separator", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        if separator_result.returncode != 0:
+            missing.append("Audio-Separator")
     except FileNotFoundError:
         missing.append("Audio-Separator")
 

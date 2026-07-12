@@ -7,25 +7,37 @@
 ![Python](assets/python.svg) ![Coverage](assets/coverage.svg)
 
 ## Documentation
-- [README.md](file:///c:/Users/ventu/Projects/AI-Hybrid-VHS-Audio-Restorer/README.md) - General overview and usage.
-- [.agent/instructions.md](file:///c:/Users/ventu/Projects/AI-Hybrid-VHS-Audio-Restorer/.agent/instructions.md) - Technical guide for AI agents and developers.
-- [docs/pipeline_logic.md](file:///c:/Users/ventu/Projects/AI-Hybrid-VHS-Audio-Restorer/docs/pipeline_logic.md) - Detailed pipeline schema.
+- [README.md](README.md) - General overview and usage.
+- [.agent/instructions.md](.agent/instructions.md) - Technical guide for AI agents and developers.
+- [docs/pipeline_logic.md](docs/pipeline_logic.md) - Detailed pipeline schema.
+- [docs/architecture.md](docs/architecture.md) - System architecture and module responsibilities.
+- [docs/setup.md](docs/setup.md) - Environment and installation setup steps.
+- [docs/validation.md](docs/validation.md) - Local and CI validation process.
+- [docs/instructions.md](docs/instructions.md) - Contributor instructions and workflow rules.
 
 ## 🛠️ Restoration Pipeline
 A specialized audio restoration pipeline designed to remaster VHS recordings.
 
 ## The Pipeline
 
-This project uses a hybrid AI approach to separate, clean, and remix audio:
+The pipeline supports two execution modes controlled by `process_mode`:
 
-1.  **Separation**: Uses `audio-separator` with the **BS-Roformer-Viperx-1297** model to split audio into Vocals and Background. The **Lossless Background** method (Original - Vocals) ensures ambient sounds like birds and nature are preserved 100%. Outputs are explicitly named `(Background)` to avoid confusion.
-2.  **Vocal Enhancement**: Runs **Resemble-Enhance** on the vocal track to remove muffle/hiss, restore high frequencies, and improve clarity.
-3.  **Background Denoising**: Runs the **UVR-DeNoise-Lite** model on the background track to gently remove tape hiss while preserving the full dynamic range of nature/ambient sounds.
-4.  **Smart Sync**: Corrects timing drift (wow/flutter) using two methods:
-    - `shift` (Default): Global delay correction (Cross-Correlation). Glitch-free & Fast.
-    - `dtw`: Dynamic Time Warping. Corrects variable drift (wow/flutter).
-    *   **Hybrid GPU Engine**: Calculates the distance matrix on **NVIDIA GPUs** (via PyTorch) and aligns paths for maximum performance.
-5.  **Mixing**: Recombines the clean vocals and denoised background using **FFmpeg** for a balanced, high-fidelity **32-bit PCM** output.
+1.  **`hybrid`**
+  - Extract audio.
+  - Separate stems with BS-Roformer (Vocals + Background).
+  - Enhance vocals with Resemble-Enhance.
+  - Denoise background with UVR-DeNoise-Lite.
+  - Sync both processed stems to original timing (`shift` or `dtw`).
+  - Final mix into output video as **32-bit float PCM (`pcm_f32le`)** audio.
+2.  **`denoise_only` (default/fallback mode)**
+  - Extract audio.
+  - Denoise the full audio track with UVR-DeNoise-Lite.
+  - Sync the denoised full track to original timing (`shift` or `dtw`).
+  - Final single-track remux into output video as **32-bit float PCM (`pcm_f32le`)** audio.
+
+Output naming is mode-specific:
+- `hybrid` -> `*_Hybrid_Cleaned.<ext>`
+- `denoise_only` -> `*_Denoised_Cleaned.<ext>`
 
 ### 🚀 Smart AI Engine
 - **Hybrid GPU Support**: Automatically prioritizes high-performance NVIDIA GPUs over Intel/integrated graphics. Ideal for laptops with dual GPUs.
@@ -46,45 +58,35 @@ classDef model fill:#F8DAC2,stroke:#825500,stroke-width:1px,color:#2D1600,rx:12,
 classDef output fill:#E1E2E6,stroke:#44474E,stroke-width:1.5px,color:#1A1C1E,rx:40,ry:40;
 
 A(["📼 Input Video/Audio"]):::input --> B(["Extract Audio<br/>(32-bit Float)"]):::processing
+B --> MODE{"process_mode"}:::model
 
-subgraph Separation ["Step 1 — Smart Separation"]
-    direction TB
-    B --> RO["Model: BS-Roformer"]:::model
-    RO --> V["Vocals"]
-    RO --> I["Background"]
-end
+MODE -->|"hybrid"| RO["BS-Roformer Separation"]:::model
+RO --> V["Vocals"]
+RO --> I["Background"]
+V --> VE["Resemble-Enhance"]:::processing
+I --> BD["Background Denoise<br/>(UVR-DeNoise-Lite)"]:::processing
+VE --> SV["Sync Vocals"]:::processing
+BD --> SB["Sync Background"]:::processing
+SV --> HMIX["FFmpeg Final Mix"]:::processing
+SB --> HMIX
+HMIX --> HOUT(["💾 Output: Hybrid_Cleaned<br/>(32-bit PCM)"]):::output
 
-subgraph Processing ["Steps 2 & 3 — Processing"]
-    direction TB
-    V --> VE["Resemble-Enhance<br/>(Denoise+Enhance)"]:::processing
-    I --> MD["AI Denoise Only<br/>(UVR-DeNoise-Lite)"]:::processing
-end
-
-subgraph Sync ["Step 4 — Smart Sync"]
-    direction TB
-    VE --> S_V["Sync Vocals"]:::processing
-    MD --> S_M["Sync Background"]:::processing
-    S_V & S_M -.-> ALIGN["Correlation / Warp<br/>(Shift or DTW)"]:::model
-end
-
-subgraph Mix ["Step 5 — Final Mix"]
-    ALIGN --> MIX["FFmpeg Mix"]:::processing
-    MIX --> OUT(["💾 Final MKV<br/>(32-bit Float)"]):::output
-end
+MODE -->|"denoise_only"| FD["Full-Audio Denoise<br/>(UVR-DeNoise-Lite)"]:::processing
+FD --> FS["Sync Full Audio"]:::processing
+FS --> FMUX["FFmpeg Final Remux"]:::processing
+FMUX --> FOUT(["💾 Output: Denoised_Cleaned<br/>(32-bit PCM)"]):::output
 
 %% Material You Subgraph Styling (Subtle Contours)
-style Separation fill:none,stroke:#825500,stroke-width:1px,stroke-dasharray: 4,opacity:0.6
-style Processing fill:none,stroke:#526350,stroke-width:1px,stroke-dasharray: 4,opacity:0.6
-style Sync fill:none,stroke:#44474E,stroke-width:1px,stroke-dasharray: 4,opacity:0.8
-style Mix fill:none,stroke:#44474E,stroke-width:1.5px,opacity:0.8
+style HMIX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
+style FMUX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
 ```
 
 ## Requirements
 
 The installer handles everything, ensuring compatibility with modern hardware:
-- **Python 3.10+** (in a local venv)
+- **Python 3.12.x** (in a local `.venv`)
 - **FFmpeg 6.1+** (Full Portable Build included & configured)
-- **NVIDIA CUDA Toolkit (Self-Contained)**: The installer automatically pulls technical libraries (`CUDNN`, `CUBLAS`) from PyPI, so you don't need a system-wide CUDA installation.
+- **NVIDIA CUDA Toolkit (Self-Contained)**: The installer automatically pulls CUDA 13.2-compatible technical libraries (`CUDNN`, `CUBLAS`) from PyPI, so you don't need a system-wide CUDA installation.
 - **AI Models**: BS-Roformer & UVR-DeNoise-Lite.
 - **Runtime Patcher**: Automatically fixes `torchaudio` and `deepspeed` issues on Windows, and injects hardware DLLs into the process environment.
 
@@ -139,7 +141,7 @@ The application uses a `config.yaml` file for easy customization. A default conf
 ```yaml
 # Audio Mix Levels (0.0 to 1.0 or higher)
 vocal_mix_volume: 1.0
-music_mix_volume: 1.0
+background_mix_volume: 1.0
 
 # Supported Video Extensions
 extensions:
@@ -150,10 +152,10 @@ extensions:
 
 # Synchronization Method
 sync_method: "shift"     # 'shift' (default) or 'dtw' (correction for wow/flutter)
-dtw_resolution: 100      # Analysis resolution in Hz (lower = faster)
+dtw_resolution: 40       # Analysis resolution in Hz (lower = faster)
 
 # Processing Mode
-process_mode: "hybrid"   # 'hybrid' (Separation+Enhance) or 'denoise_only' (Faster, Transparent)
+process_mode: "denoise_only"   # default/fallback; set 'hybrid' for Separation+Enhance
 ```
 
 ## Usage
@@ -162,22 +164,22 @@ process_mode: "hybrid"   # 'hybrid' (Separation+Enhance) or 'denoise_only' (Fast
 
 ### Option A: Drag & Drop (Recommended)
 Simply **drag and drop** your video file(s) or a folder containing videos directly onto `start.bat` (or the Python script). 
-*   **Output**: The restored video will be saved in the **same folder** as your original video.
+*   **Output**: The restored video is saved in the **same folder** as your original video.
+  - `hybrid` mode: `*_Hybrid_Cleaned.<ext>`
+  - `denoise_only` mode: `*_Denoised_Cleaned.<ext>`
 
 ### Option B: Interactive Mode (Default)
 Double-click `start.bat` without any files.
 - The script will Launch and show your System Stats.
 - Press **Enter** to automatically scan and process all files in the `input` folder.
-*   **Output**: The restored videos will be saved in the **same folder** as the original videos.
+*   **Output**: Restored videos are saved in the **same folder** as each original video.
 
 ### Option C: CLI
 Run via command line with arguments:
 ```powershell
 python restore_audio_hybrid.py "C:\Path\To\Video.mp4"
 ```
-*   **Output**: The restored video will be saved in the **same folder** as the input video.
-
-3.  Find the restored videos in `output`.
+*   **Output**: The restored video is saved in the **same folder** as the input video.
 
 ## Development & Testing
 
@@ -193,20 +195,25 @@ The project is organized into a modular package structure:
 - `restore_audio_hybrid.py`: Main entry point (calls `modules.processing`).
 
 ### Code Quality
-- **Linting**: `flake8` (max-line-length=127, max-complexity=10).
-- **Formatting**: `autopep8` (aggressive).
-- **Type Checking**: `mypy`.
-- **Complexity**: Monitored with `radon`.
+- **Linting**: `ruff`, `flake8`, and `pylint` (max-line-length=140).
+- **PowerShell Linting**: `PSScriptAnalyzer` via `.github/scripts/Invoke-PowerShellLint.ps1`.
+- **Type Checking (Advisory)**: `mypy` is available for local analysis but is not an enforced local/CI gate.
+- **Complexity (Advisory)**: `radon` is used for reporting/monitoring but is not an enforced local/CI gate.
 
 ### Testing
 Tests are run using `pytest` with `pytest-cov`.
 ```powershell
-pytest --cov=. --cov-report=term
+.\run_pipeline_locally.ps1
 ```
-Local test runs automatically update the `Coverage` badge. Detailed summaries are available in CI job summaries.
+The local pipeline runs the same quality gates as CI (PowerShell lint, Ruff, Flake8, Pylint, tests with coverage) and overwrites `assets/coverage.svg` at the end.
+It also enforces strict per-file coverage using `tests/tooling/quality_gate.py` against `coverage.json`.
 
 ### Coverage Goal
-The project enforces a **mandatory 90% minimum code coverage**. The CI pipeline will fail if coverage drops below this threshold.
+The project enforces two mandatory coverage gates:
+- **Total coverage** must stay at **>= 90%**.
+- **Per-file coverage** for every measured file must be **>= 90%**
+
+Both local validation and CI fail when either gate is violated.
 
 ## Credits
 

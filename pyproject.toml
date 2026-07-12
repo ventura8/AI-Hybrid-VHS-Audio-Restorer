@@ -1,0 +1,81 @@
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "ai-hybrid-vhs-audio-restorer"
+version = "1.0.2"
+description = "Hybrid AI VHS audio restoration pipeline"
+authors = ["AI Hybrid VHS Audio Restorer Team"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+numpy = ">=2.4.6,<2.5"
+scipy = "^1.18.0"
+soundfile = "^0.14.0"
+pyyaml = "^6.0.3"
+tqdm = "^4.68.4"
+torch = { version = "2.13.0", source = "pytorch-cu132", markers = "platform_system == 'Windows' and python_version == '3.12' and implementation_name == 'cpython'" }
+torchvision = { version = "0.28.0", source = "pytorch-cu132", markers = "platform_system == 'Windows' and python_version == '3.12' and implementation_name == 'cpython'" }
+torchaudio = { version = "2.11.0", markers = "platform_system == 'Windows' and python_version == '3.12' and implementation_name == 'cpython'" }
+audio-separator = { version = "^0.44.3", extras = ["gpu"] }
+nvidia-cudnn-cu13 = { version = "9.24.0.43", markers = "platform_system == 'Windows' and python_version == '3.12' and implementation_name == 'cpython'" }
+nvidia-cublas = { version = "13.6.0.2", markers = "platform_system == 'Windows' and python_version == '3.12' and implementation_name == 'cpython'" }
+onnxruntime-gpu = "^1.27.0"
+librosa = "^0.11.0"
+fastdtw = "^0.3.4"
+transformers = "^4.55.0"
+accelerate = "^1.14.0"
+omegaconf = "^2.3.1"
+pyloudnorm = "^0.2.0"
+rich = "^15.0.0"
+loguru = "^0.7.3"
+pandas = "^3.0.3"
+matplotlib = "^3.11.0"
+tabulate = "^0.10.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.1.1"
+pytest-cov = "^7.1.0"
+coverage = "^7.15.0"
+flake8 = "^7.3.0"
+ruff = "^0.15.21"
+pylint = "^4.0.6"
+radon = "^6.0.1"
+mypy = "^2.2.0"
+
+[[tool.poetry.source]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+priority = "explicit"
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.pylint.format]
+max-line-length = 140
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", "__pycache__", "build", "dist", "venv", ".venv"]
+addopts = "--verbose"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["modules", "restore_audio_hybrid"]
+omit = ["tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+fail_under = 90
+precision = 2
+
+[tool.coverage.html]
+directory = "htmlcov"

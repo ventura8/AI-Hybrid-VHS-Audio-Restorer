@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 import modules.ui
 import modules.utils
 
@@ -36,6 +37,7 @@ def test_get_input_files_interactive_empty(mock_input, tmp_path):
             files, use_source = modules.ui._get_input_files()
             # Empty folder returns empty list
             assert files == []
+            assert use_source is False
 
 
 @patch("modules.ui.input")
@@ -75,6 +77,26 @@ def test_get_input_files_recursive_glob(tmp_path):
             with patch("modules.ui.input", side_effect=["", ""]):
                 files, skip = modules.ui._get_input_files()
                 assert len(files) == 1
+
+
+def test_scan_files_excludes_cleaned_outputs(tmp_path, capsys):
+    """Ensure scanners do not requeue generated cleaned outputs."""
+    source = tmp_path / "source.mp4"
+    source.write_text("v")
+    hybrid = tmp_path / "source_Hybrid_Cleaned.mp4"
+    hybrid.write_text("v")
+    denoised = tmp_path / "source_Denoised_Cleaned.mp4"
+    denoised.write_text("v")
+
+    files = modules.ui._scan_files_in_path(tmp_path)
+    assert files == [source]
+
+    hybrid_direct = modules.ui._scan_files_in_path(hybrid)
+    denoised_direct = modules.ui._scan_files_in_path(denoised)
+    assert hybrid_direct == []
+    assert denoised_direct == []
+    captured = capsys.readouterr()
+    assert "Skipping cleaned output file" in captured.out
 
 
 def test_scan_files_unsupported(tmp_path, capsys):

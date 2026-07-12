@@ -1,9 +1,18 @@
 import os
-import subprocess
-import torch
-import sys
 import platform
+import subprocess
+import sys
 from pathlib import Path
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 
 def _detect_nvidia_smi(settings):
@@ -19,6 +28,10 @@ def _detect_nvidia_smi(settings):
 
 def _detect_pytorch_cuda(settings):
     """Detects GPU via PyTorch and sets VRAM/Profile."""
+    if torch is None:
+        settings["device_index"] = 0
+        return
+
     if not torch.cuda.is_available():
         settings["device_index"] = 0
         return
@@ -35,7 +48,7 @@ def _detect_pytorch_cuda(settings):
         settings["device_index"] = device_id
         settings["cuda_device"] = f"cuda:{device_id}"
         gpu_props = torch.cuda.get_device_properties(device_id)
-        vram_gb = gpu_props.total_memory / (1024 ** 3)
+        vram_gb = gpu_props.total_memory / (1024**3)
         settings["gpu_vram_gb"] = vram_gb
 
         if vram_gb >= 24:
@@ -73,7 +86,7 @@ def get_optimal_settings():
         "gpu_vram_gb": 0,
         "profile_name": "Low (Entry Config)",
         "is_nvidia": False,
-        "device_index": 0
+        "device_index": 0,
     }
 
     _detect_nvidia_smi(settings)
@@ -97,23 +110,32 @@ DEVICE_INDEX = _hw_settings["device_index"]
 
 def get_cpu_name():
     if sys.platform == "win32":
+        key = None
         try:
-            import winreg
+            if winreg is None:
+                raise ImportError("winreg unavailable")
+
             key_path = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
             key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path)
             processor_name = winreg.QueryValueEx(key, "ProcessorNameString")[0]
             return processor_name.strip()
         except Exception:
             pass
+        finally:
+            if key is not None and winreg is not None:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
     return platform.processor() or "Unknown CPU"
 
 
 def get_gpu_name():
     # 1. Try PyTorch first (more accurate for what its using)
-    if torch.cuda.is_available():
+    if torch is not None and torch.cuda.is_available():
         try:
             # We use the device specified in CUDA_DEVICE
-            idx = int(CUDA_DEVICE.split(':')[-1])
+            idx = int(CUDA_DEVICE.split(":")[-1])
             return torch.cuda.get_device_name(idx)
         except Exception:
             pass
@@ -122,7 +144,7 @@ def get_gpu_name():
     try:
         output = subprocess.check_output("nvidia-smi -L", shell=True, stderr=subprocess.DEVNULL).decode()
         if "NVIDIA" in output:
-            return output.split(':')[1].split('(')[0].strip()
+            return output.split(":")[1].split("(")[0].strip()
     except Exception:
         pass
 
@@ -136,6 +158,7 @@ def get_nvidia_paths():
     # Try torch.lib first
     try:
         import torch
+
         torch_lib = Path(torch.__file__).parent / "lib"
         if torch_lib.exists():
             nvidia_paths.append(str(torch_lib))
@@ -144,14 +167,15 @@ def get_nvidia_paths():
 
     # Try nvidia.* packages
     try:
-        import nvidia.cudnn  # type: ignore
-        import nvidia.cublas  # type: ignore
+        import nvidia.cublas
+        import nvidia.cudnn
+
         for lib in [nvidia.cudnn, nvidia.cublas]:
-            if hasattr(lib, '__path__') and lib.__path__:
+            if hasattr(lib, "__path__") and lib.__path__:
                 path = lib.__path__[0]
             else:
                 path = os.path.dirname(lib.__file__)
-            
+
             bin_path = os.path.join(path, "bin")
             lib_path = os.path.join(path, "lib")
             if os.path.exists(bin_path):

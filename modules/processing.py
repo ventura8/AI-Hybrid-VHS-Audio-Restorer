@@ -1,28 +1,67 @@
-from .utils import format_time
 import shutil
 import subprocess
 import time
 from pathlib import Path
-import soundfile as sf
-import torch
 
-from .utils import (
-    log_msg, attempt_cpu_run_with_retry, attempt_run_with_retry,
-    run_command_with_progress, is_valid_audio, is_valid_video,
-    FFMPEG_BIN
-)
+try:
+    import soundfile as sf
+except ImportError:
+    sf = None
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
+from . import utils as _utils
 from .config import (
+    BACKGROUND_MIX_VOL,
+    DENOISE_MODEL,
+    ENHANCE_NFE,
+    ENHANCE_TAU,
     KEEP_INPUT_FILES,
-    VOCALS_MODEL, BACKGROUND_MODEL, DENOISE_MODEL, ENHANCE_NFE, ENHANCE_TAU,
-    PROCESS_MODE, VOCAL_MIX_VOL, BACKGROUND_MIX_VOL
+    PROCESS_MODE,
+    VOCAL_MIX_VOL,
+    VOCALS_MODEL,
 )
-from .hardware import (
-    CPU_THREADS, GPU_BATCH_SIZE, CUDA_DEVICE
-)
+from .hardware import CPU_THREADS, CUDA_DEVICE, GPU_BATCH_SIZE
 from .sync import _align_stems
+from .utils import (
+    FFMPEG_BIN,
+    attempt_cpu_run_with_retry,
+    format_time,
+    is_valid_audio,
+    is_valid_video,
+    log_msg,
+    run_command_with_progress,
+)
+
+# Expose the GPU retry helper for test patching without aliasing to CPU retry.
+attempt_run_with_retry = _utils.attempt_run_with_retry
+
+OUTPUT_SUFFIX_BY_MODE = {
+    "hybrid": "_Hybrid_Cleaned",
+    "denoise_only": "_Denoised_Cleaned",
+}
+
+
+def _get_output_suffix(process_mode):
+    return OUTPUT_SUFFIX_BY_MODE.get(process_mode, OUTPUT_SUFFIX_BY_MODE["hybrid"])
+
+
+def _get_audio_separator_class():
+    try:
+        from audio_separator.separator import Separator
+
+        return Separator
+    except ImportError as exc:
+        raise ImportError("audio-separator is required for stem separation/denoising.") from exc
 
 
 def get_audio_duration_sec(wav_path):
+    if sf is None:
+        return None
+
     try:
         with sf.SoundFile(str(wav_path)) as f:
             return f.frames / f.samplerate
@@ -33,11 +72,7 @@ def get_audio_duration_sec(wav_path):
 def get_video_duration_sec(video_path):  # pragma: no cover
     """Gets video duration using ffprobe."""
     try:
-        cmd = [
-            "ffprobe", "-v", "error", "-show_entries",
-            "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
-            str(video_path)
-        ]
+        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)]
         val = subprocess.check_output(cmd).decode().strip()
         return float(val)
     except Exception:  # pragma: no cover
@@ -60,18 +95,22 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
 
     def build_extract_cmd(threads):
         return [
-            FFMPEG_BIN, "-stats", "-hide_banner",
-            "-threads", str(threads),
-            "-i", str(video_path),
-            "-acodec", "pcm_f32le", "-ar", "44100", "-y",
-            str(tmp_wav)
+            FFMPEG_BIN,
+            "-stats",
+            "-hide_banner",
+            "-threads",
+            str(threads),
+            "-i",
+            str(video_path),
+            "-acodec",
+            "pcm_f32le",
+            "-ar",
+            "44100",
+            "-y",
+            str(tmp_wav),
         ]
 
-    attempt_cpu_run_with_retry(
-        build_extract_cmd, CPU_THREADS,
-        description="Extracting Audio",
-        total_duration=total_duration
-    )
+    attempt_cpu_run_with_retry(build_extract_cmd, CPU_THREADS, description="Extracting Audio", total_duration=total_duration)
 
     if is_valid_audio(tmp_wav):
         tmp_wav.rename(original_wav)
@@ -145,8 +184,7 @@ def _separate_stems_step(original_wav, separation_out_dir, total_duration=None):
     log_msg("  [Step 1/5] Separating Stems (BS-Roformer - AI Engine)...")
 
     try:
-        from audio_separator.separator import Separator
-        import logging
+        Separator = _get_audio_separator_class()
 
         # 2. Configure Separator with explicit GPU/CUDA settings
         # This matches the verified logic in Auto-Subtitle-Generator but with explicit device choice
@@ -159,9 +197,9 @@ def _separate_stems_step(original_wav, separation_out_dir, total_duration=None):
             output_format="wav",
             normalization_threshold=0.9,
             use_soundfile=True,
-            vr_params={'batch_size': GPU_BATCH_SIZE, 'window_size': 320},
-            mdxc_params={'batch_size': GPU_BATCH_SIZE},
-            mdx_params={'batch_size': GPU_BATCH_SIZE}
+            vr_params={"batch_size": GPU_BATCH_SIZE, "window_size": 320},
+            mdxc_params={"batch_size": GPU_BATCH_SIZE},
+            mdx_params={"batch_size": GPU_BATCH_SIZE},
         )
 
         log_msg(f"    [AI] Loading Model: {VOCALS_MODEL}")
@@ -169,18 +207,21 @@ def _separate_stems_step(original_wav, separation_out_dir, total_duration=None):
 
         log_msg("    [AI] Starting Inference (GPU Accelerated)...")
         # BS-Roformer settings from original CLI call
-        # No simple way to get progress updates into our custom bar via the Python API 
+        # No simple way to get progress updates into our custom bar via the Python API
         # in 0.41.1 without complex logging hooks, so we provide status updates.
         output_files = separator.separate(str(original_wav))
+
+        if output_files is None:
+            raise Exception("Separation completed but output stems were not identified.")
 
         # 3. Verify Output
         vocals_wav, background_wav = _verify_separation_output(separation_out_dir, original_wav)
 
         if not vocals_wav or not background_wav:
-             # Check if output_files has them
-             if len(output_files) >= 2:
-                 log_msg(f"    [Debug] Separator returned: {output_files}", level="DEBUG")
-             raise Exception("Separation completed but output stems were not identified.")
+            # Check if output_files has them
+            if hasattr(output_files, "__len__") and len(output_files) >= 2:
+                log_msg(f"    [Debug] Separator returned: {output_files}", level="DEBUG")
+            raise Exception("Separation completed but output stems were not identified.")
 
         return vocals_wav, background_wav
 
@@ -194,20 +235,15 @@ def _run_enhance_retry(cmd_enhance, total_duration):
     max_retries = 2
     for attempt in range(max_retries):
         try:
-            run_command_with_progress(
-                cmd_enhance, description="Enhancing Vocals",
-                total_duration=total_duration
-            )
+            run_command_with_progress(cmd_enhance, description="Enhancing Vocals", total_duration=total_duration)
             return
         except subprocess.CalledProcessError as e:
             if attempt < max_retries - 1:
-                log_msg(
-                    f"    [Warning] Enhancement failed (Attempt {attempt + 1}). Retrying...",
-                    is_error=True
-                )
-                if torch.cuda.is_available():  # pragma: no cover
+                log_msg(f"    [Warning] Enhancement failed (Attempt {attempt + 1}). Retrying...", is_error=True)
+                if torch is not None and torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                import gc  # pragma: no cover
+                import gc
+
                 gc.collect()
                 time.sleep(2)
             else:  # pragma: no cover
@@ -218,13 +254,8 @@ def _handle_enhance_output(enhanced_vocals_dir, vocals_wav):
     """Checks output and verifies validity."""
     candidates_enhanced = list(enhanced_vocals_dir.glob("*.wav"))
     if not candidates_enhanced:
-        log_msg(
-            "    [Warning] Resemble-Enhance did not produce output. "
-            "Using raw vocals.", is_error=True
-        )
-        fb_path = (
-            enhanced_vocals_dir / f"fallback_{vocals_wav.name}"
-        )
+        log_msg("    [Warning] Resemble-Enhance did not produce output. Using raw vocals.", is_error=True)
+        fb_path = enhanced_vocals_dir / f"fallback_{vocals_wav.name}"
         shutil.copy(vocals_wav, fb_path)
         return fb_path
 
@@ -262,10 +293,14 @@ def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_durati
         str(enhance_input_dir),
         str(enhanced_vocals_tmp_dir),
         "--denoise_only",
-        "--nfe", str(ENHANCE_NFE),
-        "--solver", "rk4",
-        "--tau", str(ENHANCE_TAU),
-        "--device", CUDA_DEVICE
+        "--nfe",
+        str(ENHANCE_NFE),
+        "--solver",
+        "rk4",
+        "--tau",
+        str(ENHANCE_TAU),
+        "--device",
+        CUDA_DEVICE,
     ]
 
     _run_enhance_retry(cmd_enhance, total_duration)
@@ -291,45 +326,31 @@ def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_durati
     return final_output
 
 
-def _denoise_background_step(background_wav, denoised_background_dir, total_duration=None):
-    """Step 4: Denoise Background (UVR-DeNoise-Lite) via Python API."""
-    candidates_denoised = list(denoised_background_dir.glob("*.wav"))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
-        log_msg("  [Step 3/5] Skipping Background Denoising (exists)")
-        return valid_denoised[0]
-
-    log_msg("  [Step 3/5] Denoising Background (UVR-DeNoise-Lite - AI Engine)...")
-
+def _run_denoise_separator(input_wav, denoised_output_dir, selected_label, warning_message, error_message, fallback_on_failure=True):
+    """Runs UVR-DeNoise-Lite through audio-separator and selects best output."""
     try:
-        from audio_separator.separator import Separator
-        
+        Separator = _get_audio_separator_class()
+
         model_dir = Path("models").resolve()
         model_dir.mkdir(exist_ok=True)
 
         separator = Separator(
-            output_dir=str(denoised_background_dir),
+            output_dir=str(denoised_output_dir),
             model_file_dir=str(model_dir),
             output_format="wav",
             use_soundfile=True,
-            vr_params={'batch_size': GPU_BATCH_SIZE, 'window_size': 320},
-            mdxc_params={'batch_size': GPU_BATCH_SIZE},
-            mdx_params={'batch_size': GPU_BATCH_SIZE}
+            vr_params={"batch_size": GPU_BATCH_SIZE, "window_size": 320},
+            mdxc_params={"batch_size": GPU_BATCH_SIZE},
+            mdx_params={"batch_size": GPU_BATCH_SIZE},
         )
 
         log_msg(f"    [AI] Loading Model: {DENOISE_MODEL}")
-        # Note: audio-separator 0.41.1 might need different params for single_stem
-        # but usually load_model handles the arch detection
         separator.load_model(model_filename=DENOISE_MODEL)
 
         log_msg("    [AI] Starting Inference (GPU Accelerated)...")
-        # In the CLI we used --single_stem "No Noise"
-        # In Python API we can set this in the constructor or it might happen automagically
-        # but we can just use the returned file list.
-        output_files = separator.separate(str(background_wav))
+        separator.separate(str(input_wav))
 
-        candidates_denoised = list(denoised_background_dir.glob("*.wav"))
+        candidates_denoised = sorted(denoised_output_dir.glob("*.wav"), key=lambda path: path.name.lower())
         clean_candidates = [f for f in candidates_denoised if "(No Noise)" in f.name]
 
         if clean_candidates:
@@ -337,21 +358,76 @@ def _denoise_background_step(background_wav, denoised_background_dir, total_dura
         elif candidates_denoised:
             result = candidates_denoised[0]
         else:
-            log_msg("    [Warning] UVR-DeNoise failed. Using raw background.", is_error=True)
-            result = background_wav
+            log_msg(warning_message, is_error=True)
+            if fallback_on_failure:
+                result = input_wav
+            else:
+                raise RuntimeError(warning_message.strip())
 
-        log_msg(f"    Selected Denoised Stem: {result.name}")
+        log_msg(f"    {selected_label}: {result.name}")
         return result
 
-    except Exception as e:  # pragma: no cover
-        log_msg(f"    [Error] Background Denoising failed: {e}", is_error=True)
-        return background_wav
+    except Exception as e:
+        log_msg(f"    [Error] {error_message}: {e}", is_error=True)
+        if fallback_on_failure:
+            return input_wav
+        raise
 
 
-def _final_mix_step(
-    video_path, enhanced_vocals_wav,
-    denoised_background_wav, final_output_video, total_duration=None
-):
+def _select_preferred_denoised_output(valid_denoised):
+    """Pick a deterministic denoised output, preferring '(No Noise)' when present."""
+    sorted_valid_denoised = sorted(valid_denoised, key=lambda path: path.name.lower())
+    clean_candidates = [f for f in sorted_valid_denoised if "(No Noise)" in f.name]
+
+    if clean_candidates:
+        return clean_candidates[0]
+
+    return sorted_valid_denoised[0]
+
+
+def _denoise_background_step(background_wav, denoised_background_dir, total_duration=None):
+    """Step 4: Denoise Background (UVR-DeNoise-Lite) via Python API."""
+    candidates_denoised = list(denoised_background_dir.glob("*.wav"))
+    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
+
+    if valid_denoised:
+        log_msg("  [Step 3/5] Skipping Background Denoising (exists)")
+        return _select_preferred_denoised_output(valid_denoised)
+
+    log_msg("  [Step 3/5] Denoising Background (UVR-DeNoise-Lite - AI Engine)...")
+
+    return _run_denoise_separator(
+        input_wav=background_wav,
+        denoised_output_dir=denoised_background_dir,
+        selected_label="Selected Denoised Stem",
+        warning_message="    [Warning] UVR-DeNoise failed. Using raw background.",
+        error_message="Background Denoising failed",
+        fallback_on_failure=True,
+    )
+
+
+def _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=None):
+    """Denoises the full extracted audio track for denoise_only mode."""
+    candidates_denoised = list(denoised_audio_dir.glob("*.wav"))
+    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
+
+    if valid_denoised:
+        log_msg("  [Step 2/4] Skipping Full-Audio Denoise (exists)")
+        return _select_preferred_denoised_output(valid_denoised)
+
+    log_msg("  [Step 2/4] Denoising Full Audio (UVR-DeNoise-Lite - AI Engine)...")
+
+    return _run_denoise_separator(
+        input_wav=original_wav,
+        denoised_output_dir=denoised_audio_dir,
+        selected_label="Selected Denoised Track",
+        warning_message="    [Warning] UVR-DeNoise failed for full-audio mode.",
+        error_message="Full-Audio Denoising failed",
+        fallback_on_failure=False,
+    )
+
+
+def _final_mix_step(video_path, enhanced_vocals_wav, denoised_background_wav, final_output_video, total_duration=None):
     """Step 5: Mix with FFmpeg."""
     if is_valid_video(final_output_video):
         log_msg(f"  [Step 5/5] Skipping Final Mix (exists: {final_output_video.name})")
@@ -375,27 +451,33 @@ def _final_mix_step(
 
     def build_mix_cmd(threads):
         return [
-            FFMPEG_BIN, "-stats", "-hide_banner",
-            "-threads", str(threads),
-            "-i", str(video_path),          # 0: Video source
-            "-i", str(enhanced_vocals_wav),
-            "-i", str(denoised_background_wav),
-            "-map", "0:v",
+            FFMPEG_BIN,
+            "-stats",
+            "-hide_banner",
+            "-threads",
+            str(threads),
+            "-i",
+            str(video_path),  # 0: Video source
+            "-i",
+            str(enhanced_vocals_wav),
+            "-i",
+            str(denoised_background_wav),
+            "-map",
+            "0:v",
             "-filter_complex",
-            f"[1:a]volume={VOCAL_MIX_VOL}[v];"
-            f"[2:a]volume={BACKGROUND_MIX_VOL}[m];"
-            "[v][m]amix=inputs=2:duration=longest:normalize=0[out]",
-            "-map", "[out]",
-            "-c:v", "copy",
-            "-c:a", "pcm_f32le",
-            "-shortest", "-y", str(tmp_output)
+            f"[1:a]volume={VOCAL_MIX_VOL}[v];[2:a]volume={BACKGROUND_MIX_VOL}[m];[v][m]amix=inputs=2:duration=longest:normalize=0[out]",
+            "-map",
+            "[out]",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "pcm_f32le",
+            "-shortest",
+            "-y",
+            str(tmp_output),
         ]
 
-    attempt_cpu_run_with_retry(
-        build_mix_cmd, CPU_THREADS,
-        description="Final Mixing",
-        total_duration=duration
-    )
+    attempt_cpu_run_with_retry(build_mix_cmd, CPU_THREADS, description="Final Mixing", total_duration=duration)
 
     if is_valid_video(tmp_output):
         if final_output_video.exists():
@@ -406,6 +488,68 @@ def _final_mix_step(
         if tmp_output.exists():
             tmp_output.unlink()
         raise Exception("Final Mix Failed: Output video invalid/empty.")
+
+
+def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_video, total_duration=None):
+    """Final remux step for denoise_only mode (single processed track)."""
+    if is_valid_video(final_output_video):
+        log_msg(f"  [Step 4/4] Skipping Final Remux (exists: {final_output_video.name})")
+        return True
+
+    log_msg("  [Step 4/4] Final Remux (32-bit Float)...")
+
+    duration = total_duration or get_audio_duration_sec(processed_audio_wav)
+
+    if not processed_audio_wav.exists():
+        raise FileNotFoundError(f"Missing Processed Audio: {processed_audio_wav}")
+
+    tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
+    audio_codec = "aac" if final_output_video.suffix.lower() == ".mp4" else "pcm_f32le"
+
+    def build_mux_cmd(threads):
+        return [
+            FFMPEG_BIN,
+            "-stats",
+            "-hide_banner",
+            "-threads",
+            str(threads),
+            "-i",
+            str(video_path),
+            "-i",
+            str(processed_audio_wav),
+            "-map",
+            "0",
+            "-map",
+            "1:a",
+            "-map",
+            "-0:a",
+            "-c:v",
+            "copy",
+            "-c:s",
+            "copy",
+            "-c:d",
+            "copy",
+            "-c:t",
+            "copy",
+            "-c:a",
+            audio_codec,
+            "-shortest",
+            "-y",
+            str(tmp_output),
+        ]
+
+    attempt_cpu_run_with_retry(build_mux_cmd, CPU_THREADS, description="Final Remux", total_duration=duration)
+
+    if is_valid_video(tmp_output):
+        if final_output_video.exists():
+            final_output_video.unlink()
+        tmp_output.rename(final_output_video)
+        log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
+        return True
+    else:
+        if tmp_output.exists():
+            tmp_output.unlink()
+        raise Exception("Final Remux Failed: Output video invalid/empty.")
 
 
 def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
@@ -424,8 +568,8 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
     else:
         output_dir = video_path.parent
 
-    # Define final output name
-    final_output_video = output_dir / f"{video_path.stem}_Hybrid_Cleaned{video_path.suffix}"
+    output_suffix = _get_output_suffix(PROCESS_MODE)
+    final_output_video = output_dir / f"{video_path.stem}{output_suffix}{video_path.suffix}"
 
     # Resume checks: If final exists, skip
     if is_valid_video(final_output_video):
@@ -444,50 +588,43 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
         # Step 1: Extract Audio
         _extract_audio_step(video_path, original_wav, total_duration=video_dur)
 
-        # Step 2: Separate Stems
         if PROCESS_MODE == "denoise_only":
-            # Just pretend vocals is original and background is silence for logic flow?
-            # Or just bypass. For strict refactor, ignoring 'denoise_only' nuance if not in original logic?
-            # Original logic handled "denoise_only" in config but I didn't see explicit branch in main loop in my last read.
-            # Ah, the `config.py` had `PROCESS_MODE`. Check `restore_audio_hybrid.py` for usage.
-            # I didn't see `process_mode` being checked in `_separate_stems_step` or `process_hybrid_audio` in the snippets I read.
-            # I will assume standard hybrid flow as seen in the code I viewed.
-            pass
+            denoised_audio_dir = work_dir / "denoised_full_audio"
+            denoised_audio_dir.mkdir(exist_ok=True)
 
-        separation_out_dir = work_dir / "separation"
-        separation_out_dir.mkdir(exist_ok=True)
+            denoised_full_audio_wav = _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=video_dur)
 
-        vocals_wav, background_wav = _separate_stems_step(
-            original_wav, separation_out_dir, total_duration=video_dur
-        )
+            log_msg("  [Step 3/4] Smart Audio Sync (Full-Audio)...")
+            aligned_full_audio = work_dir / f"aligned_{denoised_full_audio_wav.name}"
+            _align_stems(original_wav, denoised_full_audio_wav, aligned_full_audio)
 
-        # Step 3: Enhance Vocals
-        enhanced_vocals_dir = work_dir / "enhanced_vocals"
-        enhanced_vocals_wav = _enhance_vocals_step(
-            vocals_wav, enhanced_vocals_dir, work_dir, total_duration=video_dur
-        )
+            _final_mux_single_audio_step(video_path, aligned_full_audio, final_output_video, total_duration=video_dur)
+        else:
+            separation_out_dir = work_dir / "separation"
+            separation_out_dir.mkdir(exist_ok=True)
 
-        # Step 4: Denoise Background
-        denoised_background_dir = work_dir / "denoised_background"
-        denoised_background_wav = _denoise_background_step(
-            background_wav, denoised_background_dir, total_duration=video_dur
-        )
+            vocals_wav, background_wav = _separate_stems_step(original_wav, separation_out_dir, total_duration=video_dur)
 
-        # Step 5: Sync
-        log_msg("  [Step 4/5] Smart Audio Sync (Sequential for clean output)...")
-        log_msg("    [Info] Syncing Stems (Sequential for clean output)...")
+            # Step 3: Enhance Vocals
+            enhanced_vocals_dir = work_dir / "enhanced_vocals"
+            enhanced_vocals_wav = _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_duration=video_dur)
 
-        aligned_vocals = work_dir / f"aligned_{enhanced_vocals_wav.name}"
-        _align_stems(original_wav, enhanced_vocals_wav, aligned_vocals)
+            # Step 4: Denoise Background
+            denoised_background_dir = work_dir / "denoised_background"
+            denoised_background_wav = _denoise_background_step(background_wav, denoised_background_dir, total_duration=video_dur)
 
-        aligned_background = work_dir / f"aligned_{denoised_background_wav.name}"
-        _align_stems(original_wav, denoised_background_wav, aligned_background)
+            # Step 5: Sync
+            log_msg("  [Step 4/5] Smart Audio Sync (Sequential for clean output)...")
+            log_msg("    [Info] Syncing Stems (Sequential for clean output)...")
 
-        # Step 6: Final Mix
-        _final_mix_step(
-            video_path, aligned_vocals, aligned_background, final_output_video,
-            total_duration=video_dur
-        )
+            aligned_vocals = work_dir / f"aligned_{enhanced_vocals_wav.name}"
+            _align_stems(original_wav, enhanced_vocals_wav, aligned_vocals)
+
+            aligned_background = work_dir / f"aligned_{denoised_background_wav.name}"
+            _align_stems(original_wav, denoised_background_wav, aligned_background)
+
+            # Step 6: Final Mix
+            _final_mix_step(video_path, aligned_vocals, aligned_background, final_output_video, total_duration=video_dur)
 
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True

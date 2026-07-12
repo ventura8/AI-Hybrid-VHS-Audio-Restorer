@@ -1,0 +1,4 @@
+[flake8]
+max-line-length = 140
+max-complexity = 10
+disable_noqa = True

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-from modules.processing import process_hybrid_audio
-from modules.ui import run_init_sequence, _show_banner, _get_input_files
-from modules.utils import check_dependencies
-from modules.config import OUTPUT_DIR
 import sys
-import time
 from pathlib import Path
+
+from modules.config import OUTPUT_DIR
+from modules.processing import process_hybrid_audio
+from modules.ui import _get_input_files, _show_banner, run_init_sequence
+from modules.utils import check_dependencies
 
 # Ensure local modules can be imported
 sys.path.append(str(Path(__file__).parent))
@@ -46,9 +46,7 @@ def main():
     # 4. Processing Loop
     for video_path in files:
         # User requested output to ALWAYS be in the input folder (from original logic)
-        process_hybrid_audio(
-            video_path, gpu_name, target_output_dir=video_path.parent
-        )
+        process_hybrid_audio(video_path, gpu_name, target_output_dir=video_path.parent)
 
     print("\n" + "=" * 60)
     print("   BATCH PROCESSING COMPLETE")
@@ -56,7 +54,7 @@ def main():
     try:
         input("Press Enter to exit...")
     except (EOFError, KeyboardInterrupt):
-        pass
+        print(">> Exiting gracefully.")
 
 
 if __name__ == "__main__":

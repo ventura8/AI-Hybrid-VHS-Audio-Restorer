@@ -1,143 +1,178 @@
 # === AI Hybrid VHS Audio Restorer Installer ===
-# Installs: Python (venv), FFmpeg (Portable), PyTorch, VoiceFixer, Demucs
-# Fully self-contained: No system modifications, no Admin privileges required.
+# Installs runtime dependencies only via Poetry (verbose mode), plus local FFmpeg.
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+$InformationPreference = "Continue"
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 Set-Location -Path $PSScriptRoot
 
-Write-Host "=== Setting up Hybrid AI Audio Environment (Portable Mode) ===" -ForegroundColor Cyan
+Write-Information "=== Setting up Hybrid AI Audio Environment (Poetry Runtime Mode) ==="
 
-# --- PRE-FLIGHT CHECKS ---
+function Invoke-CheckedCommand {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments
+    )
+
+    & $Executable @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $Executable $($Arguments -join ' ')"
+    }
+}
 
 # 1. Check for Python
 try {
     $pyVersion = python --version 2>&1
-    Write-Host "Found Python: $pyVersion" -ForegroundColor Green
+    Write-Information "Found Python: $pyVersion"
 }
 catch {
-    Write-Error "Python not found in PATH. Please install Python 3.10+ manually and try again."
+    throw "Python not found in PATH. Please install Python 3.12 manually and re-run this script."
 }
 
-
-
-# --- INSTALLATION ---
-
-# 4. Create Virtual Environment
-Write-Host "`nStep 1: Setting up Python Environment..." -ForegroundColor Yellow
-if (-not (Test-Path "venv")) {
-    python -m venv venv
-    Write-Host "Created virtual environment."
+# 2. Create Virtual Environment
+Write-Information "`nStep 1: Setting up Python virtual environment (.venv)..."
+[version]$minVersion = "3.12.0"
+[version]$maxVersionExclusive = "3.13.0"
+$resolvedPyVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to resolve Python interpreter version."
 }
 
-$VenvPy = "$PSScriptRoot\venv\Scripts\python.exe"
-$VenvPip = "$PSScriptRoot\venv\Scripts\pip.exe"
-$VenvScripts = "$PSScriptRoot\venv\Scripts"
+[version]$currentVersion = $resolvedPyVersion
+if ($currentVersion -lt $minVersion -or $currentVersion -ge $maxVersionExclusive) {
+    throw "Python version must be >= 3.12.0 and < 3.13.0. Found $currentVersion"
+}
 
-# 4.5 Install FFmpeg Setup (Portable & Enforced Local)
-Write-Host "`nStep 1.5: Checking Local FFmpeg..." -ForegroundColor Yellow
+if (-not (Test-Path "$PSScriptRoot\.venv\Scripts\python.exe")) {
+    Invoke-CheckedCommand "python" @("-m", "venv", ".venv")
+    Write-Information "Created .venv virtual environment."
+}
+else {
+    Write-Information "Virtual environment already exists."
+}
 
-# We strictly want FFmpeg inside our venv to ensure self-containment
+$VenvPy = "$PSScriptRoot\.venv\Scripts\python.exe"
+$VenvScripts = "$PSScriptRoot\.venv\Scripts"
+
+if (-not (Test-Path $VenvPy)) {
+    throw "Virtual environment interpreter not found at $VenvPy"
+}
+
+$resolvedPyVersion = & $VenvPy -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to resolve virtual environment interpreter version."
+}
+[version]$currentVersion = $resolvedPyVersion
+if ($currentVersion -lt $minVersion -or $currentVersion -ge $maxVersionExclusive) {
+    throw "Virtual environment Python version must be >= 3.12.0 and < 3.13.0. Found $currentVersion"
+}
+
+# 3. Install FFmpeg Setup (Portable & Enforced Local)
+Write-Information "`nStep 2: Checking local FFmpeg..."
 $localFFmpegPath = "$VenvScripts\ffmpeg.exe"
 
 if (-not (Test-Path $localFFmpegPath)) {
-    Write-Host "Local FFmpeg not found. Downloading FULL Portable Build (Gyan.dev)..." -ForegroundColor Cyan
-    
-    $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.zip"
+    Write-Information "Local FFmpeg not found. Downloading full portable build..."
+
+    $url = "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip"
+    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip"
+    $expectedSha256 = "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
     $zip = "$PSScriptRoot\ffmpeg.zip"
     $temp = "$PSScriptRoot\temp_ffmpeg"
-    
-    # 1. Download
+
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Write-Host "Downloading (Gyan.dev)..." -ForegroundColor Gray
         Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -UserAgent "Mozilla/5.0"
     }
     catch {
-        Write-Warning "Gyan.dev failed. Trying Fallback (GitHub BtbN)..."
-        try {
-            $urlFallback = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-            Invoke-WebRequest -Uri $urlFallback -OutFile $zip -UseBasicParsing -UserAgent "Mozilla/5.0"
-        }
-        catch {
-            Write-Error "Failed to download FFmpeg from both sources. Please download manually and place 'ffmpeg.exe' in 'venv\Scripts'."
-            Write-Error $_.Exception.Message
-            exit
-        }
+        Write-Warning "Primary FFmpeg source failed. Trying pinned fallback..."
+        Invoke-WebRequest -Uri $urlFallback -OutFile $zip -UseBasicParsing -UserAgent "Mozilla/5.0"
     }
-    
-    # 2. Extract
-    Write-Host "Extracting FFmpeg..." -ForegroundColor Cyan
+
+    $actualSha256 = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        throw "FFmpeg archive checksum mismatch. Expected $expectedSha256 but got $actualSha256"
+    }
+
+    Write-Information "Extracting FFmpeg..."
     Expand-Archive -Path $zip -DestinationPath $temp -Force
-    
-    # 3. Install
+
     $bin = Get-ChildItem -Path $temp -Recurse -Filter "ffmpeg.exe" | Select-Object -ExpandProperty DirectoryName -First 1
+    if ([string]::IsNullOrWhiteSpace($bin)) {
+        throw "FFmpeg extraction failed: ffmpeg.exe was not found in the extracted archive."
+    }
     Copy-Item "$bin\ffmpeg.exe" $VenvScripts -Force
     Copy-Item "$bin\ffprobe.exe" $VenvScripts -Force
-    
-    # 4. Cleanup
+
     Remove-Item $zip -Force
     Remove-Item $temp -Recurse -Force
-    
-    Write-Host "FFmpeg installed to virtual environment." -ForegroundColor Green
+
+    Write-Information "FFmpeg installed to .venv\Scripts."
 }
 else {
-    Write-Host "Local FFmpeg is is already installed in venv." -ForegroundColor Green
+    Write-Information "Local FFmpeg already installed in .venv."
 }
 
-# 5. Install Python Dependencies (via requirements.txt)
-Write-Host "Step 2: Installing All Dependencies (PyTorch, AI Models, Utilities)..." -ForegroundColor Yellow
+# 4. Install runtime dependencies with Poetry (verbose)
+Write-Information "`nStep 3: Installing runtime dependencies with Poetry..."
+Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "--upgrade", "pip")
+Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "poetry==2.4.1")
 
-try {
-    & $VenvPy -m pip install --upgrade pip
-    
-    # First, install most dependencies from requirements.txt
-    # We use a temporary requirements file without the conflicting resemble-enhance
-    Write-Host "Installing base dependencies from requirements.txt..." -ForegroundColor Cyan
-    $reqContent = Get-Content "$PSScriptRoot\requirements.txt" | Where-Object { $_ -notmatch "resemble-enhance" }
-    $tempReq = "$PSScriptRoot\temp_requirements.txt"
-    $reqContent | Set-Content $tempReq
-    
-    & $VenvPip install -r $tempReq --no-cache-dir
-    Remove-Item $tempReq
-    
-    # Then install resemble-enhance with --no-deps to bypass the torch version conflict
-    Write-Host "Installing Resemble-Enhance (bypass dependency check)..." -ForegroundColor Cyan
-    $resembleUrl = "git+https://github.com/daswer123/resemble-enhance-windows.git"
-    & $VenvPip install $resembleUrl --no-deps --no-cache-dir
-
-    if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
-
-    Write-Host "All dependencies installed successfully." -ForegroundColor Green
-    
-    # NEW: Apply Patches (cleaned up)
-    Write-Host "Applying runtime patches (DeepSpeed removal + Torchaudio fixes)..." -ForegroundColor Cyan
-    & $VenvPy apply_patches.py
-    
-}
-catch {
-    Write-Error "An unexpected error occurred during dependency installation."
+# Prevent Poetry from inheriting an unrelated active environment (for example, an external "venv").
+if ($env:VIRTUAL_ENV) {
+    Write-Information "Detected active environment at '$($env:VIRTUAL_ENV)'. Clearing it for installer-scoped Poetry commands."
+    Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
 }
 
-# 7. Create Directories
-Write-Host "Step 3: Creating project structure..." -ForegroundColor Yellow
+$env:POETRY_VIRTUALENVS_IN_PROJECT = "true"
+$env:POETRY_VIRTUALENVS_CREATE = "false"
+$env:POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON = "false"
+
+Invoke-CheckedCommand $VenvPy @("-m", "poetry", "config", "--local", "virtualenvs.in-project", "true")
+Invoke-CheckedCommand $VenvPy @("-m", "poetry", "config", "--local", "virtualenvs.create", "false")
+
+if (-not (Test-Path "$PSScriptRoot\poetry.lock")) {
+    Write-Information "poetry.lock not found. Generating lock file..."
+    Invoke-CheckedCommand $VenvPy @("-m", "poetry", "lock", "-v", "--no-interaction")
+}
+
+Invoke-CheckedCommand $VenvPy @("-m", "poetry", "install", "-v", "--only", "main", "--no-root", "--no-interaction")
+
+Write-Information "Installing Resemble-Enhance runtime package without dependency override..."
+Invoke-CheckedCommand $VenvPy @(
+    "-m",
+    "pip",
+    "install",
+    "-v",
+    "git+https://github.com/daswer123/resemble-enhance-windows.git@270d8da4ea7c0efc960c52d605b75c0458b708d0",
+    "--no-deps"
+)
+
+Write-Information "Applying runtime patches (DeepSpeed removal + Torchaudio fixes)..."
+Invoke-CheckedCommand $VenvPy @("scripts/apply_patches.py")
+
+# 5. Create directories
+Write-Information "`nStep 4: Creating project structure..."
 New-Item -ItemType Directory -Force -Path "input" | Out-Null
 New-Item -ItemType Directory -Force -Path "output" | Out-Null
 New-Item -ItemType Directory -Force -Path "temp_work" | Out-Null
 
-# 8. Create a Batch Launcher for the HYBRID Script
-Write-Host "Step 4: Creating Launcher..." -ForegroundColor Yellow
+# 6. Create launcher
+Write-Information "Step 5: Creating launcher..."
 $batContent = @"
 @echo off
-set "PYTHON_EXE=%CD%\venv\Scripts\python.exe"
+set "SCRIPT_DIR=%~dp0"
+set "PYTHON_EXE=%SCRIPT_DIR%.venv\Scripts\python.exe"
 if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
-"%PYTHON_EXE%" restore_audio_hybrid.py %*
+"%PYTHON_EXE%" "%SCRIPT_DIR%restore_audio_hybrid.py" %*
 pause
 "@
-$batContent | Out-File -FilePath "start.bat" -Encoding ascii
+Set-Content -Path "start.bat" -Value $batContent -Encoding Ascii
 
-Write-Host "`n=== Installation Complete! ===" -ForegroundColor Green
-Write-Host "1. Put your video files in the 'input' folder."
-Write-Host "2. Double-click 'start.bat' to run the Hybrid AI Cleaner."
-Write-Host "Press Enter to exit..."
-# Read-Host # Commented out for automation
+Write-Information "`n=== Installation Complete! ==="
+Write-Information "1. Put your video files in the input folder."
+Write-Information "2. Double-click start.bat to run the Hybrid AI Cleaner."

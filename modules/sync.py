@@ -1,28 +1,35 @@
+import concurrent.futures
+import importlib
 import sys
 import time
-import concurrent.futures
-import numpy as np
-import scipy.signal
-from scipy.interpolate import interp1d
-from scipy.ndimage import map_coordinates
-import soundfile as sf
-from typing import Optional, Any
+from typing import Optional
 
-from .utils import (
-    log_msg, draw_progress_bar, format_time, _save_audio_atomic
-)
-from .config import (
-    DTW_RESOLUTION, SYNC_METHOD
-)
-from .hardware import (
-    GPU_VRAM_GB, CPU_THREADS
-)
+from .config import DTW_RESOLUTION, SYNC_METHOD
+from .hardware import CPU_THREADS, GPU_VRAM_GB
+from .utils import _save_audio_atomic, draw_progress_bar, format_time, log_msg
+
+
+def _load_optional(module_name, attr_name=None):
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        return None
+    if attr_name is None:
+        return module
+    return getattr(module, attr_name, None)
+
+
+np = _load_optional("numpy")
+scipy_signal = _load_optional("scipy.signal")
+sf = _load_optional("soundfile")
+interp1d = _load_optional("scipy.interpolate", "interp1d")
+map_coordinates = _load_optional("scipy.ndimage", "map_coordinates")
 
 # Optional imports for DTW
 DTW_IMPORT_ERROR: Optional[str] = None
 try:
-    import librosa
     import fastdtw
+    import librosa
 except ImportError as e:
     DTW_IMPORT_ERROR = str(e)
     librosa = None  # type: ignore[assignment]
@@ -41,10 +48,10 @@ def _run_fastdtw_chunk(args):
     """
     ref_seg, proc_seg, radius = args
     # Ensure dependencies in worker process
-    import fastdtw
-    from scipy.spatial.distance import euclidean
+    fastdtw_module = importlib.import_module("fastdtw")
+    euclidean = importlib.import_module("scipy.spatial.distance").euclidean
 
-    _, path = fastdtw.fastdtw(ref_seg, proc_seg, radius=radius, dist=euclidean)
+    _, path = fastdtw_module.fastdtw(ref_seg, proc_seg, radius=radius, dist=euclidean)
     return path
 
 
@@ -60,8 +67,8 @@ def _run_gpu_dtw_chunk(args):
     ref_seg, proc_seg, radius = args
 
     # 1. GPU Distance Calculation
-    import torch
-    import librosa
+    librosa_module = importlib.import_module("librosa")
+    torch = importlib.import_module("torch")
 
     # Ensure tensors are on GPU
     # Note: ref_seg/proc_seg are numpy arrays (Features x Time) -> Need Transpose?
@@ -83,7 +90,7 @@ def _run_gpu_dtw_chunk(args):
     # wp is (N_steps, 2) in (row, col) -> (ref_idx, proc_idx)
     # Librosa returns path from end-to-start ([N-1, M-1] ... [0, 0]).
 
-    _, wp = librosa.sequence.dtw(C=cost_matrix, global_constraints=False)
+    _, wp = librosa_module.sequence.dtw(C=cost_matrix, global_constraints=False)
 
     # Reverse to get Start -> End ([0, 0] ... [N-1, M-1])
     wp = wp[::-1]
@@ -98,8 +105,8 @@ def _apply_warp_gpu(audio_np, source_indices_np):
     Audio: (samples, channels) numpy
     Indices: (output_samples,) numpy - The source index for each output sample.
     """
-    import torch
     try:
+        torch = importlib.import_module("torch")
         if not torch.cuda.is_available():
             return None
 
@@ -133,12 +140,7 @@ def _apply_warp_gpu(audio_np, source_indices_np):
 
         # Resample
         # align_corners=True ensures -1 maps to index 0 and 1 maps to index W-1
-        warped = torch.nn.functional.grid_sample(
-            audio_t, grid,
-            mode='bicubic',
-            padding_mode='zeros',
-            align_corners=True
-        )
+        warped = torch.nn.functional.grid_sample(audio_t, grid, mode="bicubic", padding_mode="zeros", align_corners=True)
 
         # Output: (1, C, 1, W_out)
         # Back to (W_out, C)
@@ -162,12 +164,8 @@ def _load_dtw_features(original_wav, processed_wav):
 
     audio_dur = len(ref_y) / ANALYSIS_SR
 
-    ref_chroma = librosa.feature.chroma_stft(
-        y=ref_y, sr=ANALYSIS_SR, hop_length=hop_length, n_fft=2048
-    )
-    proc_chroma = librosa.feature.chroma_stft(
-        y=proc_y, sr=ANALYSIS_SR, hop_length=hop_length, n_fft=2048
-    )
+    ref_chroma = librosa.feature.chroma_stft(y=ref_y, sr=ANALYSIS_SR, hop_length=hop_length, n_fft=2048)
+    proc_chroma = librosa.feature.chroma_stft(y=proc_y, sr=ANALYSIS_SR, hop_length=hop_length, n_fft=2048)
 
     return ref_chroma.T, proc_chroma.T, audio_dur, hop_length, ANALYSIS_SR
 
@@ -201,7 +199,8 @@ def _execute_parallel_dtw(chunks):
     """Executes DTW chunks in parallel on CPU or GPU."""
     use_gpu_dtw = False
     try:
-        import torch
+        torch = importlib.import_module("torch")
+
         if torch.cuda.is_available() and GPU_VRAM_GB >= 4:
             use_gpu_dtw = True
     except Exception:
@@ -227,10 +226,7 @@ def _execute_parallel_dtw(chunks):
     draw_progress_bar(0, "DTW Sync: Starting...")
 
     with Executor(max_workers=max_workers) as executor:
-        future_to_chunk = {
-            executor.submit(Worker, chunk): i
-            for i, chunk in enumerate(chunks)
-        }
+        future_to_chunk = {executor.submit(Worker, chunk): i for i, chunk in enumerate(chunks)}
 
         for future in concurrent.futures.as_completed(future_to_chunk):
             chunk_idx = future_to_chunk[future]
@@ -244,10 +240,7 @@ def _execute_parallel_dtw(chunks):
             chunks_done += 1
             percent = (chunks_done / num_chunks) * 100
             elapsed = time.time() - t0
-            draw_progress_bar(
-                percent, f"DTW Sync: Chunk {chunks_done}/{num_chunks}",
-                elapsed_sec=elapsed
-            )
+            draw_progress_bar(percent, f"DTW Sync: Chunk {chunks_done}/{num_chunks}", elapsed_sec=elapsed)
 
     path_segments = [results_map[i] for i in range(num_chunks)]
     sys.stdout.write("\n")
@@ -286,17 +279,12 @@ def _warp_aligned_audio_cpu(full_proc_audio, source_indices, num_channels, outpu
     log_msg("    GPU Warp unavailable/failed. Using CPU (scipy)...")
     out_audio = np.zeros_like(full_proc_audio)
     for ch in range(num_channels):
-        out_audio[:, ch] = map_coordinates(
-            full_proc_audio[:, ch],
-            [source_indices],
-            order=3
-        )
-    _save_audio_atomic(output_wav, out_audio, full_sr, subtype='FLOAT')
+        out_audio[:, ch] = map_coordinates(full_proc_audio[:, ch], [source_indices], order=3)
+    _save_audio_atomic(output_wav, out_audio, full_sr, subtype="FLOAT")
 
 
 def _warp_aligned_audio(processed_wav, output_wav, path, ref_features_len, proc_features_len):
     """Warps the processed audio to align with reference."""
-
     # Coordinate Mapping Function
     ref_indices = path[:, 0]
     proc_indices = path[:, 1]
@@ -305,7 +293,7 @@ def _warp_aligned_audio(processed_wav, output_wav, path, ref_features_len, proc_
     target_t = ref_indices[unique_idxs]
     source_t = proc_indices[unique_idxs]
 
-    warp_func = interp1d(target_t, source_t, kind='linear', fill_value="extrapolate")
+    warp_func = interp1d(target_t, source_t, kind="linear", fill_value="extrapolate")
 
     full_proc_audio, full_sr = sf.read(str(processed_wav), always_2d=True)
     num_frames = len(full_proc_audio)
@@ -322,7 +310,7 @@ def _warp_aligned_audio(processed_wav, output_wav, path, ref_features_len, proc_
     window_length = 51  # minimal default
     if len(warped_feature_indices) > window_length:
         try:
-            from scipy.signal import savgol_filter
+            savgol_filter = scipy_signal.savgol_filter
             warped_feature_indices = savgol_filter(warped_feature_indices, window_length, 3)
         except Exception:
             pass
@@ -335,7 +323,7 @@ def _warp_aligned_audio(processed_wav, output_wav, path, ref_features_len, proc_
 
     if warped_gpu is not None:
         log_msg(f"    GPU Warping complete in {time.time() - t0:.2f}s")
-        _save_audio_atomic(output_wav, warped_gpu, full_sr, subtype='FLOAT')
+        _save_audio_atomic(output_wav, warped_gpu, full_sr, subtype="FLOAT")
     else:
         _warp_aligned_audio_cpu(full_proc_audio, source_indices, num_channels, output_wav, full_sr)
 
@@ -351,9 +339,12 @@ def _calculate_cross_correlation_lag(ref_audio, proc_audio, sr):
     if len(proc_audio.shape) > 1:
         proc_audio = np.mean(proc_audio, axis=1)
 
+    if scipy_signal is None:
+        raise ImportError("scipy is required for shift synchronization (cross-correlation); install scipy to continue.")
+
     draw_progress_bar(50, "Sync: Calculating Correlation...")
-    correlation = scipy.signal.correlate(ref_audio, proc_audio, mode='full', method='fft')
-    lags = scipy.signal.correlation_lags(len(ref_audio), len(proc_audio), mode='full')
+    correlation = scipy_signal.correlate(ref_audio, proc_audio, mode="full", method="fft")
+    lags = scipy_signal.correlation_lags(len(ref_audio), len(proc_audio), mode="full")
     lag = lags[np.argmax(correlation)]
 
     log_msg(f"    Detected Lag: {lag} samples ({lag / sr * 1000:.2f} ms)")
@@ -384,7 +375,7 @@ def _apply_shift_to_audio(processed_wav, output_wav, lag):
         shifted_audio = proc_audio
 
     # Atomic Write
-    if not _save_audio_atomic(output_wav, shifted_audio, proc_sr, subtype='FLOAT'):
+    if not _save_audio_atomic(output_wav, shifted_audio, proc_sr, subtype="FLOAT"):
         raise Exception(f"Alignment Failed: Could not save shifted audio to {output_wav}")
 
 
@@ -410,7 +401,7 @@ def _align_stems_shift(original_wav, processed_wav, output_wav):
             data, rate = sf.read(str(processed_wav), always_2d=True)
             if data.shape[1] == 1:
                 data = np.tile(data, (1, 2))
-            sf.write(str(output_wav), data, rate, subtype='FLOAT')
+            sf.write(str(output_wav), data, rate, subtype="FLOAT")
             draw_progress_bar(100, "Sync: Skipped (Empty)")
             sys.stdout.write("\n")
             return output_wav
@@ -428,7 +419,7 @@ def _align_stems_shift(original_wav, processed_wav, output_wav):
             data, rate = sf.read(str(processed_wav), always_2d=True)
             if data.shape[1] == 1:
                 data = np.tile(data, (1, 2))
-            sf.write(str(output_wav), data, rate, subtype='FLOAT')
+            sf.write(str(output_wav), data, rate, subtype="FLOAT")
             draw_progress_bar(100, "Sync: Skipped (Fallback)")
         except Exception:
             pass
