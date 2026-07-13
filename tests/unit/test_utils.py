@@ -1,23 +1,33 @@
-from unittest.mock import MagicMock, patch
+import re
 import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
+
 import modules.utils
+
+
+@pytest.fixture
+def mock_utils_sf(monkeypatch):
+    mock_sf = MagicMock()
+    monkeypatch.setattr(modules.utils, "sf", mock_sf)
+    return mock_sf
+
 
 # ---------------------------------------------------------
 # Utils
 # ---------------------------------------------------------
 
 
-def test_is_valid_audio_robust(tmp_path):
+def test_is_valid_audio_robust(tmp_path, mock_utils_sf):
     """Test audio validation."""
     p = tmp_path / "v.wav"
     p.write_text("x" * 1500)
-    with patch("modules.utils.sf.SoundFile") as mock_sf:
-        mock_ctx = mock_sf.return_value.__enter__.return_value
-        mock_ctx.frames = 50000  # > 0.1s
-        mock_ctx.samplerate = 44100
-        assert modules.utils.is_valid_audio(p) is True
+    mock_ctx = mock_utils_sf.SoundFile.return_value.__enter__.return_value
+    mock_ctx.frames = 50000  # > 0.1s
+    mock_ctx.samplerate = 44100
+    assert modules.utils.is_valid_audio(p) is True
     # Test internal check for non-existence logic is covered by is_valid_audio implementation
     assert modules.utils.is_valid_audio(tmp_path / "no") is False
 
@@ -30,21 +40,26 @@ def test_is_valid_audio_small_file(tmp_path):
     assert modules.utils.is_valid_audio(small_file) is False
 
 
-@patch("modules.utils.sf.SoundFile")
-def test_is_valid_audio_zero_frames(mock_sf, tmp_path):
+def test_is_valid_audio_zero_frames(tmp_path, mock_utils_sf):
     """Test is_valid_audio with zero frames."""
     p = tmp_path / "empty.wav"
     p.write_text("x" * 1500)
-    mock_sf.return_value.__enter__.return_value.frames = 0
+    mock_utils_sf.SoundFile.return_value.__enter__.return_value.frames = 0
     assert modules.utils.is_valid_audio(p) is False
 
 
-@patch("modules.utils.sf.SoundFile")
-def test_is_valid_audio_exception(mock_sf, tmp_path):
+def test_is_valid_audio_exception(tmp_path, mock_utils_sf):
     """Test is_valid_audio handles SoundFile exceptions."""
     p = tmp_path / "corrupt.wav"
     p.write_text("x" * 2000)
-    mock_sf.side_effect = Exception("Corrupt file")
+    mock_utils_sf.SoundFile.side_effect = Exception("Corrupt file")
+    assert modules.utils.is_valid_audio(p) is False
+
+
+def test_is_valid_audio_returns_false_when_soundfile_missing(tmp_path, monkeypatch):
+    p = tmp_path / "missing_sf.wav"
+    p.write_text("x" * 2000)
+    monkeypatch.setattr(modules.utils, "sf", None)
     assert modules.utils.is_valid_audio(p) is False
 
 
@@ -192,10 +207,7 @@ def test_run_command_with_progress_passthrough(mock_popen, capsys):
     mock_popen.return_value = mock_proc
 
     # Run without total_duration - passthrough mode
-    modules.utils.run_command_with_progress(
-        ["echo", "test"],
-        description="Testing passthrough"
-    )
+    modules.utils.run_command_with_progress(["echo", "test"], description="Testing passthrough")
     captured = capsys.readouterr()
     assert "Testing passthrough" in captured.out
 
@@ -251,11 +263,7 @@ def test_run_command_with_progress_ffmpeg(mock_popen):
     mock_proc.poll = poll_mock
     mock_popen.return_value = mock_proc
 
-    modules.utils.run_command_with_progress(
-        ["ffmpeg", "-i", "input.mp4", "output.mp4"],
-        total_duration=20.0,
-        description="Encoding"
-    )
+    modules.utils.run_command_with_progress(["ffmpeg", "-i", "input.mp4", "output.mp4"], total_duration=20.0, description="Encoding")
     mock_proc.wait.assert_called()
 
 
@@ -271,21 +279,14 @@ def test_run_command_with_progress_ffmpeg_fail(mock_popen):
     mock_popen.return_value = mock_proc
 
     with pytest.raises(subprocess.CalledProcessError):
-        modules.utils.run_command_with_progress(
-            ["ffmpeg"],
-            total_duration=10.0
-        )
+        modules.utils.run_command_with_progress(["ffmpeg"], total_duration=10.0)
 
 
 @patch("modules.utils.run_command_with_progress")
 def test_attempt_cpu_run_with_retry_success(mock_run):
     """Test CPU retry on first success."""
     mock_run.return_value = None  # Success
-    result = modules.utils.attempt_cpu_run_with_retry(
-        lambda t: ["cmd", str(t)],
-        initial_threads=8,
-        description="CPU Task"
-    )
+    result = modules.utils.attempt_cpu_run_with_retry(lambda t: ["cmd", str(t)], initial_threads=8, description="CPU Task")
     assert result is True
     mock_run.assert_called_once()
 
@@ -296,14 +297,10 @@ def test_attempt_cpu_run_with_retry_fallback(mock_run):
     # First call fails, second succeeds
     mock_run.side_effect = [
         subprocess.CalledProcessError(1, "cmd"),
-        None  # Success
+        None,  # Success
     ]
 
-    result = modules.utils.attempt_cpu_run_with_retry(
-        lambda t: ["cmd", str(t)],
-        initial_threads=4,
-        description="CPU Fallback"
-    )
+    result = modules.utils.attempt_cpu_run_with_retry(lambda t: ["cmd", str(t)], initial_threads=4, description="CPU Fallback")
     assert result is True
     assert mock_run.call_count == 2
 
@@ -314,10 +311,7 @@ def test_attempt_cpu_run_with_retry_exhausted(mock_run):
     mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
 
     with pytest.raises(subprocess.CalledProcessError):
-        modules.utils.attempt_cpu_run_with_retry(
-            lambda t: ["cmd", str(t)],
-            initial_threads=1
-        )
+        modules.utils.attempt_cpu_run_with_retry(lambda t: ["cmd", str(t)], initial_threads=1)
 
 
 def test_attempt_run_with_retry_error_path():
@@ -368,20 +362,16 @@ def test_cleanup_subprocesses_active():
     assert len(modules.utils._active_processes) == 0
 
 
-def test_main_keyboard_interrupt():
-    """Test _len_active utility."""
-    modules.utils._active_processes.clear()
-    assert modules.utils._len_active() == 0
-    modules.utils._active_processes.add(MagicMock())
-    assert modules.utils._len_active() == 1
-
-
 def test_len_active():
     """Test _len_active utility."""
     modules.utils._active_processes.clear()
     assert modules.utils._len_active() == 0
-    modules.utils._active_processes.add(MagicMock())
+    proc = MagicMock()
+    modules.utils._active_processes.clear()
+    modules.utils._active_processes.add(proc)
     assert modules.utils._len_active() == 1
+    assert proc in modules.utils._active_processes
+    modules.utils._active_processes.clear()
 
 
 @patch("modules.utils.draw_progress_bar")
@@ -393,14 +383,14 @@ def test_run_command_with_progress_adds_to_active(mock_popen, mock_bar):
     # Return empty string immediately to finish loop
     mock_proc.stdout.readline.return_value = ""
     mock_popen.return_value = mock_proc
-    mock_popen.return_value = mock_proc
-    # We want to check _active_processes while it's running.
-    # We can do this by making wait() check the set.
 
-    def wait_side_effect():
-        assert len(modules.utils._active_processes) >= 1
-        return 0
-    mock_proc.wait.side_effect = wait_side_effect
+    # Assert membership while the process output loop is running.
+    def stdout_side_effect():
+        assert mock_proc in modules.utils._active_processes
+        return ""
+
+    mock_proc.stdout.readline.side_effect = stdout_side_effect
+    mock_proc.wait.return_value = 0
 
     modules.utils.run_command_with_progress(["cmd"])
 
@@ -409,10 +399,76 @@ def test_run_command_with_progress_adds_to_active(mock_popen, mock_bar):
     assert mock_proc.wait.called
 
 
+@patch("modules.utils.subprocess.Popen")
+@patch("modules.utils._monitor_process_output")
+def test_run_command_with_progress_monitor_exception_cleanup(mock_monitor, mock_popen):
+    """Ensure monitor exceptions trigger terminate/kill cleanup paths."""
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.poll.side_effect = [None, 0]
+    mock_proc.wait.side_effect = [subprocess.TimeoutExpired(cmd="cmd", timeout=5), 0]
+    mock_popen.return_value = mock_proc
+    mock_monitor.side_effect = RuntimeError("monitor boom")
+
+    with pytest.raises(RuntimeError, match="monitor boom"):
+        modules.utils.run_command_with_progress(["cmd"])
+
+    assert mock_proc.terminate.called
+    assert mock_proc.kill.called
+    assert mock_proc not in modules.utils._active_processes
+
+
+@patch("modules.utils.subprocess.Popen")
+@patch("modules.utils._monitor_process_output")
+def test_run_command_with_progress_monitor_exception_retains_active_process_on_cleanup_error(mock_monitor, mock_popen):
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.poll.return_value = None
+    mock_proc.terminate.side_effect = RuntimeError("terminate failed")
+    mock_popen.return_value = mock_proc
+    mock_monitor.side_effect = RuntimeError("monitor boom")
+
+    with pytest.raises(RuntimeError, match="monitor boom"):
+        modules.utils.run_command_with_progress(["cmd"])
+
+    try:
+        assert mock_proc in modules.utils._active_processes
+    finally:
+        modules.utils._active_processes.discard(mock_proc)
+
+
 def test_check_dependencies_success():
     """Test check_dependencies returns True when all found."""
-    with patch("subprocess.run"):
+    with patch("modules.utils.subprocess.run", return_value=MagicMock(returncode=0)):
         assert modules.utils.check_dependencies() is True
+
+
+def test_signal_handler_exits_cleanly_monkeypatch(monkeypatch):
+    """Signal handler should cleanup subprocesses and exit with code 1."""
+    cleanup_called = {"value": False}
+
+    def _fake_cleanup():
+        cleanup_called["value"] = True
+
+    monkeypatch.setattr(modules.utils, "cleanup_subprocesses", _fake_cleanup)
+
+    with pytest.raises(SystemExit) as exc:
+        modules.utils.signal_handler(None, None)
+
+    assert cleanup_called["value"] is True
+    assert exc.value.code == 1
+
+
+def test_parse_tqdm_progress_match_and_miss():
+    """Exercise both tqdm parsing branches."""
+    tqdm_re = re.compile(r"(\d+)%\s*[|:]")
+    percent, info = modules.utils._parse_tqdm_progress(" 52%|#####", tqdm_re)
+    assert percent == 52.0
+    assert info == ""
+
+    percent, info = modules.utils._parse_tqdm_progress("no progress", tqdm_re)
+    assert percent is None
+    assert info is None
 
 
 def test_cleanup_subprocesses_exception():
@@ -431,18 +487,17 @@ def test_cleanup_subprocesses_exception():
 def test_adjust_layout_extreme_truncate():
     """Test layout strategy 3: truncation."""
     # Force very narrow columns
-    width, info, label = modules.utils._adjust_bar_layout(
-        width=20, info_str="INFO", label="VeryLongLabelThatNeedsTruncation", columns=30
-    )
+    width, info, label = modules.utils._adjust_bar_layout(width=20, info_str="INFO", label="VeryLongLabelThatNeedsTruncation", columns=30)
     assert "..." in label
     assert len(label) < 20
 
 
-@patch("modules.utils.sf.write")
 @patch("modules.utils.is_valid_audio", return_value=False)
-def test_save_atomic_fail_cleanup(mock_valid, mock_write, tmp_path):
+def test_save_atomic_fail_cleanup(mock_valid, tmp_path, mock_utils_sf):
     """Test atomic save cleans up invalid temp file."""
     f = tmp_path / "test.wav"
+    f.with_suffix(".tmp.wav").write_text("temp")
+    mock_utils_sf.write.return_value = None
     modules.utils._save_audio_atomic(f, [], 44100)
     # Temp file should be unlinked
     assert not (f.with_suffix(".tmp.wav")).exists()
@@ -461,11 +516,7 @@ def test_monitor_progress_tqdm(mock_popen, mock_draw):
     mock_proc.poll.side_effect = [None, None, 0]  # Run loop twice then exit
 
     # TQDM output simulation
-    lines = [
-        "45%|xxxx| 10/20 [00:10<00:10, 1.00it/s]",
-        "100%|xxxx| 20/20 [00:20<00:00, 1.00it/s]",
-        ""
-    ]
+    lines = ["45%|xxxx| 10/20 [00:10<00:10, 1.00it/s]", "100%|xxxx| 20/20 [00:20<00:00, 1.00it/s]", ""]
     # Robust iteration for readline
     mock_proc.stdout.readline.side_effect = lines + [""] * 5
     mock_popen.return_value = mock_proc
@@ -489,20 +540,13 @@ def test_monitor_progress_ffmpeg_time(mock_popen, mock_draw):
     mock_proc.poll.side_effect = [None, None, 0]
 
     # FFmpeg time output (15s)
-    lines = [
-        "frame=100 time=00:00:15.00 bitrate=...",
-        ""
-    ]
+    lines = ["frame=100 time=00:00:15.00 bitrate=...", ""]
     # Robust iteration
     mock_proc.stdout.readline.side_effect = lines + [""] * 5
     mock_popen.return_value = mock_proc
 
     # Total duration 30s -> 15s should be 50%
-    modules.utils.run_command_with_progress(
-        ["ffmpeg"],
-        total_duration=30.0,
-        description="FFmpeg Test"
-    )
+    modules.utils.run_command_with_progress(["ffmpeg"], total_duration=30.0, description="FFmpeg Test")
 
     calls = mock_draw.call_args_list
     # Look for approx 50%
@@ -514,9 +558,9 @@ def test_log_msg_debug_level(tmp_path, capsys, monkeypatch):
     """Test log_msg with DEBUG level and DEBUG_LOGGING disabled."""
     monkeypatch.setattr("modules.utils.DEBUG_LOGGING", False)
     monkeypatch.setattr("modules.utils.LOG_FILE", str(tmp_path / "test.log"))
-    
+
     modules.utils.log_msg("debug message", level="DEBUG", console=True)
-    
+
     # Should not print to console because DEBUG_LOGGING is False
     captured = capsys.readouterr()
     assert "debug message" not in captured.out
@@ -526,9 +570,9 @@ def test_log_msg_with_error_flag(tmp_path, capsys, monkeypatch):
     """Test log_msg with is_error=True."""
     log_file = tmp_path / "test.log"
     monkeypatch.setattr("modules.utils.LOG_FILE", str(log_file))
-    
+
     modules.utils.log_msg("error message", is_error=True)
-    
+
     # Should print ERROR level
     content = log_file.read_text()
     assert "[ERROR]" in content
@@ -536,34 +580,27 @@ def test_log_msg_with_error_flag(tmp_path, capsys, monkeypatch):
 
 
 @patch("modules.utils.is_valid_audio")
-@patch("modules.utils.sf.write")
-def test_save_atomic_success(mock_write, mock_valid, tmp_path):
+def test_save_atomic_success(mock_valid, tmp_path, mock_utils_sf):
     """Test save_atomic_audio successful write."""
     # Create actual temp file to simulate successful write
     temp_file = tmp_path / "output.tmp.wav"
     temp_file.write_text("test data")
-    
+
     # First call to is_valid_audio checks if temp is valid (True)
     # Second call checks if we should proceed
     mock_valid.return_value = True
-    mock_write.return_value = None  # sf.write returns None on success
-    
+    mock_utils_sf.write.return_value = None  # sf.write returns None on success
+
     output_file = tmp_path / "output.wav"
-    
-    # Call the function  
+
+    # Call the function
     result = modules.utils._save_audio_atomic(str(output_file), b"test data", 44100)
-    
+
+    assert result is True
+    assert output_file.exists()
+
     # Mock write was called
-    assert mock_write.called
-
-
-@patch("modules.utils.is_valid_video")
-def test_is_valid_video_large(mock_sf, tmp_path):
-    """Test is_valid_video with large file."""
-    large_file = tmp_path / "large.mp4"
-    large_file.write_text("x" * (5 * 1024 * 1024))  # 5MB
-    mock_sf.return_value = True
-    assert modules.utils.is_valid_video(large_file) is True
+    assert mock_utils_sf.write.called
 
 
 def test_parse_ffmpeg_time_variations():
@@ -584,20 +621,155 @@ def test_format_time_variations():
 @patch("modules.utils.subprocess.run")
 def test_check_dependencies_all_present(mock_run):
     """Test check_dependencies when all are present."""
-    mock_run.return_value = None
-    modules.utils.check_dependencies()
-    # Should not raise
+    mock_run.return_value = MagicMock(returncode=0)
+    assert modules.utils.check_dependencies() is True
 
 
 @patch("modules.utils.is_valid_audio")
-@patch("modules.utils.sf.write")
-def test_save_atomic_invalid_output(mock_write, mock_valid, tmp_path):
+def test_save_atomic_invalid_output(mock_valid, tmp_path, mock_utils_sf):
     """Test save_atomic_file when output validation fails."""
     mock_valid.return_value = False
-    
+
     output_file = tmp_path / "output.wav"
-    
+
     # Should return False when invalid
     result = modules.utils._save_audio_atomic(str(output_file), b"test", 44100)
     assert result is False
 
+
+def test_save_audio_atomic_returns_false_when_soundfile_missing(tmp_path, monkeypatch):
+    dst = tmp_path / "missing_sf.wav"
+    monkeypatch.setattr(modules.utils, "sf", None)
+    assert modules.utils._save_audio_atomic(dst, b"data", 44100) is False
+
+
+def test_signal_handler_exits_cleanly():
+    """Test signal handler performs cleanup and exits."""
+    with patch("modules.utils.cleanup_subprocesses") as mock_cleanup:
+        with patch("modules.utils.log_msg") as mock_log:
+            with patch("modules.utils.sys.exit", side_effect=SystemExit(1)):
+                with pytest.raises(SystemExit):
+                    modules.utils.signal_handler(None, None)
+
+    mock_cleanup.assert_called_once()
+    mock_log.assert_called_once()
+
+
+def test_is_valid_video_large_real(tmp_path):
+    """Test is_valid_video accepts files above the minimum size threshold."""
+    p = tmp_path / "video.mp4"
+    p.write_bytes(b"x" * 11000)
+    assert modules.utils.is_valid_video(p) is True
+
+
+def test_terminal_columns_and_parse_tqdm_fallbacks():
+    """Test helper fallbacks for terminal size and tqdm parsing."""
+    with patch("modules.utils.shutil.get_terminal_size", side_effect=RuntimeError("boom")):
+        assert modules.utils._get_terminal_columns(default=77) == 77
+
+    percent, info = modules.utils._parse_tqdm_progress("no percent in this line", re.compile(r"(\\d+)%\\s*[|:]"))
+    assert percent is None
+    assert info is None
+
+
+def test_build_progress_info_total_and_speed():
+    """Test build progress info includes total and speed sections."""
+    info = modules.utils._build_progress_info(percent=50.0, elapsed_sec=10.0, media_sec=30.0, total_duration=60.0)
+    assert " / " in info
+    assert "x" in info
+
+
+@patch("modules.utils.sys.stdout")
+def test_draw_bar_line_truncates_when_terminal_small(mock_stdout):
+    """Test _draw_bar_line truncates content to terminal width."""
+    with patch("modules.utils._get_terminal_columns", return_value=20):
+        modules.utils._draw_bar_line(width=10, filled_length=5, info_str="info", label="very-long-label")
+    assert mock_stdout.write.called
+
+
+@patch("modules.utils._draw_bar_line")
+@patch("modules.utils._get_terminal_columns", return_value=80)
+@patch("modules.utils.time.time", side_effect=[1.0, 2.0])
+def test_draw_progress_bar_min_width(mock_time, mock_cols, mock_draw):
+    """Test draw_progress_bar enforces minimum width of 2."""
+    modules.utils._last_bar_time = 0
+    modules.utils._last_bar_pc = -1.0
+    modules.utils.draw_progress_bar(percent=10.0, width=1)
+    called_width, called_filled = mock_draw.call_args[0][0], mock_draw.call_args[0][1]
+    assert called_width == 2
+    assert called_filled == 0
+
+    modules.utils._last_bar_time = 0
+    modules.utils._last_bar_pc = -1.0
+    modules.utils.draw_progress_bar(percent=100.0, width=1)
+    called_width, called_filled = mock_draw.call_args[0][0], mock_draw.call_args[0][1]
+    assert called_width == 2
+    assert called_filled == 2
+
+
+@patch("modules.utils.log_msg")
+@patch("modules.utils.subprocess.Popen")
+def test_run_command_with_progress_env_and_error_buffer(mock_popen, mock_log):
+    """Test run_command_with_progress copies explicit env and logs buffered output on failure."""
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.wait.return_value = None
+
+    lines = ["first line", "second line", ""]
+    mock_proc.stdout.readline.side_effect = lines + [""] * 10
+    mock_proc.poll.side_effect = [None, None, 1]
+    mock_popen.return_value = mock_proc
+
+    base_env = {"A": "1"}
+    with pytest.raises(subprocess.CalledProcessError):
+        modules.utils.run_command_with_progress(["badcmd"], env=base_env)
+
+    called_env = mock_popen.call_args.kwargs["env"]
+    assert called_env["A"] == "1"
+    assert called_env["PYTHONIOENCODING"] == "utf-8"
+    logged_text = "\n".join(str(call.args[0]) for call in mock_log.call_args_list)
+    assert "first line" in logged_text
+    assert "second line" in logged_text
+
+
+@patch("modules.utils.run_command_with_progress")
+@patch("modules.utils.print")
+def test_attempt_cpu_run_with_retry_no_plain_print_when_duration(mock_print, mock_run):
+    """Test CPU retry path skips plain print when total_duration is provided."""
+    mock_run.return_value = None
+    ok = modules.utils.attempt_cpu_run_with_retry(
+        lambda t: ["cmd", str(t)],
+        initial_threads=2,
+        total_duration=1.0,
+    )
+    assert ok is True
+    mock_print.assert_not_called()
+
+
+@patch("modules.utils.log_msg")
+@patch("modules.utils.is_valid_audio", return_value=True)
+def test_save_audio_atomic_replaces_existing_file(mock_valid, mock_log, tmp_path, mock_utils_sf):
+    """Test atomic save removes existing destination before rename."""
+    dst = tmp_path / "out.wav"
+    dst.write_bytes(b"old")
+
+    def _write_side_effect(path, data, sample_rate, subtype="FLOAT"):
+        Path(path).write_bytes(b"new")
+
+    mock_utils_sf.write.side_effect = _write_side_effect
+    assert modules.utils._save_audio_atomic(dst, b"data", 44100) is True
+    assert dst.read_bytes() == b"new"
+    mock_log.assert_not_called()
+
+
+@patch("modules.utils.log_msg")
+def test_save_audio_atomic_exception_cleanup(mock_log, tmp_path, mock_utils_sf):
+    """Test atomic save cleans up temp file on write exception."""
+    dst = tmp_path / "broken.wav"
+    temp = tmp_path / "broken.tmp.wav"
+    temp.write_bytes(b"temp")
+
+    mock_utils_sf.write.side_effect = RuntimeError("disk error")
+    assert modules.utils._save_audio_atomic(dst, b"data", 44100) is False
+    assert not temp.exists()
+    assert mock_log.called

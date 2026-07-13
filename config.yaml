@@ -63,15 +63,23 @@ denoise_model: "UVR-DeNoise-Lite.pth"
 # Controls the quality and behavior of the vocal enhancement stage.
 #
 # enhance_nfe (Number of Function Evaluations):
-#   - Higher values (e.g., 128) = Better quality, slower processing.
-#   - Lower values (e.g., 64)   = Faster processing, slightly lower fidelity.
+#   - Type: Integer
+#   - Suggested range: 32 to 256
+#   - Min behavior (32): Fastest processing, but more artifacts and less detail.
+#   - Max behavior (256): Best detail/cleanup quality, but much slower processing.
+#   - Practical default: 128 (quality/speed balance).
 #
 # enhance_tau (Temperature/Scale):
-#   - Controls the dynamic range/aggressiveness of the enhancement.
-#   - Default: 0.5 (Balanced).
+#   - Type: Float
+#   - Suggested range: 0.1 to 0.7
+#   - Min behavior (0.1): Conservative/safer enhancement, preserves more original tone,
+#                         but removes less noise.
+#   - Max behavior (0.7): More aggressive enhancement/noise suppression, but can sound
+#                         over-processed or less natural.
+#   - Practical default: 0.3 (balanced for this project).
 # ------------------------------------------------------------------------------
-enhance_nfe: 64
-enhance_tau: 0.5
+enhance_nfe: 128
+enhance_tau: 0.3
 
 # ------------------------------------------------------------------------------
 # Synchronization Settings
@@ -79,12 +87,20 @@ enhance_tau: 0.5
 # Controls how the processed audio stems are aligned with the original source.
 #
 # sync_method:
-#   - 'shift': Calculated global offset (Cross-Correlation). Fast, default.
-#   - 'dtw'  : Dynamic Time Warping. Corrects variable speed/drift. Slower.
+#   - Type: String
+#   - Allowed values: 'shift' or 'dtw'
+#   - Min behavior ('shift'): Fastest, applies one global offset correction;
+#                             best when drift is small/constant.
+#   - Max behavior ('dtw'): Most adaptive, corrects variable drift/wow/flutter;
+#                           slower and more compute-heavy.
+#   - Practical default: 'shift' (good quality/speed balance).
 #
 # dtw_resolution:
-#   - Resolution (in Hz) for DTW analysis. 
-#   - 50 Hz is the sweet spot (20ms precision, ~5-10s processing).
+#   - Type: Integer (Hz)
+#   - Suggested range: 25 to 100
+#   - Min behavior (25 Hz): Faster processing, lower timing precision (~40ms).
+#   - Max behavior (100 Hz): Highest timing precision (~10ms), slower processing.
+#   - Practical default: 25 (faster); use 50 for better precision in drift-heavy audio.
 # ------------------------------------------------------------------------------
 sync_method: "shift"
 dtw_resolution: 25
@@ -99,7 +115,7 @@ dtw_resolution: 25
 #   - 'denoise_only' : Denoise full audio + Sync. No enhancement/separation.
 #                      Faster, preserves original mix balance perfectly.
 # ------------------------------------------------------------------------------
-process_mode: "hybrid"
+process_mode: "denoise_only"
 
 # ------------------------------------------------------------------------------
 # Supported Video Extensions

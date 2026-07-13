@@ -1,0 +1,19 @@
+FROM python:3.12-slim AS base
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    POETRY_VERSION=2.4.1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_VIRTUALENVS_IN_PROJECT=false
+
+WORKDIR /workspace
+
+RUN pip install "poetry==${POETRY_VERSION}"
+
+COPY pyproject.toml poetry.lock ./
+RUN poetry install -v --only main,dev --without ml --no-root
+
+COPY . .
+
+FROM base AS markdown-lint
+RUN poetry run mdformat --check README.md AGENTS.md .agent docs tests/README.md \
+    && poetry run pymarkdown scan README.md AGENTS.md .agent docs tests/README.md

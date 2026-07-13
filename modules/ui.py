@@ -1,42 +1,44 @@
 import os
-import sys
 import platform
+import sys
 import time
-import torch
 from pathlib import Path
 
-from .config import (
-    CONFIG, INPUT_DIR, OUTPUT_DIR, EXTS, PROCESS_MODE,
-    VOCAL_MIX_VOL, BACKGROUND_MIX_VOL,
-    VOCALS_MODEL, CONFIG_SOURCE
-)
+try:
+    import torch
+except ImportError:
+    torch = None
+
+from .config import BACKGROUND_MIX_VOL, CONFIG_SOURCE, EXTS, INPUT_DIR, PROCESS_MODE, VOCAL_MIX_VOL, VOCALS_MODEL
+from .hardware import CPU_THREADS, GPU_BATCH_SIZE, GPU_VRAM_GB, PROFILE_NAME, get_cpu_name, get_gpu_name
 from .utils import draw_progress_bar
-from .hardware import (
-    CPU_THREADS, GPU_VRAM_GB, get_cpu_name, get_gpu_name,
-    GPU_BATCH_SIZE, PROFILE_NAME
-)
 
 # Constants imported from config via restore_audio_hybrid normally,
 # but we can access them here or pass them.
 # The banner uses a lot of them.
 
 
+def _is_cleaned_output(file_name):
+    stem = Path(file_name).stem
+    return stem.endswith("_Hybrid_Cleaned") or stem.endswith("_Denoised_Cleaned")
+
+
 def _show_banner():
     """Prints the application banner and hardware info."""
     cpu_name = get_cpu_name()
     gpu_name = get_gpu_name()
-    
+
     # Check torch backend
     torch_backend = "CPU (Slow)"
-    if torch.cuda.is_available():
+    if torch is not None and torch.cuda.is_available():
         # Even if is_available is True, we check if we're actually on NVIDIA
         if "NVIDIA" in gpu_name.upper() or "RTX" in gpu_name.upper():
-             torch_backend = "CUDA (NVIDIA Accelerated)"
-    elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+            torch_backend = "CUDA (NVIDIA Accelerated)"
+    elif torch is not None and hasattr(torch, "xpu") and torch.xpu.is_available():
         torch_backend = "XPU (Intel Accelerated)"
 
     print("=" * 60)
-    print("   AI HYBRID VHS AUDIO RESTORER - v1.0.0")  # pragma: no cover
+    print("   AI HYBRID VHS AUDIO RESTORER - v1.0.2")
     print(f"   Running on: {platform.system()} {platform.release()}")  # pragma: no cover
     print("=" * 60 + "\n")  # pragma: no cover
 
@@ -66,17 +68,16 @@ def _scan_files_in_path(path):
     files = []
     if path.is_file():
         if path.suffix.lower() in EXTS:
-            files.append(path)
+            if not _is_cleaned_output(path.name):
+                files.append(path)
+            else:
+                print(f">> Skipping cleaned output file: {path.name}")
         else:
             print(f">> [Error] Unsupported extension: {path.suffix}")
             print(f">> Supported: {EXTS}")
     elif path.is_dir():
         print(f">> Scanning folder: {path.name}")
-        files = [
-            f for f in path.iterdir()
-            if f.is_file() and f.suffix.lower() in EXTS
-            and "_Hybrid_Cleaned" not in f.name
-        ]
+        files = [f for f in path.iterdir() if f.is_file() and f.suffix.lower() in EXTS and not _is_cleaned_output(f.name)]
     else:
         print(f">> [Error] Path is not a file or directory: {path}")
 
@@ -111,15 +112,10 @@ def _get_interactive_files():
         clean_input = _clean_user_input(user_input)
 
         if not clean_input:
-            print(">> Interactive Mode: Drag & Drop files or press "
-                  "Enter to scan 'input' folder.")
+            print(">> Interactive Mode: Drag & Drop files or press Enter to scan 'input' folder.")
             print(">> Scanning 'input' folder...")
             INPUT_DIR.mkdir(exist_ok=True)
-            files = [
-                f for f in INPUT_DIR.iterdir()
-                if f.suffix.lower() in EXTS
-                and "_Hybrid_Cleaned" not in f.name
-            ]
+            files = [f for f in INPUT_DIR.iterdir() if f.is_file() and f.suffix.lower() in EXTS and not _is_cleaned_output(f.name)]
             return files, False  # use_source_as_output = False
 
         path = Path(clean_input)
@@ -171,7 +167,7 @@ def run_init_sequence():
 
     # Profile name logic in config/hardware, but we need it here
     # It's already in constants
-    p_name = PROFILE_NAME.split('(')[0].strip()
+    p_name = PROFILE_NAME.split("(")[0].strip()
     draw_progress_bar(75, f"Applying Optimization Profile: {p_name}")
     time.sleep(0.2)
 
@@ -185,6 +181,9 @@ def run_init_sequence():
     draw_progress_bar(90, "Verifying Libraries...")
     time.sleep(0.2)
     draw_progress_bar(100, "Initialization Complete.")
+    # End the progress-bar line before regular banner prints.
+    sys.stdout.write("\n")
+    sys.stdout.flush()
     time.sleep(0.4)
 
     return cpu_name, gpu_name

@@ -1,7 +1,9 @@
-from unittest.mock import MagicMock, patch
 import sys
-import pytest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 import modules.processing
 import modules.utils
 
@@ -22,8 +24,8 @@ def test_process_skip(mock_valid_vid, mock_valid_aud, tmp_path):
 @patch("modules.processing.attempt_cpu_run_with_retry")
 @patch("modules.processing.is_valid_audio")
 def test_extract_audio_step(mock_valid, mock_retry, tmp_path):
-    mock_valid.side_effect = iter([False] + [True] * 20)
     """Test audio extraction step."""
+    mock_valid.side_effect = iter([False] + [True] * 20)
     video = tmp_path / "video.mp4"
     video.write_text("video data")
     output = tmp_path / "audio.wav"
@@ -55,8 +57,8 @@ def test_extract_audio_step_skip(mock_valid, mock_retry, tmp_path, capsys):
 
 @patch("modules.processing.is_valid_audio")
 def test_separate_stems_step(mock_valid, tmp_path):
-    mock_valid.side_effect = iter([False] + [True] * 20)
     """Test separate stems step."""
+    mock_valid.side_effect = iter([False] + [True] * 20)
     audio = tmp_path / "audio.wav"
     audio.write_text("audio data")
     out_dir = tmp_path / "sep_out"
@@ -209,32 +211,9 @@ def test_denoise_background_step(mock_valid, tmp_path):
 
 @patch("modules.processing.is_valid_audio")
 def test_denoise_background_step_no_noise_selection(mock_valid, tmp_path):
-    # Logic: 
-    # 1. Initial check (candidates) -> Return False so we don't skip.
-    # 2. After separate -> Return True for all found files.
-    # We have 2 initial candidates (reg, no_noise), so False, False.
-    # Then separate happens.
-    # Then we check again.
-    # Simplest is just always True? No, if True initially, it returns valid_denoised[0] immediately.
-    # And directory listing order is not guaranteed. 
-    # If regular comes first in glob, and we return valid_denoised[0], we get regular.
-    # We want to force it to run separation logic?
-    # Actually, the test says "Test denoise step selects (No Noise) variant."
-    # If files exist, it skips. If it skips, it returns the first valid one.
-    # If regular is first, it returns regular.
-    # The Code says: 
-    #     candidates_denoised = list(denoised_background_dir.glob("*.wav"))
-    #     valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-    #     if valid_denoised: return valid_denoised[0]
-    # So if files exist, it picks arbitrary first one. This is bad for deterministic test if multiple exist.
-    # THE TEST INTENTION: It wants to test the selection logic AFTER separation.
-    # So we MUST ensure "Initial Check" sees NO valid files.
-    # But we wrote files to disk.
-    # So mock_valid must return False for them initially.
-    # glob finds 2 files. So mock_valid called twice? Or once per file.
-    # Let's just return False enough times.
-    mock_valid.side_effect = [False, False, True, True, True, True] 
     """Test denoise step selects (No Noise) variant."""
+    # Initial validation must fail to force post-separation selection; sequence covers 2 initial files, then later valid checks.
+    mock_valid.side_effect = [False, False, True, True, True, True]
     background = tmp_path / "background.wav"
     background.write_text("background data")
     out_dir = tmp_path / "denoised"
@@ -250,7 +229,7 @@ def test_denoise_background_step_no_noise_selection(mock_valid, tmp_path):
     with patch.dict("sys.modules", {"audio_separator.separator": MagicMock()}):
         mock_sep_module = sys.modules["audio_separator.separator"]
         mock_sep_instance = mock_sep_module.Separator.return_value
-        mock_sep_instance.separate.return_value = [] # Return value ignored as we rely on glob
+        mock_sep_instance.separate.return_value = []  # Return value ignored as we rely on glob
 
         result = modules.processing._denoise_background_step(background, out_dir)
         # Should prefer the (No Noise) version
@@ -259,8 +238,8 @@ def test_denoise_background_step_no_noise_selection(mock_valid, tmp_path):
 
 @patch("modules.processing.is_valid_audio")
 def test_denoise_background_step_fallback_to_regular(mock_valid, tmp_path):
-    mock_valid.side_effect = iter([False] + [True] * 20)
     """Test denoise step falls back to regular when no (No Noise) exists."""
+    mock_valid.side_effect = iter([False] + [True] * 20)
     background = tmp_path / "background.wav"
     background.write_text("background data")
     out_dir = tmp_path / "denoised"
@@ -318,8 +297,8 @@ def test_denoise_background_step_skip(mock_valid, mock_retry, tmp_path):
 @patch("modules.processing.get_audio_duration_sec", return_value=60.0)
 @patch("modules.processing.is_valid_video")
 def test_final_mix_step(mock_is_valid_vid, mock_dur, mock_retry, tmp_path):
-    mock_is_valid_vid.side_effect = iter([False] + [True] * 20)
     """Test final mix step."""
+    mock_is_valid_vid.side_effect = iter([False] + [True] * 20)
     video = tmp_path / "video.mp4"
     video.write_text("video")
     vocals = tmp_path / "vocals.wav"
@@ -343,7 +322,7 @@ def test_final_mix_step(mock_is_valid_vid, mock_dur, mock_retry, tmp_path):
 @patch("modules.processing._separate_stems_step")
 @patch("modules.processing._enhance_vocals_step")
 @patch("modules.processing._denoise_background_step")
-@patch("modules.sync._align_stems")
+@patch("modules.processing._align_stems")
 @patch("modules.processing._final_mix_step")
 @patch("modules.processing.is_valid_audio", return_value=False)
 @patch("modules.processing.shutil.rmtree")
@@ -358,46 +337,94 @@ def test_full_pipeline_coverage(mc, mr, mv, s6, s5, s4, s3, s2, s1, tmp_path):
     # Mock _separate_stems_step return
     s2.return_value = (Path("vocals.wav"), Path("back.wav"))
 
-    assert modules.processing.process_hybrid_audio(v, "GPU", out) is True
+    with patch("modules.processing.PROCESS_MODE", "hybrid"):
+        assert modules.processing.process_hybrid_audio(v, "GPU", out) is True
 
     # Re-run (resume) handled by test_process_skip but here for branch coverage in main func?
     # No, test_process_skip mocks is_valid_video for OUTPUT.
     # Here default is_valid mock might need to toggle to cover resume.
     # But assertions are simple.
-    assert modules.processing.process_hybrid_audio(v, "GPU", out) is True
+    with patch("modules.processing.PROCESS_MODE", "hybrid"):
+        assert modules.processing.process_hybrid_audio(v, "GPU", out) is True
+
+
+@patch("modules.processing._extract_audio_step")
+@patch("modules.processing._denoise_full_audio_step", return_value=Path("denoised.wav"))
+@patch("modules.processing._align_stems")
+@patch("modules.processing._final_mux_single_audio_step")
+@patch("modules.processing._separate_stems_step")
+@patch("modules.processing._enhance_vocals_step")
+@patch("modules.processing._denoise_background_step")
+@patch("modules.processing.is_valid_video", side_effect=[False, True])
+def test_process_hybrid_audio_denoise_only_mode(
+    mock_is_valid,
+    mock_background_denoise,
+    mock_enhance,
+    mock_separate,
+    mock_final_mux,
+    mock_align,
+    mock_full_denoise,
+    mock_extract,
+    tmp_path,
+):
+    video = tmp_path / "v.mp4"
+    video.write_text("v")
+
+    with patch("modules.processing.PROCESS_MODE", "denoise_only"):
+        result = modules.processing.process_hybrid_audio(video, "GPU", target_output_dir=tmp_path)
+
+    assert result is True
+    mock_extract.assert_called_once()
+    mock_full_denoise.assert_called_once()
+    mock_align.assert_called_once()
+    mock_final_mux.assert_called_once()
+    mock_separate.assert_not_called()
+    mock_enhance.assert_not_called()
+    mock_background_denoise.assert_not_called()
 
 
 # Removed test_full_pipeline_denoise_only_mode as logic is pending reimplementation.
 
 
-@patch("soundfile.SoundFile")
-def test_get_audio_duration_sec(mock_sf):
+def test_get_audio_duration_sec(monkeypatch):
     """Test audio duration calculation."""
+    mock_sf = MagicMock()
+    monkeypatch.setattr(modules.processing, "sf", mock_sf)
+
     mock_ctx = MagicMock()
     mock_ctx.frames = 44100 * 10  # 10 seconds
     mock_ctx.samplerate = 44100
-    mock_sf.return_value.__enter__.return_value = mock_ctx
+    mock_sf.SoundFile.return_value.__enter__.return_value = mock_ctx
 
     duration = modules.processing.get_audio_duration_sec(Path("test.wav"))
     assert duration == 10.0
 
     # Test exception handling
-    mock_sf.side_effect = Exception("File not found")
+    mock_sf.SoundFile.side_effect = Exception("File not found")
     duration = modules.processing.get_audio_duration_sec(Path("nonexistent.wav"))
     # Note: exception in constructor means it raises before enter.
     assert duration is None
 
 
-@patch("modules.utils.is_valid_video", return_value=False)
+@patch("modules.processing.is_valid_video", return_value=False)
 @patch("modules.processing.get_video_duration_sec", return_value=10.0)
 @patch("modules.processing._extract_audio_step")
 @patch("modules.processing._separate_stems_step")
 @patch("modules.processing._enhance_vocals_step")
 @patch("modules.processing._denoise_background_step")
-@patch("modules.sync._align_stems")
+@patch("modules.processing._align_stems")
 @patch("modules.processing._final_mix_step")
 def test_process_hybrid_audio_preservation(
-    mock_mix, mock_align, mock_denoise, mock_enhance, mock_sep, mock_ext, mock_dur, mock_valid, tmp_path, capsys
+    mock_mix,
+    mock_align,
+    mock_denoise,
+    mock_enhance,
+    mock_sep,
+    mock_ext,
+    mock_dur,
+    mock_valid,
+    tmp_path,
+    capsys,
 ):
     """Test preservation of work dir on verification failure."""
     video = tmp_path / "v.mp4"
@@ -415,8 +442,9 @@ def test_process_hybrid_audio_preservation(
 
     # Enable Debug Logging for this test to capture the preservation message
     # Mocking modules.utils.DEBUG_LOGGING because log_msg is in utils and imports it.
-    with patch("modules.utils.DEBUG_LOGGING", True):
-        modules.processing.process_hybrid_audio(video, "GPU")
+    with patch("modules.processing.PROCESS_MODE", "hybrid"):
+        with patch("modules.utils.DEBUG_LOGGING", True):
+            modules.processing.process_hybrid_audio(video, "GPU")
 
     captured = capsys.readouterr()
     assert "Preservation: Keeping" in captured.out
@@ -426,12 +454,20 @@ def test_process_hybrid_audio_preservation(
 @patch("modules.processing._separate_stems_step", return_value=(Path("v.wav"), Path("b.wav")))
 @patch("modules.processing._enhance_vocals_step", return_value=Path("ev.wav"))
 @patch("modules.processing._denoise_background_step", return_value=Path("db.wav"))
-@patch("modules.sync._align_stems")
+@patch("modules.processing._align_stems")
 @patch("modules.processing._final_mix_step")
 @patch("modules.processing.shutil.rmtree", side_effect=OSError("Access Denied"))
 @patch("modules.processing.is_valid_video")
 def test_process_rmtree_errors(
-    mock_valid, mock_rmtree, mock_mix, mock_align, mock_den, mock_enh, mock_sep, mock_ext, tmp_path
+    mock_valid,
+    mock_rmtree,
+    mock_mix,
+    mock_align,
+    mock_den,
+    mock_enh,
+    mock_sep,
+    mock_ext,
+    tmp_path,
 ):
     """Test rmtree failure handling."""
     video = tmp_path / "v.mp4"
@@ -444,7 +480,8 @@ def test_process_rmtree_errors(
         # Validation: Start->False, Final->True (to trigger cleanup)
         mock_valid.side_effect = [False, True]
 
-        res = modules.processing.process_hybrid_audio(video, "GPU")
+        with patch("modules.processing.PROCESS_MODE", "hybrid"):
+            res = modules.processing.process_hybrid_audio(video, "GPU")
         assert res is True
         # If rmtree raised OSError, it should be caught in finally.
         # So no exception raised here.
@@ -512,20 +549,157 @@ def test_get_video_duration_sec_failure(mock_output):
     assert result is None
 
 
+def test_get_output_suffix():
+    assert modules.processing._get_output_suffix("hybrid") == "_Hybrid_Cleaned"
+    assert modules.processing._get_output_suffix("denoise_only") == "_Denoised_Cleaned"
+    assert modules.processing._get_output_suffix("unknown") == "_Hybrid_Cleaned"
+
+
+@patch("modules.processing.attempt_cpu_run_with_retry")
+@patch("modules.processing.is_valid_video")
+def test_final_mux_single_audio_step(mock_valid_video, mock_retry, tmp_path):
+    mock_valid_video.side_effect = iter([False] + [True] * 20)
+    video = tmp_path / "video.mp4"
+    video.write_text("video")
+    processed_audio = tmp_path / "denoised.wav"
+    processed_audio.write_text("audio")
+    output = tmp_path / "final.mp4"
+
+    def create_tmp(*args, **kwargs):
+        tmp_mp4 = output.with_suffix(".tmp.mp4")
+        tmp_mp4.write_text("fake video")
+        return True
+
+    mock_retry.side_effect = create_tmp
+
+    result = modules.processing._final_mux_single_audio_step(video, processed_audio, output)
+    assert result is True
+    assert output.exists()
+    assert output.read_text() == "fake video"
+    mock_retry.assert_called_once()
+
+
+@patch("modules.processing.attempt_cpu_run_with_retry")
+@patch("modules.processing.is_valid_video")
+def test_final_mux_single_audio_step_uses_container_compatible_codec(mock_valid_video, mock_retry, tmp_path):
+    mock_valid_video.side_effect = iter([False, True, False, True])
+    video = tmp_path / "video.mp4"
+    video.write_text("video")
+    processed_audio = tmp_path / "denoised.wav"
+    processed_audio.write_text("audio")
+    mp4_output = tmp_path / "final.mp4"
+    mov_output = tmp_path / "final.mov"
+
+    def create_tmp(cmd_builder, threads, **kwargs):
+        cmd = cmd_builder(threads)
+        Path(cmd[-1]).write_text("fake video")
+        return True
+
+    mock_retry.side_effect = create_tmp
+
+    modules.processing._final_mux_single_audio_step(video, processed_audio, mp4_output)
+    mp4_cmd = mock_retry.call_args_list[0][0][0](1)
+    assert mp4_cmd[mp4_cmd.index("-c:a") + 1] == "aac"
+
+    modules.processing._final_mux_single_audio_step(video, processed_audio, mov_output)
+    mov_cmd = mock_retry.call_args_list[1][0][0](1)
+    assert mov_cmd[mov_cmd.index("-c:a") + 1] == "pcm_f32le"
+
+
+@patch("modules.processing.attempt_cpu_run_with_retry")
+@patch("modules.processing.is_valid_video")
+def test_final_mux_single_audio_step_invalid_tmp_output_cleans_up_and_raises(mock_valid_video, mock_retry, tmp_path):
+    """Final remux should remove invalid tmp output and raise."""
+    mock_valid_video.side_effect = [False, False]
+
+    video = tmp_path / "video.mp4"
+    video.write_text("video")
+    processed_audio = tmp_path / "denoised.wav"
+    processed_audio.write_text("audio")
+    output = tmp_path / "final.mp4"
+    tmp_output = output.with_suffix(".tmp.mp4")
+
+    def create_tmp(*args, **kwargs):
+        tmp_output.write_text("invalid video")
+        return True
+
+    mock_retry.side_effect = create_tmp
+
+    with pytest.raises(Exception, match="Final Remux Failed: Output video invalid/empty."):
+        modules.processing._final_mux_single_audio_step(video, processed_audio, output)
+
+    assert not tmp_output.exists()
+    assert not output.exists()
+    mock_retry.assert_called_once()
+
+
+@patch("modules.processing.is_valid_audio", return_value=True)
+def test_denoise_full_audio_step_skip(mock_valid, tmp_path):
+    original = tmp_path / "original.wav"
+    original.write_text("audio")
+    denoised_dir = tmp_path / "denoised"
+    denoised_dir.mkdir()
+    existing = denoised_dir / "existing.wav"
+    existing.write_text("audio")
+
+    result = modules.processing._denoise_full_audio_step(original, denoised_dir)
+    assert result == existing
+
+
+@patch("modules.processing.is_valid_audio", return_value=False)
+def test_denoise_full_audio_step_failure_raises(mock_valid, tmp_path):
+    original = tmp_path / "original.wav"
+    original.write_text("audio")
+    denoised_dir = tmp_path / "denoised"
+    denoised_dir.mkdir()
+
+    with patch.dict("sys.modules", {"audio_separator.separator": MagicMock()}):
+        mock_sep_module = sys.modules["audio_separator.separator"]
+        mock_sep_instance = mock_sep_module.Separator.return_value
+        mock_sep_instance.separate.return_value = []
+
+        with pytest.raises(RuntimeError, match="UVR-DeNoise failed for full-audio mode"):
+            modules.processing._denoise_full_audio_step(original, denoised_dir)
+
+
+@patch("modules.processing._extract_audio_step")
+@patch("modules.processing._denoise_full_audio_step", side_effect=RuntimeError("denoise failed"))
+@patch("modules.processing._align_stems")
+@patch("modules.processing._final_mux_single_audio_step")
+@patch("modules.processing.is_valid_video", side_effect=[False, False])
+def test_process_hybrid_audio_denoise_only_failure_returns_false(
+    mock_is_valid,
+    mock_final_mux,
+    mock_align,
+    mock_full_denoise,
+    mock_extract,
+    tmp_path,
+):
+    video = tmp_path / "v.mp4"
+    video.write_text("v")
+
+    with patch("modules.processing.PROCESS_MODE", "denoise_only"):
+        result = modules.processing.process_hybrid_audio(video, "GPU", target_output_dir=tmp_path)
+
+    assert result is False
+    mock_align.assert_not_called()
+    mock_final_mux.assert_not_called()
+
+
 @patch("modules.processing.is_valid_audio")
 def test_verify_separation_output_patterns(mock_valid, tmp_path):
     """Test _verify_separation_output finds stems with different patterns."""
     sep_dir = tmp_path / "sep"
     sep_dir.mkdir()
-    
+
     # Create files with different patterns
     v1 = sep_dir / "song_(Vocals)_stem.wav"
     v1.write_text("vocals")
     b1 = sep_dir / "song_(Instrumental)_stem.wav"
     b1.write_text("background")
-    
+
     mock_valid.return_value = True
-    
+
     vocals, background = modules.processing._verify_separation_output(sep_dir, tmp_path / "original.wav")
     assert vocals.name == "song_(Vocals)_stem.wav"
     assert "(Background)" in background.name
@@ -536,15 +710,15 @@ def test_verify_separation_fallback_pattern2(mock_valid, tmp_path):
     """Test _verify_separation_output with pattern matching."""
     sep_dir = tmp_path / "sep"
     sep_dir.mkdir()
-    
+
     # Create files with different naming patterns
     v_tagged = sep_dir / "song_(Vocals).wav"
     v_tagged.write_text("vocals")
     b_tagged = sep_dir / "song_(Instrumental).wav"
     b_tagged.write_text("background")
-    
+
     mock_valid.return_value = True
-    
+
     vocals, background = modules.processing._verify_separation_output(sep_dir, tmp_path / "original.wav")
     assert "(Vocals)" in vocals.name
     assert "(Background)" in background.name or "(Instrumental)" in background.name
@@ -557,15 +731,15 @@ def test_handle_enhance_output_fallback(mock_valid, mock_copy, tmp_path):
     # Mock empty directory
     enhanced_dir = tmp_path / "enhanced"
     enhanced_dir.mkdir()
-    
+
     vocals_wav = tmp_path / "vocals.wav"
     vocals_wav.write_text("vocals")
-    
+
     mock_copy.return_value = None
-    
+
     # When no files in enhanced_dir, should copy vocals to fallback
     result = modules.processing._handle_enhance_output(enhanced_dir, vocals_wav)
-    
+
     assert "fallback" in result.name
     mock_copy.assert_called_once()
 
@@ -575,36 +749,39 @@ def test_handle_enhance_output_success(mock_valid, tmp_path):
     """Test _handle_enhance_output with valid enhanced output."""
     enhanced_dir = tmp_path / "enhanced"
     enhanced_dir.mkdir()
-    
+
     # Create an enhanced file
     enhanced_file = enhanced_dir / "vocals_enhanced.wav"
     enhanced_file.write_text("enhanced")
-    
+
     vocals_wav = tmp_path / "vocals.wav"
     vocals_wav.write_text("vocals")
-    
+
     mock_valid.return_value = True
-    
+
     result = modules.processing._handle_enhance_output(enhanced_dir, vocals_wav)
-    
+
     assert result == enhanced_file
     assert result.exists()
 
 
-@patch("modules.processing.run_command_with_progress")
-@patch("modules.processing.is_valid_audio", return_value=True)
-def test_denoise_background_step_no_selection(mock_valid, mock_run, tmp_path):
+@patch("modules.processing._run_denoise_separator")
+@patch("modules.processing.is_valid_audio", return_value=False)
+def test_denoise_background_step_no_selection(mock_valid, mock_run_separator, tmp_path):
     """Test _denoise_background_step when no noise selection available."""
     bg_wav = tmp_path / "background.wav"
     bg_wav.write_text("background")
-    
-    # When run_command fails or no noise file, should return original
-    mock_run.return_value = None
-    
-    result = modules.processing._denoise_background_step(bg_wav, tmp_path)
-    
+    denoised_dir = tmp_path / "denoised"
+    denoised_dir.mkdir()
+
+    # If separator path cannot select output, step falls back to raw background.
+    mock_run_separator.return_value = bg_wav
+
+    result = modules.processing._denoise_background_step(bg_wav, denoised_dir)
+
     # Should return original background when denoise not possible
     assert result == bg_wav
+    mock_run_separator.assert_called_once()
 
 
 @patch("modules.processing.is_valid_audio", return_value=True)
@@ -614,33 +791,36 @@ def test_separate_stems_exception_handling(mock_valid, tmp_path):
     audio.write_text("audio")
     out_dir = tmp_path / "sep"
     out_dir.mkdir()
-    
+
     # Mock the internal import of Separator
     with patch.dict("sys.modules", {"audio_separator.separator": MagicMock()}):
         mock_sep_module = sys.modules["audio_separator.separator"]
         mock_sep_instance = mock_sep_module.Separator.return_value
         # Mock separate to return empty list or anything that won't create files
         mock_sep_instance.separate.return_value = []
-        
+
         # When no output files are created, should raise an exception
         with pytest.raises(Exception, match="Separation completed"):
             modules.processing._separate_stems_step(audio, out_dir)
 
 
-@patch("modules.processing.run_command_with_progress")  
-@patch("modules.processing.is_valid_audio", return_value=True)
-def test_denoise_background_step_success(mock_run, mock_valid, tmp_path):
+@patch("modules.processing._run_denoise_separator")
+@patch("modules.processing.is_valid_audio", return_value=False)
+def test_denoise_background_step_success(mock_valid, mock_run_separator, tmp_path):
     """Test _denoise_background_step successful denoising."""
     bg_wav = tmp_path / "background.wav"
     bg_wav.write_text("background")
-    
+    denoised_dir = tmp_path / "denoised"
+    denoised_dir.mkdir()
+
     # Create denoised output
-    denoised = tmp_path / "background_denoised.wav"
+    denoised = denoised_dir / "background_denoised.wav"
     denoised.write_text("denoised")
-    
-    result = modules.processing._denoise_background_step(bg_wav, tmp_path)
-    # Should return original or denoised version
-    assert result.exists()
+    mock_run_separator.return_value = denoised
+
+    result = modules.processing._denoise_background_step(bg_wav, denoised_dir)
+    assert result == denoised
+    mock_run_separator.assert_called_once()
 
 
 @patch("modules.processing.is_valid_video", return_value=True)
@@ -648,15 +828,10 @@ def test_final_mix_step_skip(mock_video, tmp_path):
     """Test final_mix_step skips when output exists."""
     output = tmp_path / "output.mp4"
     output.write_text("output")
-    
+
     with patch("modules.processing.log_msg"):
-        modules.processing._final_mix_step(
-            tmp_path / "video.mp4",
-            tmp_path / "vocals.wav",
-            tmp_path / "background.wav",
-            output
-        )
-        
+        modules.processing._final_mix_step(tmp_path / "video.mp4", tmp_path / "vocals.wav", tmp_path / "background.wav", output)
+
         # Should skip without errors
 
 
@@ -666,14 +841,14 @@ def test_handle_enhance_output_with_valid_enhanced(mock_valid, mock_log, tmp_pat
     """Test _handle_enhance_output selects valid enhanced file."""
     enhanced_dir = tmp_path / "enhanced"
     enhanced_dir.mkdir()
-    
+
     # Create enhanced file
     enhanced_file = enhanced_dir / "vocals_enhanced.wav"
     enhanced_file.write_text("enhanced")
-    
+
     vocals = tmp_path / "vocals.wav"
     vocals.write_text("vocals")
-    
+
     result = modules.processing._handle_enhance_output(enhanced_dir, vocals)
     assert result == enhanced_file
 
@@ -684,12 +859,12 @@ def test_denoise_with_audio_validation(mock_run, mock_valid, tmp_path):
     """Test denoise background validates audio properly."""
     bg_wav = tmp_path / "background.wav"
     bg_wav.write_text("background")
-    
+
     # First call: check input valid (True)
     # No denoise output, so should return original
     mock_valid.return_value = True
     mock_run.return_value = None
-    
+
     result = modules.processing._denoise_background_step(bg_wav, tmp_path)
     assert result.exists()
 
@@ -700,25 +875,33 @@ def test_process_skip_no_reprocessing(mock_video, mock_audio, tmp_path):
     """Test process skips when valid output already exists."""
     vid = tmp_path / "vid.mp4"
     vid.write_text("x")
-    
-    result = modules.processing.process_hybrid_audio(
-        vid, "GPU", target_output_dir=tmp_path
-    )
+
+    result = modules.processing.process_hybrid_audio(vid, "GPU", target_output_dir=tmp_path)
     assert result is True
 
 
 @patch("modules.processing.is_valid_audio")
 def test_extract_audio_step_cleans_up_tmp(mock_valid, tmp_path):
-    """Test extract_audio_step cleans up failed tmp files."""
-    mock_valid.side_effect = [True]  # Skip extraction - already valid
-    
+    """Test extract_audio_step cleans up tmp files when extraction output is invalid."""
+    mock_valid.side_effect = [False, False]
+
     video = tmp_path / "video.mp4"
     video.write_text("video")
     output = tmp_path / "audio.wav"
-    
-    modules.processing._extract_audio_step(video, output)
-    
-    # Should not create any files
+    tmp_output = output.with_suffix(".tmp.wav")
+
+    with patch("modules.processing.attempt_cpu_run_with_retry") as mock_retry:
+
+        def create_bad_tmp(*args, **kwargs):
+            tmp_output.write_text("bad")
+            return True
+
+        mock_retry.side_effect = create_bad_tmp
+
+        with pytest.raises(Exception, match="Extraction failed"):
+            modules.processing._extract_audio_step(video, output)
+
+    assert not tmp_output.exists()
     assert not output.exists()
 
 
@@ -728,17 +911,17 @@ def test_verify_separation_rename_background(mock_valid, mock_log, tmp_path):
     """Test _verify_separation_output renames background file."""
     sep_dir = tmp_path / "sep"
     sep_dir.mkdir()
-    
+
     # Create files needing rename
     v_file = sep_dir / "song_(Vocals).wav"
     v_file.write_text("vocals")
     b_file = sep_dir / "song_(Instrumental).wav"
     b_file.write_text("background")
-    
+
     mock_valid.return_value = True
-    
+
     vocals, background = modules.processing._verify_separation_output(sep_dir, tmp_path / "original.wav")
-    
+
     # Verify background was renamed
     assert "(Background)" in background.name
     assert not b_file.exists()  # Original should be gone
@@ -748,15 +931,15 @@ def test_verify_separation_rename_background(mock_valid, mock_log, tmp_path):
 def test_handle_enhance_creates_fallback(mock_valid, tmp_path):
     """Test _handle_enhance_output creates fallback when no output."""
     mock_valid.return_value = True
-    
+
     enhanced_dir = tmp_path / "enhanced"
     enhanced_dir.mkdir()
-    
+
     vocals = tmp_path / "vocals.wav"
     vocals.write_text("vocals")
-    
+
     # No enhanced files, should create fallback
     result = modules.processing._handle_enhance_output(enhanced_dir, vocals)
-    
+
     assert result.exists()
     assert "fallback" in result.name
