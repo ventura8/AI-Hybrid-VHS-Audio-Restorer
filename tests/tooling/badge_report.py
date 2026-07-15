@@ -1,3 +1,4 @@
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -13,74 +14,34 @@ except ImportError:
 COMPLEXITY_UNAVAILABLE = "unavailable"
 
 
-def generate_badge(line_rate, output_path="assets/coverage.svg"):
-    try:
-        coverage = float(line_rate) * 100
-    except ValueError:
-        coverage = 0.0
-
-    color = "#e05d44"  # red
-    if coverage >= 95:
-        color = "#4c1"  # brightgreen
-    elif coverage >= 90:
-        color = "#97ca00"  # green
-    elif coverage >= 75:
-        color = "#dfb317"  # yellow
-    elif coverage >= 50:
-        color = "#fe7d37"  # orange
-
-    label_text = "Coverage"
-    value_text = f"{coverage:.0f}%"
+def generate_badge(xml_file, output_path="assets/coverage.svg"):
+    xml_path = Path(xml_file)
+    if not xml_path.exists():
+        print(f"Error: {xml_file} not found")
+        sys.exit(1)
 
     # Ensure output directory exists when a directory component is present.
     output_path_obj = Path(output_path)
     if output_path_obj.parent != Path("."):
         output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-    # Estimate widths
-    label_width = 70
-    value_width = int(len(value_text) * 8.5) + 12
+    cmd = [
+        sys.executable,
+        "-m",
+        "genbadge.main",
+        "coverage",
+        "-i",
+        str(xml_path),
+        "-o",
+        str(output_path_obj),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        print(f"Failed to generate coverage badge with genbadge: {exc.stderr.strip()}")
+        sys.exit(1)
 
-    total_width = label_width + value_width
-
-    # Center positions
-    label_x = label_width / 2.0 * 10
-    value_x = (label_width + value_width / 2.0) * 10
-
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" \
-height="20" role="img" aria-label="{label_text}: {value_text}">
-    <title>{label_text}: {value_text}</title>
-    <linearGradient id="s" x2="0" y2="100%">
-        <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-        <stop offset="1" stop-opacity=".1"/>
-    </linearGradient>
-    <clipPath id="r">
-        <rect width="{total_width}" height="20" rx="3" fill="#fff"/>
-    </clipPath>
-    <g clip-path="url(#r)">
-        <rect width="{label_width}" height="20" fill="#555"/>
-        <rect x="{label_width}" width="{value_width}" height="20" \
-fill="{color}"/>
-        <rect width="{total_width}" height="20" fill="url(#s)"/>
-    </g>
-    <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu \
-Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
-        <text aria-hidden="true" x="{int(label_x)}" y="150" fill="#010101" \
-fill-opacity=".3" transform="scale(.1)" \
-textLength="{label_width * 10 - 100}">{label_text}</text>
-        <text x="{int(label_x)}" y="140" transform="scale(.1)" fill="#fff" \
-textLength="{label_width * 10 - 100}">{label_text}</text>
-        <text aria-hidden="true" x="{int(value_x)}" y="150" fill="#010101" \
-fill-opacity=".3" transform="scale(.1)" \
-textLength="{value_width * 10 - 100}">{value_text}</text>
-        <text x="{int(value_x)}" y="140" transform="scale(.1)" fill="#fff" \
-textLength="{value_width * 10 - 100}">{value_text}</text>
-    </g>
-</svg>"""
-
-    with output_path_obj.open("w", encoding="utf-8") as f:
-        f.write(svg)
-    print(f"Generated badge: {output_path_obj} ({value_text})")
+    print(f"Generated badge with genbadge: {output_path_obj}")
 
 
 def _compute_total_coverage_fraction(root):
@@ -200,9 +161,8 @@ def transform_coverage(xml_file):
         # Update complexity for each class using radon
         update_complexity(root)
 
-        # Generate badge from combined line+branch coverage (pytest-cov TOTAL semantics)
-        total_coverage_fraction = _compute_total_coverage_fraction(root)
-        generate_badge(total_coverage_fraction)
+        # Generate badge from coverage.xml via genbadge.
+        generate_badge(xml_path)
 
     except ET.ParseError as e:
         print(f"Error parsing XML: {e}")

@@ -10,12 +10,18 @@ working on this project.
 When fixing issues in a file, follow this order of operations in a single pass:
 
 - **Lint First**: Run
+  `black --check modules tests restore_audio_hybrid.py scripts/apply_patches.py`,
+  `isort --check-only --diff modules tests restore_audio_hybrid.py scripts/apply_patches.py`,
   `ruff check modules tests restore_audio_hybrid.py scripts/apply_patches.py`
   and
-  `flake8 modules tests restore_audio_hybrid.py scripts/apply_patches.py`.
+  `flake8 modules tests restore_audio_hybrid.py scripts/apply_patches.py`,
+  plus `taplo fmt --check <tracked toml files>`.
 - **Static Analysis Gate**: Run
   `pylint --errors-only modules tests restore_audio_hybrid.py scripts/apply_patches.py`
   before `pytest`.
+- **Security Gates**: Run
+  `bandit -ll -ii -r modules restore_audio_hybrid.py scripts/apply_patches.py`
+  and `pip-audit`.
 - **Markdown Quality**: Run `mdformat` (auto-delint) and `pymarkdown scan`
   for Markdown docs and agent guidance.
 - **Auto-Fix**: Use `ruff format ...` and `ruff check --fix ...` for
@@ -23,7 +29,7 @@ When fixing issues in a file, follow this order of operations in a single pass:
 - **Manual Fix**: If lints remain after Ruff fixes, resolve them manually
   (without `noqa` or suppression pragmas).
 - **Tests Second**: Once lints pass, run tests (`pytest`).
-  - **Test Linting**: Ensure test files pass both Ruff and Flake8 checks.
+  - **Test Linting**: Ensure test files pass Black, isort, Ruff, and Flake8 checks.
 - **Single Pass**: Aim to resolve both lint and test issues in the same
   iteration whenever possible.
 

@@ -242,14 +242,16 @@ The project is organized into a modular package structure:
 
 ### Code Quality
 
-- **Linting**: `ruff`, `flake8`, and `pylint` (max-line-length=140).
+- **Linting/Formatting**: `black`, `isort`, `ruff`, `flake8`, `pylint`, and
+  `taplo` (max-line-length=140 for Python).
+- **Security Scanning**: `bandit -ll -ii` and `pip-audit`.
 - **Markdown Quality**: `mdformat` (automatic delint/format) and
   `pymarkdownlnt` lint checks.
 - **PowerShell Linting**: `PSScriptAnalyzer` via `.github/scripts/Invoke-PowerShellLint.ps1`.
 - **Type Checking (Advisory)**: `mypy` is available for local analysis,
   but it is not an enforced local/CI gate.
-- **Complexity (Advisory)**: `radon` is used for
-  reporting/monitoring, but it is not an enforced local/CI gate.
+- **Complexity Gates**: `radon` reports plus strict pass gates
+  (`tests/tooling/radon_cc_gate.py`, `tests/tooling/radon_mi_gate.py`).
 
 ### Testing
 
@@ -260,7 +262,8 @@ Tests are run using `pytest` with `pytest-cov`.
 ```
 
 The local pipeline runs the same quality gates as CI (PowerShell lint,
-Ruff, Flake8, Pylint, Markdown auto-delint/lint, tests with coverage)
+Black, isort, Ruff, Flake8, Taplo, Pylint, Bandit, pip-audit,
+Radon reports/gates, Markdown auto-delint/lint, tests with coverage)
 and overwrites `assets/coverage.svg` at the end.
 It also enforces strict per-file coverage using
 `tests/tooling/quality_gate.py` against `coverage.json`.

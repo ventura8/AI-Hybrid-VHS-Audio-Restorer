@@ -68,6 +68,30 @@ if added_any:
 _venv_scripts_missing = not scripts_dirs
 
 
+def _resolve_log_level(is_error, level):
+    if is_error:
+        return "ERROR"
+    return level.upper()
+
+
+def _should_print_log(console, effective_level):
+    if effective_level == "DEBUG" and not DEBUG_LOGGING:
+        return False
+    return console
+
+
+def _print_log_message(message):
+    sys.stdout.write("\r\033[K")
+    sys.stdout.flush()
+    print(f"   {message}" if not message.startswith("   ") else message)
+
+
+def _append_log_file(effective_level, clean_msg):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] [{effective_level:5}] {clean_msg}\n")
+
+
 def log_msg(message, is_error=False, console=True, level="INFO"):
     """
     Logs messages to console and log file.
@@ -78,30 +102,16 @@ def log_msg(message, is_error=False, console=True, level="INFO"):
         console: If True, prints to console (unless level is DEBUG).
         level: Log level - 'INFO', 'DEBUG', or 'ERROR'. DEBUG never prints to console.
     """
-    # Determine effective log level
-    if is_error:
-        effective_level = "ERROR"
-    else:
-        effective_level = level.upper()
-
-    # DEBUG logs never print to console unless debug_logging is enabled
-    should_print = console
-    if effective_level == "DEBUG" and not DEBUG_LOGGING:
-        should_print = False
+    effective_level = _resolve_log_level(is_error, level)
+    should_print = _should_print_log(console, effective_level)
 
     if should_print:
-        # Clear any active progress bar line before printing log
-        # Use 3 spaces for all log messages too
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
-        print(f"   {message}" if not message.startswith("   ") else message)
+        _print_log_message(message)
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     clean_msg = message.strip()
 
     try:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{timestamp}] [{effective_level:5}] {clean_msg}\n")
+        _append_log_file(effective_level, clean_msg)
     except Exception:
         pass
 
@@ -114,29 +124,27 @@ if _venv_scripts_missing:
 _active_processes: Set[subprocess.Popen] = set()
 
 
+def _terminate_processes(processes, terminate_fn):
+    for process in processes:
+        try:
+            if process.poll() is None:
+                terminate_fn(process)
+        except Exception:
+            pass
+
+
 def cleanup_subprocesses():
     """Terminates all registered active subprocesses."""
     if not _active_processes:
         return
 
     log_msg(f"\n[System] Cleaning up {_len_active()} processes...", level="DEBUG")
-    # Work on a copy to avoid 'Set changed size during iteration'
-    for p in list(_active_processes):
-        try:
-            if p.poll() is None:
-                p.terminate()
-        except Exception:
-            pass
+    active_processes = list(_active_processes)
+    _terminate_processes(active_processes, lambda process: process.terminate())
 
-    # Give them a moment to terminate gracefully
     time.sleep(0.5)
 
-    for p in list(_active_processes):
-        try:
-            if p.poll() is None:
-                p.kill()
-        except Exception:
-            pass
+    _terminate_processes(active_processes, lambda process: process.kill())
     _active_processes.clear()
 
 
@@ -167,27 +175,33 @@ def is_valid_audio(file_path):
     Returns False if corrupted, empty, or extremely short (<0.1s).
     """
     path = Path(file_path)
-    if not path.exists():
-        return False
-
-    # Less than 1KB is likely not a valid processed audio file
-    if path.stat().st_size < 1024:
+    if not _is_audio_candidate(path):
         return False
 
     if sf is None:
         return False
 
-    try:
-        # Quick header check using SoundFile
-        with sf.SoundFile(str(path)) as f:
-            if f.frames > 0 and f.samplerate > 0:
-                duration = f.frames / f.samplerate
-                if duration > 0.1:  # Must be at least 100ms
-                    return True
-    except Exception:
-        pass
+    duration = _read_audio_duration(path)
+    return duration is not None and duration > 0.1
 
-    return False
+
+def _is_audio_candidate(path):
+    try:
+        if not path.exists():
+            return False
+        return path.stat().st_size >= 1024
+    except OSError:
+        return False
+
+
+def _read_audio_duration(path):
+    try:
+        with sf.SoundFile(str(path)) as f:
+            if f.frames <= 0 or f.samplerate <= 0:
+                return None
+            return f.frames / f.samplerate
+    except Exception:
+        return None
 
 
 def is_valid_video(file_path):
@@ -249,46 +263,98 @@ _last_bar_time = 0
 _last_bar_pc = -1.0
 
 
+def _time_progress_part(media_sec, elapsed_sec, total_duration):
+    if media_sec is not None:
+        current_str = format_time(media_sec)
+        if total_duration:
+            return f"{current_str} / {format_time(total_duration)}"
+        return current_str
+    if elapsed_sec is not None:
+        return format_time(elapsed_sec)
+    return None
+
+
+def _eta_progress_part(percent, elapsed_sec):
+    if percent <= 0 or percent >= 100 or elapsed_sec is None:
+        return None
+    total_est = (elapsed_sec / percent) * 100
+    eta_sec = total_est - elapsed_sec
+    return f"ETA {format_time(eta_sec).split(',')[0]}"
+
+
+def _speed_progress_part(media_sec, elapsed_sec):
+    if media_sec is None or elapsed_sec is None or elapsed_sec <= 0.1:
+        return None
+    speed = media_sec / elapsed_sec
+    return f"{speed:5.2f}x"
+
+
 def _build_progress_info(percent, elapsed_sec, media_sec, total_duration=None):
     """
     Builds the info string: 74.3% | 00:20:43,400 / 00:27:52,777 | ETA 00:00:39 | 10.76x
     """
-    # 1. Percent
     parts = [f"{percent:5.1f}%"]
-
-    # 2. Time / Total
-    if media_sec is not None:
-        current_str = format_time(media_sec)
-        if total_duration:
-            total_str = format_time(total_duration)
-            parts.append(f"{current_str} / {total_str}")
-        else:
-            parts.append(f"{current_str}")
-    elif elapsed_sec is not None:
-        # Fallback to elapsed if no media time (e.g. non-ffmpeg steps)
-        parts.append(format_time(elapsed_sec))
-
-    # 3. ETA
-    if percent > 0 and percent < 100 and elapsed_sec is not None:
-        total_est = (elapsed_sec / percent) * 100
-        eta_sec = total_est - elapsed_sec
-        parts.append(f"ETA {format_time(eta_sec).split(',')[0]}")  # Keep ETA simple (seconds)
-
-    # 4. Speed
-    if media_sec is not None and elapsed_sec is not None and elapsed_sec > 0.1:
-        speed = media_sec / elapsed_sec
-        parts.append(f"{speed:5.2f}x")
+    for extra_part in [
+        _time_progress_part(media_sec, elapsed_sec, total_duration),
+        _eta_progress_part(percent, elapsed_sec),
+        _speed_progress_part(media_sec, elapsed_sec),
+    ]:
+        if extra_part:
+            parts.append(extra_part)
 
     return " | ".join(parts)
 
 
 def _get_terminal_columns(default=79):
-    """Returns terminal columns with safety margin."""
     try:
-        # Remove 80-column cap for modern terminals
         return shutil.get_terminal_size((80, 20)).columns - 1
     except Exception:
         return default
+
+
+def _truncate_label(clean_label, label_len, excess):
+    if label_len <= 20:
+        return clean_label, label_len, 0
+    label_can_give = max(0, label_len - 15)
+    shrink_label = min(excess, label_can_give)
+    label_len -= shrink_label
+    clean_label = clean_label[:label_len] + "..."
+    return clean_label, label_len, shrink_label
+
+
+def _shrink_bar(width, excess):
+    can_shrink = max(0, width - 5)
+    return min(excess, can_shrink)
+
+
+def _hard_truncate_label(clean_label, excess):
+    label_available = max(0, len(clean_label) - excess - 3)
+    if label_available < 5:
+        return ""
+    return clean_label[:label_available] + "..."
+
+
+def _truncate_bar_label(clean_label, label_len, total_len, columns):
+    if total_len <= columns:
+        return clean_label, label_len, total_len
+    excess = total_len - columns
+    clean_label, label_len, shrink_label = _truncate_label(clean_label, label_len, excess)
+    if shrink_label:
+        total_len -= shrink_label - 3
+    return clean_label, label_len, total_len
+
+
+def _shrink_bar_width(width, total_len, columns):
+    if total_len <= columns:
+        return width, total_len
+    shrink_amt = _shrink_bar(width, total_len - columns)
+    return width - shrink_amt, total_len - shrink_amt
+
+
+def _apply_hard_label_truncation(clean_label, total_len, columns):
+    if total_len <= columns:
+        return clean_label
+    return _hard_truncate_label(clean_label, total_len - columns)
 
 
 def _adjust_bar_layout(width, info_str, label, columns):
@@ -299,34 +365,9 @@ def _adjust_bar_layout(width, info_str, label, columns):
     label_len = len(clean_label) if clean_label else 0
     total_len = overhead + width + len(info_str) + label_len + 3  # +3 for '   ' padding
 
-    if total_len > columns:
-        # Strategy 1: Truncate Label first (prefer keeping the bar)
-        excess = total_len - columns
-        if label_len > 20:
-            # How much can we take from label?
-            # We want to keep at least 15 chars of label
-            label_can_give = max(0, label_len - 15)
-            shrink_label = min(excess, label_can_give)
-            label_len -= shrink_label
-            clean_label = clean_label[:label_len] + "..."
-            total_len -= shrink_label - 3  # account for ellipsis
-
-        if total_len > columns:
-            # Strategy 2: Shrink Bar
-            excess = total_len - columns
-            can_shrink = max(0, width - 5)  # Keep bar at least 5 wide
-            shrink_amt = min(excess, can_shrink)
-            width -= shrink_amt
-            total_len -= shrink_amt
-
-        if total_len > columns:
-            # Strategy 3: Hard Truncate Label
-            excess = total_len - columns
-            label_available = max(0, len(clean_label) - excess - 3)
-            if label_available < 5:
-                clean_label = ""
-            else:
-                clean_label = clean_label[:label_available] + "..."
+    clean_label, label_len, total_len = _truncate_bar_label(clean_label, label_len, total_len, columns)
+    width, total_len = _shrink_bar_width(width, total_len, columns)
+    clean_label = _apply_hard_label_truncation(clean_label, total_len, columns)
 
     return width, info_str, clean_label
 
@@ -396,6 +437,47 @@ def _parse_tqdm_progress(line, tqdm_re):
     return float(match.group(1)), ""
 
 
+def _update_ffmpeg_progress(line, duration, description, start_time):
+    current_time = parse_ffmpeg_time(line)
+    if current_time is None or not duration:
+        return False
+    percent = (current_time / duration) * 100
+    elapsed = time.time() - start_time
+    draw_progress_bar(percent, description, elapsed_sec=elapsed, media_sec=current_time, total_duration=duration)
+    return True
+
+
+def _should_skip_output_line(line):
+    return "muxing overhead" in line.lower()
+
+
+def _should_emit_tqdm_progress(process, percent):
+    if not hasattr(process, "_last_pc"):
+        return True
+    return abs(percent - process._last_pc) >= 0.1 or percent in [0, 100]
+
+
+def _update_tqdm_progress(process, percent, tqdm_info, description, duration, start_time):
+    elapsed = time.time() - start_time
+    media_sec = (percent / 100) * duration if duration else None
+    if not _should_emit_tqdm_progress(process, percent):
+        return
+    process._last_pc = percent
+    label = f"{description} {tqdm_info}" if tqdm_info else description
+    draw_progress_bar(percent, label, elapsed_sec=elapsed, media_sec=media_sec)
+
+
+def _handle_progress_output_line(process, line, start_time, duration, description, tqdm_re):
+    if _update_ffmpeg_progress(line, duration, description, start_time):
+        return
+    if _should_skip_output_line(line):
+        return
+
+    percent, tqdm_info = _parse_tqdm_progress(line, tqdm_re)
+    if percent is not None:
+        _update_tqdm_progress(process, percent, tqdm_info, description, duration, start_time)
+
+
 def _monitor_process_output(process, start_time, duration, description, tqdm_re):
     """Monitors process stdout for progress updates."""
     output_buffer = collections.deque(maxlen=20)
@@ -407,31 +489,7 @@ def _monitor_process_output(process, start_time, duration, description, tqdm_re)
 
         if line:
             output_buffer.append(line)
-            # log_msg(f"READ LINE: {line.strip()}", level="DEBUG") # For extreme debugging
-
-            # 1. Check for FFmpeg 'time='
-            current_time = parse_ffmpeg_time(line)
-            if current_time is not None and duration:
-                percent = (current_time / duration) * 100
-                elapsed = time.time() - start_time
-                draw_progress_bar(percent, description, elapsed_sec=elapsed, media_sec=current_time, total_duration=duration)
-                continue
-
-            # 2. Check for TQDM '%'
-            if "muxing overhead" in line.lower():
-                continue
-
-            percent, tqdm_info = _parse_tqdm_progress(line, tqdm_re)
-            if percent is not None:
-                elapsed = time.time() - start_time
-                media_sec = (percent / 100) * duration if duration else None
-
-                # Filter updates - only print if percent changed by at least 0.1%
-                # or if it's the 100% or 0% mark
-                if not hasattr(process, "_last_pc") or abs(percent - process._last_pc) >= 0.1 or percent in [0, 100]:
-                    process._last_pc = percent
-                    label = f"{description} {tqdm_info}" if tqdm_info else description
-                    draw_progress_bar(percent, label, elapsed_sec=elapsed, media_sec=media_sec)
+            _handle_progress_output_line(process, line, start_time, duration, description, tqdm_re)
     return output_buffer
 
 
@@ -453,6 +511,49 @@ def _cleanup_after_monitor_error(process):
     return process.poll() is not None
 
 
+def _prepare_process_environment(env):
+    prepared_env = os.environ.copy()
+    if env is not None:
+        prepared_env.update(env)
+    prepared_env["PYTHONIOENCODING"] = "utf-8"
+    return prepared_env
+
+
+def _drain_process_output(process, start_time, duration, description, tqdm_re):
+    try:
+        return _monitor_process_output(process, start_time, duration, description, tqdm_re)
+    except Exception as monitor_exc:
+        if _cleanup_after_monitor_error(process):
+            _active_processes.discard(process)
+        raise monitor_exc
+
+
+def _handle_command_failure(cmd, output_buffer):
+    sys.stdout.write("\n")
+    log_msg(f"\n[Error] Command {cmd[0]} failed. Last output:", is_error=True)
+    for err_line in output_buffer:
+        log_msg(f"  > {err_line.strip()}", is_error=True)
+    raise subprocess.CalledProcessError(1, cmd)
+
+
+def _finish_command(process, cmd, description, start_time, duration, output_buffer):
+    process.wait()
+    _active_processes.discard(process)
+
+    if process.returncode == 0:
+        elapsed = time.time() - start_time
+        draw_progress_bar(100.0, description, elapsed_sec=elapsed, media_sec=duration)
+        sys.stdout.write("\n")
+        return
+
+    sys.stdout.write("\n")
+    log_msg(f"\n[Error] Command {cmd[0]} failed. Last output:", is_error=True)
+    for err_line in output_buffer:
+        log_msg(f"  > {err_line.strip()}", is_error=True)
+
+    raise subprocess.CalledProcessError(process.returncode, cmd)
+
+
 def run_command_with_progress(cmd, env=None, description="Running...", total_duration=None):
     """
     Runs a subprocess and parses progress from its output.
@@ -461,11 +562,7 @@ def run_command_with_progress(cmd, env=None, description="Running...", total_dur
     start_time = time.time()
     sys.stdout.write("\n")  # Ensure we start on a new line
     sys.stdout.flush()
-    if env is None:
-        env = os.environ.copy()
-    else:
-        env = env.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
+    env = _prepare_process_environment(env)
 
     process = subprocess.Popen(
         cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding="utf-8", errors="replace"
@@ -473,33 +570,17 @@ def run_command_with_progress(cmd, env=None, description="Running...", total_dur
     _active_processes.add(process)
 
     duration = max(0.1, total_duration) if total_duration else None
-    # Stricter TQDM regex to avoid false positives and handle both | and : styles
     tqdm_re = re.compile(r"(\d+)%\s*[|:]")
-    output_buffer = []
+    output_buffer = _drain_process_output(process, start_time, duration, description, tqdm_re)
+    _finish_command(process, cmd, description, start_time, duration, output_buffer)
 
-    try:
-        output_buffer = _monitor_process_output(process, start_time, duration, description, tqdm_re)
-    except Exception as monitor_exc:
-        # Only remove once cleanup completed and child is confirmed stopped.
-        if _cleanup_after_monitor_error(process):
-            _active_processes.discard(process)
 
-        raise monitor_exc
+def _clear_cuda_retry_state():
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    import gc
 
-    process.wait()
-    _active_processes.discard(process)
-
-    if process.returncode == 0:
-        elapsed = time.time() - start_time
-        draw_progress_bar(100.0, description, elapsed_sec=elapsed, media_sec=duration)
-        sys.stdout.write("\n")
-    else:
-        sys.stdout.write("\n")
-        log_msg(f"\n[Error] Command {cmd[0]} failed. Last output:", is_error=True)
-        for err_line in output_buffer:
-            log_msg(f"  > {err_line.strip()}", is_error=True)
-
-        raise subprocess.CalledProcessError(process.returncode, cmd)
+    gc.collect()
 
 
 def attempt_run_with_retry(command_builder_func, initial_batch_size, description="Running...", total_duration=None):
@@ -519,14 +600,24 @@ def attempt_run_with_retry(command_builder_func, initial_batch_size, description
         except subprocess.CalledProcessError as e:
             if current_batch_size > 1:
                 log_msg("    [Warning] GPU failed. Retrying with reduced batch...", is_error=True)
-                if torch is not None and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                import gc
-
-                gc.collect()
+                _clear_cuda_retry_state()
                 current_batch_size = max(1, current_batch_size // 2)
             else:
                 raise e
+
+
+def _remove_if_exists(path):
+    if path.exists():
+        path.unlink()
+
+
+def _replace_with_valid_audio(temp_path, final_path):
+    if not is_valid_audio(temp_path):
+        log_msg(f"[Error] Atomic Save Failed: {temp_path} is invalid.", is_error=True)
+        _remove_if_exists(temp_path)
+        return False
+    os.replace(str(temp_path), str(final_path))
+    return True
 
 
 def attempt_cpu_run_with_retry(command_builder_func, initial_threads, description="Running...", total_duration=None):
@@ -575,23 +666,11 @@ def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):
 
     try:
         sf.write(str(temp_path), data, sample_rate, subtype=subtype)
-
-        # Verify written file is valid before renaming
-        if is_valid_audio(temp_path):
-            if path.exists():
-                path.unlink()
-            temp_path.rename(path)
-            return True
-        else:
-            log_msg(f"[Error] Atomic Save Failed: {temp_path} is invalid.", is_error=True)
-            if temp_path.exists():
-                temp_path.unlink()
-            return False
+        return _replace_with_valid_audio(temp_path, path)
 
     except Exception as e:
         log_msg(f"[Error] Failed to save audio {path}: {e}", is_error=True)
-        if temp_path.exists():
-            temp_path.unlink()
+        _remove_if_exists(temp_path)
         return False
 
 
@@ -603,19 +682,18 @@ def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):
 def check_dependencies():
     missing = []
 
-    try:
-        ffmpeg_result = subprocess.run([FFMPEG_BIN, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        if ffmpeg_result.returncode != 0:
-            missing.append("FFmpeg")
-    except FileNotFoundError:
-        missing.append("FFmpeg")
+    def _record_missing(name, command):
+        try:
+            result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=10)
+            if result.returncode != 0:
+                missing.append(name)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
+            missing.append(name)
 
-    try:
-        separator_result = subprocess.run(["audio-separator", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        if separator_result.returncode != 0:
-            missing.append("Audio-Separator")
-    except FileNotFoundError:
-        missing.append("Audio-Separator")
+    _record_missing("FFmpeg", [FFMPEG_BIN, "-version"])
+    _record_missing("Audio-Separator", ["audio-separator", "--help"])
+    _record_missing("Resemble-Enhance", [sys.executable, "-c", "import resemble_enhance"])
+    _record_missing("OmegaConf", [sys.executable, "-c", "from omegaconf import OmegaConf"])
 
     if missing:
         log_msg(f"CRITICAL: Missing: {', '.join(missing)}", is_error=True)

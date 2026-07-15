@@ -49,7 +49,8 @@ class _FakeArray:
         out = []
         idx = 0
         for _ in range(rows):
-            out.append(flat[idx: idx + cols])
+            end = idx + cols
+            out.append(flat[idx:end])
             idx += cols
         return _FakeArray(out)
 

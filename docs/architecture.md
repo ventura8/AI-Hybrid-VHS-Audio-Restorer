@@ -59,9 +59,16 @@ Local canonical gate:
 Gate stages:
 
 - PowerShell lint
+- Black
+- isort
 - Ruff
 - Flake8
+- Taplo
 - Pylint
+- Bandit
+- pip-audit
+- Radon reports + CC/MI pass gates
+- Markdown auto-delint/lint
 - Pytest with total coverage threshold
 - Strict per-file coverage check from coverage.json
 - Coverage badge regeneration

@@ -56,8 +56,8 @@ def test_extract_audio_step_skip(mock_valid, mock_retry, tmp_path, capsys):
 
 
 @patch("modules.processing.is_valid_audio")
-def test_separate_stems_step(mock_valid, tmp_path):
-    """Test separate stems step."""
+def test_separate_stems_step_returns_vocals_and_background(mock_valid, tmp_path):
+    """Separate stems should return both detected stem paths."""
     mock_valid.side_effect = iter([False] + [True] * 20)
     audio = tmp_path / "audio.wav"
     audio.write_text("audio data")
@@ -82,16 +82,30 @@ def test_separate_stems_step(mock_valid, tmp_path):
         # assert mock_retry.assert_called_once() # NOT called anymore
         assert len(result) == 2
         assert result[0] == vocal_file
-        # Output might be renamed or not depending on tags.
-        # Logic: if (Background) tag not present, it renames.
-        # Our mocked output "audio_(Instrumental)..." didn't have (Background).
-        # So it should be renamed.
-        assert "(Background)" in result[1].name
-        # Since we mocked only 1 behavior call, check if the file object in result refers to new name
-        # The actual file on disk "back_file" was written with old name.
-        # rename() in code changes simple path object but we also need to mock valid check?
-        # Actually, verify_separation_output renames ON DISK.
-        # Our test wrote 'back_file'. The code should rename 'back_file' to 'result[1]'.
+
+
+@patch("modules.processing.is_valid_audio")
+def test_separate_stems_step_renames_background_candidate(mock_valid, tmp_path):
+    """The fallback background file should be renamed to the normalized background name."""
+    mock_valid.side_effect = iter([False] + [True] * 20)
+    audio = tmp_path / "audio.wav"
+    audio.write_text("audio data")
+    out_dir = tmp_path / "sep_out"
+    out_dir.mkdir()
+
+    vocal_file = out_dir / "audio_(Vocals)_model_bs_roformer_test.wav"
+    vocal_file.write_text("vocals")
+    back_file = out_dir / "audio_(Instrumental)_model_bs_roformer_test.wav"
+    back_file.write_text("background")
+
+    with patch.dict("sys.modules", {"audio_separator.separator": MagicMock()}):
+        mock_sep_module = sys.modules["audio_separator.separator"]
+        mock_sep_instance = mock_sep_module.Separator.return_value
+        mock_sep_instance.separate.return_value = ["v.wav", "b.wav"]
+
+        result = modules.processing._separate_stems_step(audio, out_dir)
+
+        assert result[1].name == back_file.name.replace("(Instrumental)", "(Background)")
         assert result[1].exists()
         assert not back_file.exists()
 
@@ -126,7 +140,21 @@ def test_separate_stems_step_skip(mock_valid, mock_retry, tmp_path):
 @patch("modules.processing.shutil.copy")
 @patch("modules.processing.shutil.rmtree")
 @patch("modules.processing.is_valid_audio", return_value=False)
-def test_enhance_vocals_step(mock_valid, mock_rm, mock_cp, mock_run, tmp_path):
+@pytest.mark.parametrize(
+    ("cuda_visible_device", "cuda_env"),
+    [
+        (None, {}),
+        (
+            "cuda:0",
+            {
+                "CUDA_VISIBLE_DEVICES": "2",
+                "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+                "ORT_TENSORRT_FP16_ENABLE": "1",
+            },
+        ),
+    ],
+)
+def test_enhance_vocals_step(mock_valid, mock_rm, mock_cp, mock_run, tmp_path, cuda_visible_device, cuda_env):
     """Test vocal enhancement step."""
     vocals = tmp_path / "vocals.wav"
     vocals.write_text("vocals data")
@@ -139,8 +167,15 @@ def test_enhance_vocals_step(mock_valid, mock_rm, mock_cp, mock_run, tmp_path):
     enhanced = out_dir / "enhanced_vocals.wav"
     enhanced.write_text("enhanced")
 
-    modules.processing._enhance_vocals_step(vocals, out_dir, work_dir)
+    with patch("modules.processing.CUDA_VISIBLE_DEVICE", cuda_visible_device), patch("modules.processing.CUDA_ENV", cuda_env):
+        modules.processing._enhance_vocals_step(vocals, out_dir, work_dir)
+
     mock_run.assert_called_once()
+    args, kwargs = mock_run.call_args
+    cmd = args[0]
+    device_idx = cmd.index("--device")
+    assert cmd[device_idx + 1] == cuda_visible_device
+    assert kwargs["env"] == cuda_env
 
 
 @patch("modules.processing.run_command_with_progress")

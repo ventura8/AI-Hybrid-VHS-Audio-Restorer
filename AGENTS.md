@@ -20,6 +20,16 @@ Run this command before proposing completion:
 This command runs PowerShell lint, Ruff, Flake8, Pylint, tests with
 coverage, and regenerates `assets/coverage.svg`.
 
+Current local/CI gate set includes:
+
+- PowerShell lint (`PSScriptAnalyzer`)
+- Python format/lint checks (`black`, `isort`, `ruff`, `flake8`, `pylint`)
+- TOML formatting check (`taplo fmt --check`)
+- Security gates (`bandit -ll -ii`, `pip-audit`)
+- Radon reports and CC/MI pass gates
+- Markdown quality (`mdformat`, `pymarkdown scan`)
+- Pytest coverage + strict per-file coverage gate + badge regeneration
+
 It also runs Markdown quality gates:
 
 - `mdformat` (automatic delint/format) on repository docs and agent guidance files.

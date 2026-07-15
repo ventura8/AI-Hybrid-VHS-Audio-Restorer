@@ -9,3 +9,5 @@ Tooling scripts:
 - tests/tooling/quality_gate.py: strict per-file coverage gate.
 - tests/tooling/badge_report.py: badge generation and summary transform.
 - tests/tooling/threshold_policy.py: shared threshold policy and env override.
+- tests/tooling/radon_cc_gate.py: strict Radon CC rank gate.
+- tests/tooling/radon_mi_gate.py: strict Radon MI rank gate.

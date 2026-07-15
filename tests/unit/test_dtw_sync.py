@@ -6,6 +6,18 @@ import numpy as np
 import modules.sync
 
 
+def _build_dtw_submit_side_effect(submitted_chunks):
+    def _side_effect_submit(_func, chunk):
+        mock_future = MagicMock()
+        submitted_chunks.append(chunk)
+        ref_seg = chunk[0]
+        length = len(ref_seg)
+        mock_future.result.return_value = [[i, i] for i in range(length)]
+        return mock_future
+
+    return _side_effect_submit
+
+
 def test_parallel_dtw_logic():
     """Test chunking and stitching logic."""
 
@@ -18,21 +30,13 @@ def test_parallel_dtw_logic():
         mock_pool = MagicMock()
         MockExecutor.return_value = mock_pool
         mock_pool.__enter__.return_value = mock_pool
+        submitted_chunks = []
 
         # Setup as_completed to return list of futures immediately
         mock_as_completed.side_effect = lambda futures: list(futures)
 
-        # Mock submit to return a mock future with a result
-        def side_effect_submit(func, chunk):
-            mock_future = MagicMock()
-            ref_seg, proc_seg, rad = chunk
-            # Return diagonal path for this chunk size
-            L = len(ref_seg)
-            path = [[i, i] for i in range(L)]
-            mock_future.result.return_value = path
-            return mock_future
-
-        mock_pool.submit.side_effect = side_effect_submit
+        # Mock submit to return a mock future with a result.
+        mock_pool.submit.side_effect = _build_dtw_submit_side_effect(submitted_chunks)
 
         # We need to mock librosa load/chroma too to reach the logic
         with patch("modules.sync.CPU_THREADS", 4), patch("modules.sync.DTW_RESOLUTION", 40), patch("modules.sync.GPU_VRAM_GB", 0):
@@ -80,6 +84,11 @@ def test_parallel_dtw_logic():
                 args, _ = mock_pool.submit.call_args_list[0]
                 chunk_arg = args[1]
                 assert len(chunk_arg[0]) == 3000
+
+                # Verify every submission includes the same cancellation token.
+                assert len({id(chunk[3]) for chunk in submitted_chunks}) == 1
+                first_token = submitted_chunks[0][3]
+                assert first_token is not None
 
 
 def test_gpu_dtw_worker():

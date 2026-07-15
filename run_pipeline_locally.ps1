@@ -10,6 +10,9 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $repoRoot
 $VenvPy = "$repoRoot\.venv\Scripts\python.exe"
+$PoetryVenvDir = "$repoRoot\.poetry-venv"
+$PoetryPy = "$PoetryVenvDir\Scripts\python.exe"
+$PoetryExe = "$PoetryVenvDir\Scripts\poetry.exe"
 $PoetryVersion = "2.4.1"
 
 if (-not (Test-Path $VenvPy)) {
@@ -72,7 +75,7 @@ function Invoke-CheckedCommand {
 function Invoke-PoetryCommand {
     param([string[]]$Arguments)
 
-    Invoke-CheckedCommand $VenvPy (@("-m", "poetry") + $Arguments)
+    Invoke-CheckedCommand $PoetryExe $Arguments
 }
 
 function Get-CoverageThreshold {
@@ -97,14 +100,18 @@ function Get-CoverageThreshold {
 }
 
 function Initialize-Poetry {
-    try {
-        Invoke-PoetryCommand @("--version")
+    if (-not (Test-Path $PoetryPy)) {
+        Write-Information "Poetry helper environment was not found. Creating $PoetryVenvDir ..."
+        Invoke-CheckedCommand $VenvPy @("-m", "venv", $PoetryVenvDir)
     }
-    catch {
-        Write-Information "Poetry was not found. Installing Poetry..."
-        Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "poetry==$PoetryVersion")
-        Invoke-PoetryCommand @("--version")
+
+    if (-not (Test-Path $PoetryExe)) {
+        Write-Information "Poetry CLI was not found in helper environment. Installing Poetry..."
+        Invoke-CheckedCommand $PoetryPy @("-m", "pip", "install", "--upgrade", "pip")
+        Invoke-CheckedCommand $PoetryPy @("-m", "pip", "install", "poetry==$PoetryVersion")
     }
+
+    Invoke-PoetryCommand @("--version")
 }
 
 $pipelineFailed = $false
@@ -121,8 +128,12 @@ try {
         Invoke-PoetryCommand @("check", "--lock")
     }
 
-    Invoke-Step "Install test/light dependencies" {
-        Invoke-PoetryCommand @("install", "-v", "--only", "main,dev", "--without", "ml", "--no-root")
+    Invoke-Step "Sync test/light dependencies" {
+        Invoke-PoetryCommand @("sync", "--only", "main,dev", "--no-root")
+    }
+
+    Invoke-Step "Re-bootstrap Poetry CLI" {
+        Initialize-Poetry
     }
 
     Invoke-Step "Install developer PR review tooling" {
@@ -172,6 +183,45 @@ try {
         )
     }
 
+    Invoke-Step "Run Black" {
+        Invoke-PoetryCommand @(
+            "run",
+            "black",
+            "--check",
+            "modules",
+            "tests",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py"
+        )
+    }
+
+    Invoke-Step "Run isort" {
+        Invoke-PoetryCommand @(
+            "run",
+            "isort",
+            "--check-only",
+            "--diff",
+            "modules",
+            "tests",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py"
+        )
+    }
+
+    Invoke-Step "Run Taplo (TOML format check)" {
+        $tomlFiles = @(& git ls-files "*.toml")
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list TOML files using git ls-files."
+        }
+
+        if ($tomlFiles.Count -eq 0) {
+            Write-Information "No TOML files found to check with Taplo."
+        }
+        else {
+            Invoke-PoetryCommand (@("run", "taplo", "fmt", "--check") + $tomlFiles)
+        }
+    }
+
     Invoke-Step "Run Flake8" {
         Invoke-PoetryCommand @("run", "flake8", "modules", "tests", "restore_audio_hybrid.py", "scripts/apply_patches.py")
     }
@@ -186,6 +236,117 @@ try {
             "restore_audio_hybrid.py",
             "scripts/apply_patches.py"
         )
+    }
+
+    Invoke-Step "Run Bandit" {
+        Invoke-PoetryCommand @(
+            "run",
+            "bandit",
+            "-ll",
+            "-ii",
+            "-r",
+            "modules",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py"
+        )
+    }
+
+    Invoke-Step "Run pip-audit" {
+        Invoke-PoetryCommand @("run", "pip-audit")
+    }
+
+    Invoke-Step "Run Radon cyclomatic complexity report" {
+        Invoke-PoetryCommand @(
+            "run",
+            "radon",
+            "cc",
+            "modules",
+            "tests\conftest.py",
+            "tests\unit",
+            "tests\integration",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py",
+            "-s"
+        )
+    }
+
+    Invoke-Step "Run Radon maintainability report" {
+        Invoke-PoetryCommand @(
+            "run",
+            "radon",
+            "mi",
+            "modules",
+            "tests\conftest.py",
+            "tests\unit",
+            "tests\integration",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py",
+            "-s"
+        )
+    }
+
+    Invoke-Step "Run Radon raw metrics" {
+        Invoke-PoetryCommand @(
+            "run",
+            "radon",
+            "raw",
+            "modules",
+            "tests\conftest.py",
+            "tests\unit",
+            "tests\integration",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py"
+        )
+    }
+
+    Invoke-Step "Run Radon Halstead metrics" {
+        Invoke-PoetryCommand @(
+            "run",
+            "radon",
+            "hal",
+            "modules",
+            "tests\conftest.py",
+            "tests\unit",
+            "tests\integration",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py"
+        )
+    }
+
+    Invoke-Step "Enforce Radon cyclomatic complexity A grade" {
+        Invoke-PoetryCommand @(
+            "run",
+            "radon",
+            "cc",
+            "modules",
+            "tests\conftest.py",
+            "tests\unit",
+            "tests\integration",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py",
+            "-j",
+            "-O",
+            "radon-cc-report.json"
+        )
+        Invoke-PoetryCommand @("run", "python", "tests/tooling/radon_cc_gate.py", "radon-cc-report.json")
+    }
+
+    Invoke-Step "Enforce Radon maintainability A grade" {
+        Invoke-PoetryCommand @(
+            "run",
+            "radon",
+            "mi",
+            "modules",
+            "tests\conftest.py",
+            "tests\unit",
+            "tests\integration",
+            "restore_audio_hybrid.py",
+            "scripts/apply_patches.py",
+            "-j",
+            "-O",
+            "radon-mi-report.json"
+        )
+        Invoke-PoetryCommand @("run", "python", "tests/tooling/radon_mi_gate.py", "radon-mi-report.json")
     }
 
     Invoke-Step "Run Markdown Auto-Delint" {

@@ -27,7 +27,8 @@ jobs:
       - name: Install Poetry
         shell: bash
         run: |
-          pip install "poetry==${{ env.POETRY_VERSION }}"
+          curl -sSL https://install.python-poetry.org | python - --version "${{ env.POETRY_VERSION }}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Configure Poetry In-Project Virtualenv
         shell: bash
         run: |
@@ -37,24 +38,89 @@ jobs:
         run: |
           poetry lock --no-interaction
           poetry check --lock
-      - name: Install Test/Light Dependencies
+      - name: Sync Test/Light Dependencies
         shell: bash
         run: |
-          poetry install -v --only main,dev --without ml --no-root
+          poetry sync --only main,dev --no-root
       - name: Run PowerShell Lint
         shell: pwsh
         run: |
-          $scriptPaths = @("./install_dependencies.ps1", "./run_pipeline_locally.ps1", "./.github/scripts/Invoke-PowerShellLint.ps1")
+          $scriptPaths = @(
+            "./install_dependencies.ps1",
+            "./run_pipeline_locally.ps1",
+            "./scripts/install_pr_review_tooling.ps1",
+            "./.github/scripts/Invoke-PowerShellLint.ps1"
+          )
           & ./.github/scripts/Invoke-PowerShellLint.ps1 -ScriptPaths $scriptPaths
       - name: Run Ruff
         run: |
           poetry run ruff check modules tests restore_audio_hybrid.py scripts/apply_patches.py
+      - name: Run Black
+        run: |
+          poetry run black --check modules tests restore_audio_hybrid.py scripts/apply_patches.py
+      - name: Run isort
+        run: |
+          poetry run isort --check-only --diff modules tests restore_audio_hybrid.py scripts/apply_patches.py
+      - name: Run Taplo (TOML format check)
+        shell: bash
+        run: |
+          TOML_FILES=$(git ls-files '*.toml')
+          if [ -n "$TOML_FILES" ]; then
+            poetry run taplo fmt --check $TOML_FILES
+          fi
       - name: Run Flake8
         run: |
           poetry run flake8 modules tests restore_audio_hybrid.py scripts/apply_patches.py
       - name: Run Pylint
         run: |
           poetry run pylint --errors-only modules tests restore_audio_hybrid.py scripts/apply_patches.py
+      - name: Run Bandit
+        run: |
+          poetry run bandit -ll -ii -r modules restore_audio_hybrid.py scripts/apply_patches.py
+      - name: Run pip-audit
+        run: |
+          poetry run pip-audit
+      - name: Run Radon Gates and Reports
+        shell: bash
+        run: |
+          poetry run radon cc modules tests/conftest.py tests/unit tests/integration restore_audio_hybrid.py scripts/apply_patches.py -s > radon-report.txt
+          poetry run radon cc modules tests/conftest.py tests/unit tests/integration restore_audio_hybrid.py scripts/apply_patches.py -j -O radon-cc-report.json
+          poetry run radon mi modules tests/conftest.py tests/unit tests/integration restore_audio_hybrid.py scripts/apply_patches.py -s > radon-mi-report.txt
+          poetry run radon mi modules tests/conftest.py tests/unit tests/integration restore_audio_hybrid.py scripts/apply_patches.py -j -O radon-mi-report.json
+          poetry run radon raw modules tests/conftest.py tests/unit tests/integration restore_audio_hybrid.py scripts/apply_patches.py > radon-raw-report.txt
+          poetry run radon hal modules tests/conftest.py tests/unit tests/integration restore_audio_hybrid.py scripts/apply_patches.py > radon-hal-report.txt
+          {
+            echo "## Radon Cyclomatic Complexity"
+            echo
+            echo '```text'
+            cat radon-report.txt
+            echo '```'
+            echo
+            echo "## Radon Maintainability Index"
+            echo
+            echo '```text'
+            cat radon-mi-report.txt
+            echo '```'
+            echo
+            echo "## Radon Raw Metrics"
+            echo
+            echo '```text'
+            cat radon-raw-report.txt
+            echo '```'
+            echo
+            echo "## Radon Halstead Metrics"
+            echo
+            echo '```text'
+            cat radon-hal-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cc_gate_status=0
+          mi_gate_status=0
+          poetry run python tests/tooling/radon_cc_gate.py radon-cc-report.json || cc_gate_status=$?
+          poetry run python tests/tooling/radon_mi_gate.py radon-mi-report.json || mi_gate_status=$?
+          if [ "$cc_gate_status" -ne 0 ] || [ "$mi_gate_status" -ne 0 ]; then
+            exit 1
+          fi
       - name: Run Markdown Auto-Delint Check
         run: |
           poetry run mdformat --check README.md AGENTS.md .agent docs tests/README.md
@@ -77,6 +143,12 @@ jobs:
             coverage.xml
             coverage.json
             .coverage
+            radon-report.txt
+            radon-cc-report.json
+            radon-mi-report.txt
+            radon-mi-report.json
+            radon-raw-report.txt
+            radon-hal-report.txt
 
   quality_reporting:
     name: "📊 Analytics & Coverage Reporting"
@@ -90,14 +162,10 @@ jobs:
         uses: actions/setup-python@v6.3.0
         with:
           python-version: "3.12.13"
-      - name: Install Minimal Badge Dependencies
-        run: |
-          python -m pip install --disable-pip-version-check radon
       - name: Download Coverage Artifacts
         uses: actions/download-artifact@v8.0.1
         with:
           name: coverage-artifacts
-      - name: Generate Badge and Summary
+      - name: Generate Coverage Summary
         run: |
-          python tests/tooling/badge_report.py coverage.xml
           python tests/tooling/badge_report.py coverage.xml --summary >> $GITHUB_STEP_SUMMARY
