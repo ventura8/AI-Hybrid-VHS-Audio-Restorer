@@ -13,8 +13,11 @@ This workflow ensures that code quality and testing standards are met in a singl
 First, identify all linting issues for the target file.
 
 ```powershell
-flake8 <file_path>
-mypy <file_path>
+black --check modules tests restore_audio_hybrid.py scripts/apply_patches.py
+isort --check-only --diff modules tests restore_audio_hybrid.py scripts/apply_patches.py
+ruff check modules tests restore_audio_hybrid.py scripts/apply_patches.py
+flake8 modules tests restore_audio_hybrid.py scripts/apply_patches.py
+pylint --errors-only modules tests restore_audio_hybrid.py scripts/apply_patches.py
 ```
 
 ### 2. Fix Lints
@@ -26,7 +29,7 @@ Apply fixes for all reported linting errors. Prioritize fixing lints before movi
 Once lints pass, run tests and check coverage.
 
 ```powershell
-pytest --cov=<module_name> --cov-report=term-missing <test_path>
+./run_pipeline_locally.ps1
 ```
 
 ### 4. Fix Test Failures
@@ -38,12 +41,10 @@ Resolve any failing tests.
 
 ### 5. Generate Badge & Verify
 
-Generate the coverage badge and verify it meets the 90% threshold.
+The local pipeline already generates the coverage badge and enforces threshold checks.
 
 ```powershell
-# Example command if using a specific script or coverage-badge tool
-# python .github/scripts/generate_coverage_badge.py
-coverage-badge -o assets/coverage.svg -f
+./run_pipeline_locally.ps1
 ```
 
 > [!IMPORTANT]

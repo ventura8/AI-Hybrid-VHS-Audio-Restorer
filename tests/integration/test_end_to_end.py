@@ -48,6 +48,34 @@ def _get_test_video(input_dir):
     return video_files[0]
 
 
+def _get_expected_output(output_dir, input_video):
+    hybrid_output = output_dir / f"{input_video.stem}_Hybrid_Cleaned{input_video.suffix}"
+    denoised_output = output_dir / f"{input_video.stem}_Denoised_Cleaned{input_video.suffix}"
+    return hybrid_output if hybrid_output.exists() else denoised_output
+
+
+def _assert_log_markers(logs):
+    assert "Attempting execution on GPU" in logs, "GPU Usage Attempt marker missing from logs."
+    print("GPU Usage Attempt: DETECTED (Good)")
+
+    if "GPU Failed" in logs:
+        print("GPU Status: FAILED (Fallback to CPU used)")
+    else:
+        print("GPU Status: SUCCESS (Presumably)")
+
+
+def _assert_smoke_output_artifact(smoke_expected):
+    assert smoke_expected.exists(), "FAILURE: smoke subprocess did not emit mode-specific output artifact."
+    assert is_valid_video(smoke_expected) or smoke_expected.stat().st_size > 0
+
+
+def _assert_smoke_log_contents(smoke_log, process_mode):
+    assert smoke_log.exists(), "FAILURE: smoke subprocess did not create session log."
+    smoke_logs = smoke_log.read_text(encoding="utf-8")
+    assert "Attempting execution on GPU" in smoke_logs
+    assert f"mode={process_mode}" in smoke_logs
+
+
 def _run_script(base_dir, repo_root):
     """Executes the restore script via subprocess."""
     print("=== STARTING E2E TEST ===")
@@ -77,15 +105,15 @@ def _verify_output(output_dir, log_file, input_video):
     """Verifies that output files exist and checks logs."""
     hybrid_output = output_dir / f"{input_video.stem}_Hybrid_Cleaned{input_video.suffix}"
     denoised_output = output_dir / f"{input_video.stem}_Denoised_Cleaned{input_video.suffix}"
-    assert not (hybrid_output.exists() and denoised_output.exists()), (
-        "FAILURE: Both hybrid and denoise-only outputs exist; expected exactly one mode-specific output."
-    )
-    expected_output = hybrid_output if hybrid_output.exists() else denoised_output
+    assert not (
+        hybrid_output.exists() and denoised_output.exists()
+    ), "FAILURE: Both hybrid and denoise-only outputs exist; expected exactly one mode-specific output."
+    expected_output = _get_expected_output(output_dir, input_video)
 
     assert expected_output.exists(), "FAILURE: Output file NOT found for either mode-specific suffix."
-    assert is_valid_video(expected_output) or expected_output.stat().st_size > 0, (
-        f"FAILURE: Output artifact exists but is invalid/empty: {expected_output.name}"
-    )
+    assert (
+        is_valid_video(expected_output) or expected_output.stat().st_size > 0
+    ), f"FAILURE: Output artifact exists but is invalid/empty: {expected_output.name}"
     print(f"SUCCESS: Output file generated: {expected_output.name}")
     print(f"Size: {expected_output.stat().st_size / 1024 / 1024:.2f} MB")
 
@@ -95,25 +123,10 @@ def _verify_output(output_dir, log_file, input_video):
         logs = log_f.read()
 
     print("\n--- LOG ANALYSIS ---")
-    if "Attempting execution on GPU" in logs:
-        print("GPU Usage Attempt: DETECTED (Good)")
-    else:
-        print("GPU Usage Attempt: NOT DETECTED (Bad)")
-
-    if "GPU Failed" in logs:
-        print("GPU Status: FAILED (Fallback to CPU used)")
-    else:
-        print("GPU Status: SUCCESS (Presumably)")
+    _assert_log_markers(logs)
 
 
-def _run_real_subprocess_smoke_test(base_dir, repo_root, process_mode, mode_suffix):
-    # Real subprocess smoke test for entry-point/config routing without mock patching.
-    smoke_dir = base_dir / "smoke"
-    smoke_input, _, smoke_log = _setup_test_environment(smoke_dir)
-    smoke_video = smoke_input / "seed_input.mp4"
-    smoke_video.write_bytes(b"v" * 12000)
-    (smoke_dir / "config.yaml").write_text(f"process_mode: {process_mode}\n", encoding="utf-8")
-
+def _write_smoke_sitecustomize(smoke_dir, process_mode):
     sitecustomize_path = smoke_dir / "sitecustomize.py"
     sitecustomize_path.write_text(
         "from pathlib import Path\n"
@@ -141,6 +154,8 @@ def _run_real_subprocess_smoke_test(base_dir, repo_root, process_mode, mode_suff
         encoding="utf-8",
     )
 
+
+def _build_smoke_environment(smoke_dir, repo_root):
     smoke_env = os.environ.copy()
     existing_pythonpath = smoke_env.get("PYTHONPATH", "")
     pythonpath_parts = [str(smoke_dir), str(repo_root)]
@@ -149,37 +164,58 @@ def _run_real_subprocess_smoke_test(base_dir, repo_root, process_mode, mode_suff
     smoke_env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
     smoke_env["AI_RESTORE_TEST_MODE"] = "1"
     smoke_env["PYTHONIOENCODING"] = "utf-8"
+    return smoke_env
 
-    start_time = time.time()
-    timeout_sec = 120
+
+def _run_smoke_subprocess(smoke_env, smoke_dir, repo_root, smoke_video):
     cmd = [sys.executable, str(repo_root / "restore_audio_hybrid.py"), str(smoke_video)]
+    subprocess.run(cmd, check=True, env=smoke_env, timeout=120, cwd=smoke_dir)
 
-    try:
-        subprocess.run(
-            cmd,
-            check=True,
-            env=smoke_env,
-            timeout=timeout_sec,
-            cwd=smoke_dir,
-        )
-    except subprocess.TimeoutExpired as e:
-        elapsed = time.time() - start_time
-        print(f"Script timed out after {e.timeout} seconds")
-        print(f"Smoke subprocess timeout after {elapsed:.2f}s: cmd={e.cmd}")
-        raise
-    except subprocess.CalledProcessError as e:
-        elapsed = time.time() - start_time
-        print(f"Script failed with code {e.returncode}")
-        print(f"Smoke subprocess failed after {elapsed:.2f}s: cmd={e.cmd}")
-        raise
+
+def _run_real_subprocess_smoke_test(base_dir, repo_root, process_mode, mode_suffix):
+    # Real subprocess smoke test for entry-point/config routing without mock patching.
+    smoke_dir = base_dir / "smoke"
+    smoke_input, _, smoke_log = _setup_test_environment(smoke_dir)
+    smoke_video = smoke_input / "seed_input.mp4"
+    smoke_video.write_bytes(b"v" * 12000)
+    (smoke_dir / "config.yaml").write_text(f"process_mode: {process_mode}\n", encoding="utf-8")
+
+    _write_smoke_sitecustomize(smoke_dir, process_mode)
+    smoke_env = _build_smoke_environment(smoke_dir, repo_root)
+    _run_smoke_subprocess(smoke_env, smoke_dir, repo_root, smoke_video)
 
     smoke_expected = smoke_video.parent / f"{smoke_video.stem}_{mode_suffix}{smoke_video.suffix}"
-    assert smoke_expected.exists(), "FAILURE: smoke subprocess did not emit mode-specific output artifact."
-    assert is_valid_video(smoke_expected) or smoke_expected.stat().st_size > 0
-    assert smoke_log.exists(), "FAILURE: smoke subprocess did not create session log."
-    smoke_logs = smoke_log.read_text(encoding="utf-8")
-    assert "Attempting execution on GPU" in smoke_logs
-    assert f"mode={process_mode}" in smoke_logs
+    _assert_smoke_output_artifact(smoke_expected)
+    _assert_smoke_log_contents(smoke_log, process_mode)
+
+
+def _assert_pipeline_run_execution(check, timeout, cwd, base_dir):
+    assert check is True
+    assert timeout == 900
+    assert cwd == base_dir
+
+
+def _assert_pipeline_run_environment(env, base_dir, process_mode):
+    assert env.get("AI_RESTORE_TEST_MODE") == "1"
+    assert (base_dir / "config.yaml").read_text(encoding="utf-8") == f"process_mode: {process_mode}\n"
+
+
+def _assert_pipeline_run_command(cmd, repo_root):
+    assert str(repo_root / "restore_audio_hybrid.py") in cmd
+
+
+def _write_pipeline_run_artifacts(output_dir, log_file, input_video, mode_suffix):
+    out_path = output_dir / f"{input_video.stem}_{mode_suffix}{input_video.suffix}"
+    out_path.write_bytes(b"processed-video")
+    log_file.write_text("[INFO] Attempting execution on GPU\n", encoding="utf-8")
+
+
+def _fake_pipeline_run(cmd, check, env, timeout, cwd, repo_root, base_dir, process_mode, output_dir, log_file, input_video, mode_suffix):
+    _assert_pipeline_run_execution(check, timeout, cwd, base_dir)
+    _assert_pipeline_run_environment(env, base_dir, process_mode)
+    _assert_pipeline_run_command(cmd, repo_root)
+    _write_pipeline_run_artifacts(output_dir, log_file, input_video, mode_suffix)
+    return subprocess.CompletedProcess(cmd, 0)
 
 
 @pytest.mark.parametrize(
@@ -203,19 +239,20 @@ def test_pipeline_modes(tmp_path, monkeypatch, mode_suffix):
     print(f"Using test video: {input_video.name}")
 
     def _fake_run(cmd, check, env, timeout, cwd):
-        assert check is True
-        assert timeout == 900
-        assert cwd == base_dir
-        assert env.get("AI_RESTORE_TEST_MODE") == "1"
-        assert str(repo_root / "restore_audio_hybrid.py") in cmd
-        assert (base_dir / "config.yaml").read_text(encoding="utf-8") == f"process_mode: {process_mode}\n"
-
-        # Simulate generated output artifact and session log from a successful run.
-        out_path = output_dir / f"{input_video.stem}_{mode_suffix}{input_video.suffix}"
-        out_path.write_bytes(b"processed-video")
-        log_file.write_text("[INFO] Attempting execution on GPU\n", encoding="utf-8")
-
-        return subprocess.CompletedProcess(cmd, 0)
+        return _fake_pipeline_run(
+            cmd,
+            check,
+            env,
+            timeout,
+            cwd,
+            repo_root,
+            base_dir,
+            process_mode,
+            output_dir,
+            log_file,
+            input_video,
+            mode_suffix,
+        )
 
     with patch("subprocess.run", side_effect=_fake_run):
         _run_script(base_dir, repo_root)

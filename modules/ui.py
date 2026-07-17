@@ -23,20 +23,30 @@ def _is_cleaned_output(file_name):
     return stem.endswith("_Hybrid_Cleaned") or stem.endswith("_Denoised_Cleaned")
 
 
-def _show_banner():
-    """Prints the application banner and hardware info."""
-    cpu_name = get_cpu_name()
-    gpu_name = get_gpu_name()
+def _is_nvidia_gpu_name(gpu_name):
+    upper_gpu_name = gpu_name.upper()
+    return "NVIDIA" in upper_gpu_name or "RTX" in upper_gpu_name
 
-    # Check torch backend
-    torch_backend = "CPU (Slow)"
-    if torch is not None and torch.cuda.is_available():
-        # Even if is_available is True, we check if we're actually on NVIDIA
-        if "NVIDIA" in gpu_name.upper() or "RTX" in gpu_name.upper():
-            torch_backend = "CUDA (NVIDIA Accelerated)"
-    elif torch is not None and hasattr(torch, "xpu") and torch.xpu.is_available():
-        torch_backend = "XPU (Intel Accelerated)"
 
+def _has_cuda_backend():
+    return torch is not None and torch.cuda.is_available()
+
+
+def _has_xpu_backend():
+    return torch is not None and hasattr(torch, "xpu") and torch.xpu.is_available()
+
+
+def _get_torch_backend(gpu_name):
+    if _has_cuda_backend():
+        if _is_nvidia_gpu_name(gpu_name):
+            return "CUDA (NVIDIA Accelerated)"
+        return "CUDA (Accelerated)"
+    if _has_xpu_backend():
+        return "XPU (Intel Accelerated)"
+    return "CPU (Slow)"
+
+
+def _print_banner(cpu_name, gpu_name, torch_backend):
     print("=" * 60)
     print("   AI HYBRID VHS AUDIO RESTORER - v1.0.2")
     print(f"   Running on: {platform.system()} {platform.release()}")  # pragma: no cover
@@ -56,32 +66,69 @@ def _show_banner():
     print(f"   Models          : {VOCALS_MODEL} / UVR-DeNoise")
     print(f"   Config Source   : {CONFIG_SOURCE}\n")
 
-    if "CPU" in torch_backend and "NVIDIA" in gpu_name.upper():
+
+def _print_backend_warning(torch_backend, gpu_name):
+    if "CPU" in torch_backend and _is_nvidia_gpu_name(gpu_name):
         print("!! WARNING: NVIDIA GPU detected but Torch is using CPU.")
         print("!! This will be EXTREMELY slow. Check your drivers/installation.\n")
+
+
+def _show_banner():
+    """Prints the application banner and hardware info."""
+    cpu_name = get_cpu_name()
+    gpu_name = get_gpu_name()
+
+    torch_backend = _get_torch_backend(gpu_name)
+    _print_banner(cpu_name, gpu_name, torch_backend)
+    _print_backend_warning(torch_backend, gpu_name)
 
     return cpu_name, gpu_name
 
 
+def _scan_single_file(path):
+    if path.suffix.lower() not in EXTS:
+        print(f">> [Error] Unsupported extension: {path.suffix}")
+        print(f">> Supported: {EXTS}")
+        return []
+    if _is_cleaned_output(path.name):
+        print(f">> Skipping cleaned output file: {path.name}")
+        return []
+    return [path]
+
+
+def _scan_directory_files(path):
+    return [f for f in path.iterdir() if f.is_file() and f.suffix.lower() in EXTS and not _is_cleaned_output(f.name)]
+
+
+def _scan_directory_with_error_handling(path, error_message):
+    try:
+        return _scan_directory_files(path)
+    except OSError:
+        print(error_message)
+        return []
+
+
+def _scan_directory(path):
+    print(f">> Scanning folder: {path.name}")
+    return _scan_directory_with_error_handling(path, f">> [Error] Could not access folder: {path}")
+
+
 def _scan_files_in_path(path):
     """Scans a file or directory for valid video files."""
-    files = []
     if path.is_file():
-        if path.suffix.lower() in EXTS:
-            if not _is_cleaned_output(path.name):
-                files.append(path)
-            else:
-                print(f">> Skipping cleaned output file: {path.name}")
-        else:
-            print(f">> [Error] Unsupported extension: {path.suffix}")
-            print(f">> Supported: {EXTS}")
-    elif path.is_dir():
-        print(f">> Scanning folder: {path.name}")
-        files = [f for f in path.iterdir() if f.is_file() and f.suffix.lower() in EXTS and not _is_cleaned_output(f.name)]
-    else:
-        print(f">> [Error] Path is not a file or directory: {path}")
+        return _scan_single_file(path)
+    if path.is_dir():
+        return _scan_directory(path)
+    print(f">> [Error] Path is not a file or directory: {path}")
+    return []
 
-    return files
+
+def _strip_wrapping_quotes(user_input):
+    if user_input.startswith('"') and user_input.endswith('"'):
+        return user_input[1:-1]
+    if user_input.startswith("'") and user_input.endswith("'"):
+        return user_input[1:-1]
+    return user_input
 
 
 def _clean_user_input(user_input):
@@ -91,17 +138,31 @@ def _clean_user_input(user_input):
     if user_input.startswith("&"):
         user_input = user_input[1:].strip()
 
-    # Move quote stripping up, before file:// check
-    # because user input might be: "file://..."
-    if user_input.startswith('"') and user_input.endswith('"'):
-        user_input = user_input[1:-1]
-    elif user_input.startswith("'") and user_input.endswith("'"):
-        user_input = user_input[1:-1]
+    user_input = _strip_wrapping_quotes(user_input)
 
     if user_input.lower().startswith("file://"):
         user_input = user_input[7:].strip()
 
     return user_input
+
+
+def _ensure_input_dir():
+    try:
+        INPUT_DIR.mkdir(exist_ok=True)
+        return True
+    except OSError:
+        print(">> [Error] Could not create or access 'input' folder.")
+        return False
+
+
+def _scan_default_input_dir():
+    print(">> Interactive Mode: Drag & Drop files or press Enter to scan 'input' folder.")
+    print(">> Scanning 'input' folder...")
+    if not _ensure_input_dir():
+        return [], False
+
+    files = _scan_directory_with_error_handling(INPUT_DIR, ">> [Error] Could not access 'input' folder.")
+    return files, False
 
 
 def _get_interactive_files():
@@ -112,19 +173,14 @@ def _get_interactive_files():
         clean_input = _clean_user_input(user_input)
 
         if not clean_input:
-            print(">> Interactive Mode: Drag & Drop files or press Enter to scan 'input' folder.")
-            print(">> Scanning 'input' folder...")
-            INPUT_DIR.mkdir(exist_ok=True)
-            files = [f for f in INPUT_DIR.iterdir() if f.is_file() and f.suffix.lower() in EXTS and not _is_cleaned_output(f.name)]
-            return files, False  # use_source_as_output = False
+            return _scan_default_input_dir()
 
         path = Path(clean_input)
         if not path.exists():
             print(f">> [Error] File not found: {path}")
             return [], False
 
-        files = _scan_files_in_path(path)
-        return files, True
+        return _scan_files_in_path(path), True
 
     except (EOFError, KeyboardInterrupt):
         return [], False

@@ -24,7 +24,7 @@ from .config import (
     VOCAL_MIX_VOL,
     VOCALS_MODEL,
 )
-from .hardware import CPU_THREADS, CUDA_DEVICE, GPU_BATCH_SIZE
+from .hardware import CPU_THREADS, CUDA_ENV, CUDA_VISIBLE_DEVICE, GPU_BATCH_SIZE
 from .sync import _align_stems
 from .utils import (
     FFMPEG_BIN,
@@ -120,54 +120,100 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
         raise Exception("Extraction failed: Output audio is invalid, empty, or too small.")  # pragma: no cover
 
 
+def _collect_stem_candidates(separation_out_dir):
+    vocals = list(separation_out_dir.glob("*(Vocals)*.wav"))
+    background = list(separation_out_dir.glob("*(Instrumental)*.wav"))
+    background += list(separation_out_dir.glob("*(Background)*.wav"))
+    background += list(separation_out_dir.glob("*(No Vocals)*.wav"))
+    all_wavs = list(separation_out_dir.glob("*.wav"))
+    return vocals, background, all_wavs
+
+
+def _needs_background_fallback(v_files, b_files, all_wavs):
+    return not b_files and len(all_wavs) == 2 and bool(v_files)
+
+
+def _fallback_background_candidates(v_files, b_files, all_wavs):
+    if not _needs_background_fallback(v_files, b_files, all_wavs):
+        return b_files
+    return [f for f in all_wavs if f != v_files[0]]
+
+
+def _sorted_valid_audio(paths):
+    sorted_paths = sorted(paths, key=lambda path: path.stat().st_size, reverse=True)
+    return [path for path in sorted_paths if is_valid_audio(path)]
+
+
+def _select_valid_stem(v_files, b_files):
+    v_valid = _sorted_valid_audio(v_files)
+    b_valid = _sorted_valid_audio(b_files)
+    if v_valid and b_valid:
+        return v_valid[0], b_valid[0], v_valid, b_valid
+    return None, None, v_valid, b_valid
+
+
+def _normalize_background_name(separation_out_dir, vocals, background):
+    if "(Background)" in background.name:
+        return background
+
+    new_name = vocals.name.replace("(Vocals)", "(Background)")
+    new_path = separation_out_dir / new_name
+    if new_path.exists():
+        return background
+
+    try:
+        background.rename(new_path)
+        return new_path
+    except OSError:  # pragma: no cover
+        return background
+
+
+def _log_separation_failure(separation_out_dir, v_valid, b_valid):
+    log_msg("    [Debug] Separation output mismatch.", level="DEBUG")
+    log_msg(f"    [Debug] Found Vocals: {[f.name for f in v_valid]}", level="DEBUG")
+    log_msg(f"    [Debug] Found Background: {[f.name for f in b_valid]}", level="DEBUG")
+    all_any = list(separation_out_dir.glob("*"))
+    log_msg(f"    [Debug] All files in dir: {[f.name for f in all_any]}", level="DEBUG")
+
+
 def _verify_separation_output(separation_out_dir, original_wav):
     """Verifies that separation produced both stems with extreme robustness."""
-    # Pattern 1: Explicit tags
-    v_files = list(separation_out_dir.glob("*(Vocals)*.wav"))
-    b_files = list(separation_out_dir.glob("*(Instrumental)*.wav"))
-    b_files += list(separation_out_dir.glob("*(Background)*.wav"))
-    b_files += list(separation_out_dir.glob("*(No Vocals)*.wav"))
+    del original_wav
+    v_files, b_files, all_wavs = _collect_stem_candidates(separation_out_dir)
+    b_files = _fallback_background_candidates(v_files, b_files, all_wavs)
+    vocals, background, v_valid, b_valid = _select_valid_stem(v_files, b_files)
 
-    # Pattern 2: Fallback - if we have exactly 2 wav files and only one is Vocals
-    all_wavs = list(separation_out_dir.glob("*.wav"))
-    if not b_files and len(all_wavs) == 2 and v_files:
-        other = [f for f in all_wavs if f != v_files[0]]
-        if other:
-            b_files = other
+    if vocals and background:
+        return vocals, _normalize_background_name(separation_out_dir, vocals, background)
 
-    # Sort by size/time to pick best candidates
-    v_files.sort(key=lambda x: x.stat().st_size, reverse=True)
-    b_files.sort(key=lambda x: x.stat().st_size, reverse=True)
-
-    v_valid = [f for f in v_files if is_valid_audio(f)]
-    b_valid = [f for f in b_files if is_valid_audio(f)]
-
-    if v_valid and b_valid:
-        vocals = v_valid[0]
-        background = b_valid[0]
-
-        # Ensure consistency: Rename background to use (Background) tag
-        if "(Background)" not in background.name:
-            # Try to build a clean name based on vocals or original
-            new_name = vocals.name.replace("(Vocals)", "(Background)")
-            new_path = separation_out_dir / new_name
-            if not new_path.exists():
-                try:
-                    background.rename(new_path)
-                    background = new_path
-                except OSError:  # pragma: no cover
-                    pass
-        return vocals, background
-
-    # Detailed logging on failure
-    if not v_valid or not b_valid:
-        log_msg("    [Debug] Separation output mismatch.", level="DEBUG")
-        log_msg(f"    [Debug] Found Vocals: {[f.name for f in v_valid]}", level="DEBUG")
-        log_msg(f"    [Debug] Found Background: {[f.name for f in b_valid]}", level="DEBUG")
-        all_any = list(separation_out_dir.glob("*"))
-        log_msg(f"    [Debug] All files in dir: {[f.name for f in all_any]}", level="DEBUG")
-
+    _log_separation_failure(separation_out_dir, v_valid, b_valid)
     return None, None
+
+
+def _build_separator(output_dir):
+    Separator = _get_audio_separator_class()
+    model_dir = Path("models").resolve()
+    model_dir.mkdir(exist_ok=True)
+    return Separator(
+        output_dir=str(output_dir),
+        model_file_dir=str(model_dir),
+        output_format="wav",
+        use_soundfile=True,
+        normalization_threshold=0.9,
+        vr_params={"batch_size": GPU_BATCH_SIZE, "window_size": 320},
+        mdxc_params={"batch_size": GPU_BATCH_SIZE},
+        mdx_params={"batch_size": GPU_BATCH_SIZE},
+    )
+
+
+def _resolve_separation_result(separation_out_dir, original_wav, output_files):
+    vocals_wav, background_wav = _verify_separation_output(separation_out_dir, original_wav)
+    if vocals_wav and background_wav:
+        return vocals_wav, background_wav
+
+    if hasattr(output_files, "__len__") and len(output_files) >= 2:
+        log_msg(f"    [Debug] Separator returned: {output_files}", level="DEBUG")
+    raise Exception("Separation completed but output stems were not identified.")
 
 
 def _separate_stems_step(original_wav, separation_out_dir, total_duration=None):
@@ -184,23 +230,7 @@ def _separate_stems_step(original_wav, separation_out_dir, total_duration=None):
     log_msg("  [Step 1/5] Separating Stems (BS-Roformer - AI Engine)...")
 
     try:
-        Separator = _get_audio_separator_class()
-
-        # 2. Configure Separator with explicit GPU/CUDA settings
-        # This matches the verified logic in Auto-Subtitle-Generator but with explicit device choice
-        model_dir = Path("models").resolve()
-        model_dir.mkdir(exist_ok=True)
-
-        separator = Separator(
-            output_dir=str(separation_out_dir),
-            model_file_dir=str(model_dir),
-            output_format="wav",
-            normalization_threshold=0.9,
-            use_soundfile=True,
-            vr_params={"batch_size": GPU_BATCH_SIZE, "window_size": 320},
-            mdxc_params={"batch_size": GPU_BATCH_SIZE},
-            mdx_params={"batch_size": GPU_BATCH_SIZE},
-        )
+        separator = _build_separator(separation_out_dir)
 
         log_msg(f"    [AI] Loading Model: {VOCALS_MODEL}")
         separator.load_model(model_filename=VOCALS_MODEL)
@@ -214,40 +244,54 @@ def _separate_stems_step(original_wav, separation_out_dir, total_duration=None):
         if output_files is None:
             raise Exception("Separation completed but output stems were not identified.")
 
-        # 3. Verify Output
-        vocals_wav, background_wav = _verify_separation_output(separation_out_dir, original_wav)
-
-        if not vocals_wav or not background_wav:
-            # Check if output_files has them
-            if hasattr(output_files, "__len__") and len(output_files) >= 2:
-                log_msg(f"    [Debug] Separator returned: {output_files}", level="DEBUG")
-            raise Exception("Separation completed but output stems were not identified.")
-
-        return vocals_wav, background_wav
+        return _resolve_separation_result(separation_out_dir, original_wav, output_files)
 
     except Exception as e:  # pragma: no cover
         log_msg(f"    [Error] AI Separation failed: {e}", is_error=True)
         raise e
 
 
-def _run_enhance_retry(cmd_enhance, total_duration):
+def _clear_cuda_retry_state():
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    import gc
+
+    gc.collect()
+
+
+def _run_enhance_retry(cmd_enhance, total_duration, env=None):
     """Retries the enhancement command."""
     max_retries = 2
     for attempt in range(max_retries):
         try:
-            run_command_with_progress(cmd_enhance, description="Enhancing Vocals", total_duration=total_duration)
+            run_command_with_progress(cmd_enhance, env=env, description="Enhancing Vocals", total_duration=total_duration)
             return
         except subprocess.CalledProcessError as e:
             if attempt < max_retries - 1:
                 log_msg(f"    [Warning] Enhancement failed (Attempt {attempt + 1}). Retrying...", is_error=True)
-                if torch is not None and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                import gc
-
-                gc.collect()
+                _clear_cuda_retry_state()
                 time.sleep(2)
             else:  # pragma: no cover
                 raise e
+
+
+def _prepare_clean_directory(path):
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _copy_result_to_final_dir(result, output_dir):
+    final_output = output_dir / result.name
+    shutil.copy(result, final_output)
+    return final_output
+
+
+def _cleanup_directory(path):
+    try:
+        shutil.rmtree(path)
+    except Exception:
+        pass
 
 
 def _handle_enhance_output(enhanced_vocals_dir, vocals_wav):
@@ -274,19 +318,13 @@ def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_durati
 
     log_msg("  [Step 2/5] Enhancing Vocals (Resemble-Enhance)...")
 
-    # Resemble-Enhance expects an input DIRECTORY, not a file.
     enhance_input_dir = work_dir / "enhance_input"
-    if enhance_input_dir.exists():
-        shutil.rmtree(enhance_input_dir)
-    enhance_input_dir.mkdir()
+    _prepare_clean_directory(enhance_input_dir)
 
     shutil.copy(vocals_wav, enhance_input_dir / vocals_wav.name)
 
-    # Atomic directory pattern
     enhanced_vocals_tmp_dir = work_dir / "enhanced_vocals_tmp"
-    if enhanced_vocals_tmp_dir.exists():
-        shutil.rmtree(enhanced_vocals_tmp_dir)
-    enhanced_vocals_tmp_dir.mkdir()
+    _prepare_clean_directory(enhanced_vocals_tmp_dir)
 
     cmd_enhance = [
         "resemble-enhance",
@@ -300,49 +338,45 @@ def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_durati
         "--tau",
         str(ENHANCE_TAU),
         "--device",
-        CUDA_DEVICE,
+        CUDA_VISIBLE_DEVICE,
     ]
 
-    _run_enhance_retry(cmd_enhance, total_duration)
+    _run_enhance_retry(cmd_enhance, total_duration, env=CUDA_ENV)
 
-    try:
-        shutil.rmtree(enhance_input_dir)
-    except Exception:  # pragma: no cover
-        pass
+    _cleanup_directory(enhance_input_dir)
 
-    # Verify and Move
     result = _handle_enhance_output(enhanced_vocals_tmp_dir, vocals_wav)
+    final_output = _copy_result_to_final_dir(result, enhanced_vocals_dir)
 
-    # If we got a result (either enhanced or fallback), move it to final dir
-    final_output = enhanced_vocals_dir / result.name
-    shutil.copy(result, final_output)
-
-    # Cleanup tmp dir
-    try:
-        shutil.rmtree(enhanced_vocals_tmp_dir)
-    except Exception:
-        pass
+    _cleanup_directory(enhanced_vocals_tmp_dir)
 
     return final_output
+
+
+def _has_denoised_candidates(candidates_denoised):
+    return bool(candidates_denoised)
+
+
+def _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure):
+    if fallback_on_failure:
+        log_msg(warning_message, is_error=True)
+        return input_wav
+    raise RuntimeError(warning_message.strip())
+
+
+def _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure):
+    clean_candidates = [f for f in candidates_denoised if "(No Noise)" in f.name]
+    if clean_candidates:
+        return clean_candidates[0]
+    if _has_denoised_candidates(candidates_denoised):
+        return candidates_denoised[0]
+    return _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure)
 
 
 def _run_denoise_separator(input_wav, denoised_output_dir, selected_label, warning_message, error_message, fallback_on_failure=True):
     """Runs UVR-DeNoise-Lite through audio-separator and selects best output."""
     try:
-        Separator = _get_audio_separator_class()
-
-        model_dir = Path("models").resolve()
-        model_dir.mkdir(exist_ok=True)
-
-        separator = Separator(
-            output_dir=str(denoised_output_dir),
-            model_file_dir=str(model_dir),
-            output_format="wav",
-            use_soundfile=True,
-            vr_params={"batch_size": GPU_BATCH_SIZE, "window_size": 320},
-            mdxc_params={"batch_size": GPU_BATCH_SIZE},
-            mdx_params={"batch_size": GPU_BATCH_SIZE},
-        )
+        separator = _build_separator(denoised_output_dir)
 
         log_msg(f"    [AI] Loading Model: {DENOISE_MODEL}")
         separator.load_model(model_filename=DENOISE_MODEL)
@@ -351,19 +385,7 @@ def _run_denoise_separator(input_wav, denoised_output_dir, selected_label, warni
         separator.separate(str(input_wav))
 
         candidates_denoised = sorted(denoised_output_dir.glob("*.wav"), key=lambda path: path.name.lower())
-        clean_candidates = [f for f in candidates_denoised if "(No Noise)" in f.name]
-
-        if clean_candidates:
-            result = clean_candidates[0]
-        elif candidates_denoised:
-            result = candidates_denoised[0]
-        else:
-            log_msg(warning_message, is_error=True)
-            if fallback_on_failure:
-                result = input_wav
-            else:
-                raise RuntimeError(warning_message.strip())
-
+        result = _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure)
         log_msg(f"    {selected_label}: {result.name}")
         return result
 
@@ -427,6 +449,52 @@ def _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=No
     )
 
 
+def _ensure_audio_inputs_exist(*paths):
+    for label, path in paths:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing {label}: {path}")
+
+
+def _promote_valid_output(tmp_output, final_output_video, success_message):
+    if not is_valid_video(tmp_output):
+        if tmp_output.exists():
+            tmp_output.unlink()
+        raise Exception(success_message)
+
+    if final_output_video.exists():
+        final_output_video.unlink()
+    tmp_output.rename(final_output_video)
+
+
+def _build_mix_command(video_path, enhanced_vocals_wav, denoised_background_wav, tmp_output, threads):
+    return [
+        FFMPEG_BIN,
+        "-stats",
+        "-hide_banner",
+        "-threads",
+        str(threads),
+        "-i",
+        str(video_path),
+        "-i",
+        str(enhanced_vocals_wav),
+        "-i",
+        str(denoised_background_wav),
+        "-map",
+        "0:v",
+        "-filter_complex",
+        f"[1:a]volume={VOCAL_MIX_VOL}[v];[2:a]volume={BACKGROUND_MIX_VOL}[m];[v][m]amix=inputs=2:duration=longest:normalize=0[out]",
+        "-map",
+        "[out]",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "pcm_f32le",
+        "-shortest",
+        "-y",
+        str(tmp_output),
+    ]
+
+
 def _final_mix_step(video_path, enhanced_vocals_wav, denoised_background_wav, final_output_video, total_duration=None):
     """Step 5: Mix with FFmpeg."""
     if is_valid_video(final_output_video):
@@ -435,59 +503,50 @@ def _final_mix_step(video_path, enhanced_vocals_wav, denoised_background_wav, fi
 
     log_msg("  [Step 5/5] Final Mix (32-bit Float)...")
 
-    # Use provided duration or calculate from enhanced vocals
     duration = total_duration or get_audio_duration_sec(enhanced_vocals_wav)
+    _ensure_audio_inputs_exist(("Vocals", enhanced_vocals_wav), ("Background", denoised_background_wav))
 
-    # Verify inputs exist to avoid cryptic FFmpeg errors
-    if not enhanced_vocals_wav.exists():
-        raise FileNotFoundError(f"Missing Vocals: {enhanced_vocals_wav}")
-    if not denoised_background_wav.exists():
-        raise FileNotFoundError(f"Missing Background: {denoised_background_wav}")
-
-    # Atomic Final Write
-    # Fix: Use same suffix as final/input to support containers like MOV (ProRes)
-    # forcing .mp4 causes codec tag errors if copying unsupported streams
     tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
 
     def build_mix_cmd(threads):
-        return [
-            FFMPEG_BIN,
-            "-stats",
-            "-hide_banner",
-            "-threads",
-            str(threads),
-            "-i",
-            str(video_path),  # 0: Video source
-            "-i",
-            str(enhanced_vocals_wav),
-            "-i",
-            str(denoised_background_wav),
-            "-map",
-            "0:v",
-            "-filter_complex",
-            f"[1:a]volume={VOCAL_MIX_VOL}[v];[2:a]volume={BACKGROUND_MIX_VOL}[m];[v][m]amix=inputs=2:duration=longest:normalize=0[out]",
-            "-map",
-            "[out]",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "pcm_f32le",
-            "-shortest",
-            "-y",
-            str(tmp_output),
-        ]
+        return _build_mix_command(video_path, enhanced_vocals_wav, denoised_background_wav, tmp_output, threads)
 
     attempt_cpu_run_with_retry(build_mix_cmd, CPU_THREADS, description="Final Mixing", total_duration=duration)
+    _promote_valid_output(tmp_output, final_output_video, "Final Mix Failed: Output video invalid/empty.")
+    log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
 
-    if is_valid_video(tmp_output):
-        if final_output_video.exists():
-            final_output_video.unlink()
-        tmp_output.rename(final_output_video)
-        log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
-    else:  # pragma: no cover
-        if tmp_output.exists():
-            tmp_output.unlink()
-        raise Exception("Final Mix Failed: Output video invalid/empty.")
+
+def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_codec, threads):
+    return [
+        FFMPEG_BIN,
+        "-stats",
+        "-hide_banner",
+        "-threads",
+        str(threads),
+        "-i",
+        str(video_path),
+        "-i",
+        str(processed_audio_wav),
+        "-map",
+        "0",
+        "-map",
+        "1:a",
+        "-map",
+        "-0:a",
+        "-c:v",
+        "copy",
+        "-c:s",
+        "copy",
+        "-c:d",
+        "copy",
+        "-c:t",
+        "copy",
+        "-c:a",
+        audio_codec,
+        "-shortest",
+        "-y",
+        str(tmp_output),
+    ]
 
 
 def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_video, total_duration=None):
@@ -499,62 +558,92 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
     log_msg("  [Step 4/4] Final Remux (32-bit Float)...")
 
     duration = total_duration or get_audio_duration_sec(processed_audio_wav)
-
-    if not processed_audio_wav.exists():
-        raise FileNotFoundError(f"Missing Processed Audio: {processed_audio_wav}")
+    _ensure_audio_inputs_exist(("Processed Audio", processed_audio_wav))
 
     tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
     audio_codec = "aac" if final_output_video.suffix.lower() == ".mp4" else "pcm_f32le"
 
     def build_mux_cmd(threads):
-        return [
-            FFMPEG_BIN,
-            "-stats",
-            "-hide_banner",
-            "-threads",
-            str(threads),
-            "-i",
-            str(video_path),
-            "-i",
-            str(processed_audio_wav),
-            "-map",
-            "0",
-            "-map",
-            "1:a",
-            "-map",
-            "-0:a",
-            "-c:v",
-            "copy",
-            "-c:s",
-            "copy",
-            "-c:d",
-            "copy",
-            "-c:t",
-            "copy",
-            "-c:a",
-            audio_codec,
-            "-shortest",
-            "-y",
-            str(tmp_output),
-        ]
+        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_codec, threads)
 
     attempt_cpu_run_with_retry(build_mux_cmd, CPU_THREADS, description="Final Remux", total_duration=duration)
+    _promote_valid_output(tmp_output, final_output_video, "Final Remux Failed: Output video invalid/empty.")
+    log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
+    return True
 
-    if is_valid_video(tmp_output):
-        if final_output_video.exists():
-            final_output_video.unlink()
-        tmp_output.rename(final_output_video)
-        log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
-        return True
-    else:
-        if tmp_output.exists():
-            tmp_output.unlink()
-        raise Exception("Final Remux Failed: Output video invalid/empty.")
+
+def _log_video_duration(video_path):
+    video_dur = get_video_duration_sec(video_path)
+    if video_dur:
+        log_msg(f"  [Info] Duration: {format_time(video_dur)}")
+    return video_dur
+
+
+def _process_denoise_only_mode(work_dir, original_wav, video_path, final_output_video, video_dur):
+    denoised_audio_dir = work_dir / "denoised_full_audio"
+    denoised_audio_dir.mkdir(exist_ok=True)
+
+    denoised_full_audio_wav = _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=video_dur)
+
+    log_msg("  [Step 3/4] Smart Audio Sync (Full-Audio)...")
+    aligned_full_audio = work_dir / f"aligned_{denoised_full_audio_wav.name}"
+    _align_stems(original_wav, denoised_full_audio_wav, aligned_full_audio)
+
+    _final_mux_single_audio_step(video_path, aligned_full_audio, final_output_video, total_duration=video_dur)
+
+
+def _process_hybrid_mode(work_dir, original_wav, video_path, final_output_video, video_dur):
+    separation_out_dir = work_dir / "separation"
+    separation_out_dir.mkdir(exist_ok=True)
+
+    vocals_wav, background_wav = _separate_stems_step(original_wav, separation_out_dir, total_duration=video_dur)
+    enhanced_vocals_dir = work_dir / "enhanced_vocals"
+    enhanced_vocals_wav = _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_duration=video_dur)
+
+    denoised_background_dir = work_dir / "denoised_background"
+    denoised_background_wav = _denoise_background_step(background_wav, denoised_background_dir, total_duration=video_dur)
+
+    log_msg("  [Step 4/5] Smart Audio Sync (Sequential for clean output)...")
+    log_msg("    [Info] Syncing Stems (Sequential for clean output)...")
+
+    aligned_vocals = work_dir / f"aligned_{enhanced_vocals_wav.name}"
+    _align_stems(original_wav, enhanced_vocals_wav, aligned_vocals)
+
+    aligned_background = work_dir / f"aligned_{denoised_background_wav.name}"
+    _align_stems(original_wav, denoised_background_wav, aligned_background)
+
+    _final_mix_step(video_path, aligned_vocals, aligned_background, final_output_video, total_duration=video_dur)
+
+
+def _cleanup_work_dir(work_dir, final_output_video):
+    if not work_dir.exists() or KEEP_INPUT_FILES:
+        return
+    if is_valid_video(final_output_video):
+        try:
+            shutil.rmtree(work_dir, ignore_errors=True)
+        except Exception:
+            pass
+        return
+    log_msg(f"  [System] Preservation: Keeping {work_dir.name} for inspection on failure.", level="DEBUG")
+
+
+def _resolve_output_dir(video_path, target_output_dir):
+    if target_output_dir:
+        return target_output_dir
+    return video_path.parent
+
+
+def _run_processing_mode(work_dir, original_wav, video_path, final_output_video, video_dur):
+    if PROCESS_MODE == "denoise_only":
+        _process_denoise_only_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
+        return
+    _process_hybrid_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
 
 
 def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
     """Main Orchestrator."""
     log_msg(f"\n[System] Processing Task: {video_path.name}")
+    del gpu_name
 
     if not video_path.exists():
         log_msg(f"  [Error] File not found: {video_path}", is_error=True)
@@ -563,10 +652,7 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
     # Create safe working directory pattern
     # Use a hidden temp dir in the same location to ensure atomic moves work
     work_dir = video_path.parent / f".temp_work_{video_path.stem}"
-    if target_output_dir:
-        output_dir = target_output_dir
-    else:
-        output_dir = video_path.parent
+    output_dir = _resolve_output_dir(video_path, target_output_dir)
 
     output_suffix = _get_output_suffix(PROCESS_MODE)
     final_output_video = output_dir / f"{video_path.stem}{output_suffix}{video_path.suffix}"
@@ -579,52 +665,9 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
     try:
         work_dir.mkdir(exist_ok=True)
         original_wav = work_dir / "original.wav"
-
-        # Step 0: Video Duration
-        video_dur = get_video_duration_sec(video_path)
-        if video_dur:
-            log_msg(f"  [Info] Duration: {format_time(video_dur)}")
-
-        # Step 1: Extract Audio
+        video_dur = _log_video_duration(video_path)
         _extract_audio_step(video_path, original_wav, total_duration=video_dur)
-
-        if PROCESS_MODE == "denoise_only":
-            denoised_audio_dir = work_dir / "denoised_full_audio"
-            denoised_audio_dir.mkdir(exist_ok=True)
-
-            denoised_full_audio_wav = _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=video_dur)
-
-            log_msg("  [Step 3/4] Smart Audio Sync (Full-Audio)...")
-            aligned_full_audio = work_dir / f"aligned_{denoised_full_audio_wav.name}"
-            _align_stems(original_wav, denoised_full_audio_wav, aligned_full_audio)
-
-            _final_mux_single_audio_step(video_path, aligned_full_audio, final_output_video, total_duration=video_dur)
-        else:
-            separation_out_dir = work_dir / "separation"
-            separation_out_dir.mkdir(exist_ok=True)
-
-            vocals_wav, background_wav = _separate_stems_step(original_wav, separation_out_dir, total_duration=video_dur)
-
-            # Step 3: Enhance Vocals
-            enhanced_vocals_dir = work_dir / "enhanced_vocals"
-            enhanced_vocals_wav = _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_duration=video_dur)
-
-            # Step 4: Denoise Background
-            denoised_background_dir = work_dir / "denoised_background"
-            denoised_background_wav = _denoise_background_step(background_wav, denoised_background_dir, total_duration=video_dur)
-
-            # Step 5: Sync
-            log_msg("  [Step 4/5] Smart Audio Sync (Sequential for clean output)...")
-            log_msg("    [Info] Syncing Stems (Sequential for clean output)...")
-
-            aligned_vocals = work_dir / f"aligned_{enhanced_vocals_wav.name}"
-            _align_stems(original_wav, enhanced_vocals_wav, aligned_vocals)
-
-            aligned_background = work_dir / f"aligned_{denoised_background_wav.name}"
-            _align_stems(original_wav, denoised_background_wav, aligned_background)
-
-            # Step 6: Final Mix
-            _final_mix_step(video_path, aligned_vocals, aligned_background, final_output_video, total_duration=video_dur)
+        _run_processing_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
 
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True
@@ -634,15 +677,7 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
         return False
 
     finally:
-        # Cleanup Temp Directory
-        if work_dir.exists() and not KEEP_INPUT_FILES:
-            if is_valid_video(final_output_video):
-                try:
-                    shutil.rmtree(work_dir, ignore_errors=True)
-                except Exception:
-                    pass
-            else:
-                log_msg(f"  [System] Preservation: Keeping {work_dir.name} for inspection on failure.", level="DEBUG")
+        _cleanup_work_dir(work_dir, final_output_video)
 
 
 # Need format_time for `process_hybrid_audio` duration logging

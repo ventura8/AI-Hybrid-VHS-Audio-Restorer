@@ -26,12 +26,19 @@
   **>= 90% per-file coverage** for every measured file. The per-file
   gate is enforced via `tests/tooling/quality_gate.py` over
   `coverage.json` in both local and CI validation.
+- **Radon Coverage**: Run Radon complexity, maintainability, raw, and
+  Halstead checks against the production code and the test suite
+  (`tests/conftest.py`, `tests/unit/`, and `tests/integration/`) in both
+  local and CI validation.
 - **Badge Mandatory**: Always ensure the `assets/coverage.svg` badge is
   updated after making code changes. This is handled automatically by
   local test runs, but must be verified before pushing.
-- **Code Quality**: Enforce `ruff`, `flake8`, and `pylint` with max
-  line length 140. Use `mypy` for type checking. Complexity is
-  monitored using `radon`.
+- **Code Quality**: Enforce `black`, `isort`, `ruff`, `flake8`, and `pylint`
+  with max line length 140. Use `mypy` for type checking.
+- **Security Quality**: Enforce `bandit -ll -ii` and `pip-audit` in
+  local and CI validation.
+- **Complexity Quality**: Enforce Radon CC/MI pass gates via
+  `tests/tooling/radon_cc_gate.py` and `tests/tooling/radon_mi_gate.py`.
 - **PowerShell Quality**: Lint project PowerShell scripts with
   `PSScriptAnalyzer`.
 - **Pipeline Command**: Run `./run_pipeline_locally.ps1` for local

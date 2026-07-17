@@ -1,5 +1,6 @@
 import importlib
 import os
+import subprocess
 import sys
 import types
 from unittest.mock import MagicMock, patch
@@ -117,9 +118,9 @@ def test_optimal_settings_all_profiles():
             mock_props.total_memory = vram_gb * 1024**3
             with patch.object(modules.hardware.torch.cuda, "get_device_properties", return_value=mock_props):
                 settings = modules.hardware.get_optimal_settings()
-                assert expected_profile in settings["profile_name"], (
-                    f"Expected {expected_profile} for {vram_gb}GB, got {settings['profile_name']}"
-                )
+                assert (
+                    expected_profile in settings["profile_name"]
+                ), f"Expected {expected_profile} for {vram_gb}GB, got {settings['profile_name']}"
 
 
 def test_optimal_settings_no_cuda():
@@ -239,21 +240,50 @@ def test_detect_pytorch_cuda_no_cuda():
     """Test _detect_pytorch_cuda early return when CUDA not available."""
     mock_cuda = MagicMock()
     mock_cuda.is_available.return_value = False
-    settings = {"device_index": -1}  # default test val
+    settings = {"device_index": -1, "is_nvidia": True, "cuda_device": "cuda:3"}  # default test val
     with patch.object(modules.hardware, "torch", MagicMock(cuda=mock_cuda)):
         modules.hardware._detect_pytorch_cuda(settings)
     assert settings["device_index"] == 0
+    assert settings["is_nvidia"] is False
+    assert settings["cuda_device"] is None
+    assert settings["cpu_only_fallback"] is True
 
 
-def test_apply_env_vars():
-    """Test environment variable application."""
+def test_apply_env_vars_sets_cuda_environment():
+    """CUDA-enabled settings should populate the expected child-process environment."""
     settings = {"is_nvidia": True, "device_index": 2}
     with patch.dict(os.environ, {}, clear=True):
         modules.hardware._apply_env_vars(settings)
         assert os.environ["CUDA_VISIBLE_DEVICES"] == "2"
         assert os.environ["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
         assert os.environ["ORT_TENSORRT_FP16_ENABLE"] == "1"
+
+
+def test_apply_env_vars_keeps_current_process_device_label():
+    """Direct calls should still expose the canonical current-process CUDA label."""
+    settings = {"is_nvidia": True, "device_index": 2}
+    with patch.dict(os.environ, {}, clear=True):
+        modules.hardware._apply_env_vars(settings)
         assert settings["cuda_device"] == "cuda:0"
+
+
+def test_apply_env_vars_cpu_only_fallback_does_not_set_cuda_env():
+    """CPU-only fallback must not populate CUDA-related environment variables."""
+    settings = {"is_nvidia": True, "device_index": 2, "cuda_device": "cuda:2", "cpu_only_fallback": True}
+    with patch.dict(os.environ, {}, clear=True):
+        modules.hardware._apply_env_vars(settings)
+        assert "CUDA_VISIBLE_DEVICES" not in os.environ
+        assert "CUDA_DEVICE_ORDER" not in os.environ
+        assert "ORT_TENSORRT_FP16_ENABLE" not in os.environ
+
+
+def test_apply_env_vars_cpu_only_fallback_resets_cuda_state():
+    """CPU-only fallback should reset the in-memory CUDA state as well."""
+    settings = {"is_nvidia": True, "device_index": 2, "cuda_device": "cuda:2", "cpu_only_fallback": True}
+    with patch.dict(os.environ, {}, clear=True):
+        modules.hardware._apply_env_vars(settings)
+    assert settings["is_nvidia"] is False
+    assert settings["cuda_device"] is None
 
 
 def test_get_cpu_name_hard_exception():
@@ -290,6 +320,25 @@ def test_get_gpu_name_non_nvidia_smi_output_returns_generic():
         patch("modules.hardware.subprocess.check_output", return_value=b"GPU 0: Intel Arc"),
     ):
         assert modules.hardware.get_gpu_name() == "Generic / Not Detected"
+
+
+@patch("modules.hardware.subprocess.check_output")
+def test_get_nvidia_smi_gpu_name_uses_safe_subprocess_call(mock_out):
+    """nvidia-smi lookup should avoid shell=True and use a finite timeout."""
+    mock_out.return_value = b"GPU 0: NVIDIA RTX 5000 (UUID: abc-123)"
+
+    result = modules.hardware._get_nvidia_smi_gpu_name()
+
+    assert result == "NVIDIA RTX 5000"
+    mock_out.assert_called_once_with(["nvidia-smi", "-L"], stderr=subprocess.DEVNULL, timeout=5)
+
+
+@patch("modules.hardware.subprocess.check_output")
+def test_get_nvidia_smi_gpu_name_timeout_returns_none(mock_out):
+    """Timeouts from nvidia-smi should be handled as no GPU name."""
+    mock_out.side_effect = subprocess.TimeoutExpired(cmd=["nvidia-smi", "-L"], timeout=5)
+
+    assert modules.hardware._get_nvidia_smi_gpu_name() is None
 
 
 def test_module_import_without_optional_deps():

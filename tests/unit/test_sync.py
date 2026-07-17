@@ -14,20 +14,32 @@ import modules.sync
 
 @patch("modules.sync.sf.read")
 @patch("modules.sync._save_audio_atomic", return_value=True)
-def test_align_stems_branches(mock_save, mr):
-    """Test audio alignment branches."""
+def test_align_stems_shift_branch_no_lag(mock_save, mr):
+    """Shift sync should preserve audio when no lag is detected."""
     sr = 44100
     base_audio = np.arange(200, dtype=np.float32).reshape(100, 2)
     shifted_audio = np.arange(200, dtype=np.float32).reshape(100, 2) + 1000
     mr.side_effect = [(base_audio, sr), (shifted_audio, sr), (shifted_audio, sr)] * 3
 
-    # Negligible lag
     with patch("modules.sync._calculate_cross_correlation_lag", return_value=0):
         with patch("modules.sync.SYNC_METHOD", "shift"):
             modules.sync._align_stems(Path("o.wav"), Path("p.wav"), Path("out.wav"))
             assert mock_save.called
+            no_lag_written = mock_save.call_args_list[-1][0][1]
+            assert no_lag_written.shape == shifted_audio.shape
+            assert no_lag_written[0, 0] == shifted_audio[0, 0]
+            assert no_lag_written[-1, -1] == shifted_audio[-1, -1]
 
-    # Positive lag
+
+@patch("modules.sync.sf.read")
+@patch("modules.sync._save_audio_atomic", return_value=True)
+def test_align_stems_shift_branch_positive_lag(mock_save, mr):
+    """Shift sync should roll audio forward when a positive lag is detected."""
+    sr = 44100
+    base_audio = np.arange(200, dtype=np.float32).reshape(100, 2)
+    shifted_audio = np.arange(200, dtype=np.float32).reshape(100, 2) + 1000
+    mr.side_effect = [(base_audio, sr), (shifted_audio, sr), (shifted_audio, sr)] * 3
+
     with patch("modules.sync._calculate_cross_correlation_lag", return_value=50):
         with patch("modules.sync.SYNC_METHOD", "shift"):
             modules.sync._align_stems(Path("o.wav"), Path("p.wav"), Path("out.wav"))
@@ -35,7 +47,16 @@ def test_align_stems_branches(mock_save, mr):
             assert np.array_equal(positive_written[:-50], shifted_audio[50:])
             assert np.all(positive_written[-50:] == 0)
 
-    # Negative lag
+
+@patch("modules.sync.sf.read")
+@patch("modules.sync._save_audio_atomic", return_value=True)
+def test_align_stems_shift_branch_negative_lag(mock_save, mr):
+    """Shift sync should roll audio backward when a negative lag is detected."""
+    sr = 44100
+    base_audio = np.arange(200, dtype=np.float32).reshape(100, 2)
+    shifted_audio = np.arange(200, dtype=np.float32).reshape(100, 2) + 1000
+    mr.side_effect = [(base_audio, sr), (shifted_audio, sr), (shifted_audio, sr)] * 3
+
     with patch("modules.sync._calculate_cross_correlation_lag", return_value=-50):
         with patch("modules.sync.SYNC_METHOD", "shift"):
             modules.sync._align_stems(Path("o.wav"), Path("p.wav"), Path("out.wav"))
@@ -345,6 +366,35 @@ def test_execute_parallel_dtw_raises_on_worker_failure():
             modules.sync._execute_parallel_dtw(chunks)
 
 
+def test_collect_dtw_results_cancels_outstanding_futures_on_failure():
+    """Failed chunk collection should cancel non-completed futures and re-raise."""
+    chunks = ["c0", "c1", "c2"]
+    failed_future = MagicMock()
+    outstanding_future_1 = MagicMock()
+    outstanding_future_2 = MagicMock()
+
+    failed_future.result.side_effect = RuntimeError("boom")
+    failed_future.done.return_value = True
+    outstanding_future_1.done.return_value = False
+    outstanding_future_2.done.return_value = False
+
+    executor = MagicMock()
+    executor.submit.side_effect = [failed_future, outstanding_future_1, outstanding_future_2]
+
+    with (
+        patch("modules.sync.concurrent.futures.as_completed", return_value=[failed_future]),
+        patch("modules.sync.log_msg") as mock_log,
+        patch("modules.sync._update_dtw_progress") as mock_progress,
+    ):
+        with pytest.raises(RuntimeError, match="boom"):
+            modules.sync._collect_dtw_results(executor, MagicMock(), chunks, len(chunks), 0.0)
+
+    outstanding_future_1.cancel.assert_called_once()
+    outstanding_future_2.cancel.assert_called_once()
+    mock_log.assert_called_once_with("    Chunk 0 failed: boom", is_error=True)
+    mock_progress.assert_not_called()
+
+
 def test_warp_aligned_audio_handles_savgol_error_and_gpu_success(tmp_path):
     """Warp should continue when savgol fails and use GPU output when available."""
     processed = tmp_path / "proc.wav"
@@ -370,15 +420,17 @@ def test_warp_aligned_audio_handles_savgol_error_and_gpu_success(tmp_path):
     assert mock_save.called
 
 
-def test_align_stems_shift_swallow_fallback_write_error(tmp_path):
-    """Fallback write failure should be swallowed in shift align exception block."""
+def test_align_stems_shift_propagates_fallback_write_error(tmp_path):
+    """Fallback write failure should propagate so an invalid output path is not returned."""
     wav = tmp_path / "in.wav"
     out = tmp_path / "out.wav"
 
-    with patch("modules.sync.sf.read", side_effect=[Exception("x"), Exception("y")]):
-        result = modules.sync._align_stems_shift(wav, wav, out)
-
-    assert result == out
+    with (
+        patch("modules.sync.sf.read", side_effect=[Exception("x"), (np.zeros((2, 1)), 44100)]),
+        patch("modules.sync._save_audio_atomic", side_effect=Exception("write failed")),
+    ):
+        with pytest.raises(Exception, match="write failed"):
+            modules.sync._align_stems_shift(wav, wav, out)
 
 
 def test_align_stems_dtw_missing_deps_logs_import_error_context(tmp_path):

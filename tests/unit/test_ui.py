@@ -148,3 +148,24 @@ def test_run_init_sequence(mock_gpu, mock_cpu, mock_sleep, mock_bar):
     assert cpu == "TestCPU"
     assert gpu == "TestGPU"
     assert mock_bar.call_count >= 5
+
+
+def test_get_torch_backend_prefers_cuda_capability_over_gpu_name():
+    """CUDA availability should still report a CUDA backend even for non-NVIDIA names."""
+    with patch("modules.ui._has_cuda_backend", return_value=True):
+        assert modules.ui._get_torch_backend("Unknown GPU") == "CUDA (Accelerated)"
+
+
+def test_get_torch_backend_uses_nvidia_label_for_nvidia_names():
+    """NVIDIA-like GPU names should keep the NVIDIA label when CUDA is available."""
+    with patch("modules.ui._has_cuda_backend", return_value=True):
+        assert modules.ui._get_torch_backend("NVIDIA RTX 4090") == "CUDA (NVIDIA Accelerated)"
+
+
+def test_get_torch_backend_xpu_and_cpu_fallbacks():
+    """Backend selection should preserve XPU and CPU fallback behavior."""
+    with patch("modules.ui._has_cuda_backend", return_value=False), patch("modules.ui._has_xpu_backend", return_value=True):
+        assert modules.ui._get_torch_backend("Any") == "XPU (Intel Accelerated)"
+
+    with patch("modules.ui._has_cuda_backend", return_value=False), patch("modules.ui._has_xpu_backend", return_value=False):
+        assert modules.ui._get_torch_backend("Any") == "CPU (Slow)"

@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -63,6 +64,18 @@ def test_is_valid_audio_returns_false_when_soundfile_missing(tmp_path, monkeypat
     assert modules.utils.is_valid_audio(p) is False
 
 
+def test_is_valid_audio_filesystem_oserror_fallback(tmp_path):
+    """is_valid_audio should return False when file metadata checks raise OSError."""
+    p = tmp_path / "oserror.wav"
+    p.write_text("x" * 2000)
+
+    with patch.object(Path, "exists", side_effect=OSError("exists failed")):
+        assert modules.utils.is_valid_audio(p) is False
+
+    with patch.object(Path, "exists", return_value=True), patch.object(Path, "stat", side_effect=OSError("stat failed")):
+        assert modules.utils.is_valid_audio(p) is False
+
+
 def test_is_valid_video_small(tmp_path):
     """Test is_valid_video rejects files smaller than 1MB."""
     p = tmp_path / "small.mp4"
@@ -97,75 +110,89 @@ def test_deps_fail(mock_run):
     # Use FileNotFoundError since that's what check_dependencies catches
     mock_run.side_effect = FileNotFoundError("ffmpeg not found")
     assert modules.utils.check_dependencies() is False
+    assert mock_run.call_count == 4
+    for call in mock_run.call_args_list:
+        assert call.kwargs["timeout"] == 10
 
 
-def test_draw_progress_bar(capsys):
-    """Test progress bar rendering."""
-    # Reset global_state to ensure bar is drawn
+@patch("modules.utils.subprocess.run")
+def test_deps_fail_timeout(mock_run):
+    """Test dependency check failure when probe commands time out."""
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["ffmpeg", "-version"], timeout=10)
+    assert modules.utils.check_dependencies() is False
+    assert mock_run.call_count == 4
+    for call in mock_run.call_args_list:
+        assert call.kwargs["timeout"] == 10
+
+
+def test_draw_progress_bar_renders_progress(capsys):
+    """Progress bar rendering should include the percentage and label."""
     modules.utils._last_bar_time = 0
     modules.utils.draw_progress_bar(50, "Testing...")
     captured = capsys.readouterr()
     assert "50.0%" in captured.out
     assert "Testing..." in captured.out
 
-    modules.utils.draw_progress_bar(0, "Start")
-    captured = capsys.readouterr()
-    assert "0.0%" in captured.out
 
-    modules.utils.draw_progress_bar(100, "Done")
-    captured = capsys.readouterr()
-    assert "100.0%" in captured.out
-
-    modules.utils.draw_progress_bar(150, "Over")
-    captured = capsys.readouterr()
-    assert "100.0%" in captured.out
-
+def test_draw_progress_bar_clamps_low_values(capsys):
+    """Progress bar rendering should clamp negative values to zero."""
+    modules.utils._last_bar_time = 0
     modules.utils.draw_progress_bar(-10, "Under")
     captured = capsys.readouterr()
     assert "0.0%" in captured.out
 
 
-def test_log_msg_variations(tmp_path, capsys):
-    """Test log message variations."""
-    # Temporarily change LOG_FILE
+def test_draw_progress_bar_clamps_high_values(capsys):
+    """Progress bar rendering should clamp values above 100 percent."""
+    modules.utils._last_bar_time = 0
+    modules.utils.draw_progress_bar(150, "Over")
+    captured = capsys.readouterr()
+    assert "100.0%" in captured.out
+
+
+def test_log_msg_writes_console_and_file(tmp_path, capsys):
+    """log_msg should print messages and persist them to the log file."""
     original_log = modules.utils.LOG_FILE
     modules.utils.LOG_FILE = tmp_path / "test_log.txt"
 
     try:
-        # Normal message
         modules.utils.log_msg("Test message", console=True)
         captured = capsys.readouterr()
         assert "Test message" in captured.out
 
-        # Error message
         modules.utils.log_msg("Error!", is_error=True)
         captured = capsys.readouterr()
         assert "Error!" in captured.out
 
-        # Debug message (should NOT print to console)
+        log_content = modules.utils.LOG_FILE.read_text()
+        assert "Test message" in log_content
+        assert "ERROR" in log_content
+    finally:
+        modules.utils.LOG_FILE = original_log
+
+
+def test_log_msg_suppresses_debug_and_silent_output(tmp_path, capsys):
+    """Debug and silent log messages should not reach the console."""
+    original_log = modules.utils.LOG_FILE
+    modules.utils.LOG_FILE = tmp_path / "test_log.txt"
+
+    try:
         modules.utils.log_msg("Debug info", level="DEBUG")
         captured = capsys.readouterr()
         assert "Debug info" not in captured.out
 
-        # Console=False
         modules.utils.log_msg("Silent", console=False)
         captured = capsys.readouterr()
         assert "Silent" not in captured.out
-
-        # Verify log file was written
-        log_content = modules.utils.LOG_FILE.read_text()
-        assert "Test message" in log_content
-        assert "ERROR" in log_content  # Error should be logged as ERROR
-
     finally:
         modules.utils.LOG_FILE = original_log
 
 
 def test_log_msg_file_error(tmp_path, capsys, monkeypatch):
     """Test log_msg handles file write errors gracefully."""
-    # Set LOG_FILE to an invalid path
+    # Set LOG_FILE to an existing directory so file write fails deterministically.
     original = modules.utils.LOG_FILE
-    modules.utils.LOG_FILE = Path("/nonexistent/path/log.txt")
+    modules.utils.LOG_FILE = tmp_path
 
     try:
         # Should not raise, just silently fail file write
@@ -441,6 +468,9 @@ def test_check_dependencies_success():
     """Test check_dependencies returns True when all found."""
     with patch("modules.utils.subprocess.run", return_value=MagicMock(returncode=0)):
         assert modules.utils.check_dependencies() is True
+        assert modules.utils.subprocess.run.call_count == 4
+        for call in modules.utils.subprocess.run.call_args_list:
+            assert call.kwargs["timeout"] == 10
 
 
 def test_signal_handler_exits_cleanly_monkeypatch(monkeypatch):
@@ -623,6 +653,9 @@ def test_check_dependencies_all_present(mock_run):
     """Test check_dependencies when all are present."""
     mock_run.return_value = MagicMock(returncode=0)
     assert modules.utils.check_dependencies() is True
+    assert mock_run.call_count == 4
+    for call in mock_run.call_args_list:
+        assert call.kwargs["timeout"] == 10
 
 
 @patch("modules.utils.is_valid_audio")
@@ -709,8 +742,8 @@ def test_draw_progress_bar_min_width(mock_time, mock_cols, mock_draw):
 
 @patch("modules.utils.log_msg")
 @patch("modules.utils.subprocess.Popen")
-def test_run_command_with_progress_env_and_error_buffer(mock_popen, mock_log):
-    """Test run_command_with_progress copies explicit env and logs buffered output on failure."""
+def test_run_command_with_progress_copies_explicit_env(mock_popen, mock_log):
+    """run_command_with_progress should merge the provided environment."""
     mock_proc = MagicMock()
     mock_proc.returncode = 1
     mock_proc.wait.return_value = None
@@ -727,9 +760,31 @@ def test_run_command_with_progress_env_and_error_buffer(mock_popen, mock_log):
     called_env = mock_popen.call_args.kwargs["env"]
     assert called_env["A"] == "1"
     assert called_env["PYTHONIOENCODING"] == "utf-8"
+    assert called_env["PATH"] == os.environ["PATH"]
+
+
+@patch("modules.utils.log_msg")
+@patch("modules.utils.subprocess.Popen")
+def test_run_command_with_progress_logs_error_buffer(mock_popen, mock_log):
+    """run_command_with_progress should flush buffered output when the command fails."""
+    _configure_failed_command_mock(mock_popen)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        modules.utils.run_command_with_progress(["badcmd"], env={"A": "1"})
+
     logged_text = "\n".join(str(call.args[0]) for call in mock_log.call_args_list)
-    assert "first line" in logged_text
-    assert "second line" in logged_text
+    assert "first line" in logged_text and "second line" in logged_text
+
+
+def _configure_failed_command_mock(mock_popen):
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.wait.return_value = None
+
+    lines = ["first line", "second line", ""]
+    mock_proc.stdout.readline.side_effect = lines + [""] * 10
+    mock_proc.poll.side_effect = [None, None, 1]
+    mock_popen.return_value = mock_proc
 
 
 @patch("modules.utils.run_command_with_progress")

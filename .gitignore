@@ -25,6 +25,7 @@ MANIFEST
 # --- Virtual Environments ---
 venv/
 .venv/
+.poetry-venv/
 env/
 .env
 
@@ -33,6 +34,9 @@ env/
 .idea/
 *.swp
 *.swo
+
+# --- Local Tooling Cache ---
+.tools/
 
 # --- Project Specific (Data & Output) ---
 input/
@@ -76,3 +80,11 @@ htmlcov/
 .mypy_cache/
 nosetests.xml
 coverage_out.txt
+
+# --- Static Analysis Reports ---
+radon-report.txt
+radon-cc-report.json
+radon-mi-report.txt
+radon-mi-report.json
+radon-raw-report.txt
+radon-hal-report.txt

@@ -3,6 +3,32 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+DEEPSPEED_TRIGGERS = ("import deepspeed", "from deepspeed")
+
+
+def _site_packages_candidates():
+    return [
+        REPO_ROOT / ".venv/Lib/site-packages",
+        REPO_ROOT / "venv/Lib/site-packages",
+    ]
+
+
+def _prepend_poetry_site_packages(candidates):
+    try:
+        result = subprocess.run(["poetry", "env", "info", "-p"], cwd=REPO_ROOT, capture_output=True, text=True, check=False, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return candidates
+
+    if result.returncode != 0:
+        return candidates
+    poetry_env = result.stdout.strip()
+    if poetry_env:
+        return [Path(poetry_env) / "Lib/site-packages", *candidates]
+    return candidates
+
+
+def _contains_target_package(candidate, target_package):
+    return (candidate / target_package).exists() or (candidate / f"{target_package}.py").exists()
 
 
 def _require_site_packages_dir(target_package):
@@ -14,22 +40,10 @@ def _require_site_packages_dir(target_package):
 
 def _resolve_site_packages_dir(target_package):
     target_package = target_package.replace("-", "_")
-    candidates = [
-        REPO_ROOT / ".venv/Lib/site-packages",
-        REPO_ROOT / "venv/Lib/site-packages",
-    ]
-
-    try:
-        result = subprocess.run(["poetry", "env", "info", "-p"], cwd=REPO_ROOT, capture_output=True, text=True, check=False, timeout=5)
-        if result.returncode == 0:
-            poetry_env = result.stdout.strip()
-            if poetry_env:
-                candidates.insert(0, Path(poetry_env) / "Lib/site-packages")
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+    candidates = _prepend_poetry_site_packages(_site_packages_candidates())
 
     for candidate in candidates:
-        if (candidate / target_package).exists() or (candidate / f"{target_package}.py").exists():
+        if _contains_target_package(candidate, target_package):
             return candidate
 
     for candidate in candidates:
@@ -58,12 +72,7 @@ class DeepSpeedEngine: pass
     patched_count = 0
     failures = []
     for filepath in resemble_dir.rglob("*.py"):
-        try:
-            if _patch_deepspeed_file(filepath, mock_code):
-                patched_count += 1
-        except Exception as e:
-            print(f" -> Failed to patch {filepath}: {e}")
-            failures.append((filepath, e))
+        patched_count += _attempt_deepspeed_patch(filepath, mock_code, failures)
 
     if patched_count == 0:
         print(" -> DeepSpeed patches already applied or not needed.")
@@ -72,26 +81,46 @@ class DeepSpeedEngine: pass
         raise RuntimeError("; ".join(f"{path}: {exc}" for path, exc in failures))
 
 
-def _patch_deepspeed_file(filepath, mock_code):
-    content = filepath.read_text(encoding="utf-8")
-    triggers = ["import deepspeed", "from deepspeed"]
-    if not any(trigger in content for trigger in triggers):
-        return False
-    if "# PATCHED V2" in content:
-        return False
+def _attempt_deepspeed_patch(filepath, mock_code, failures):
+    try:
+        return int(_patch_deepspeed_file(filepath, mock_code))
+    except Exception as e:
+        print(f" -> Failed to patch {filepath}: {e}")
+        failures.append((filepath, e))
+        return 0
 
-    print(f" -> Patching {filepath.name} for DeepSpeed...")
-    lines = content.splitlines()
+
+def _is_deepspeed_trigger(line):
+    return any(trigger in line for trigger in DEEPSPEED_TRIGGERS)
+
+
+def _requires_deepspeed_patch(content):
+    if not any(trigger in content for trigger in DEEPSPEED_TRIGGERS):
+        return False
+    return "# PATCHED V2" not in content
+
+
+def _inject_deepspeed_mock(lines, mock_code):
     new_lines = []
     injected = False
     for line in lines:
-        if "import deepspeed" in line or "from deepspeed" in line:
-            new_lines.append(f"# {line} # PATCHED")
-            if not injected:
-                new_lines.append(mock_code)
-                injected = True
-        else:
+        if not _is_deepspeed_trigger(line):
             new_lines.append(line)
+            continue
+        new_lines.append(f"# {line} # PATCHED")
+        if not injected:
+            new_lines.append(mock_code)
+            injected = True
+    return new_lines
+
+
+def _patch_deepspeed_file(filepath, mock_code):
+    content = filepath.read_text(encoding="utf-8")
+    if not _requires_deepspeed_patch(content):
+        return False
+
+    print(f" -> Patching {filepath.name} for DeepSpeed...")
+    new_lines = _inject_deepspeed_mock(content.splitlines(), mock_code)
     filepath.write_text("\n".join(new_lines), encoding="utf-8")
     return True
 
@@ -168,46 +197,63 @@ def patch_resemble_cli_args():
         content = resemble_main.read_text(encoding="utf-8")
 
         # Regex to match the enhance() call with arguments
-        pattern = (
-            r"(hwav,\s*sr\s*=\s*enhance\()([\s\S]*?)"
-            r"(lambd=args.lambd,)([\s\S]*?)(\))"
-        )
+        pattern = r"(hwav,\s*sr\s*=\s*enhance\()([\s\S]*?)" r"(lambd=args.lambd,)([\s\S]*?)(\))"
 
         match = re.search(pattern, content)
-        if match:
-            full_match = match.group(0)
-            if re.search(r"chunk_seconds\s*=\s*10\b", full_match):
-                print(" -> Upgrading patch from 10s to 25s...")
-                upgraded_call = re.sub(r"chunk_seconds\s*=\s*10\b", "chunk_seconds=25", full_match)
-                upgraded_call = re.sub(r"chunks_overlap\s*=\s*1\b", "chunks_overlap=2", upgraded_call)
-                content = content.replace(full_match, upgraded_call)
-                resemble_main.write_text(content, encoding="utf-8")
-                print(" -> Patch upgraded.")
-                return
-
-            if re.search(r"chunk_seconds\s*=", full_match):
-                print(" -> CLI arguments already patched (late check).")
-                return
-
-            print(" -> Patching CLI arguments with improved logic...")
-            last_paren_idx = full_match.rfind(")")
-            call_content = full_match[:last_paren_idx].rstrip()
-
-            if not call_content.endswith(","):
-                call_content += ","
-
-            new_args = "\n                chunk_seconds=25,\n                chunks_overlap=2,"
-            new_call = f"{call_content}{new_args}\n            )"
-
-            content = content.replace(full_match, new_call)
-            resemble_main.write_text(content, encoding="utf-8")
-            print(" -> Successfully patched CLI arguments.")
-        else:
+        if not match:
             raise RuntimeError("Could not find 'enhance(...)' call pattern to patch.")
+
+        full_match = match.group(0)
+        updated_content, status_message = _update_cli_patch_content(content, full_match)
+        if updated_content is None:
+            print(status_message)
+            return
+
+        resemble_main.write_text(updated_content, encoding="utf-8")
+        print(status_message)
 
     except Exception as e:
         print(f" -> Failed to patch CLI args: {e}")
         raise
+
+
+def _upgrade_cli_patch(full_match):
+    chunk_seconds_pattern = r"(chunk_seconds\s*=\s*)\d+(?:\.\d+)?(?=\s*(?:,|\)))"
+    chunks_overlap_pattern = r"(chunks_overlap\s*=\s*)\d+(?:\.\d+)?(?=\s*(?:,|\)))"
+
+    upgraded_call = re.sub(chunk_seconds_pattern, "chunk_seconds=25", full_match, count=1)
+    if re.search(chunks_overlap_pattern, upgraded_call):
+        return re.sub(chunks_overlap_pattern, "chunks_overlap=2", upgraded_call, count=1)
+
+    last_paren_idx = upgraded_call.rfind(")")
+    call_content = upgraded_call[:last_paren_idx].rstrip()
+    if not call_content.endswith(","):
+        call_content += ","
+    return f"{call_content}\n                chunks_overlap=2,\n            )"
+
+
+def _build_cli_patch(full_match):
+    last_paren_idx = full_match.rfind(")")
+    call_content = full_match[:last_paren_idx].rstrip()
+    if not call_content.endswith(","):
+        call_content += ","
+    new_args = "\n                chunk_seconds=25,\n                chunks_overlap=2,"
+    return f"{call_content}{new_args}\n            )"
+
+
+def _update_cli_patch_content(content, full_match):
+    chunk_seconds_ok = bool(re.search(r"chunk_seconds\s*=\s*25(?=\s*(?:,|\)))", full_match))
+    chunks_overlap_ok = bool(re.search(r"chunks_overlap\s*=\s*2(?=\s*(?:,|\)))", full_match))
+
+    if chunk_seconds_ok and chunks_overlap_ok:
+        return None, " -> CLI arguments already patched."
+
+    if re.search(r"chunk_seconds\s*=\s*", full_match):
+        print(" -> Upgrading patch to enforce 25s chunks and 2s overlap...")
+        return content.replace(full_match, _upgrade_cli_patch(full_match)), " -> Patch upgraded."
+
+    print(" -> Patching CLI arguments with improved logic...")
+    return content.replace(full_match, _build_cli_patch(full_match)), " -> Successfully patched CLI arguments."
 
 
 def patch_common_separator_force_soundfile():

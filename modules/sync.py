@@ -1,5 +1,6 @@
 import concurrent.futures
 import importlib
+import multiprocessing
 import sys
 import time
 from typing import Optional
@@ -46,7 +47,13 @@ def _run_fastdtw_chunk(args):
     NOTE: 'dist' function (euclidean) must be imported in worker scope or passed.
     SciPy euclidean is picklable.
     """
-    ref_seg, proc_seg, radius = args
+    if len(args) == 3:
+        ref_seg, proc_seg, radius = args
+        cancel_event = None
+    else:
+        ref_seg, proc_seg, radius, cancel_event = args
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("DTW sync cancelled.")
     # Ensure dependencies in worker process
     fastdtw_module = importlib.import_module("fastdtw")
     euclidean = importlib.import_module("scipy.spatial.distance").euclidean
@@ -64,7 +71,13 @@ def _run_gpu_dtw_chunk(args):
     Args: (ref_segment, proc_segment, radius)
     Returns: path (list of [ref_idx, proc_idx])
     """
-    ref_seg, proc_seg, radius = args
+    if len(args) == 3:
+        ref_seg, proc_seg, radius = args
+        cancel_event = None
+    else:
+        ref_seg, proc_seg, radius, cancel_event = args
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("DTW sync cancelled.")
 
     # 1. GPU Distance Calculation
     librosa_module = importlib.import_module("librosa")
@@ -195,62 +208,104 @@ def _prepare_dtw_chunks(ref_features, proc_features):
     return chunks, chunk_starts
 
 
-def _execute_parallel_dtw(chunks):
-    """Executes DTW chunks in parallel on CPU or GPU."""
-    use_gpu_dtw = False
+def _should_use_gpu_dtw():
     try:
         torch = importlib.import_module("torch")
-
-        if torch.cuda.is_available() and GPU_VRAM_GB >= 4:
-            use_gpu_dtw = True
+        return torch.cuda.is_available() and GPU_VRAM_GB >= 4
     except Exception:
-        pass
+        return False
 
-    if use_gpu_dtw:
-        max_workers = min(len(chunks), 4)
-        Worker = _run_gpu_dtw_chunk
-        Executor = concurrent.futures.ThreadPoolExecutor
+
+def _resolve_dtw_executor(chunks):
+    if _should_use_gpu_dtw():
         log_msg(f"    GPU Optimization ENABLED (VRAM: {GPU_VRAM_GB}GB). Using Torch+Librosa.")
-    else:
-        max_workers = min(len(chunks), CPU_THREADS)
-        Worker = _run_fastdtw_chunk
-        Executor = concurrent.futures.ProcessPoolExecutor
+        return concurrent.futures.ThreadPoolExecutor, _run_gpu_dtw_chunk, min(len(chunks), 4)
+    return concurrent.futures.ProcessPoolExecutor, _run_fastdtw_chunk, min(len(chunks), CPU_THREADS)
 
-    log_msg(f"    Spawning {max_workers} workers for {len(chunks)} chunks...")
 
+def _update_dtw_progress(chunks_done, num_chunks, start_time):
+    percent = (chunks_done / num_chunks) * 100
+    elapsed = time.time() - start_time
+    draw_progress_bar(percent, f"DTW Sync: Chunk {chunks_done}/{num_chunks}", elapsed_sec=elapsed)
+
+
+def _cancel_other_outstanding_futures(future_to_chunk, failed_future):
+    for other_future in future_to_chunk:
+        if other_future is failed_future:
+            continue
+        if not other_future.done():
+            other_future.cancel()
+
+
+def _shutdown_executor_now(executor):
+    try:
+        executor.shutdown(wait=False, cancel_futures=True)
+    except TypeError:
+        executor.shutdown(wait=False)
+
+
+def _collect_dtw_results(executor, worker, chunks, num_chunks, start_time, cancel_event=None):
     results_map = {}
     chunks_done = 0
+    if cancel_event is None:
+        cancel_event = multiprocessing.Event()
+    future_to_chunk = {executor.submit(worker, (*chunk, cancel_event)): i for i, chunk in enumerate(chunks)}
+
+    for future in concurrent.futures.as_completed(future_to_chunk):
+        chunk_idx = future_to_chunk[future]
+        try:
+            results_map[chunk_idx] = future.result()
+        except Exception as e:
+            log_msg(f"    Chunk {chunk_idx} failed: {e}", is_error=True)
+            cancel_event.set()
+            _cancel_other_outstanding_futures(future_to_chunk, future)
+            _shutdown_executor_now(executor)
+            raise
+
+        chunks_done += 1
+        _update_dtw_progress(chunks_done, num_chunks, start_time)
+
+    return results_map
+
+
+def _execute_parallel_dtw(chunks):
+    """Executes DTW chunks in parallel on CPU or GPU."""
+    executor_type, worker, max_workers = _resolve_dtw_executor(chunks)
+    log_msg(f"    Spawning {max_workers} workers for {len(chunks)} chunks...")
+
     num_chunks = len(chunks)
     t0 = time.time()
-
     draw_progress_bar(0, "DTW Sync: Starting...")
 
-    with Executor(max_workers=max_workers) as executor:
-        future_to_chunk = {executor.submit(Worker, chunk): i for i, chunk in enumerate(chunks)}
-
-        for future in concurrent.futures.as_completed(future_to_chunk):
-            chunk_idx = future_to_chunk[future]
-            try:
-                res = future.result()
-                results_map[chunk_idx] = res
-            except Exception as e:
-                log_msg(f"    Chunk {chunk_idx} failed: {e}", is_error=True)
-                raise e
-
-            chunks_done += 1
-            percent = (chunks_done / num_chunks) * 100
-            elapsed = time.time() - t0
-            draw_progress_bar(percent, f"DTW Sync: Chunk {chunks_done}/{num_chunks}", elapsed_sec=elapsed)
+    cancel_event = multiprocessing.Event()
+    executor = executor_type(max_workers=max_workers)
+    try:
+        results_map = _collect_dtw_results(executor, worker, chunks, num_chunks, t0, cancel_event)
+    finally:
+        _shutdown_executor_now(executor)
 
     path_segments = [results_map[i] for i in range(num_chunks)]
     sys.stdout.write("\n")
     return path_segments
 
 
+def _write_stereo_copy(output_wav, data, rate):
+    if data.shape[1] == 1:
+        data = np.tile(data, (1, 2))
+    _save_audio_atomic(output_wav, data, rate, subtype="FLOAT")
+
+
+def _copy_unaligned_audio(processed_wav, output_wav, progress_label):
+    data, rate = sf.read(str(processed_wav), always_2d=True)
+    _write_stereo_copy(output_wav, data, rate)
+    draw_progress_bar(100, progress_label)
+    sys.stdout.write("\n")
+    return output_wav
+
+
 def _stitch_dtw_path(path_segments, chunk_starts):
     """Stitches chunked paths into a single monotonic path."""
     full_path = []
-
     for i, segment_path in enumerate(path_segments):
         base_idx = chunk_starts[i]
         seg_arr = np.array(segment_path)
@@ -398,13 +453,7 @@ def _align_stems_shift(original_wav, processed_wav, output_wav):
         m = len(proc_audio)
         if n == 0 or m == 0:
             log_msg("    [Warning] Audio empty, skipping sync.", is_error=True)
-            data, rate = sf.read(str(processed_wav), always_2d=True)
-            if data.shape[1] == 1:
-                data = np.tile(data, (1, 2))
-            sf.write(str(output_wav), data, rate, subtype="FLOAT")
-            draw_progress_bar(100, "Sync: Skipped (Empty)")
-            sys.stdout.write("\n")
-            return output_wav
+            return _copy_unaligned_audio(processed_wav, output_wav, "Sync: Skipped (Empty)")
 
         lag = _calculate_cross_correlation_lag(ref_audio, proc_audio, sr)
         _apply_shift_to_audio(processed_wav, output_wav, lag)
@@ -416,13 +465,9 @@ def _align_stems_shift(original_wav, processed_wav, output_wav):
     except Exception as e:
         log_msg(f"    [Warning] Sync failed ({e}). Using unaligned.", is_error=True)
         try:
-            data, rate = sf.read(str(processed_wav), always_2d=True)
-            if data.shape[1] == 1:
-                data = np.tile(data, (1, 2))
-            sf.write(str(output_wav), data, rate, subtype="FLOAT")
-            draw_progress_bar(100, "Sync: Skipped (Fallback)")
+            return _copy_unaligned_audio(processed_wav, output_wav, "Sync: Skipped (Fallback)")
         except Exception:
-            pass
+            raise
         return output_wav
 
 

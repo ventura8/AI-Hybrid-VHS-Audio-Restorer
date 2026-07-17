@@ -189,7 +189,7 @@ def test_patch_resemble_cli_args_no_file(mock_venv, capsys):
 
 
 def test_patch_resemble_cli_args_already_patched(mock_venv, capsys):
-    """Test when already has chunk_seconds."""
+    """Test when chunk_seconds is present but chunks_overlap still needs upgrading."""
     tmp_path, venv_site = mock_venv
 
     enhancer_dir = venv_site / "resemble_enhance" / "enhancer"
@@ -210,8 +210,10 @@ def process():
     )
 
     apply_patches.patch_resemble_cli_args()
+    patched = main_py.read_text(encoding="utf-8")
     captured = capsys.readouterr()
-    assert "already patched" in captured.out
+    assert "chunks_overlap=2" in patched
+    assert "Patch upgraded" in captured.out
 
 
 def test_patch_resemble_cli_args_pattern_not_found(mock_venv, capsys):
@@ -257,7 +259,7 @@ def process():
 
 
 def test_patch_resemble_cli_args_already_in_regex(mock_venv, capsys):
-    """Test when chunk_seconds is already in the enhance call."""
+    """Test when chunk_seconds is already in the enhance call but overlap still needs upgrading."""
     tmp_path, venv_site = mock_venv
 
     enhancer_dir = venv_site / "resemble_enhance" / "enhancer"
@@ -276,8 +278,10 @@ def process():
     main_py.write_text(content, encoding="utf-8")
 
     apply_patches.patch_resemble_cli_args()
+    patched = main_py.read_text(encoding="utf-8")
     captured = capsys.readouterr()
-    assert "already patched" in captured.out
+    assert "chunks_overlap=2" in patched
+    assert "Patch upgraded" in captured.out
 
 
 def test_patch_resemble_cli_args_upgrades_whitespace_variant(mock_venv, capsys):
