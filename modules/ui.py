@@ -9,7 +9,17 @@ try:
 except ImportError:
     torch = None
 
-from .config import BACKGROUND_MIX_VOL, CONFIG_SOURCE, EXTS, INPUT_DIR, PROCESS_MODE, VOCAL_MIX_VOL, VOCALS_MODEL
+from .config import (
+    ARNNDN_MODEL,
+    BACKGROUND_MIX_VOL,
+    CLEANED_OUTPUT_SUFFIXES,
+    CONFIG_SOURCE,
+    EXTS,
+    INPUT_DIR,
+    PROCESS_MODE,
+    VOCAL_MIX_VOL,
+    VOCALS_MODEL,
+)
 from .hardware import CPU_THREADS, GPU_BATCH_SIZE, GPU_VRAM_GB, PROFILE_NAME, get_cpu_name, get_gpu_name
 from .utils import draw_progress_bar
 
@@ -20,7 +30,7 @@ from .utils import draw_progress_bar
 
 def _is_cleaned_output(file_name):
     stem = Path(file_name).stem
-    return stem.endswith("_Hybrid_Cleaned") or stem.endswith("_Denoised_Cleaned")
+    return stem.endswith(CLEANED_OUTPUT_SUFFIXES)
 
 
 def _is_nvidia_gpu_name(gpu_name):
@@ -32,6 +42,10 @@ def _has_cuda_backend():
     return torch is not None and torch.cuda.is_available()
 
 
+def _has_mps_backend():
+    return torch is not None and hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+
 def _has_xpu_backend():
     return torch is not None and hasattr(torch, "xpu") and torch.xpu.is_available()
 
@@ -41,14 +55,34 @@ def _get_torch_backend(gpu_name):
         if _is_nvidia_gpu_name(gpu_name):
             return "CUDA (NVIDIA Accelerated)"
         return "CUDA (Accelerated)"
+    if _has_mps_backend():
+        return "MPS (Apple Silicon Accelerated)"
     if _has_xpu_backend():
         return "XPU (Intel Accelerated)"
     return "CPU (Slow)"
 
 
+def _get_active_models_label():
+    labels = {
+        "auto": "AI Auto-Detect & Restore (Intelligent Scanner)",
+        "multipass_auto": "AI Multi-Pass Cascaded Restoration (4-Pass Engine)",
+        "multipass": "AI Multi-Pass Cascaded Restoration (4-Pass Engine)",
+        "auto_pure": "AI Pure Speech & Ambient Denoising (4-Pass Non-Generative Engine)",
+        "pure": "AI Pure Speech & Ambient Denoising (4-Pass Non-Generative Engine)",
+        "hybrid": f"{VOCALS_MODEL} / UVR-DeNoise",
+        "denoise_only": "UVR-DeNoise-Lite",
+        "auto_ffmpeg_native": "Adaptive FFmpeg DSP (Auto-Tuned Scan)",
+        "ffmpeg_native": "FFmpeg Native (afftdn + adeclick + highpass)",
+        "auto_vhs_native": "Adaptive FFmpeg DSP (Auto-Tuned Scan)",
+        "vhs_native": "FFmpeg Native (afftdn + adeclick + highpass)",
+        "arnndn_speech": f"FFmpeg ARNNDN ({ARNNDN_MODEL})",
+    }
+    return labels.get(PROCESS_MODE, "Default")
+
+
 def _print_banner(cpu_name, gpu_name, torch_backend):
     print("=" * 60)
-    print("   AI HYBRID VHS AUDIO RESTORER - v1.0.2")
+    print("   AI HYBRID VHS AUDIO RESTORER - v1.1.0")
     print(f"   Running on: {platform.system()} {platform.release()}")  # pragma: no cover
     print("=" * 60 + "\n")  # pragma: no cover
 
@@ -63,7 +97,7 @@ def _print_banner(cpu_name, gpu_name, torch_backend):
     print(f"   Batch Size      : {GPU_BATCH_SIZE}")
     print(f"   Threads         : {CPU_THREADS}")
     print(f"   Mix Levels      : Vocals={VOCAL_MIX_VOL}, Background={BACKGROUND_MIX_VOL}")
-    print(f"   Models          : {VOCALS_MODEL} / UVR-DeNoise")
+    print(f"   Models          : {_get_active_models_label()}")
     print(f"   Config Source   : {CONFIG_SOURCE}\n")
 
 

@@ -431,6 +431,56 @@ def test_apply_runtime_patches_aggregates_failures(monkeypatch):
 # ---------------------------------------------------------
 
 
+def test_patch_resemble_cfm(tmp_path, capsys):
+    """Test patching CFM solver for NumPy 2.x."""
+    resemble_dir = tmp_path / "resemble_enhance"
+    lcfm_dir = resemble_dir / "enhancer" / "lcfm"
+    lcfm_dir.mkdir(parents=True)
+
+    cfm_py = lcfm_dir / "cfm.py"
+    cfm_py.write_text("a = float(scipy.optimize.fsolve(lambda a: h(1 / n, a) - 0.5, x0=0))\n", encoding="utf-8")
+
+    apply_patches._patch_resemble_cfm(resemble_dir)
+    assert "[0]" in cfm_py.read_text(encoding="utf-8")
+
+    # Already patched branch
+    apply_patches._patch_resemble_cfm(resemble_dir)
+    captured = capsys.readouterr()
+    assert "already patched for NumPy 2.x" in captured.out
+
+    # Missing anchor branch raises RuntimeError
+    cfm_py.write_text("unrelated content without anchors\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Could not find target anchor"):
+        apply_patches._patch_resemble_cfm(resemble_dir)
+
+    # Missing file branch
+    non_existent = tmp_path / "missing_resemble"
+    apply_patches._patch_resemble_cfm(non_existent)
+
+
+def test_site_packages_for_root_posix(tmp_path):
+    """Test _site_packages_for_root finds lib/python3.*/site-packages."""
+    sp_dir = tmp_path / "lib" / "python3.12" / "site-packages"
+    sp_dir.mkdir(parents=True)
+    res = apply_patches._site_packages_for_root(tmp_path)
+    assert sp_dir in res
+
+
+def test_prepend_poetry_site_packages_success(tmp_path, monkeypatch):
+    """Test _prepend_poetry_site_packages with valid poetry env output."""
+    poetry_root = tmp_path / "poetry_env"
+    sp_dir = poetry_root / "lib" / "python3.12" / "site-packages"
+    sp_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        apply_patches.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=str(poetry_root)),
+    )
+    res = apply_patches._prepend_poetry_site_packages([])
+    assert sp_dir in res
+
+
 def test_module_import():
     """Test that module imports cleanly."""
     import importlib

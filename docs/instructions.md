@@ -20,8 +20,12 @@ This document provides concise contributor instructions for day-to-day changes.
 
 Run:
 
+```bash
+./run_pipeline_locally.sh
+```
+
 ```powershell
-./run_pipeline_locally.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_pipeline_locally.ps1
 ```
 
 Confirm:

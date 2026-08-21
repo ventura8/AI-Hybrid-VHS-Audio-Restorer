@@ -6,11 +6,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEEPSPEED_TRIGGERS = ("import deepspeed", "from deepspeed")
 
 
+def _site_packages_for_root(root_dir):
+    root = Path(root_dir)
+    res = [root / "Lib/site-packages", root / "lib/site-packages"]
+    lib_dir = root / "lib"
+    if lib_dir.is_dir():
+        for py_dir in lib_dir.glob("python3.*"):
+            res.append(py_dir / "site-packages")
+    return res
+
+
 def _site_packages_candidates():
-    return [
-        REPO_ROOT / ".venv/Lib/site-packages",
-        REPO_ROOT / "venv/Lib/site-packages",
-    ]
+    candidates = []
+    for prefix in [REPO_ROOT / ".venv", REPO_ROOT / "venv"]:
+        candidates.extend(_site_packages_for_root(prefix))
+    return candidates
 
 
 def _prepend_poetry_site_packages(candidates):
@@ -23,7 +33,7 @@ def _prepend_poetry_site_packages(candidates):
         return candidates
     poetry_env = result.stdout.strip()
     if poetry_env:
-        return [Path(poetry_env) / "Lib/site-packages", *candidates]
+        return [*_site_packages_for_root(poetry_env), *candidates]
     return candidates
 
 
@@ -172,6 +182,24 @@ torchaudio.save = custom_save
         raise FileNotFoundError(f"{main_py} not found.")
 
 
+def _patch_resemble_cfm(resemble_dir):
+    cfm_py = resemble_dir / "enhancer/lcfm/cfm.py"
+    if not cfm_py.exists():
+        print(f" -> Warning: {cfm_py} not found; NumPy compatibility patch was not applied.")
+        return
+    content = cfm_py.read_text(encoding="utf-8")
+    target = "a = float(scipy.optimize.fsolve(lambda a: h(1 / n, a) - 0.5, x0=0))"
+    replacement = "a = float(scipy.optimize.fsolve(lambda a: h(1 / n, a) - 0.5, x0=0)[0])"
+    if replacement in content:
+        print(f" -> {cfm_py.name} already patched for NumPy 2.x.")
+    elif target in content:
+        print(f" -> Patching {cfm_py.name} for NumPy 2.x scalar conversion...")
+        content = content.replace(target, replacement)
+        cfm_py.write_text(content, encoding="utf-8")
+    else:
+        raise RuntimeError(f"Could not find target anchor in {cfm_py.name}")
+
+
 def patch_resemble_enhance():
     print("[Patch] Checking Resemble-Enhance (DeepSpeed Removal)...")
     venv_site = _require_site_packages_dir("resemble_enhance")
@@ -182,6 +210,7 @@ def patch_resemble_enhance():
 
     _patch_deepspeed_usage(resemble_dir)
     _patch_torchaudio_loader(resemble_dir)
+    _patch_resemble_cfm(resemble_dir)
 
 
 def patch_resemble_cli_args():

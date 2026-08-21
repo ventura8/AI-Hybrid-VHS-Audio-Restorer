@@ -23,35 +23,49 @@ except ImportError:
     torch = None
 
 # Import config constants
-from .config import DEBUG_LOGGING, LOG_FILE
-from .hardware import get_nvidia_paths
+from .config import DEBUG_LOGGING, LOG_FILE, PROCESS_MODE
+from .hardware import get_nvidia_paths, prepare_runtime_library_paths
 
 # === AUTO-CONFIGURE PATH ===
 project_dir = Path(__file__).parent.parent.resolve()  # modules/..
 
+# Anchored to the package, never the working directory: the model store is
+# hundreds of MB, and a cwd-relative path silently re-downloads all of it
+# whenever the CLI or start.sh is launched from outside the repository root.
+MODELS_DIR = project_dir / "models"
+
 
 def _get_scripts_dirs(base_dir):
     candidates = [
+        base_dir / ".venv" / "bin",
+        base_dir / "venv" / "bin",
         base_dir / ".venv" / "Scripts",
         base_dir / "venv" / "Scripts",
     ]
     return [p for p in candidates if p.exists()]
 
 
+def _resolve_binary(binary_name, candidate_dirs):
+    exts = [".exe", ""] if sys.platform == "win32" else ["", ".exe"]
+    for scripts_dir in candidate_dirs:
+        for ext in exts:
+            candidate = scripts_dir / f"{binary_name}{ext}"
+            if candidate.exists():
+                return str(candidate)
+    return binary_name
+
+
 scripts_dirs = _get_scripts_dirs(project_dir)
-primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / ".venv" / "Scripts")
+primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / ".venv" / "bin")
 
 # 1. Base Binary Paths
-FFMPEG_BIN = "ffmpeg"
-for scripts_dir in scripts_dirs:
-    ffmpeg_candidate = scripts_dir / "ffmpeg.exe"
-    if ffmpeg_candidate.exists():
-        FFMPEG_BIN = str(ffmpeg_candidate)
-        break
+FFMPEG_BIN = _resolve_binary("ffmpeg", scripts_dirs)
+FFPROBE_BIN = _resolve_binary("ffprobe", scripts_dirs)
 
-# 2. NVIDIA / CUDA Library Injection (Critical for Hybrid GPUs)
+# 2. NVIDIA / CUDA Library Injection (Critical for Hybrid GPUs & Linux / Windows)
 extra_paths = [str(p) for p in scripts_dirs]
 extra_paths.extend(get_nvidia_paths())
+prepare_runtime_library_paths()
 
 current_path = os.environ.get("PATH", "")
 path_list = current_path.split(os.pathsep)
@@ -219,6 +233,51 @@ def is_valid_video(file_path):
     return True
 
 
+def _probe_stream_types(file_path):
+    """Returns the set of codec types ffprobe reports for a media container.
+
+    Args:
+        file_path: Path to the container to probe.
+
+    Returns:
+        set: Reported codec types (e.g. {"video", "audio"}); empty when the
+            container is unreadable, corrupt, or ffprobe is unavailable.
+    """
+    cmd = [
+        FFPROBE_BIN,
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(file_path),
+    ]
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=30)
+    except Exception:
+        return set()
+    return {line.strip() for line in output.decode("utf-8", "replace").splitlines() if line.strip()}
+
+
+def is_verified_video(file_path):
+    """Strictly validates a restored output by probing its container and streams.
+
+    Unlike is_valid_video, which only filters missing or undersized files, this
+    verifies that the container actually parses and carries both a video and an
+    audio stream, so truncated or corrupt outputs stay eligible for restoration.
+
+    Args:
+        file_path: Candidate output video path.
+
+    Returns:
+        bool: True only for a readable container holding video and audio streams.
+    """
+    if not is_valid_video(file_path):
+        return False
+    return {"video", "audio"}.issubset(_probe_stream_types(file_path))
+
+
 def format_time(seconds):
     """Formats seconds as HH:MM:SS.mm"""
     if seconds < 0:
@@ -372,9 +431,32 @@ def _adjust_bar_layout(width, info_str, label, columns):
     return width, info_str, clean_label
 
 
+def _format_bar_characters(filled_length, empty_length):
+    """Generates bar string with unicode blocks or ASCII fallback if encoding fails."""
+    encoding = getattr(sys.stdout, "encoding", None)
+    if not isinstance(encoding, str):
+        encoding = "utf-8"
+    try:
+        "█░".encode(encoding)
+        return "█" * filled_length + "░" * empty_length
+    except (UnicodeEncodeError, LookupError, TypeError):
+        return "#" * filled_length + "-" * empty_length
+
+
+def _write_bar_safely(line_content):
+    """Writes progress bar string to stdout, falling back to ASCII on encoding errors."""
+    try:
+        sys.stdout.write(f"\r\033[K{line_content}")
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        safe_content = line_content.encode("ascii", errors="replace").decode("ascii")
+        sys.stdout.write(f"\r\033[K{safe_content}")
+        sys.stdout.flush()
+
+
 def _draw_bar_line(width, filled_length, info_str, label=""):
     """Draws the final bar line with explicit clearing and no-wrap safety."""
-    bar = "█" * filled_length + "░" * (width - filled_length)
+    bar = _format_bar_characters(filled_length, width - filled_length)
 
     # Standardized 3-space padding
     if label:
@@ -388,9 +470,7 @@ def _draw_bar_line(width, filled_length, info_str, label=""):
         line_content = line_content[: cols - 1]
 
     with _print_lock:
-        # \r to start, \033[K to clear, then content. NO trailing newline.
-        sys.stdout.write(f"\r\033[K{line_content}")
-        sys.stdout.flush()
+        _write_bar_safely(line_content)
 
 
 def draw_progress_bar(percent, label="", width=20, elapsed_sec=None, media_sec=None, total_duration=None):
@@ -679,7 +759,9 @@ def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):
 # I need 'import torch' at top.
 
 
-def check_dependencies():
+def check_dependencies(process_mode=None):
+    """Verifies external tools and library dependencies based on active process mode."""
+    mode = process_mode or PROCESS_MODE
     missing = []
 
     def _record_missing(name, command):
@@ -690,13 +772,19 @@ def check_dependencies():
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
             missing.append(name)
 
+    # FFmpeg and FFprobe are universally required across all modes
     _record_missing("FFmpeg", [FFMPEG_BIN, "-version"])
-    _record_missing("Audio-Separator", ["audio-separator", "--help"])
-    _record_missing("Resemble-Enhance", [sys.executable, "-c", "import resemble_enhance"])
-    _record_missing("OmegaConf", [sys.executable, "-c", "from omegaconf import OmegaConf"])
+    _record_missing("FFprobe", [FFPROBE_BIN, "-version"])
+
+    # AI stem separation and enhancement dependencies are mode-specific
+    if mode in ("hybrid", "denoise_only", "auto", "multipass_auto", "multipass", "auto_pure", "pure"):
+        _record_missing("Audio-Separator", ["audio-separator", "--help"])
+
+    if mode in ("hybrid", "multipass_auto", "multipass", "auto"):
+        _record_missing("Resemble-Enhance", [sys.executable, "-c", "import resemble_enhance"])
 
     if missing:
         log_msg(f"CRITICAL: Missing: {', '.join(missing)}", is_error=True)
-        log_msg(f"Search Path: {os.environ['PATH']}", is_error=True)
+        log_msg(f"Search Path: {os.environ.get('PATH', '')}", is_error=True)
         return False
     return True

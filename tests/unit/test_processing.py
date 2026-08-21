@@ -328,6 +328,35 @@ def test_denoise_background_step_skip(mock_valid, mock_retry, tmp_path):
     assert result == existing
 
 
+@patch("modules.processing._run_denoise_separator")
+@patch("modules.processing.is_valid_audio", return_value=True)
+def test_denoise_vocals_step(mock_valid, mock_run_sep, tmp_path):
+    """Test denoise vocals step runs separator."""
+    vocals = tmp_path / "vocals.wav"
+    vocals.write_text("vocals")
+    out_dir = tmp_path / "denoised_vocals"
+    out_dir.mkdir()
+    mock_run_sep.return_value = out_dir / "clean_vocals.wav"
+
+    result = modules.processing._denoise_vocals_step(vocals, out_dir)
+    mock_run_sep.assert_called_once()
+    assert result.name == "clean_vocals.wav"
+
+
+@patch("modules.processing.is_valid_audio", return_value=True)
+def test_denoise_vocals_step_skip(mock_valid, tmp_path):
+    """Test denoise vocals step skips when valid denoised exists."""
+    vocals = tmp_path / "vocals.wav"
+    vocals.write_text("vocals")
+    out_dir = tmp_path / "denoised_vocals"
+    out_dir.mkdir()
+    existing = out_dir / "vocals_(No Noise).wav"
+    existing.write_text("denoised")
+
+    result = modules.processing._denoise_vocals_step(vocals, out_dir)
+    assert result == existing
+
+
 @patch("modules.processing.attempt_cpu_run_with_retry")
 @patch("modules.processing.get_audio_duration_sec", return_value=60.0)
 @patch("modules.processing.is_valid_video")
@@ -978,3 +1007,28 @@ def test_handle_enhance_creates_fallback(mock_valid, tmp_path):
 
     assert result.exists()
     assert "fallback" in result.name
+
+
+def test_purge_corrupted_model_file(tmp_path, monkeypatch):
+    """Corrupt model file is purged from MODELS_DIR."""
+    monkeypatch.setattr(modules.processing, "MODELS_DIR", tmp_path)
+    corrupt_model = tmp_path / "corrupt_model.ckpt"
+    corrupt_model.write_bytes(b"corrupt")
+
+    modules.processing._purge_corrupted_model_file("corrupt_model.ckpt")
+    assert not corrupt_model.exists()
+
+
+def test_load_separator_model_retries_after_purging_corrupt_file(tmp_path, monkeypatch):
+    """If load_model fails initially, the corrupt file is purged and load_model is retried."""
+    monkeypatch.setattr(modules.processing, "MODELS_DIR", tmp_path)
+    corrupt_model = tmp_path / "model.onnx"
+    corrupt_model.write_bytes(b"bad")
+
+    mock_sep = MagicMock()
+    mock_sep.load_model.side_effect = [RuntimeError("Corrupt ONNX file"), None]
+
+    modules.processing._load_separator_model(mock_sep, "model.onnx")
+
+    assert not corrupt_model.exists()
+    assert mock_sep.load_model.call_count == 2

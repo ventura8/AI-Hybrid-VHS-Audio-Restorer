@@ -1,0 +1,348 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.1.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: "2.4.1"
+
+jobs:
+  validate:
+    name: "✅ Validate Release"
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract version
+        id: version
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid tag format '${TAG}'" >&2
+            exit 1
+          fi
+          VER="${TAG#v}"
+          echo "VERSION=${VER}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building release for version ${VER} (tag: ${TAG})"
+
+      - name: Verify and Check Out Release Tag
+        shell: bash
+        run: |
+          git fetch --tags --force || true
+          if ! git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            echo "Error: tag '${TAG}' does not exist in this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${TAG}"
+          echo "Checked out $(git rev-parse HEAD) for tag ${TAG}"
+
+      - name: Set up Python
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        shell: bash
+        run: |
+          curl -sSL https://install.python-poetry.org | python - --version "${{ env.POETRY_VERSION }}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Configure Poetry In-Project Virtualenv
+        shell: bash
+        run: |
+          poetry config virtualenvs.in-project true
+
+      - name: Validate Poetry Lockfile
+        shell: bash
+        run: |
+          poetry check --lock
+
+      - name: Sync Dependencies
+        shell: bash
+        run: |
+          poetry sync --only main,dev --no-root
+
+      - name: Run Quality Gate Pipeline
+        shell: bash
+        run: |
+          ./run_pipeline_locally.sh
+
+  package:
+    name: "📦 Package ${{ matrix.platform }} Release"
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            archive: zip
+          - platform: linux
+            runner: ubuntu-latest
+            archive: tar.gz
+          - platform: macos-arm64
+            # macos-26 is GitHub's latest Apple Silicon hosted runner. Keep the
+            # architecture in the asset name so users do not accidentally
+            # download an Intel-oriented package.
+            runner: macos-26
+            architecture: arm64
+            archive: tar.gz
+          - platform: macos-intel
+            runner: macos-26-intel
+            architecture: x86_64
+            archive: tar.gz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install FFmpeg for Unix artifact smoke test
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          if [ "$(uname -s)" = "Darwin" ]; then
+            brew install ffmpeg
+          else
+            sudo apt-get update
+            sudo apt-get install --yes ffmpeg
+          fi
+
+      - name: Extract and verify release tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid tag format '${TAG}'" >&2
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            echo "Error: tag '${TAG}' does not exist in this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${TAG}"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Verify macOS release environment
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "${{ matrix.architecture }}"
+          test "$(python3 -c 'import platform; print(platform.machine())')" = "${{ matrix.architecture }}"
+
+      - name: Create release archive
+        id: archive
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          NAME="AI-Hybrid-VHS-Audio-Restorer-${TAG}-${PLATFORM}"
+          mkdir -p release-assets
+          if [ "${ARCHIVE}" = "zip" ]; then
+            git archive --format=zip --prefix="${NAME}/" --output="release-assets/${NAME}.zip" HEAD
+            echo "path=release-assets/${NAME}.zip" >> "$GITHUB_OUTPUT"
+          else
+            git archive --format=tar --prefix="${NAME}/" HEAD | gzip -9 > "release-assets/${NAME}.tar.gz"
+            echo "path=release-assets/${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install and smoke-test Unix release artifact
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          ARCHIVE="$(find release-assets -name '*.tar.gz' -print -quit)"
+          test -n "${ARCHIVE}"
+          mkdir artifact-test
+          tar -xzf "${ARCHIVE}" -C artifact-test
+          APP_DIR="$(find artifact-test -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "${APP_DIR}"
+          cd "${APP_DIR}"
+          ./install_dependencies.sh
+          if [ "${{ matrix.platform }}" = "macos-arm64" ]; then
+            ./.venv/bin/python -c 'import torch; assert torch.backends.mps.is_available(), "PyTorch MPS is unavailable"'
+          fi
+          perl -0pi -e 's/^process_mode:.*$/process_mode: "vhs_native"/m' config.yaml
+          ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=30 -f lavfi -i sine=frequency=1000:sample_rate=48000 \
+            -t 1 -c:v mpeg4 -c:a aac -shortest artifact-smoke.mp4
+          ./start.sh "$PWD/artifact-smoke.mp4" < /dev/null
+          test -s artifact-smoke_FFmpeg_Cleaned.mp4
+          ffprobe -v error artifact-smoke_FFmpeg_Cleaned.mp4
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of default=noprint_wrappers=1 \
+            artifact-smoke_FFmpeg_Cleaned.mp4 | grep -Fx 'codec_type=audio'
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of default=noprint_wrappers=1 \
+            artifact-smoke_FFmpeg_Cleaned.mp4 | grep -Fx 'codec_type=video'
+
+      - name: Install and smoke-test Windows release artifact
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem -Path release-assets -Filter '*.zip' | Select-Object -First 1
+          if ($null -eq $archive) {
+            throw "Windows release archive was not created."
+          }
+          Expand-Archive -Path $archive.FullName -DestinationPath artifact-test
+          $appDir = Get-ChildItem -Path artifact-test -Directory | Select-Object -First 1
+          if ($null -eq $appDir) {
+            throw "Windows release archive has no application directory."
+          }
+          Set-Location $appDir.FullName
+          & .\install_dependencies.ps1
+          (Get-Content config.yaml) -replace '^process_mode:.*$', 'process_mode: "vhs_native"' | Set-Content config.yaml
+          & .\.venv\Scripts\ffmpeg.exe -y -f lavfi -i testsrc2=size=320x240:rate=30 -f lavfi `
+            -i sine=frequency=1000:sample_rate=48000 -t 1 -c:v mpeg4 -c:a aac -shortest artifact-smoke.mp4
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the Windows media fixture."
+          }
+          cmd /c "echo.| call start.bat artifact-smoke.mp4"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows release launcher did not complete successfully."
+          }
+          $output = 'artifact-smoke_FFmpeg_Cleaned.mp4'
+          if (-not (Test-Path $output) -or (Get-Item $output).Length -eq 0) {
+            throw "Windows release artifact did not produce a restored media file."
+          }
+          & .\.venv\Scripts\ffprobe.exe -v error $output
+          if ($LASTEXITCODE -ne 0) {
+            throw "Restored Windows media file is invalid."
+          }
+          $probe = & .\.venv\Scripts\ffprobe.exe -v error -select_streams a:0 -show_entries stream=codec_type `
+            -of default=noprint_wrappers=1 $output
+          if ($LASTEXITCODE -ne 0 -or $probe -notcontains 'codec_type=audio') {
+            throw "Restored Windows media file has no readable audio stream."
+          }
+          $probe = & .\.venv\Scripts\ffprobe.exe -v error -select_streams v:0 -show_entries stream=codec_type `
+            -of default=noprint_wrappers=1 $output
+          if ($LASTEXITCODE -ne 0 -or $probe -notcontains 'codec_type=video') {
+            throw "Restored Windows media file has no readable video stream."
+          }
+
+      - name: Upload platform release artifact
+        # actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ steps.archive.outputs.path }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: "🚀 Publish GitHub Release"
+    permissions:
+      contents: write
+    needs:
+      - validate
+      - package
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract and verify release tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid tag format '${TAG}'" >&2
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            echo "Error: tag '${TAG}' does not exist in this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${TAG}"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Download platform release artifacts
+        # actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Check release notes body
+        id: notes
+        shell: bash
+        run: |
+          BODY_FILE="docs/releases/v${VERSION}_github_description.md"
+          if [ -f "${BODY_FILE}" ]; then
+            echo "use_body=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_body=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release (authored notes)
+        if: steps.notes.outputs.use_body == 'true'
+        # softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "AI Hybrid VHS Audio Restorer v${{ env.VERSION }}"
+          body_path: docs/releases/v${{ env.VERSION }}_github_description.md
+          files: release-assets/*
+          draft: false
+          prerelease: false
+
+      - name: Create GitHub Release (generated fallback notes)
+        if: steps.notes.outputs.use_body == 'false'
+        # softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "AI Hybrid VHS Audio Restorer v${{ env.VERSION }}"
+          generate_release_notes: true
+          files: release-assets/*
+          draft: false
+          prerelease: false

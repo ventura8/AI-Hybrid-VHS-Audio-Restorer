@@ -22,8 +22,12 @@ When fixing issues in a file, follow this order of operations in a single pass:
 - **Security Gates**: Run
   `bandit -ll -ii -r modules restore_audio_hybrid.py scripts/apply_patches.py`
   and `pip-audit`.
-- **Markdown Quality**: Run `mdformat` (auto-delint) and `pymarkdown scan`
-  for Markdown docs and agent guidance.
+- **Markdown Quality**: Run
+  `poetry run mdformat --check $(git ls-files '*.md')` and
+  `poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')`
+  (the Poetry-managed executables from the markdown-quality skill) for
+  Markdown docs and agent guidance without modifying files. Formatting
+  fixes run separately.
 - **Auto-Fix**: Use `ruff format ...` and `ruff check --fix ...` for
   safe automatic fixes.
 - **Manual Fix**: If lints remain after Ruff fixes, resolve them manually
@@ -63,14 +67,30 @@ When fixing issues in a file, follow this order of operations in a single pass:
   - Use helpers like `is_valid_audio(path)` or `is_valid_video(path)`.
 - **Skip Logic**: Ensure every potentially expensive step has a
   "Skip if Exists & Valid" check at the very top.
+- **Continuous Documentation Updates**: Every time code, configuration,
+  architecture, models, or workflows are modified, all relevant Markdown
+  documentation files (`README.md`, `docs/`, `AGENTS.md`, `.agent/`, etc.)
+  must be updated in the same pass.
 
 ### 5. Pipeline Architecture (Lossless Background)
 
 - **Process Modes**:
-  - `hybrid` (default/fallback): separation + vocal enhancement +
+  - `auto_pure` (default via `DEFAULT_PROCESS_MODE`): dual-resolution scan +
+    pre-conditioning + separation + pure speech/ambient UVR-DeNoise + sync +
+    mix.
+  - `auto`: AI acoustic profiling + dynamic mode selection + sync + remux.
+  - `multipass_auto`: 4-pass cascaded restoration with Resemble-Enhance.
+  - `pure`: alias for `auto_pure`.
+  - `hybrid` (fallback): separation + vocal enhancement +
     background denoise + sync + final mix.
   - `denoise_only`: full-audio denoise + sync + final remux, with no
     separation or vocal enhancement.
+  - `auto_ffmpeg_native`: auto-parameterized FFmpeg DSP chain + sync + remux.
+  - `auto_vhs_native`: alias for `auto_ffmpeg_native`.
+  - `vhs_native`: native FFmpeg DSP filtering (afftdn + adeclick +
+    highpass + notch) + sync + final remux (`_FFmpeg_Cleaned`).
+  - `ffmpeg_native`: alias for `vhs_native`.
+  - `arnndn_speech`: FFmpeg RNNoise speech denoiser + sync + final remux.
 - **Separation Strategy (`hybrid` only)**: The project uses a
   **Subtractive/Lossless Background** approach.
   - **Do NOT** use a dedicated "Music" model (like MDX-NET) because it
@@ -101,8 +121,8 @@ When fixing issues in a file, follow this order of operations in a single pass:
     call `draw_progress_bar(100, ...)` before completion.
   - **Sequential Execution**: In `hybrid`, syncing Vocals and
     Background runs sequentially to maintain clean grouped log output.
-  - **Mode Behavior**: In `denoise_only`, only one full-audio sync pass
-    is executed.
+  - **Mode Behavior**: In `denoise_only`, `vhs_native`, and `arnndn_speech`,
+    only one full-audio sync pass is executed.
   - **Dynamic Radius**: `radius` for DTW must scale with resolution
     (e.g., `0.3 * Resolution`).
   - **Recommended Resolution**: 100Hz for high precision (lipsync),
@@ -127,9 +147,15 @@ When fixing issues in a file, follow this order of operations in a single pass:
 
 ### 8. Output Naming
 
+- `auto` outputs must use `*_Auto_Cleaned.<ext>`.
+- `multipass_auto` outputs must use `*_MultiPass_Cleaned.<ext>`.
+- `auto_pure` / `pure` outputs must use `*_Pure_Cleaned.<ext>`.
 - `hybrid` outputs must use `*_Hybrid_Cleaned.<ext>`.
 - `denoise_only` outputs must use `*_Denoised_Cleaned.<ext>`.
-- File scanning must exclude both cleaned output patterns to avoid
+- `auto_ffmpeg_native` / `auto_vhs_native` outputs must use `*_AutoFFmpeg_Cleaned.<ext>`.
+- `vhs_native` / `ffmpeg_native` outputs must use `*_FFmpeg_Cleaned.<ext>`.
+- `arnndn_speech` outputs must use `*_Speech_Cleaned.<ext>`.
+- File scanning must exclude all cleaned output patterns to avoid
   reprocessing generated files.
 
 ### 9. Execution Modes
@@ -140,6 +166,9 @@ When fixing issues in a file, follow this order of operations in a single pass:
 - **CLI**: Passing a file or directory as a command-line argument
   processes those targets directly and outputs to the same folder as
   the input.
+- **Help**: `-h` / `--help` (handled in `restore_audio_hybrid.py:main`,
+  with a venv-less fallback in `start.sh`) prints usage and exits before
+  the init sequence.
 
 ### 10. PR Comment Resolution Discipline
 

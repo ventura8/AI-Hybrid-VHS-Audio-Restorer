@@ -1,0 +1,27 @@
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    curl \
+    git \
+    build-essential \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.6.14@sha256:3362a526af7eca2fcd8604e6a07e873fb6e4286d8837cb753503558ce1213664 /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+RUN chown -R ubuntu:ubuntu /app
+
+USER ubuntu
+COPY --chown=ubuntu:ubuntu . /app
+
+RUN uv python install 3.12
+RUN chmod +x install_dependencies.sh start.sh run_pipeline_locally.sh
+RUN ./install_dependencies.sh
+RUN .venv/bin/poetry install --with dev --no-root
+
+CMD [".venv/bin/python", "-m", "pytest", "tests/", "-v"]

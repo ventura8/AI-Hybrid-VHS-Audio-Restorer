@@ -35,23 +35,41 @@ background_mix_volume: 1.0
 # AI Model Selection
 # ------------------------------------------------------------------------------
 # Specify the filenames of the AI models used for separation and denoising.
-# NOTE: These models must be valid models supported by 'audio-separator'.
+# Models required for 'hybrid' and 'denoise_only' modes are automatically
+# downloaded and cached by 'audio-separator' upon first execution.
 #
-# Common / Recommended Models:
+# Model Breakdown & Selection Guide:
 # 
-# 1. Vocals Models (for extracting speech/singing):
-#    - model_bs_roformer_ep_317_sdr_12.9755.ckpt  (State-of-the-art, resource heavy)
-#    - UVR-MDX-NET-Voc_FT.onnx                    (Balanced speed/quality)
-#    - kim_vocal_2.onnx                           (Good alternative)
+# 1. Vocals Models (for extracting dialogue/speech and singing):
+#    - model_bs_roformer_ep_317_sdr_12.9755.ckpt
+#      * Architecture: Band-Split RoFormer (Transformer)
+#      * Best for: Maximum separation precision, clearest dialogue extraction.
+#      * Performance: High VRAM requirement (Recommended >= 8 GB VRAM).
+#    - UVR-MDX-NET-Voc_FT.onnx
+#      * Architecture: MDX-Net Fine-Tuned (ONNX)
+#      * Best for: Ultra-fast separation, lower VRAM footprints, high quality.
+#    - kim_vocal_2.onnx
+#      * Architecture: MDX-Net
+#      * Best for: Vintage recording styles and challenging vocal frequencies.
 #
-# 2. Instrumental Models (for removing vocals):
-#    - UVR-MDX-NET-Inst_HQ_3.onnx                 (High fidelity instrumental)
-#    - UVR-MDX-NET-Inst_Main.onnx                 (Balanced)
-#    - UVR_MDXNET_KARA_2.onnx                     (Optimized for Karaoke/No Vocals)
+# 2. Instrumental Models (for isolating ambient background and music):
+#    - UVR-MDX-NET-Inst_HQ_3.onnx
+#      * Architecture: MDX-Net HQ
+#      * Best for: High-fidelity background stem isolation with minimal vocal bleed.
+#    - UVR-MDX-NET-Inst_Main.onnx
+#      * Architecture: MDX-Net
+#      * Best for: General-purpose background separation.
+#    - UVR_MDXNET_KARA_2.onnx
+#      * Architecture: MDX-Net Karaoke
+#      * Best for: Aggressive vocal removal from background music tracks.
 #
-# 3. Denoise Models (for removing hiss/noise):
-#    - UVR-DeNoise-Lite.pth                       (Safe, preserves details)
-#    - UVR-DeNoise.pth                            (Aggressive, may remove ambiance)
+# 3. Denoise Models (AI broadband tape noise and hiss removal):
+#    - UVR-DeNoise-Lite.pth
+#      * Best for: Transparent denoising. Preserves delicate high-frequency room
+#        ambiance and consonant air while eliminating broadband analog tape hiss.
+#    - UVR-DeNoise.pth
+#      * Best for: Heavy noise reduction on severely degraded analog tapes.
+#        May attenuate subtle environmental background sounds.
 # ------------------------------------------------------------------------------
 vocals_model: "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 background_model: "UVR-MDX-NET-Inst_HQ_3.onnx"
@@ -106,16 +124,124 @@ sync_method: "shift"
 dtw_resolution: 25
 
 # ------------------------------------------------------------------------------
-# Processing Mode
+# Processing Mode & Multi-Pass Cascaded Engine
 # ------------------------------------------------------------------------------
-# Controls the complexity of the restoration pipeline.
+# Controls the complexity and engine of the restoration pipeline.
+#
+# enable_multipass (Multi-Pass Cascaded Pipeline Toggle):
+#   - When true (default), enables 4-pass restoration:
+#     Pass 1 (Dual-Resolution Scan) -> Pass 2 (Analog Pre-Conditioning DSP) ->
+#     Pass 3 (AI Neural Separation & Speech Reconstruction) -> Pass 4 (Residual Polish & DTW Sync).
+#   - Eliminates AI hallucination and phase smearing caused by tape clicks and hum.
 #
 # process_mode:
-#   - 'hybrid'       : Full separation + vocal enhance + background denoise. (Default)
-#   - 'denoise_only' : Denoise full audio + Sync. No enhancement/separation.
-#                      Faster, preserves original mix balance perfectly.
+#   - 'auto_pure'          : Multi-Step Pure Speech & Ambient Denoising Engine (*_Pure_Cleaned). (Default)
+#                            Denoises voice without generative AI vocoder synthesis while cleanly
+#                            conserving and denoising original music and ambient acoustics.
+#   - 'auto'               : AI Auto-Detection & Restoration Engine with Multi-Pass Scan.
+#   - 'multipass_auto'     : Explicit 4-Pass Cascaded AI & DSP Restoration Engine (*_MultiPass_Cleaned).
+#   - 'multipass'          : Compatibility alias for 'multipass_auto'.
+#   - 'hybrid'             : Full AI separation + vocal enhance + background denoise.
+#   - 'denoise_only'       : Denoise full audio + Sync via AI (UVR-DeNoise-Lite).
+#                            Preserves original mix balance.
+#   - 'auto_ffmpeg_native' : Intelligent adaptive FFmpeg DSP restoration. Scans audio for mechanical
+#                            motor rumble, 50/60 Hz hum/buzz, click density, and tape hiss noise floor,
+#                            auto-tuning filter graphs for pristine studio-quality restoration.
+#   - 'ffmpeg_native'      : Ultra-fast native FFmpeg DSP restoration (afftdn + adeclick + highpass).
+#                            Best for tape hiss, mechanical rumble, and electrical clicks without GPU.
+#   - 'arnndn_speech'      : FFmpeg Recurrent Neural Network (RNNoise) speech denoiser.
+#                            Best for VHS recordings containing dialogue and spoken voice.
 # ------------------------------------------------------------------------------
-process_mode: "denoise_only"
+process_mode: "auto_pure"
+enable_multipass: true
+
+# ------------------------------------------------------------------------------
+# Native FFmpeg Filter Settings (for 'vhs_native' mode; 'ffmpeg_native' alias)
+# ------------------------------------------------------------------------------
+# Fine-tune native DSP filters built into FFmpeg for VHS tape artifacts.
+#
+# afftdn_nr (Noise Reduction dB):
+#   - Type: Float
+#   - Suggested range: 8.0 to 15.0 dB (Default: 12.0)
+#   - Recommendation: Avoid values >18 dB to prevent metallic chirping or phase artifacts.
+#
+# afftdn_nf (Noise Floor dB):
+#   - Type: Float
+#   - Suggested range: -80.0 to -20.0 dB (Default: -45.0)
+#
+# afftdn_tn (Continuous Noise Tracking):
+#   - Type: Boolean
+#   - Default: true (Enables continuous adaptive estimation across tape dynamics)
+#
+# highpass_freq (Mechanical Rumble Cutoff in Hz):
+#   - Type: Integer
+#   - Default: 60 (Cuts sub-audible motor rumble below 60 Hz; set 0 to disable)
+#
+# enable_adeclick (Impulsive Click/Pop Interpolation):
+#   - Type: Boolean
+#   - Default: true (Detects and interpolates electrical clicks and tape dropouts)
+#
+# notch_freq (Hi-Fi Switching Buzz Notch Filter in Hz):
+#   - Type: Float
+#   - Default: 0.0 (Set to 50.0 or 59.94 / 60.0 to notch out power/head-switching buzz; 0 to disable)
+# ------------------------------------------------------------------------------
+afftdn_nr: 12.0
+afftdn_nf: -45.0
+afftdn_tn: true
+highpass_freq: 60
+enable_adeclick: true
+notch_freq: 0.0
+
+# ------------------------------------------------------------------------------
+# ARNNDN Speech Settings (for 'arnndn_speech' mode)
+# ------------------------------------------------------------------------------
+# Controls the FFmpeg Recurrent Neural Network (RNNoise) speech denoiser.
+# The application automatically downloads the specified model into 'models/arnndn/'
+# if it is not already present locally on your system.
+#
+# Available / Recommended RNNoise (.rnnn) Models:
+#   - "cb.rnnn"         : Standard balanced speech model trained on diverse noise profiles (Default).
+#   - "bd.rnnn"         : Optimized for clear studio/broadcast dialogue captures with background noise.
+#   - "lq.rnnn"         : Upstream general-purpose model for speech with varied noise.
+#   - "mp.rnnn"         : Tuned for mixed speech and medium persistent background interference.
+#   - "sh.rnnn"         : Specialized model for aggressive high-frequency hiss attenuation.
+#
+# Custom Models:
+#   You can also specify custom model filenames placed inside 'models/arnndn/' or 'models/'.
+#
+# arnndn_highpass_freq:
+#   - Cuts sub-audible mechanical rumble before neural inference (Default: 60 Hz)
+#
+# arnndn_enable_adeclick:
+#   - Cleans impulsive clicks before neural inference (Default: true)
+# ------------------------------------------------------------------------------
+arnndn_model: "cb.rnnn"
+arnndn_highpass_freq: 60
+arnndn_enable_adeclick: true
+
+# ------------------------------------------------------------------------------
+# Advanced Audio Polish & Archival Preservation
+# ------------------------------------------------------------------------------
+# enable_deesser:
+#   - true:  Applies dynamic sibilance control to tame harsh 's'/'sh' frequencies on enhanced speech (Default).
+#   - false: Disabled.
+#
+# enable_loudnorm:
+#   - true:  Applies broadcast EBU R128 (-16 LUFS) loudness normalization and True-Peak limiting (Default).
+#   - false: Disabled.
+#
+# enable_dynamic_expander:
+#   - true:  Applies smooth downward dynamic expansion on background track during dialogue pauses (Default).
+#   - false: Disabled.
+#
+# preserve_original_audio_track:
+#   - true:  Preserves original untouched audio as Stream 2 alongside restored audio in container.
+#   - false: Output container contains restored clean audio track only (Default).
+# ------------------------------------------------------------------------------
+enable_deesser: true
+enable_loudnorm: true
+enable_dynamic_expander: true
+preserve_original_audio_track: false
 
 # ------------------------------------------------------------------------------
 # Supported Video Extensions
@@ -129,8 +255,12 @@ process_mode: "denoise_only"
 extensions:
   - .mp4
   - .mkv
+  - .mpg
+  - .mpeg
   - .avi
   - .mov
+  - .ts
+  - .m2ts
 
 # ------------------------------------------------------------------------------
 # DEBUGGING
@@ -138,4 +268,5 @@ extensions:
 # debug_logging:
 #   - false: Standard output (Recommended).
 #   - true:  Detailed terminal logs for troubleshooting.
+# ------------------------------------------------------------------------------
 debug_logging: false

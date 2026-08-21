@@ -1,6 +1,7 @@
 # SKILL: Documentation and Discoverability
 
-Use this skill when adding features, changing behavior, or introducing new project guidance.
+Use this skill when adding features, changing behavior, or introducing new
+project guidance.
 
 ## Objective
 

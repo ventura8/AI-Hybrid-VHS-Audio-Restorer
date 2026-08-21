@@ -5,7 +5,7 @@ Project-specific Copilot guidance is maintained in `.agent/instructions.md`.
 Agents should also consult:
 
 - `AGENTS.md`
-- `.agent/skills/`
+- `.agents/skills/`
 - `.agent/workflows/`
 
 Always run:

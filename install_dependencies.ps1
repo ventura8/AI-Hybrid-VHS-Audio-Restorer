@@ -78,9 +78,9 @@ $localFFmpegPath = "$VenvScripts\ffmpeg.exe"
 if (-not (Test-Path $localFFmpegPath)) {
     Write-Information "Local FFmpeg not found. Downloading full portable build..."
 
-    $url = "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip"
-    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip"
-    $expectedSha256 = "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
+    $url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip"
+    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip"
+    $expectedSha256 = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"
     $zip = "$PSScriptRoot\ffmpeg.zip"
     $temp = "$PSScriptRoot\temp_ffmpeg"
 

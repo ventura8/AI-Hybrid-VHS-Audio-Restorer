@@ -1,6 +1,7 @@
 # SKILL: Agent Configuration Consistency
 
-Use this skill when editing agent instructions, skills, workflows, or Copilot guidance files.
+Use this skill when editing agent instructions, skills, workflows, or Copilot
+guidance files.
 
 ## Objective
 

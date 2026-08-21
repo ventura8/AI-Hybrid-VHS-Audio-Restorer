@@ -1,4 +1,6 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 import modules.ui
 import modules.utils
@@ -87,16 +89,50 @@ def test_scan_files_excludes_cleaned_outputs(tmp_path, capsys):
     hybrid.write_text("v")
     denoised = tmp_path / "source_Denoised_Cleaned.mp4"
     denoised.write_text("v")
+    auto_out = tmp_path / "video_Auto_Cleaned.mp4"
+    auto_out.write_text("v")
+    multipass_out = tmp_path / "video_MultiPass_Cleaned.mp4"
+    multipass_out.write_text("v")
+    pure_out = tmp_path / "video_Pure_Cleaned.mp4"
+    pure_out.write_text("v")
+    ffmpeg_out = tmp_path / "video_FFmpeg_Cleaned.mp4"
+    ffmpeg_out.write_text("v")
+    auto_ffmpeg_out = tmp_path / "video_AutoFFmpeg_Cleaned.mp4"
+    auto_ffmpeg_out.write_text("v")
+    speech = tmp_path / "video_Speech_Cleaned.mp4"
+    speech.write_text("v")
 
     files = modules.ui._scan_files_in_path(tmp_path)
     assert files == [source]
 
-    hybrid_direct = modules.ui._scan_files_in_path(hybrid)
-    denoised_direct = modules.ui._scan_files_in_path(denoised)
-    assert hybrid_direct == []
-    assert denoised_direct == []
+    for direct_file in [hybrid, denoised, auto_out, multipass_out, pure_out, ffmpeg_out, auto_ffmpeg_out, speech]:
+        assert modules.ui._scan_files_in_path(direct_file) == []
+
     captured = capsys.readouterr()
     assert "Skipping cleaned output file" in captured.out
+
+
+@pytest.mark.parametrize(
+    "mode,model_name,expected_substr",
+    [
+        ("auto", "cb.rnnn", "AI Auto-Detect & Restore"),
+        ("multipass_auto", "cb.rnnn", "AI Multi-Pass Cascaded Restoration"),
+        ("auto_pure", "cb.rnnn", "AI Pure Speech & Ambient Denoising"),
+        ("pure", "cb.rnnn", "AI Pure Speech & Ambient Denoising"),
+        ("hybrid", "cb.rnnn", "UVR-DeNoise"),
+        ("denoise_only", "cb.rnnn", "UVR-DeNoise-Lite"),
+        ("auto_ffmpeg_native", "cb.rnnn", "Adaptive FFmpeg DSP (Auto-Tuned Scan)"),
+        ("ffmpeg_native", "cb.rnnn", "FFmpeg Native (afftdn + adeclick + highpass)"),
+        ("auto_vhs_native", "cb.rnnn", "Adaptive FFmpeg DSP (Auto-Tuned Scan)"),
+        ("vhs_native", "cb.rnnn", "FFmpeg Native (afftdn + adeclick + highpass)"),
+        ("arnndn_speech", "cb.rnnn", "FFmpeg ARNNDN (cb.rnnn)"),
+        ("other_mode", "cb.rnnn", "Default"),
+    ],
+)
+def test_get_active_models_label(mode, model_name, expected_substr):
+    """Verify active models label returns correct string for all modes."""
+    with patch("modules.ui.PROCESS_MODE", mode), patch("modules.ui.ARNNDN_MODEL", model_name):
+        assert expected_substr in modules.ui._get_active_models_label()
 
 
 def test_scan_files_unsupported(tmp_path, capsys):
@@ -107,6 +143,21 @@ def test_scan_files_unsupported(tmp_path, capsys):
     assert len(files) == 0
     captured = capsys.readouterr()
     assert "[Error] Unsupported extension" in captured.out
+
+
+def test_scan_files_multi_containers(tmp_path):
+    """Test _scan_files_in_path discovers .mkv, .avi, .mpg alongside .mp4."""
+    d = tmp_path / "videos"
+    d.mkdir()
+    (d / "sample.mp4").touch()
+    (d / "sample.mkv").touch()
+    (d / "sample.avi").touch()
+    (d / "sample.mpg").touch()
+    (d / "readme.txt").touch()
+
+    files = modules.ui._scan_files_in_path(d)
+    expected_files = [d / "sample.avi", d / "sample.mkv", d / "sample.mp4", d / "sample.mpg"]
+    assert sorted(files) == sorted(expected_files)
 
 
 def test_clean_user_input_variations():
@@ -164,8 +215,31 @@ def test_get_torch_backend_uses_nvidia_label_for_nvidia_names():
 
 def test_get_torch_backend_xpu_and_cpu_fallbacks():
     """Backend selection should preserve XPU and CPU fallback behavior."""
-    with patch("modules.ui._has_cuda_backend", return_value=False), patch("modules.ui._has_xpu_backend", return_value=True):
+    with patch("modules.ui._has_cuda_backend", return_value=False), patch("modules.ui._has_mps_backend", return_value=True):
+        assert modules.ui._get_torch_backend("Any") == "MPS (Apple Silicon Accelerated)"
+
+    with (
+        patch("modules.ui._has_cuda_backend", return_value=False),
+        patch("modules.ui._has_mps_backend", return_value=False),
+        patch("modules.ui._has_xpu_backend", return_value=True),
+    ):
         assert modules.ui._get_torch_backend("Any") == "XPU (Intel Accelerated)"
 
-    with patch("modules.ui._has_cuda_backend", return_value=False), patch("modules.ui._has_xpu_backend", return_value=False):
+    with (
+        patch("modules.ui._has_cuda_backend", return_value=False),
+        patch("modules.ui._has_mps_backend", return_value=False),
+        patch("modules.ui._has_xpu_backend", return_value=False),
+    ):
         assert modules.ui._get_torch_backend("Any") == "CPU (Slow)"
+
+
+def test_has_mps_backend_detection():
+    """Test _has_mps_backend branch coverage."""
+    mock_torch = MagicMock()
+    mock_torch.backends.mps.is_available.return_value = True
+    with patch.object(modules.ui, "torch", mock_torch):
+        assert modules.ui._has_mps_backend() is True
+
+    mock_torch.backends.mps.is_available.return_value = False
+    with patch.object(modules.ui, "torch", mock_torch):
+        assert modules.ui._has_mps_backend() is False

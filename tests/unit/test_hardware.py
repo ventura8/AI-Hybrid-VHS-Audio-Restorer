@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -16,6 +16,7 @@ def mock_hardware_torch(monkeypatch):
     mock_torch.__file__ = "C:/mock/torch/__init__.py"
     mock_torch.cuda = MagicMock()
     mock_torch.cuda.is_available.return_value = False
+    mock_torch.backends.mps.is_available.return_value = False
     monkeypatch.setitem(sys.modules, "torch", mock_torch)
     monkeypatch.setattr(modules.hardware, "torch", mock_torch)
     return mock_torch
@@ -63,8 +64,12 @@ def test_get_gpu_name_robust(mock_out):
 
     # Test failure case
     mock_out.side_effect = Exception("nvidia-smi not found")
-    # Ensure torch doesn't interfere
-    with patch.object(modules.hardware.torch.cuda, "is_available", return_value=False):
+    # Ensure torch and MPS don't interfere
+    with (
+        patch("sys.platform", "linux"),
+        patch.object(modules.hardware.torch.cuda, "is_available", return_value=False),
+        patch.object(modules.hardware, "IS_MPS", False),
+    ):
         result = modules.hardware.get_gpu_name()
         assert ("Not Detected" in result) or ("Generic" in result)
 
@@ -85,20 +90,21 @@ def test_get_cpu_name_windows():
 
 
 def test_get_cpu_name_linux():
-    """Test CPU name detection on Linux/Fallback."""
-    with patch("sys.platform", "linux"):
-        with patch("platform.processor", return_value="AMD Ryzen Linux"):
-            result = modules.hardware.get_cpu_name()
-            assert "AMD" in result
+    """Test CPU name detection on Linux."""
+    with patch("sys.platform", "linux"), patch("modules.hardware._get_unix_cpu_name", return_value="AMD Ryzen Linux"):
+        result = modules.hardware.get_cpu_name()
+        assert "AMD" in result
 
 
 def test_get_cpu_name_fallback():
     """Test CPU name fallback to platform.processor."""
-    # Test the non-Windows path directly (which always falls back to platform.processor)
-    with patch("sys.platform", "linux"):
-        with patch("modules.hardware.platform.processor", return_value="Fallback CPU"):
-            result = modules.hardware.get_cpu_name()
-            assert result == "Fallback CPU"
+    with (
+        patch("sys.platform", "linux"),
+        patch("modules.hardware._get_unix_cpu_name", return_value=None),
+        patch("modules.hardware.platform.processor", return_value="Fallback CPU"),
+    ):
+        result = modules.hardware.get_cpu_name()
+        assert result == "Fallback CPU"
 
 
 def test_optimal_settings_all_profiles():
@@ -240,8 +246,10 @@ def test_detect_pytorch_cuda_no_cuda():
     """Test _detect_pytorch_cuda early return when CUDA not available."""
     mock_cuda = MagicMock()
     mock_cuda.is_available.return_value = False
+    mock_torch = MagicMock(cuda=mock_cuda)
+    mock_torch.backends.mps.is_available.return_value = False
     settings = {"device_index": -1, "is_nvidia": True, "cuda_device": "cuda:3"}  # default test val
-    with patch.object(modules.hardware, "torch", MagicMock(cuda=mock_cuda)):
+    with patch.object(modules.hardware, "torch", mock_torch):
         modules.hardware._detect_pytorch_cuda(settings)
     assert settings["device_index"] == 0
     assert settings["is_nvidia"] is False
@@ -388,3 +396,169 @@ def test_get_nvidia_paths_torch_lib_missing_and_module_file_fallback():
 
     assert any(path.replace("\\", "/").endswith("cudnn/bin") for path in paths)
     assert any(path.replace("\\", "/").endswith("cublas/bin") for path in paths)
+
+
+def test_get_linux_cpu_name_success():
+    """Test _get_linux_cpu_name parses /proc/cpuinfo correctly."""
+    cpuinfo_content = "processor\t: 0\nmodel name\t: AMD Ryzen 9 5950X 16-Core Processor\nflags\t: fpu\n"
+    with patch("builtins.open", mock_open(read_data=cpuinfo_content)):
+        result = modules.hardware._get_linux_cpu_name()
+        assert result == "AMD Ryzen 9 5950X 16-Core Processor"
+
+
+def test_get_linux_cpu_name_oserror():
+    """Test _get_linux_cpu_name returns None on OSError."""
+    with patch("modules.hardware.open", side_effect=OSError("Read error")):
+        assert modules.hardware._get_linux_cpu_name() is None
+
+
+@patch("modules.hardware.subprocess.check_output")
+def test_get_macos_cpu_name_success(mock_out):
+    """Test _get_macos_cpu_name parses sysctl brand string."""
+    mock_out.return_value = b"Apple M3 Max\n"
+    assert modules.hardware._get_macos_cpu_name() == "Apple M3 Max"
+    mock_out.assert_called_once_with(["sysctl", "-n", "machdep.cpu.brand_string"], stderr=subprocess.DEVNULL, timeout=5)
+
+
+@patch("modules.hardware.subprocess.check_output")
+def test_get_macos_cpu_name_error(mock_out):
+    """Test _get_macos_cpu_name returns None on subprocess error."""
+    mock_out.side_effect = subprocess.CalledProcessError(1, ["sysctl"])
+    assert modules.hardware._get_macos_cpu_name() is None
+
+
+def test_get_unix_cpu_name_dispatch():
+    """Test _get_unix_cpu_name dispatches based on sys.platform."""
+    with patch("sys.platform", "linux"), patch("modules.hardware._get_linux_cpu_name", return_value="Linux CPU"):
+        assert modules.hardware._get_unix_cpu_name() == "Linux CPU"
+
+    with patch("sys.platform", "darwin"), patch("modules.hardware._get_macos_cpu_name", return_value="Mac CPU"):
+        assert modules.hardware._get_unix_cpu_name() == "Mac CPU"
+
+    with patch("sys.platform", "win32"):
+        assert modules.hardware._get_unix_cpu_name() is None
+
+
+def _detect_mps_with_stale_fallback(mem_gb=12.0):
+    """Runs MPS detection on a settings dict left over from a CPU-only probe."""
+    mock_torch = MagicMock()
+    mock_torch.backends.mps.is_available.return_value = True
+    settings = {"cpu_only_fallback": True}
+    with patch.object(modules.hardware, "torch", mock_torch):
+        with patch("modules.hardware._get_macos_total_memory_gb", return_value=mem_gb):
+            detected = modules.hardware._detect_mps_backend(settings)
+    return detected, settings
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("cuda_device", "mps"),
+        ("cuda_child_device", "mps"),
+        ("is_mps", True),
+        ("gpu_batch_size", 4),
+        ("gpu_vram_gb", 12.0),
+        # Left unset, _apply_env_vars would take the CPU-only branch and wipe
+        # cuda_device back to None, silently disabling MPS.
+        ("cpu_only_fallback", False),
+    ],
+)
+def test_detect_mps_backend_sets_every_flag_it_owns(key, expected):
+    """MPS detection must leave no flag it owns carrying a stale value."""
+    detected, settings = _detect_mps_with_stale_fallback(mem_gb=12.0)
+    assert detected is True
+    assert settings[key] == expected
+
+
+def test_detect_mps_backend_available():
+    """Test _detect_mps_backend when Apple Silicon MPS is available."""
+    detected, settings = _detect_mps_with_stale_fallback(mem_gb=32.0)
+    assert detected is True
+    assert settings["profile_name"] == "APPLE SILICON (32 GB Unified Memory)"
+    assert settings["gpu_batch_size"] == 32
+    assert settings["gpu_vram_gb"] == 32.0
+
+
+def test_mps_survives_apply_env_vars_after_a_cpu_only_probe():
+    """The end-to-end guarantee the cpu_only_fallback reset exists to provide."""
+    _, settings = _detect_mps_with_stale_fallback()
+    with patch.dict(os.environ, {}, clear=True):
+        modules.hardware._apply_env_vars(settings)
+    assert settings["cuda_device"] == "mps"
+    assert settings["cuda_child_device"] == "mps"
+
+
+def test_detect_mps_backend_unavailable():
+    """Test _detect_mps_backend when MPS is not available."""
+    mock_torch = MagicMock()
+    mock_torch.backends.mps.is_available.return_value = False
+    settings = {}
+    with patch.object(modules.hardware, "torch", mock_torch):
+        assert modules.hardware._detect_mps_backend(settings) is False
+
+    with patch.object(modules.hardware, "torch", None):
+        assert modules.hardware._detect_mps_backend(settings) is False
+
+
+def test_detect_pytorch_device_mps_fallback():
+    """Test _detect_pytorch_device falls back to MPS when CUDA is not available."""
+    mock_torch = MagicMock()
+    mock_torch.cuda.is_available.return_value = False
+    mock_torch.backends.mps.is_available.return_value = True
+    settings = {}
+    with patch.object(modules.hardware, "torch", mock_torch):
+        modules.hardware._detect_pytorch_device(settings)
+        assert settings["cuda_device"] == "mps"
+        assert settings["is_mps"] is True
+
+
+def test_apply_env_vars_mps():
+    """Test _apply_env_vars configuration when is_mps is True."""
+    settings = {"is_nvidia": False, "is_mps": True, "cuda_device": "mps"}
+    initial_env = {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+        "ORT_TENSORRT_FP16_ENABLE": "1",
+    }
+    with patch.dict(os.environ, initial_env, clear=True):
+        modules.hardware._apply_env_vars(settings)
+        assert settings["cuda_child_device"] == "mps"
+        assert "CUDA_VISIBLE_DEVICES" not in os.environ
+        assert "CUDA_DEVICE_ORDER" not in os.environ
+        assert "ORT_TENSORRT_FP16_ENABLE" not in os.environ
+
+
+def test_get_macos_gpu_name_integrated():
+    """Test _get_macos_gpu_name returns Apple Silicon GPU on Darwin."""
+    with patch("sys.platform", "darwin"), patch("modules.hardware._get_macos_cpu_name", return_value="Apple M2"):
+        assert "Apple M2 (Integrated GPU)" in modules.hardware._get_macos_gpu_name()
+
+    with patch("sys.platform", "darwin"), patch("modules.hardware._get_macos_cpu_name", return_value=None):
+        with patch.object(modules.hardware, "IS_MPS", True):
+            assert "MPS" in modules.hardware._get_macos_gpu_name()
+
+    with patch("sys.platform", "linux"):
+        assert modules.hardware._get_macos_gpu_name() is None
+
+
+def test_get_gpu_name_macos_dispatch():
+    """Test get_gpu_name dispatches to macOS GPU name when no CUDA or SMI."""
+    with (
+        patch.object(modules.hardware, "torch", None),
+        patch("modules.hardware.subprocess.check_output", side_effect=Exception("No SMI")),
+        patch("modules.hardware._get_macos_gpu_name", return_value="Apple M1 (Integrated GPU)"),
+    ):
+        assert modules.hardware.get_gpu_name() == "Apple M1 (Integrated GPU)"
+
+
+def test_dynamic_linker_env_updates():
+    """Test _update_dynamic_linker_env and prepare_runtime_library_paths."""
+    fake_path = "/opt/nvidia/cuda/lib64"
+    with patch.dict(os.environ, {}, clear=True):
+        modules.hardware._update_dynamic_linker_env(fake_path)
+        assert fake_path in os.environ.get("LD_LIBRARY_PATH", "")
+        assert fake_path in os.environ.get("DYLD_LIBRARY_PATH", "")
+
+        with patch("modules.hardware.get_nvidia_paths", return_value=[fake_path]):
+            modules.hardware.prepare_runtime_library_paths()
+            assert fake_path in os.environ["LD_LIBRARY_PATH"]

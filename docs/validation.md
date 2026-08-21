@@ -4,8 +4,12 @@
 
 Run full local validation with:
 
+```bash
+./run_pipeline_locally.sh
+```
+
 ```powershell
-./run_pipeline_locally.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_pipeline_locally.ps1
 ```
 
 ## What Validation Covers
@@ -15,11 +19,11 @@ Run full local validation with:
 - TOML formatting check via `taplo`.
 - Static analysis gate (Pylint).
 - Security checks via Bandit and pip-audit.
-- Markdown auto-delint via `mdformat`.
-- Markdown linting via `pymarkdownlnt`.
+- Markdown formatting verified via `mdformat --check`.
+- Markdown linting via `pymarkdown --config .pymarkdown.json scan`.
 - Test execution with total coverage threshold enforcement.
-- Radon complexity, maintainability, raw, and Halstead checks for
-  modules and the test suite.
+- Radon complexity, maintainability, raw, and Halstead checks for modules and
+  the test suite.
 - Strict per-file coverage enforcement from `coverage.json`.
 - Coverage badge regeneration.
 
@@ -65,4 +69,5 @@ if ($tomlFiles.Count -gt 0) {
 
 ## CI Parity
 
-CI workflow mirrors local validation ordering and tooling to avoid environment drift.
+CI workflow mirrors local validation ordering and tooling to avoid environment
+drift.

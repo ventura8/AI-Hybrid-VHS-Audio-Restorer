@@ -15,5 +15,7 @@ RUN poetry install -v --only main,dev --without ml --no-root
 COPY . .
 
 FROM base AS markdown-lint
-RUN poetry run mdformat --check README.md AGENTS.md .agent docs tests/README.md \
-    && poetry run pymarkdown scan README.md AGENTS.md .agent docs tests/README.md
+RUN find README.md AGENTS.md .agent .agents docs tests/README.md -type f -name '*.md' -print0 \
+    | xargs -0 poetry run mdformat --check \
+    && find README.md AGENTS.md .agent .agents docs tests/README.md -type f -name '*.md' -print0 \
+    | xargs -0 poetry run pymarkdown --config .pymarkdown.json scan

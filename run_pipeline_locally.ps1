@@ -123,8 +123,7 @@ try {
         Initialize-Poetry
     }
 
-    Invoke-Step "Refresh Poetry lockfile" {
-        Invoke-PoetryCommand @("lock", "--no-interaction")
+    Invoke-Step "Validate Poetry lockfile" {
         Invoke-PoetryCommand @("check", "--lock")
     }
 
@@ -349,29 +348,20 @@ try {
         Invoke-PoetryCommand @("run", "python", "tests/tooling/radon_mi_gate.py", "radon-mi-report.json")
     }
 
-    Invoke-Step "Run Markdown Auto-Delint" {
-        Invoke-PoetryCommand @(
-            "run",
-            "mdformat",
-            "README.md",
-            "AGENTS.md",
-            ".agent",
-            "docs",
-            "tests/README.md"
-        )
+    # Every tracked Markdown file, not just the top level of each directory: a
+    # plain directory argument to pymarkdown does not recurse, which left the
+    # skill and workflow documents unchecked.
+    $script:markdownFiles = @(& git ls-files '*.md')
+    if ($LASTEXITCODE -ne 0 -or $script:markdownFiles.Count -eq 0) {
+        throw "Unable to enumerate tracked Markdown files via git ls-files."
+    }
+
+    Invoke-Step "Run Markdown Format Check" {
+        Invoke-PoetryCommand (@("run", "mdformat", "--check") + $script:markdownFiles)
     }
 
     Invoke-Step "Run Markdown Lint" {
-        Invoke-PoetryCommand @(
-            "run",
-            "pymarkdown",
-            "scan",
-            "README.md",
-            "AGENTS.md",
-            ".agent",
-            "docs",
-            "tests/README.md"
-        )
+        Invoke-PoetryCommand (@("run", "pymarkdown", "--config", ".pymarkdown.json", "scan") + $script:markdownFiles)
     }
 
     Invoke-Step "Run tests with coverage" {
