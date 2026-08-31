@@ -1,14 +1,17 @@
 # SKILL: PR Comment Resolution (GitHub CLI + MCP)
 
-Use this skill when processing pull request review comments from both CodeRabbit and human reviewers.
+Use this skill when processing pull request review comments from both CodeRabbit
+and human reviewers.
 
 ## Objective
 
-Resolve PR discussions with full traceability by combining GitHub CLI (`gh`) and MCP tools.
+Resolve PR discussions with full traceability by combining GitHub CLI (`gh`) and
+MCP tools.
 
 ## Core Rule
 
-Never resolve or close any PR comment thread until a detailed reply has been posted to that thread.
+Never resolve or close any PR comment thread until a detailed reply has been
+posted to that thread.
 
 Detailed reply minimum:
 
@@ -38,7 +41,7 @@ Preferred MCP tools:
 ./run_pipeline_locally.ps1
 ```
 
-5. Post a detailed reply per comment thread including:
+1. Post a detailed reply per comment thread including:
    - Root cause.
    - Concrete fix.
    - Validation evidence.
@@ -48,10 +51,12 @@ Preferred MCP tools:
 
 ## Operational Notes
 
-- Prioritize CodeRabbit findings that indicate correctness, data loss, security, or regression risk.
+- Prioritize CodeRabbit findings that indicate correctness, data loss, security,
+  or regression risk.
 - Do not batch-resolve comments without per-thread replies.
 - If a comment is outdated or invalid, still reply in detail before resolving.
-- If blocked (missing context, flaky reproduction), reply with attempted steps and blocker details, then leave unresolved until actionable.
+- If blocked (missing context, flaky reproduction), reply with attempted steps
+  and blocker details, then leave unresolved until actionable.
 
 ## Example Command Snippets
 
@@ -63,4 +68,5 @@ gh pr view <pr-number> --comments
 gh pr checkout <pr-number>
 ```
 
-Use MCP equivalents when provider-backed APIs are available, and keep thread-level accountability identical.
+Use MCP equivalents when provider-backed APIs are available, and keep
+thread-level accountability identical.

@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-from modules.config import OUTPUT_DIR
+from modules.config import OUTPUT_DIR, PROCESS_MODE
 from modules.processing import process_hybrid_audio
 from modules.ui import _get_input_files, _show_banner, run_init_sequence
 from modules.utils import check_dependencies
@@ -10,8 +10,53 @@ from modules.utils import check_dependencies
 # Ensure local modules can be imported
 sys.path.append(str(Path(__file__).parent))
 
+HELP_TEXT = """\
+AI Hybrid VHS Audio Restorer
+
+Usage:
+  start.sh  [PATH ...]                  (Linux / macOS)
+  start.bat [PATH ...]                  (Windows)
+  python restore_audio_hybrid.py [PATH ...]
+
+Arguments:
+  PATH         One or more video files or folders to restore. The cleaned file
+               is written next to each source with a mode-specific
+               '*_Cleaned' suffix.
+
+Options:
+  -h, --help   Show this help message and exit.
+
+With no arguments the app starts in interactive mode: drag & drop a file, or
+press Enter to scan the 'input/' folder. The restoration engine is chosen by
+'process_mode' in config.yaml (current: {mode})."""
+
+
+def _wants_help(argv):
+    """Returns True when the CLI arguments request the help screen."""
+    return any(arg in ("-h", "--help") for arg in argv)
+
+
+def _print_help():
+    """Prints CLI usage, including the currently configured process mode."""
+    print(HELP_TEXT.format(mode=PROCESS_MODE))
+
+
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 def main():
+    if _wants_help(sys.argv[1:]):
+        _print_help()
+        return
+    _run_restoration()
+
+
+def _run_restoration():
     # 1. Initialization Sequence
     cpu_name, gpu_name = run_init_sequence()
 

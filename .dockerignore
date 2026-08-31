@@ -1,0 +1,15 @@
+.venv/
+.poetry-venv/
+venv/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+coverage.xml
+coverage.json
+dist/
+build/
+input/
+output/
+temp_work/

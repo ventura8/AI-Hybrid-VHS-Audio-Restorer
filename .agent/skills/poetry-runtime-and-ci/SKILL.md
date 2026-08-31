@@ -4,7 +4,8 @@ Use this skill when changing dependencies, installer logic, or CI workflows.
 
 ## Objective
 
-Enforce Poetry-first dependency management with deterministic lockfile installs and local/CI parity.
+Enforce Poetry-first dependency management with deterministic lockfile installs
+and local/CI parity.
 
 ## Dependency Policy
 
@@ -16,7 +17,8 @@ Enforce Poetry-first dependency management with deterministic lockfile installs 
 ## Installer Policy
 
 - Installer sets up `.venv` and installs runtime dependencies only.
-- Runtime-only exceptions that cannot be solved via Poetry resolver can be installed explicitly after main sync.
+- Runtime-only exceptions that cannot be solved via Poetry resolver can be
+  installed explicitly after main sync.
 
 ## CI Policy
 
@@ -26,4 +28,5 @@ Enforce Poetry-first dependency management with deterministic lockfile installs 
 
 ## CUDA Policy
 
-- Preserve final CUDA 13.2 wheel strategy and corresponding source index for torch packages.
+- Preserve final CUDA 13.2 wheel strategy and corresponding source index for
+  torch packages.

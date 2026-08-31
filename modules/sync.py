@@ -509,8 +509,10 @@ def _align_stems_dtw(original_wav, processed_wav, output_wav):
         return _align_stems_shift(original_wav, processed_wav, output_wav)
 
 
-def _align_stems(original_wav, processed_wav, output_wav):
-    if SYNC_METHOD == "dtw":
+def _align_stems(original_wav, processed_wav, output_wav, sync_method=None):
+    """Aligns a processed track to the reference, honouring a strategy override."""
+    method = SYNC_METHOD if sync_method is None else sync_method
+    if method == "dtw":
         return _align_stems_dtw(original_wav, processed_wav, output_wav)
     else:
         return _align_stems_shift(original_wav, processed_wav, output_wav)

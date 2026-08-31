@@ -59,13 +59,18 @@ test_mix.wav
 debug_*.py
 
 # --- Models & Dependencies ---
-models/
 *.ckpt
 *.pth
 *.onnx
 *.safetensors
+models/*.json
+models/*.yaml
 ffmpeg.zip
 ffmpeg/
+
+# --- Scratch & Benchmark Files ---
+benchmark_*.json
+scratch_*.json
 
 # --- Artifacts ---
 start.bat

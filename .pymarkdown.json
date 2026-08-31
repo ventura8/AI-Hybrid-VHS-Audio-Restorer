@@ -1,0 +1,14 @@
+{
+  "extensions": {
+    "front-matter": {
+      "enabled": true
+    }
+  },
+  "plugins": {
+    "md013": {
+      "line_length": 80,
+      "code_block_line_length": 200,
+      "heading_line_length": 200
+    }
+  }
+}

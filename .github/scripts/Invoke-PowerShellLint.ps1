@@ -16,8 +16,18 @@ function Get-LatestInstalledPssaVersion {
 
 
 $psGallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
-if ($null -eq $psGallery -or $psGallery.SourceLocation -ne "https://www.powershellgallery.com/api/v2") {
-    throw "PSGallery repository is not configured with the approved source location."
+if ($null -eq $psGallery) {
+    throw "PSGallery repository is not registered."
+}
+
+# Validate the scheme and host rather than an exact URL string. Hosted runners
+# register PSGallery with a trailing slash or the v3 endpoint depending on the
+# PowerShellGet version present, which made a byte-exact match fail CI
+# intermittently. Checking the host still rejects any third-party gallery.
+$sourceUri = $null
+$parsed = [System.Uri]::TryCreate($psGallery.SourceLocation, [System.UriKind]::Absolute, [ref]$sourceUri)
+if (-not $parsed -or $sourceUri.Scheme -ne "https" -or $sourceUri.Host -ne "www.powershellgallery.com") {
+    throw "PSGallery is not configured with an approved source location: $($psGallery.SourceLocation)"
 }
 
 $restoreInstallationPolicy = $false

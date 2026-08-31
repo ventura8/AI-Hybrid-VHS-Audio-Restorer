@@ -1,0 +1,339 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.1.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: "2.4.1"
+
+jobs:
+  validate:
+    name: "✅ Validate Release"
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract version
+        id: version
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid tag format '${TAG}'" >&2
+            exit 1
+          fi
+          VER="${TAG#v}"
+          echo "VERSION=${VER}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building release for version ${VER} (tag: ${TAG})"
+
+      - name: Verify and Check Out Release Tag
+        shell: bash
+        run: |
+          git fetch --tags --force || true
+          if ! git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            echo "Error: tag '${TAG}' does not exist in this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${TAG}"
+          echo "Checked out $(git rev-parse HEAD) for tag ${TAG}"
+
+      - name: Set up Python
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      # The tracked poetry.toml sets virtualenvs.create = false, so Poetry never
+      # builds .venv itself; it installs into whichever interpreter runs it. The
+      # quality gate resolves tooling through .venv/bin/python, so the venv is
+      # created here and Poetry is installed inside it, mirroring
+      # install_dependencies.sh.
+      - name: Create In-Project Virtualenv and Install Poetry
+        shell: bash
+        run: |
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install "poetry==${POETRY_VERSION}"
+
+      - name: Validate Poetry Lockfile
+        shell: bash
+        run: |
+          ./.venv/bin/python -m poetry check --lock
+
+      # Dependencies are installed by the gate itself (its Step 3). `poetry sync`
+      # is deliberately not used here: it prunes everything outside main,dev,
+      # which uninstalls Poetry from .venv and breaks the gate's own
+      # `.venv/bin/python -m poetry` invocations.
+      - name: Run Quality Gate Pipeline
+        shell: bash
+        run: |
+          ./run_pipeline_locally.sh
+
+  package:
+    name: "📦 Package ${{ matrix.platform }} Release"
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            installer_type: exe
+          - platform: linux
+            runner: ubuntu-latest
+            installer_type: deb_rpm
+          - platform: macos-arm64
+            # macos-26 is GitHub's latest Apple Silicon hosted runner. Keep the
+            # architecture in the asset name so users do not accidentally
+            # download an Intel-oriented package.
+            runner: macos-26
+            architecture: arm64
+            installer_type: pkg
+          - platform: macos-intel
+            runner: macos-26-intel
+            architecture: x86_64
+            installer_type: pkg
+    runs-on: ${{ matrix.runner }}
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging tools on Linux
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev alien rpm ffmpeg
+
+      - name: Install FFmpeg for macOS artifact smoke test
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          # Hosted macOS images can carry this unused tap. Remove it rather
+          # than granting broad trust to a third-party tap.
+          brew untap aws/tap || true
+          brew install ffmpeg
+
+      - name: Install FFmpeg for Windows runner smoke test
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress
+          ffmpeg -version
+
+      - name: Extract and verify release tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid tag format '${TAG}'" >&2
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            echo "Error: tag '${TAG}' does not exist in this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${TAG}"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Verify macOS release environment
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "${{ matrix.architecture }}"
+          test "$(python3 -c 'import platform; print(platform.machine())')" = "${{ matrix.architecture }}"
+
+      - name: Build Linux installers (.deb & .rpm)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          ./scripts/package_linux_deb_rpm.sh "${TAG}" release-assets
+          test -f "release-assets/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.deb"
+          if [ -f "release-assets/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.rpm" ]; then
+            echo "Built RPM package successfully."
+          fi
+
+      - name: Build macOS installer (.pkg)
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          ./scripts/package_macos_pkg.sh "${TAG}" release-assets "${{ matrix.architecture }}"
+          test -f "release-assets/AI-Hybrid-VHS-Audio-Restorer-${TAG}-macos-${{ matrix.architecture }}.pkg"
+
+      - name: Build Windows executable
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          & .\scripts\package_windows_installer.ps1 -Tag $env:TAG -OutputDir release-assets
+          $installer = "release-assets\AI-Hybrid-VHS-Audio-Restorer-$($env:TAG)-windows.exe"
+          if (-not (Test-Path $installer)) {
+            throw "Windows executable launcher was not created."
+          }
+
+      - name: Install and smoke-test Linux .deb installer package
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo dpkg -i "release-assets/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.deb"
+          test -d /opt/ai-hybrid-vhs-audio-restorer
+          test -x /usr/local/bin/ai-hybrid-vhs-audio-restorer
+          sudo chown -R "$USER:$USER" /opt/ai-hybrid-vhs-audio-restorer
+          cd /opt/ai-hybrid-vhs-audio-restorer
+          ./install_dependencies.sh
+          python3 "$GITHUB_WORKSPACE/scripts/test_installed_executable.py" ai-hybrid-vhs-audio-restorer --config-dir /opt/ai-hybrid-vhs-audio-restorer
+
+      - name: Install and smoke-test macOS .pkg installer
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          sudo installer -pkg "release-assets/AI-Hybrid-VHS-Audio-Restorer-${TAG}-macos-${{ matrix.architecture }}.pkg" -target /
+          test -d /Applications/AI-Hybrid-VHS-Audio-Restorer.app
+          test -x /Applications/AI-Hybrid-VHS-Audio-Restorer.app/Contents/MacOS/ai-hybrid-vhs-audio-restorer
+          test -x /usr/local/bin/ai-hybrid-vhs-audio-restorer
+          sudo chown -R "$USER:admin" /Applications/AI-Hybrid-VHS-Audio-Restorer.app
+          cd /Applications/AI-Hybrid-VHS-Audio-Restorer.app/Contents/Resources
+          ./install_dependencies.sh
+          if [ "${{ matrix.platform }}" = "macos-arm64" ]; then
+            ./.venv/bin/python -c 'import torch; assert torch.backends.mps.is_available(), "PyTorch MPS is unavailable"'
+          fi
+          python3 "$GITHUB_WORKSPACE/scripts/test_installed_executable.py" ai-hybrid-vhs-audio-restorer --config-dir /Applications/AI-Hybrid-VHS-Audio-Restorer.app/Contents/Resources
+
+      - name: Install and smoke-test Windows executable
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path release-assets -Filter '*windows.exe' | Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Windows release executable was not created."
+          }
+          $appDir = "$env:USERPROFILE\AI-Hybrid-VHS-Audio-Restorer"
+          if (Test-Path $appDir) { Remove-Item $appDir -Recurse -Force }
+          python "$env:GITHUB_WORKSPACE\scripts\test_installed_executable.py" $installer.FullName --config-dir $appDir
+
+      - name: Upload platform release installer assets
+        # actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: "🚀 Publish GitHub Release"
+    permissions:
+      contents: write
+    needs:
+      - validate
+      - package
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract and verify release tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid tag format '${TAG}'" >&2
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            echo "Error: tag '${TAG}' does not exist in this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${TAG}"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Download platform release artifacts
+        # actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Check release notes body
+        id: notes
+        shell: bash
+        run: |
+          BODY_FILE="docs/releases/v${VERSION}_github_description.md"
+          if [ -f "${BODY_FILE}" ]; then
+            echo "use_body=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_body=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release (authored notes)
+        if: steps.notes.outputs.use_body == 'true'
+        # softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "AI Hybrid VHS Audio Restorer v${{ env.VERSION }}"
+          body_path: docs/releases/v${{ env.VERSION }}_github_description.md
+          files: release-assets/*
+          draft: false
+          prerelease: false
+
+      - name: Create GitHub Release (generated fallback notes)
+        if: steps.notes.outputs.use_body == 'false'
+        # softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "AI Hybrid VHS Audio Restorer v${{ env.VERSION }}"
+          generate_release_notes: true
+          files: release-assets/*
+          draft: false
+          prerelease: false

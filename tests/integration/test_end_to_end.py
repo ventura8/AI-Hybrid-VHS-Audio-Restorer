@@ -10,9 +10,18 @@ import pytest
 from modules.utils import is_valid_video
 
 MODE_BY_SUFFIX = {
+    "Auto_Cleaned": "auto",
+    "MultiPass_Cleaned": "multipass_auto",
+    "Pure_Cleaned": "auto_pure",
     "Denoised_Cleaned": "denoise_only",
     "Hybrid_Cleaned": "hybrid",
+    "FFmpeg_Cleaned": "ffmpeg_native",
+    "AutoFFmpeg_Cleaned": "auto_ffmpeg_native",
+    "Speech_Cleaned": "arnndn_speech",
 }
+
+# Single source of truth for every mode-specific output suffix.
+MODE_SUFFIXES = [f"_{suffix}" for suffix in MODE_BY_SUFFIX]
 
 
 def _setup_test_environment(base_dir):
@@ -23,10 +32,9 @@ def _setup_test_environment(base_dir):
 
     # Clean previous run artifacts
     if output_dir.exists():
-        for f in output_dir.glob("*_Hybrid_Cleaned*"):
-            f.unlink()
-        for f in output_dir.glob("*_Denoised_Cleaned*"):
-            f.unlink()
+        for suffix in MODE_SUFFIXES:
+            for f in output_dir.glob(f"*{suffix}*"):
+                f.unlink()
     if log_file.exists():
         log_file.unlink()
 
@@ -49,9 +57,11 @@ def _get_test_video(input_dir):
 
 
 def _get_expected_output(output_dir, input_video):
-    hybrid_output = output_dir / f"{input_video.stem}_Hybrid_Cleaned{input_video.suffix}"
-    denoised_output = output_dir / f"{input_video.stem}_Denoised_Cleaned{input_video.suffix}"
-    return hybrid_output if hybrid_output.exists() else denoised_output
+    for suffix in MODE_SUFFIXES:
+        candidate = output_dir / f"{input_video.stem}{suffix}{input_video.suffix}"
+        if candidate.exists():
+            return candidate
+    return output_dir / f"{input_video.stem}_Denoised_Cleaned{input_video.suffix}"
 
 
 def _assert_log_markers(logs):
@@ -101,29 +111,26 @@ def _run_script(base_dir, repo_root):
     print(f"=== EXECUTION FINISHED in {end_time - start_time:.2f}s ===")
 
 
+def _collect_existing_mode_outputs(output_dir, input_video):
+    return [
+        output_dir / f"{input_video.stem}{s}{input_video.suffix}"
+        for s in MODE_SUFFIXES
+        if (output_dir / f"{input_video.stem}{s}{input_video.suffix}").exists()
+    ]
+
+
 def _verify_output(output_dir, log_file, input_video):
     """Verifies that output files exist and checks logs."""
-    hybrid_output = output_dir / f"{input_video.stem}_Hybrid_Cleaned{input_video.suffix}"
-    denoised_output = output_dir / f"{input_video.stem}_Denoised_Cleaned{input_video.suffix}"
-    assert not (
-        hybrid_output.exists() and denoised_output.exists()
-    ), "FAILURE: Both hybrid and denoise-only outputs exist; expected exactly one mode-specific output."
+    found_outputs = _collect_existing_mode_outputs(output_dir, input_video)
+    assert len(found_outputs) <= 1, "FAILURE: Multiple mode outputs exist."
     expected_output = _get_expected_output(output_dir, input_video)
 
-    assert expected_output.exists(), "FAILURE: Output file NOT found for either mode-specific suffix."
-    assert (
-        is_valid_video(expected_output) or expected_output.stat().st_size > 0
-    ), f"FAILURE: Output artifact exists but is invalid/empty: {expected_output.name}"
+    assert expected_output.exists(), "FAILURE: Output file NOT found for mode-specific suffix."
+    assert is_valid_video(expected_output) or expected_output.stat().st_size > 0, f"FAILURE: Empty output {expected_output.name}"
     print(f"SUCCESS: Output file generated: {expected_output.name}")
-    print(f"Size: {expected_output.stat().st_size / 1024 / 1024:.2f} MB")
 
-    # Verify Log content
     assert log_file.exists(), "FAILURE: Log file not found."
-    with open(log_file, "r", encoding="utf-8") as log_f:
-        logs = log_f.read()
-
-    print("\n--- LOG ANALYSIS ---")
-    _assert_log_markers(logs)
+    _assert_log_markers(log_file.read_text(encoding="utf-8"))
 
 
 def _write_smoke_sitecustomize(smoke_dir, process_mode):
@@ -139,7 +146,7 @@ def _write_smoke_sitecustomize(smoke_dir, process_mode):
         "    video_path = Path(video_path)\n"
         "    target_dir = Path(target_output_dir) if target_output_dir else video_path.parent\n"
         "    target_dir.mkdir(parents=True, exist_ok=True)\n"
-        "    suffix = '_Hybrid_Cleaned' if cfg.PROCESS_MODE == 'hybrid' else '_Denoised_Cleaned'\n"
+        "    suffix = proc._get_output_suffix(cfg.PROCESS_MODE)\n"
         '    out = target_dir / f"{video_path.stem}{suffix}{video_path.suffix}"\n'
         "    out.write_bytes(b'v' * 12000)\n"
         "    with Path('session_log.txt').open('a', encoding='utf-8') as handle:\n"
@@ -218,10 +225,7 @@ def _fake_pipeline_run(cmd, check, env, timeout, cwd, repo_root, base_dir, proce
     return subprocess.CompletedProcess(cmd, 0)
 
 
-@pytest.mark.parametrize(
-    "mode_suffix",
-    ["Denoised_Cleaned", "Hybrid_Cleaned"],
-)
+@pytest.mark.parametrize("mode_suffix", sorted(MODE_BY_SUFFIX))
 def test_pipeline_modes(tmp_path, monkeypatch, mode_suffix):
     repo_root = Path(__file__).resolve().parents[2]
     base_dir = tmp_path
@@ -304,7 +308,7 @@ def test_verify_output_accepts_hybrid_mode_artifact(tmp_path):
 
 
 def test_verify_output_rejects_dual_mode_outputs(tmp_path):
-    """E2E verification should fail when both hybrid and denoise-only outputs exist."""
+    """E2E verification should fail when multiple mode outputs exist."""
     output_dir = tmp_path / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
     log_file = tmp_path / "session_log.txt"
@@ -315,5 +319,5 @@ def test_verify_output_rejects_dual_mode_outputs(tmp_path):
     (output_dir / "clip_Hybrid_Cleaned.mp4").write_bytes(b"hybrid")
     (output_dir / "clip_Denoised_Cleaned.mp4").write_bytes(b"denoise")
 
-    with pytest.raises(AssertionError, match="Both hybrid and denoise-only outputs exist"):
+    with pytest.raises(AssertionError, match="Multiple mode outputs exist"):
         _verify_output(output_dir, log_file, input_video)

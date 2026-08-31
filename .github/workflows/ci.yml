@@ -17,13 +17,15 @@ jobs:
     name: "🔍 Static Quality Verification + Automated Pipeline Validation"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v6.3.0
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.12.13"
+          python-version: "3.12"
       - name: Install Poetry
         shell: bash
         run: |
@@ -49,6 +51,7 @@ jobs:
             "./install_dependencies.ps1",
             "./run_pipeline_locally.ps1",
             "./scripts/install_pr_review_tooling.ps1",
+            "./scripts/package_windows_installer.ps1",
             "./.github/scripts/Invoke-PowerShellLint.ps1"
           )
           & ./.github/scripts/Invoke-PowerShellLint.ps1 -ScriptPaths $scriptPaths
@@ -56,8 +59,11 @@ jobs:
         run: |
           poetry run ruff check modules tests restore_audio_hybrid.py scripts/apply_patches.py
       - name: Run Black
+        shell: bash
         run: |
-          poetry run black --check modules tests restore_audio_hybrid.py scripts/apply_patches.py
+          while IFS= read -r -d '' python_file; do
+            poetry run black --check "$python_file"
+          done < <(git ls-files -z '*.py')
       - name: Run isort
         run: |
           poetry run isort --check-only --diff modules tests restore_audio_hybrid.py scripts/apply_patches.py
@@ -122,21 +128,38 @@ jobs:
             exit 1
           fi
       - name: Run Markdown Auto-Delint Check
+        shell: bash
         run: |
-          poetry run mdformat --check README.md AGENTS.md .agent docs tests/README.md
+          mapfile -t markdown_files < <(git ls-files '*.md')
+          poetry run mdformat --check "${markdown_files[@]}"
       - name: Run Markdown Lint
+        shell: bash
         run: |
-          poetry run pymarkdown scan README.md AGENTS.md .agent docs tests/README.md
+          mapfile -t markdown_files < <(git ls-files '*.md')
+          poetry run pymarkdown --config .pymarkdown.json scan "${markdown_files[@]}"
+      - name: Resolve Shared Coverage Threshold Policy
+        id: coverage
+        shell: bash
+        run: |
+          THRESHOLD="$(poetry run python -c 'from tests.tooling.threshold_policy import get_coverage_threshold; print(f"{get_coverage_threshold():.2f}")')"
+          if ! printf '%s' "$THRESHOLD" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "Coverage threshold is not numeric: '$THRESHOLD'" >&2
+            exit 1
+          fi
+          echo "Using coverage threshold: $THRESHOLD"
+          echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
       - name: Run Tests with Coverage
         run: |
           poetry run pytest -o addopts= --cov=restore_audio_hybrid --cov=modules --cov-branch \
-            --cov-report=xml --cov-report=json --cov-report=term --cov-fail-under=90 tests/
+            --cov-report=xml --cov-report=json --cov-report=term \
+            --cov-fail-under=${{ steps.coverage.outputs.threshold }} tests/
       - name: Enforce Strict Per-File Coverage
         run: |
-          poetry run python tests/tooling/quality_gate.py coverage.json --threshold 90.0
+          poetry run python tests/tooling/quality_gate.py coverage.json --threshold ${{ steps.coverage.outputs.threshold }}
       - name: Upload Coverage Artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        # actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: coverage-artifacts
           path: |
@@ -155,17 +178,95 @@ jobs:
     needs: validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Setup Python Runtime
-        uses: actions/setup-python@v6.3.0
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.12.13"
+          python-version: "3.12"
       - name: Download Coverage Artifacts
-        uses: actions/download-artifact@v8.0.1
+        # actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: coverage-artifacts
       - name: Generate Coverage Summary
         run: |
-          python tests/tooling/badge_report.py coverage.xml --summary >> $GITHUB_STEP_SUMMARY
+          python tests/tooling/badge_report.py coverage.xml --summary >> "$GITHUB_STEP_SUMMARY"
+
+  ubuntu_docker_e2e:
+    name: "🐳 Ubuntu Docker Real-Dependency Test"
+    runs-on: ubuntu-latest
+    needs: validation
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build and Run Ubuntu Container Suite
+        run: |
+          docker build -f docker/Dockerfile.ubuntu -t vhs-restorer-ubuntu-e2e:latest .
+          docker run --rm vhs-restorer-ubuntu-e2e:latest
+
+  macos_e2e:
+    name: "🍏 macOS Apple Silicon Real-Dependency Validation"
+    # macos-26 is GitHub's latest Apple Silicon hosted runner.
+    runs-on: macos-26
+    needs: validation
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Verify Apple Silicon environment
+        shell: bash
+        run: |
+          test "$(uname -m)" = "arm64"
+          test "$(python3 -c 'import platform; print(platform.machine())')" = "arm64"
+      - name: Install FFmpeg via Homebrew
+        run: brew install ffmpeg
+      - name: Install Poetry
+        run: pip install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Configure Poetry In-Project Virtualenv
+        run: poetry config virtualenvs.in-project true
+      - name: Install Test Dependencies
+        run: poetry install -v --only main,dev --no-root
+      - name: Run Test Suite on macOS
+        run: poetry run pytest -v tests/
+
+  windows_e2e:
+    name: "🪟 Windows Real-Dependency Validation"
+    runs-on: windows-latest
+    needs: validation
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        # actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Install FFmpeg via Chocolatey
+        shell: pwsh
+        run: choco install ffmpeg --no-progress -y
+      - name: Install Poetry
+        shell: pwsh
+        run: pip install "poetry==${{ env.POETRY_VERSION }}"
+      - name: Configure Poetry In-Project Virtualenv
+        shell: pwsh
+        run: poetry config virtualenvs.in-project true
+      - name: Install Test Dependencies
+        shell: pwsh
+        run: poetry install -v --only main,dev --no-root
+      - name: Run Test Suite on Windows
+        shell: pwsh
+        run: poetry run pytest -v tests/

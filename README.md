@@ -7,15 +7,15 @@
 ## Documentation
 
 - [README.md](README.md) - General overview and usage.
-- [.agent/instructions.md](.agent/instructions.md) - Technical guide for
-  AI agents and developers.
+- [.agent/instructions.md](.agent/instructions.md) - Technical guide for AI
+  agents and developers.
 - [docs/pipeline_logic.md](docs/pipeline_logic.md) - Detailed pipeline schema.
-- [docs/architecture.md](docs/architecture.md) - System architecture and
-  module responsibilities.
+- [docs/architecture.md](docs/architecture.md) - System architecture and module
+  responsibilities.
 - [docs/setup.md](docs/setup.md) - Environment and installation setup steps.
 - [docs/validation.md](docs/validation.md) - Local and CI validation process.
-- [docs/instructions.md](docs/instructions.md) - Contributor
-  instructions and workflow rules.
+- [docs/instructions.md](docs/instructions.md) - Contributor instructions and
+  workflow rules.
 
 ## 🛠️ Restoration Pipeline
 
@@ -23,7 +23,40 @@ A specialized audio restoration pipeline designed to remaster VHS recordings.
 
 ## The Pipeline
 
-The pipeline supports two execution modes controlled by `process_mode`:
+The pipeline supports multiple execution modes controlled by `process_mode`:
+
+1. **`auto_pure` (4-pass pure speech & ambient denoising engine - default)**
+
+- Extract audio.
+- Pass 1: Dual-resolution acoustic scan (profiling speech, music, ambience,
+  noise).
+- Pass 2: Precision analog hardware pre-conditioning DSP (DC nulling, balance).
+- Pass 3: Dual-track AI stem separation (BS-Roformer) with pure neural speech
+  denoising (UVR-DeNoise + de-esser, bypassing vocoder synthesis) and pure
+  music/ambient background conservation (UVR-DeNoise + dynamic expander).
+- Pass 4: Sub-sample DTW/shift synchronization and 32-bit float intermediate mix.
+- Output suffix: `*_Pure_Cleaned.<ext>`.
+
+1. **`auto` (AI auto-detection & restoration engine)**
+
+- Extract audio.
+- Perform deep AI acoustic profiling (speech formants, environmental textures
+  like birds/cars, musical harmonics, noise floor, mains hum, and rumble).
+- Automatically select the optimal restoration engine (`hybrid`,
+  `denoise_only`, or `auto_ffmpeg_native`) and dynamically choose the best AI
+  models (`BS-Roformer`, `UVR-DeNoise`).
+- Sync and remux into output video (codecs depend on selected container: AAC
+  for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
+  configured PCM-capable containers).
+
+1. **`multipass_auto` (4-pass cascaded AI & DSP restoration engine)**
+
+- Extract audio.
+- Pass 1: Dual-resolution acoustic scan (global macro & 5s temporal micro map).
+- Pass 2: Non-destructive analog pre-conditioning DSP (strips clicks & hum).
+- Pass 3: AI stem separation & Resemble-Enhance 256-NFE speech reconstruction.
+- Pass 4: Ambient residual polish, sub-sample DTW synchronization, and mix.
+- Output suffix: `*_MultiPass_Cleaned.<ext>`.
 
 1. **`hybrid`**
 
@@ -32,43 +65,84 @@ The pipeline supports two execution modes controlled by `process_mode`:
 - Enhance vocals with Resemble-Enhance.
 - Denoise background with UVR-DeNoise-Lite.
 - Sync both processed stems to original timing (`shift` or `dtw`).
-- Final mix into output video as **32-bit float PCM (`pcm_f32le`)** audio.
+- Final mix into output video (codecs depend on selected container: AAC
+  for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
+  configured PCM-capable containers).
 
-1. **`denoise_only` (default/fallback mode)**
+1. **`denoise_only`**
 
 - Extract audio.
 - Denoise the full audio track with UVR-DeNoise-Lite.
 - Sync the denoised full track to original timing (`shift` or `dtw`).
-- Final single-track remux into output video as **32-bit float PCM
-  (`pcm_f32le`)** audio.
+- Final single-track remux into output video (codecs depend on selected
+  container: AAC for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le`
+  only for configured PCM-capable containers).
+
+1. **`auto_ffmpeg_native` (intelligent adaptive FFmpeg DSP restoration)**
+
+- Extract audio.
+- Perform acoustic noise profiling across the capture (noise floor estimation,
+  50/60 Hz mains hum and head-switching buzz detection, sub-bass rumble
+  analysis, and impulsive click spike density).
+- Auto-tune the native FFmpeg filter graph (`highpass`, `adeclick`, `afftdn`,
+  `bandreject` notch) dynamically based on the measured profile.
+- Sync filtered track to original timing (`shift` or `dtw`).
+- Final remux into output video (codecs depend on selected container: AAC
+  for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
+  configured PCM-capable containers).
+
+1. **`vhs_native` (fast native DSP filter chain; `ffmpeg_native` alias)**
+
+- Extract audio.
+- Apply native multi-threaded FFmpeg filter chain (`highpass` rumble filter +
+  `adeclick` impulsive pop filter + `afftdn` continuous noise tracking +
+  optional notch filter).
+- Sync filtered track to original timing (`shift` or `dtw`).
+- Final remux into output video (codecs depend on selected container: AAC
+  for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
+  configured PCM-capable containers).
+
+1. **`arnndn_speech` (RNNoise neural dialogue denoiser)**
+
+- Extract audio.
+- Apply FFmpeg Recurrent Neural Network denoiser with RNNoise speech model
+  (`arnndn=m=cb.rnnn` + `highpass` + `adeclick`).
+- Sync denoised track to original timing (`shift` or `dtw`).
+- Final remux into output video (codecs depend on selected container: AAC
+  for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
+  configured PCM-capable containers).
 
 Output naming is mode-specific:
 
+- `auto` -> `*_Auto_Cleaned.<ext>`
+- `multipass_auto` -> `*_MultiPass_Cleaned.<ext>`
+- `auto_pure` -> `*_Pure_Cleaned.<ext>`
 - `hybrid` -> `*_Hybrid_Cleaned.<ext>`
 - `denoise_only` -> `*_Denoised_Cleaned.<ext>`
+- `auto_ffmpeg_native` -> `*_AutoFFmpeg_Cleaned.<ext>`
+- `vhs_native` (`ffmpeg_native` alias) -> `*_FFmpeg_Cleaned.<ext>`
+- `arnndn_speech` -> `*_Speech_Cleaned.<ext>`
 
 ### 🚀 Smart AI Engine
 
-- **Hybrid GPU Support**: Automatically prioritizes high-performance
-  NVIDIA GPUs over Intel/integrated graphics. Ideal for laptops with
-  dual GPUs.
-- **Python API Integration**: Uses a direct Python interface for all AI
-  models (BS-Roformer, UVR-DeNoise), ensuring better reliability and
-  driver stability than command-line calling.
-- **Dynamic Batching**: Automatically scales AI batch sizes based on
-  detected VRAM to prevent OOM (Out-of-Memory) errors.
+- **Hybrid GPU Support**: Automatically prioritizes high-performance NVIDIA GPUs
+  over Intel/integrated graphics. Ideal for laptops with dual GPUs.
+- **Python API Integration**: Uses a direct Python interface for all AI models
+  (BS-Roformer, UVR-DeNoise), ensuring better reliability and driver stability
+  than command-line calling.
+- **Dynamic Batching**: Automatically scales AI batch sizes based on detected
+  VRAM to prevent OOM (Out-of-Memory) errors.
 
 ### ✨ Key Features
 
-- **Robust Resume**: Automatically detects existing output files for
-  every step. If you crash or stop the script, simply run it again. It
-  skips finished work and resumes where it left off.
+- **Robust Resume**: Automatically detects existing output files for every step.
+  If you crash or stop the script, simply run it again. It skips finished work
+  and resumes where it left off.
 - **Local Temp Files**: Creates hidden temporary folders (e.g.,
-  `.temp_work_video_name`) next to your input file, keeping your
-  project root clean. Auto-deletes on success.
-- **Windows-Ready**: Optimized for standard Windows terminals
-  (cmd/PowerShell) with strict 80-column log formatting to prevent
-  wrapping.
+  `.temp_work_video_name`) next to your input file, keeping your project root
+  clean. Auto-deletes on success.
+- **Windows-Ready**: Optimized for standard Windows terminals (cmd/PowerShell)
+  with strict 80-column log formatting to prevent wrapping.
 
 ```mermaid
 flowchart TD
@@ -81,6 +155,23 @@ classDef output fill:#E1E2E6,stroke:#44474E,stroke-width:1.5px,color:#1A1C1E,rx:
 A(["📼 Input Video/Audio"]):::input --> B(["Extract Audio<br/>(32-bit Float)"]):::processing
 B --> MODE{"process_mode"}:::model
 
+MODE -->|"auto_pure (default)"| PP["Analog Pre-Conditioning"]:::processing
+PP --> PS["BS-Roformer Separation"]:::model
+PS --> PV["Speech Stem"]
+PS --> PB["Background Stem"]
+PV --> PVD["UVR-DeNoise + De-Esser<br/>(no vocoder synthesis)"]:::processing
+PB --> PBD["UVR-DeNoise + Expander"]:::processing
+PVD --> PSY["Sync Stems"]:::processing
+PBD --> PSY
+PSY --> PMIX["Final Mix<br/>+ 2-pass EBU R128 + Limiter"]:::processing
+PMIX --> POUT(["💾 Output: Pure_Cleaned"]):::output
+
+MODE -->|"auto / multipass_auto"| AP1["Dual-Resolution Acoustic Scan"]:::processing
+AP1 --> AP2["Analog Pre-Conditioning"]:::processing
+AP2 --> AP3["BS-Roformer + Resemble-Enhance / Denoise"]:::model
+AP3 --> AP4["Sync Stems + Dynamic Mix"]:::processing
+AP4 --> APOUT(["💾 Output: Auto_Cleaned / MultiPass_Cleaned"]):::output
+
 MODE -->|"hybrid"| RO["BS-Roformer Separation"]:::model
 RO --> V["Vocals"]
 RO --> I["Background"]
@@ -90,16 +181,34 @@ VE --> SV["Sync Vocals"]:::processing
 BD --> SB["Sync Background"]:::processing
 SV --> HMIX["FFmpeg Final Mix"]:::processing
 SB --> HMIX
-HMIX --> HOUT(["💾 Output: Hybrid_Cleaned<br/>(32-bit PCM)"]):::output
+HMIX --> HOUT(["💾 Output: Hybrid_Cleaned"]):::output
 
 MODE -->|"denoise_only"| FD["Full-Audio Denoise<br/>(UVR-DeNoise-Lite)"]:::processing
 FD --> FS["Sync Full Audio"]:::processing
 FS --> FMUX["FFmpeg Final Remux"]:::processing
-FMUX --> FOUT(["💾 Output: Denoised_Cleaned<br/>(32-bit PCM)"]):::output
+FMUX --> FOUT(["💾 Output: Denoised_Cleaned"]):::output
+
+MODE -->|"auto_ffmpeg_native"| AFN["Auto-Tuned DSP Chain<br/>(highpass + adeclick + afftdn + notches)"]:::processing
+AFN --> AFS["Sync Full Audio"]:::processing
+AFS --> AFMIX["FFmpeg Final Remux"]:::processing
+AFMIX --> AFOUT(["💾 Output: AutoFFmpeg_Cleaned"]):::output
+
+MODE -->|"vhs_native"| VN["Native Filters<br/>(afftdn + adeclick + highpass)"]:::processing
+VN --> VS["Sync Full Audio"]:::processing
+VS --> VMUX["FFmpeg Final Remux"]:::processing
+VMUX --> VOUT(["💾 Output: FFmpeg_Cleaned"]):::output
+
+MODE -->|"arnndn_speech"| SN["ARNNDN Speech Denoise<br/>(RNNoise)"]:::processing
+SN --> SS["Sync Full Audio"]:::processing
+SS --> SMUX["FFmpeg Final Remux"]:::processing
+SMUX --> SOUT(["💾 Output: Speech_Cleaned"]):::output
 
 %% Material You Subgraph Styling (Subtle Contours)
 style HMIX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
 style FMUX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
+style AFMIX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
+style VMUX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
+style SMUX fill:#DCE5DD,stroke:#44474E,stroke-width:1.5px,opacity:0.9
 ```
 
 ## Requirements
@@ -108,34 +217,36 @@ The installer handles everything, ensuring compatibility with modern hardware:
 
 - **Python 3.12.x** (in a local `.venv`)
 - **FFmpeg 6.1+** (Full Portable Build included & configured)
-- **NVIDIA CUDA Toolkit (Self-Contained)**: The installer
-  automatically pulls CUDA 13.2-compatible technical libraries
-  (`CUDNN`, `CUBLAS`) from PyPI, so you do not need a system-wide
-  CUDA installation.
+- **NVIDIA CUDA Toolkit (Self-Contained)**: The installer automatically pulls
+  CUDA 13.2-compatible technical libraries (`CUDNN`, `CUBLAS`) from PyPI, so you
+  do not need a system-wide CUDA installation.
 - **AI Models**: BS-Roformer & UVR-DeNoise-Lite.
-- **Runtime Patcher**: Automatically fixes `torchaudio` and
-  `deepspeed` issues on Windows, and injects hardware DLLs into the
-  process environment.
+- **Runtime Patcher**: Automatically fixes `torchaudio` and `deepspeed` issues
+  on Windows, and injects hardware DLLs into the process environment.
 
 ## Hardware Auto-Detection Logic
 
 The script automatically scales performance based on your GPU VRAM:
 
-| Profile | VRAM | Example GPUs | Batch Size |
-| :--- | :--- | :--- | :--- |
-| **EXTREME** | ≥ 24 GB | RTX 3090 / 4090 / 5090 | 32 |
-| **HIGH** | ≥ 15 GB | RTX 3080 / 4080 / 5080 | 8 |
-| **MID** | ≥ 10 GB | RTX 3070 / 4070 | 4 |
-| **LOW** | < 10 GB | Entry Level / Older Cards | 1 |
+- **EXTREME**: 24 GB or more; examples: RTX 3090, 4090, 5090, or A6000;
+  batch size 32.
+- **HIGH**: 15 GB to under 24 GB; examples: RTX 3080 16GB, 4080, or 5080;
+  batch size 8.
+- **MID**: 10 GB to under 15 GB; examples: RTX 3080 10GB/12GB or 4070;
+  batch size 4.
+- **LOW**: under 10 GB; examples: RTX 3070, entry-level, or older cards;
+  batch size 1.
 
 > [!TIP]
-> **Smart OOM Recovery**: If an operation fails (GPU or CPU memory
-> pressure), the script automatically retries with reduced settings:
-> GPU steps: Halves the batch size until success.
-> CPU steps (FFmpeg): Halves the thread count until success.
+> **Smart OOM Recovery**: If an operation fails (GPU or CPU memory pressure), the
+> script automatically retries with reduced settings: GPU steps: Halves the batch
+> size until success. CPU steps (FFmpeg): Halves the thread count until success.
+
+<!-- -->
+
 > [!NOTE]
-> CPU threads are automatically set to your maximum available cores
-> (e.g., 32 threads for Ryzen 9950X3D).
+> CPU threads are automatically set to your maximum available cores (e.g., 32
+> threads for Ryzen 9950X3D).
 
 ```mermaid
 flowchart TD
@@ -146,14 +257,12 @@ flowchart TD
     CUDA -- No --> Default[Batch Size = 1]
     CUDA -- Yes --> VRAM{Check VRAM}
     
-    VRAM -- ">= 24 GB" --> EX["Profile: EXTREME<br/>(RTX 5090 / A6000)"]
-    VRAM -- ">= 22 GB" --> E["Profile: ULTRA<br/>(RTX 3090/4090)"]
-    VRAM -- ">= 15 GB" --> F["Profile: HIGH<br/>(RTX 4080/5080)"]
-    VRAM -- ">= 10 GB" --> G["Profile: MID<br/>(RTX 3080/4070)"]
-    VRAM -- "< 10 GB" --> H["Profile: LOW<br/>(Entry Config)"]
+    VRAM -- ">= 24 GB" --> EX["Profile: EXTREME<br/>(RTX 3090/4090/5090)"]
+    VRAM -- ">= 15 GB" --> F["Profile: HIGH<br/>(RTX 3080 16GB / 4080/5080)"]
+    VRAM -- ">= 10 GB" --> G["Profile: MID<br/>(RTX 3080 10GB/12GB / 4070)"]
+    VRAM -- "< 10 GB" --> H["Profile: LOW<br/>(RTX 3070 / Entry Config)"]
     
     EX --> Run[Run Pipeline]
-    E --> Run
     F --> Run
     G --> Run
     H --> Run
@@ -162,9 +271,8 @@ flowchart TD
 
 ## ⚙️ Configuration
 
-The application uses a `config.yaml` file for easy customization. A
-default configuration is loaded automatically if the file does not
-exist.
+The application uses a `config.yaml` file for easy customization. A default
+configuration is loaded automatically if the file does not exist.
 
 ### **Default `config.yaml`:**
 
@@ -185,45 +293,91 @@ sync_method: "shift"     # 'shift' (default) or 'dtw' (correction for wow/flutte
 dtw_resolution: 40       # Analysis resolution in Hz (lower = faster)
 
 # Processing Mode
-process_mode: "denoise_only"   # default/fallback; set 'hybrid' for Separation+Enhance
+process_mode: "auto_pure"   # 4-pass pure speech & ambient denoising engine (default)
+```
+
+## Requirements & Compatibility
+
+- **Operating Systems**:
+  - **Linux**: Ubuntu 22.04+, Debian 12+, Fedora, Arch Linux (NVIDIA CUDA /
+    CPU).
+  - **macOS**: macOS 13+ (Ventura, Sonoma, Sequoia) on Apple Silicon
+    (M1/M2/M3/M4) accelerated via **Metal Performance Shaders (MPS)**. Intel
+    x86_64 Macs are supported for the FFmpeg-native DSP modes only
+    (`vhs_native`, `auto_ffmpeg_native`, `arnndn_speech`): `numba`/`llvmlite`
+    no longer ship Intel-mac wheels, so the AI separation and neural
+    enhancement stack is not installed there.
+  - **Windows**: Windows 10 / 11 (64-bit) with the tested NVIDIA CUDA 13.2
+    stack or CPU
+    fallback.
+- **Python**: Python `>= 3.12, < 3.13` (managed via Poetry & in-project
+  `.venv`).
+- **Media Binaries**: `ffmpeg` and `ffprobe` in system PATH or environment.
+
+## Installation & Setup
+
+### Native Installers & Executables (Recommended)
+
+- **Windows**: Download and double-click `AI-Hybrid-VHS-Audio-Restorer-v*-windows.exe`
+  (auto-installs environment on first run, supports CLI arguments & drag-and-drop).
+- **macOS (Apple Silicon / Intel)**: Download `.pkg` (`macos-arm64` or `macos-x86_64`)
+  to install `/Applications/AI-Hybrid-VHS-Audio-Restorer.app` and `ai-hybrid-vhs-audio-restorer`
+  command.
+- **Linux (Ubuntu / Debian)**: Download `.deb` from GitHub Releases and run
+  `sudo dpkg -i AI-Hybrid-VHS-Audio-Restorer-v*-linux.deb`.
+- **Linux (Fedora / RHEL)**: Download `.rpm` from GitHub Releases and run
+  `sudo rpm -i AI-Hybrid-VHS-Audio-Restorer-v*-linux.rpm`.
+
+### Manual Source Setup
+
+#### Linux & macOS
+
+```bash
+# 1. Ensure FFmpeg is installed
+# On Debian/Ubuntu: sudo apt-get install -y ffmpeg
+# On macOS (Homebrew): brew install ffmpeg
+
+# 2. Make scripts executable and run installer
+chmod +x install_dependencies.sh start.sh run_pipeline_locally.sh
+./install_dependencies.sh
+```
+
+#### Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_dependencies.ps1
 ```
 
 ## Usage
 
-1. Run `install_dependencies.ps1` to set up the environment.
+### Option A: Drag & Drop (GUI / Desktop)
 
-### Option A: Drag & Drop (Recommended)
-
-Simply **drag and drop** your video file(s) or a folder containing
-videos directly onto `start.bat` (or the Python script).
-
-- **Output**: The restored video is saved in the **same folder** as
-  your original video.
-
-- `hybrid` mode: `*_Hybrid_Cleaned.<ext>`
-
-- `denoise_only` mode: `*_Denoised_Cleaned.<ext>`
+- **Linux / macOS**: Pass video file paths to `./start.sh "path/to/video.mp4"`.
+- **Windows**: Drag and drop your video file(s) or folder directly onto
+  `start.bat`.
 
 ### Option B: Interactive Mode (Default)
 
-Double-click `start.bat` without any files.
+Launch `./start.sh` (Linux/macOS) or double-click `start.bat` (Windows) without
+arguments.
 
-- The script will Launch and show your System Stats.
+- The initialization sequence scans your CPU, GPU, and acceleration backend
+  (CUDA / MPS / CPU).
+- Press **Enter** to scan and process all video files in the `input/` folder.
+- Restored videos are saved in the same directory as each source file.
 
-- Press **Enter** to automatically scan and process all files in the
-  `input` folder.
+### Option C: CLI Mode
 
-- **Output**: Restored videos are saved in the **same folder** as each original video.
+```bash
+# Linux / macOS
+./start.sh "/path/to/video.mp4"
 
-### Option C: CLI
-
-Run via command line with arguments:
-
-```powershell
+# Windows
 python restore_audio_hybrid.py "C:\Path\To\Video.mp4"
 ```
 
-- **Output**: The restored video is saved in the **same folder** as the input video.
+Pass `--help` (or `-h`) to `start.sh`, `start.bat`, or
+`restore_audio_hybrid.py` to print usage and exit without processing.
 
 ## Development & Testing
 
@@ -245,11 +399,12 @@ The project is organized into a modular package structure:
 - **Linting/Formatting**: `black`, `isort`, `ruff`, `flake8`, `pylint`, and
   `taplo` (max-line-length=140 for Python).
 - **Security Scanning**: `bandit -ll -ii` and `pip-audit`.
-- **Markdown Quality**: `mdformat` (automatic delint/format) and
-  `pymarkdownlnt` lint checks.
-- **PowerShell Linting**: `PSScriptAnalyzer` via `.github/scripts/Invoke-PowerShellLint.ps1`.
-- **Type Checking (Advisory)**: `mypy` is available for local analysis,
-  but it is not an enforced local/CI gate.
+- **Markdown Quality**: Read-only `mdformat --check` validation and
+  `pymarkdown` lint checks.
+- **PowerShell Linting**: `PSScriptAnalyzer` via
+  `.github/scripts/Invoke-PowerShellLint.ps1`.
+- **Type Checking (Advisory)**: `mypy` is available for local analysis, but it
+  is not an enforced local/CI gate.
 - **Complexity Gates**: `radon` reports plus strict pass gates
   (`tests/tooling/radon_cc_gate.py`, `tests/tooling/radon_mi_gate.py`).
 
@@ -261,12 +416,11 @@ Tests are run using `pytest` with `pytest-cov`.
 .\run_pipeline_locally.ps1
 ```
 
-The local pipeline runs the same quality gates as CI (PowerShell lint,
-Black, isort, Ruff, Flake8, Taplo, Pylint, Bandit, pip-audit,
-Radon reports/gates, Markdown auto-delint/lint, tests with coverage)
-and overwrites `assets/coverage.svg` at the end.
-It also enforces strict per-file coverage using
-`tests/tooling/quality_gate.py` against `coverage.json`.
+The local pipeline runs the same quality gates as CI (PowerShell lint, Black,
+isort, Ruff, Flake8, Taplo, Pylint, Bandit, pip-audit, Radon reports/gates,
+Markdown format check and lint, tests with coverage) and overwrites
+`assets/coverage.svg` at the end. It also enforces strict per-file coverage
+using `tests/tooling/quality_gate.py` against `coverage.json`.
 
 ### Coverage Goal
 
@@ -279,6 +433,8 @@ Both local validation and CI fail when either gate is violated.
 
 ## Credits
 
-- **Audio-Separator**: [beveradb/audio-separator](https://github.com/beveradb/audio-separator)
-- **Resemble-Enhance**: [resemble-ai/resemble-enhance](https://github.com/resemble-ai/resemble-enhance)
+- **Audio-Separator**:
+  [beveradb/audio-separator](https://github.com/beveradb/audio-separator)
+- **Resemble-Enhance**:
+  [resemble-ai/resemble-enhance](https://github.com/resemble-ai/resemble-enhance)
 - **FFmpeg**: [ffmpeg.org](https://ffmpeg.org/)

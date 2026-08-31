@@ -78,9 +78,9 @@ $localFFmpegPath = "$VenvScripts\ffmpeg.exe"
 if (-not (Test-Path $localFFmpegPath)) {
     Write-Information "Local FFmpeg not found. Downloading full portable build..."
 
-    $url = "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip"
-    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip"
-    $expectedSha256 = "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
+    $url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip"
+    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip"
+    $expectedSha256 = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"
     $zip = "$PSScriptRoot\ffmpeg.zip"
     $temp = "$PSScriptRoot\temp_ffmpeg"
 
@@ -93,7 +93,18 @@ if (-not (Test-Path $localFFmpegPath)) {
         Invoke-WebRequest -Uri $urlFallback -OutFile $zip -UseBasicParsing -UserAgent "Mozilla/5.0"
     }
 
-    $actualSha256 = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualSha256 = ""
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    $fileStream = [System.IO.File]::OpenRead($zip)
+    try {
+        $hashBytes = $hasher.ComputeHash($fileStream)
+        $actualSha256 = [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $fileStream.Dispose()
+        $hasher.Dispose()
+    }
+
     if ($actualSha256 -ne $expectedSha256) {
         throw "FFmpeg archive checksum mismatch. Expected $expectedSha256 but got $actualSha256"
     }
@@ -140,17 +151,63 @@ if (-not (Test-Path "$PSScriptRoot\poetry.lock")) {
     Invoke-CheckedCommand $VenvPy @("-m", "poetry", "lock", "-v", "--no-interaction")
 }
 
-Invoke-CheckedCommand $VenvPy @("-m", "poetry", "install", "-v", "--with", "ml", "--without", "dev", "--no-root", "--no-interaction")
+$env:POETRY_REQUESTS_TIMEOUT = "600"
+$env:PIP_DEFAULT_TIMEOUT = "600"
 
-Write-Information "Installing Resemble-Enhance runtime package without dependency override..."
-Invoke-CheckedCommand $VenvPy @(
-    "-m",
-    "pip",
-    "install",
-    "-v",
-    "git+https://github.com/daswer123/resemble-enhance-windows.git@270d8da4ea7c0efc960c52d605b75c0458b708d0",
-    "--no-deps"
-)
+$maxAttempts = 3
+$attempt = 1
+while ($attempt -le $maxAttempts) {
+    try {
+        Write-Information "Running poetry install (attempt $attempt of $maxAttempts)..."
+        Invoke-CheckedCommand $VenvPy @("-m", "poetry", "install", "-v", "--with", "ml", "--without", "dev", "--no-root", "--no-interaction")
+        break
+    }
+    catch {
+        if ($attempt -ge $maxAttempts) {
+            throw $_
+        }
+        Write-Warning "Poetry install attempt $attempt failed ($($_.Exception.Message)). Retrying in 10 seconds..."
+        Start-Sleep -Seconds 10
+        $attempt++
+    }
+}
+
+# Resemble-Enhance is a VCS install, so pip re-clones and rebuilds it on every
+# run unless it is skipped explicitly. Prefer the installed copy: rebuild only
+# when the recorded commit does not match the pinned ref (a version string alone
+# does not change between revisions), or when FORCE_RESEMBLE_REBUILD=1.
+$ResembleRepo = "https://github.com/daswer123/resemble-enhance-windows.git"
+$ResembleRef = "270d8da4ea7c0efc960c52d605b75c0458b708d0"
+
+function Get-InstalledResembleRef {
+    param([string]$PythonExe)
+
+    $probe = 'import json, importlib.metadata as metadata; dist = next((item for item in metadata.distributions() if str(item.metadata[''Name'']).lower() == ''resemble-enhance''), None); raw = dist.read_text(''direct_url.json'') if dist else None; print(json.loads(raw).get(''vcs_info'', {}).get(''commit_id'', '''') if raw else '''')'
+
+    $result = & $PythonExe "-c" $probe 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return ""
+    }
+    return ($result | Select-Object -Last 1)
+}
+
+Write-Information "Checking Resemble-Enhance runtime package..."
+$installedRef = Get-InstalledResembleRef -PythonExe $VenvPy
+if ($env:FORCE_RESEMBLE_REBUILD -ne "1" -and $installedRef -eq $ResembleRef) {
+    Write-Information "Resemble-Enhance already installed at pinned commit $($ResembleRef.Substring(0, 12)); skipping source build."
+}
+else {
+    Write-Information "Installing Resemble-Enhance runtime package (building from source)..."
+    Invoke-CheckedCommand $VenvPy @(
+        "-m",
+        "pip",
+        "install",
+        "-v",
+        "git+${ResembleRepo}@${ResembleRef}",
+        "--no-deps",
+        "--force-reinstall"
+    )
+}
 
 Write-Information "Applying runtime patches (DeepSpeed removal + Torchaudio fixes)..."
 Invoke-CheckedCommand $VenvPy @("scripts/apply_patches.py")
@@ -167,7 +224,15 @@ $batContent = @"
 @echo off
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_EXE=%SCRIPT_DIR%.venv\Scripts\python.exe"
-if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
+if not exist "%PYTHON_EXE%" (
+    echo Virtual environment not found. Setting up environment automatically...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%install_dependencies.ps1"
+)
+if not exist "%PYTHON_EXE%" (
+    echo Failed to configure environment.
+    pause
+    exit /b 1
+)
 "%PYTHON_EXE%" "%SCRIPT_DIR%restore_audio_hybrid.py" %*
 pause
 "@
