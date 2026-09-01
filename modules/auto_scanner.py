@@ -19,6 +19,7 @@ from .config import (
     BACKGROUND_MIX_VOL,
     ENHANCE_NFE,
     ENHANCE_TAU,
+    MAX_ENHANCE_NFE,
     SYNC_METHOD,
     VOCAL_MIX_VOL,
 )
@@ -346,8 +347,8 @@ def _build_default_strategy():
         "denoise_model": "UVR-DeNoise-Lite.pth",
         "arnndn_model": "cb.rnnn",
         "enable_preconditioning": True,
-        "precondition_filters": {"highpass_hz": 60, "notch_hz": 0.0, "enable_adeclick": True},
-        "enhance_nfe": max(int(ENHANCE_NFE), 256),
+        "precondition_filters": {"highpass_hz": 80, "notch_hz": 0.0, "enable_adeclick": True},
+        "enhance_nfe": min(int(ENHANCE_NFE), MAX_ENHANCE_NFE),
         "enhance_tau": ENHANCE_TAU,
         "vocal_mix_vol": VOCAL_MIX_VOL,
         "bg_mix_vol": BACKGROUND_MIX_VOL,
@@ -409,7 +410,7 @@ def evaluate_restoration_strategy(profile):
     music = profile.get("music_ratio", 0.3)
     ambient = profile.get("ambient_ratio", 0.2)
     nf_db = profile.get("noise_floor_db", -45.0)
-    rumble = profile.get("highpass_hz", 60)
+    rumble = profile.get("highpass_hz", 80)
     has_dialogue = profile.get("temporal_profile", {}).get("has_dialogue", speech >= 0.20)
     periodicity = profile.get("onset_periodicity", 0.0)
 
@@ -435,7 +436,7 @@ def evaluate_restoration_strategy(profile):
             "crt_notch_hz": profile.get("crt_notch_hz", 0.0),
             "resonance_hz": profile.get("resonance_hz", 0.0),
         },
-        "enhance_nfe": max(int(ENHANCE_NFE), 256),
+        "enhance_nfe": min(int(ENHANCE_NFE), MAX_ENHANCE_NFE),
         "enhance_tau": tau,
         "vocal_mix_vol": VOCAL_MIX_VOL,
         "bg_mix_vol": BACKGROUND_MIX_VOL,

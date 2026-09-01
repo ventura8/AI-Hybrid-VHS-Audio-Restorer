@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.config import EXTS, PROCESS_MODE
-from modules.hardware import get_cpu_name, get_gpu_name
+from modules.hardware import get_gpu_name
 from modules.processing import _get_output_suffix, process_hybrid_audio
 from modules.ui import _is_cleaned_output, _show_banner
 from modules.utils import check_dependencies, format_time, is_verified_video, log_msg

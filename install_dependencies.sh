@@ -88,21 +88,190 @@ else
     exit 1
 fi
 
+if [ -x "$VENV_DIR/bin/ffmpeg" ]; then
+    FFMPEG_DETECTED="$VENV_DIR/bin/ffmpeg"
+else
+    FFMPEG_DETECTED="$(command -v ffmpeg 2>/dev/null || true)"
+fi
+if [ -x "$FFMPEG_DETECTED" ]; then
+    if ! "$FFMPEG_DETECTED" -filters 2>/dev/null | grep -q "arnndn"; then
+        echo "WARNING: Detected FFmpeg does not support the 'arnndn' filter. 'arnndn_speech' mode will be unavailable." >&2
+    fi
+fi
+
+# Step 3b: Verify Cathar Audio Restoration Toolkit
+echo -e "\nStep 3b: Checking Cathar audio restoration toolkit..."
+CATHAR_EXPECTED_VER="0.7.3"
+
+check_cathar_ver() {
+    local bin="$1"
+    if [ -x "$bin" ]; then
+        local ver
+        ver="$("$bin" --version 2>/dev/null || true)"
+        if echo "$ver" | grep -q "^cathar $CATHAR_EXPECTED_VER$"; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# cathar is the default process_mode, so a machine without it cannot restore a file with
+# the shipped configuration. Provisioning is therefore required, not best-effort.
+#
+# The upstream release binary is preferred over building from source: a source build needs a
+# full Rust toolchain and a working C linker, which is a large ask on a user's machine and
+# fails outright on stock Windows (no MSVC LIB paths, no MinGW dlltool). Downloading a
+# checksum-verified binary is the same approach this installer already takes for FFmpeg.
+CATHAR_BASE_URL="https://github.com/vbasky/cathar/releases/download/v${CATHAR_EXPECTED_VER}"
+
+# target|archive extension|sha256 of the published archive, per platform.
+cathar_release_for_host() {
+    case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) echo "x86_64-unknown-linux-gnu tar.gz dbf1b92d3991ad70f9b03094afee385f8c54497184cd5c5196694928c7dbdea4" ;;
+    Darwin-arm64) echo "aarch64-apple-darwin tar.gz 4a502cee5dbb4b66a8467484460d89398e3d4401e1b2611d17ce0c6f1f87669b" ;;
+    Darwin-x86_64) echo "x86_64-apple-darwin tar.gz 3768e6bc11f951cdc374f13dc81de217b572e46213c5c2564bec583231ddc000" ;;
+    *) return 1 ;;
+    esac
+}
+
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+download_cathar_release() {
+    local spec target ext expected tmp archive actual
+    spec="$(cathar_release_for_host)" || return 1
+    read -r target ext expected <<EOF
+$spec
+EOF
+    tmp="$(mktemp -d)"
+    archive="${tmp}/cathar.${ext}"
+    echo "Downloading cathar ${CATHAR_EXPECTED_VER} for ${target}..."
+    if ! curl -fsSL "${CATHAR_BASE_URL}/cathar-v${CATHAR_EXPECTED_VER}-${target}.${ext}" -o "$archive"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+    actual="$(sha256_of "$archive")"
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: cathar archive checksum mismatch (expected $expected, got $actual)" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    tar -xzf "$archive" -C "$tmp" || { rm -rf "$tmp"; return 1; }
+    local found
+    found="$(find "$tmp" -type f -name cathar -perm -u+x | head -1)"
+    [ -n "$found" ] || { rm -rf "$tmp"; return 1; }
+    mkdir -p "$VENV_DIR/bin"
+    cp "$found" "$VENV_DIR/bin/cathar"
+    chmod +x "$VENV_DIR/bin/cathar"
+    rm -rf "$tmp"
+    check_cathar_ver "$VENV_DIR/bin/cathar"
+}
+
+# Source build, kept only as the fallback for a platform with no published binary.
+# RUSTUP_HOME and CARGO_HOME point inside .venv, so nothing lands in ~/.cargo, nothing
+# touches PATH, and deleting .venv removes every trace.
+CARGO_BIN=""
+bootstrap_rust() {
+    export RUSTUP_HOME="$VENV_DIR/rustup"
+    export CARGO_HOME="$VENV_DIR/cargo"
+    if [ -x "$CARGO_HOME/bin/cargo" ]; then
+        CARGO_BIN="$CARGO_HOME/bin/cargo"
+        echo "Using the project-local Rust toolchain: $CARGO_BIN"
+        return 0
+    fi
+    echo "No Rust toolchain found. Bootstrapping one inside $VENV_DIR (nothing is installed system-wide)..."
+    local init="$VENV_DIR/rustup-init.sh"
+    # --proto '=https' --tlsv1.2 are rustup's own documented flags for this; -f makes curl
+    # fail on an HTTP error instead of saving the error page as a shell script.
+    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o "$init"; then
+        echo "ERROR: could not download the Rust installer from https://sh.rustup.rs" >&2
+        return 1
+    fi
+    # --no-modify-path is what keeps this contained: without it rustup edits the user's shell
+    # profile, which is exactly the system-wide change this block exists to avoid.
+    if ! sh "$init" -y --no-modify-path --profile minimal --default-toolchain stable; then
+        rm -f "$init"
+        echo "ERROR: the Rust toolchain bootstrap failed." >&2
+        return 1
+    fi
+    rm -f "$init"
+    CARGO_BIN="$CARGO_HOME/bin/cargo"
+    [ -x "$CARGO_BIN" ] || return 1
+    echo "Rust toolchain ready: $("$CARGO_BIN" --version)"
+}
+
+if check_cathar_ver "$VENV_DIR/bin/cathar"; then
+    echo "Found verified venv Cathar CLI ($CATHAR_EXPECTED_VER): $VENV_DIR/bin/cathar"
+else
+    rm -f "$VENV_DIR/bin/cathar"
+    if check_cathar_ver "$(which cathar 2>/dev/null)"; then
+        echo "Found system Cathar CLI ($CATHAR_EXPECTED_VER): $(which cathar)"
+        cp "$(which cathar)" "$VENV_DIR/bin/cathar"
+    elif check_cathar_ver "$HOME/.cargo/bin/cathar"; then
+        echo "Found cargo Cathar CLI ($CATHAR_EXPECTED_VER): $HOME/.cargo/bin/cathar"
+        cp "$HOME/.cargo/bin/cathar" "$VENV_DIR/bin/cathar"
+    elif download_cathar_release; then
+        echo "Cathar $CATHAR_EXPECTED_VER installed from the verified upstream release."
+    else
+        echo "No published cathar binary for this platform; falling back to a source build."
+        if command -v cargo >/dev/null 2>&1; then
+            CARGO_BIN="$(command -v cargo)"
+        else
+            bootstrap_rust || {
+                echo "ERROR: Cathar is the default restoration mode and could not be provisioned." >&2
+                echo "       Install Rust manually (https://rustup.rs), then re-run this installer." >&2
+                exit 1
+            }
+        fi
+        echo "Building cathar-cli==$CATHAR_EXPECTED_VER into the venv (this compiles from source and takes a few minutes)..."
+        if ! "$CARGO_BIN" install cathar-cli --version "$CATHAR_EXPECTED_VER" --root "$VENV_DIR" --locked; then
+            echo "ERROR: Cathar compilation failed. It is the default restoration mode, so the" >&2
+            echo "       installation cannot be considered complete." >&2
+            exit 1
+        fi
+    fi
+fi
+
+check_cathar_ver "$VENV_DIR/bin/cathar" ||
+    { echo "ERROR: Cathar $CATHAR_EXPECTED_VER is not usable at $VENV_DIR/bin/cathar after provisioning." >&2; exit 1; }
+echo "Cathar ready: $VENV_DIR/bin/cathar ($CATHAR_EXPECTED_VER)"
+
 # Step 4: Install Dependencies via Poetry
 echo -e "\nStep 4: Installing Dependencies via Poetry..."
 "$VENV_PY" -m pip install --upgrade pip
-"$VENV_PY" -m pip install poetry==2.4.1
+"$VENV_PY" -m pip install poetry==2.4.3
 
 "$VENV_PY" -m poetry config --local virtualenvs.in-project true
 "$VENV_PY" -m poetry config --local virtualenvs.create false
+
+echo "Provisioning isolated Piper fixture runtime..."
+export POETRY_REQUESTS_TIMEOUT=600
+export PIP_DEFAULT_TIMEOUT=600
+for piper_attempt in 1 2 3; do
+  if POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true \
+    "$VENV_PY" -m poetry --directory "$SCRIPT_DIR/tools/piper-tts" install \
+    --only main --no-root --no-interaction; then
+    break
+  fi
+  if [ "$piper_attempt" = 3 ]; then
+    echo "WARNING: Piper runtime installation failed after 3 attempts; optional fixture tooling is unavailable." >&2
+    break
+  else
+    echo "WARNING: Piper install attempt $piper_attempt failed; retrying in 10 seconds..."
+    sleep 10
+  fi
+done
 
 if [ ! -f "poetry.lock" ]; then
     echo "Generating poetry.lock..."
     "$VENV_PY" -m poetry lock --no-interaction
 fi
 
-export POETRY_REQUESTS_TIMEOUT=300
-export PIP_DEFAULT_TIMEOUT=300
 
 # The ml group pulls audio-separator -> librosa -> numba -> llvmlite. numba
 # stopped publishing macOS x86_64 (Intel) wheels at 0.61, and llvmlite has no

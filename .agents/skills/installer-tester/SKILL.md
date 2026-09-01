@@ -19,7 +19,8 @@ installation workflow (`install_dependencies.ps1` and `start.bat`).
    - Sets PowerShell execution policy appropriately for script execution.
 1. **Environment & Dependency Checks**:
    - Verifies Python 3.12.x installation (`>=3.12,<3.13`).
-   - Detects GPU capabilities and driver versions (NVIDIA CUDA 13.2 / PyTorch).
+   - Requires NVIDIA CUDA 13.2 runtime stack compatibility only when NVIDIA
+     acceleration is selected, while CPU-only installations remain supported.
    - Installs and bootstraps Poetry if absent.
 1. **Virtual Environment Provisioning**:
    - Creates a dedicated `.venv` in the repository root.

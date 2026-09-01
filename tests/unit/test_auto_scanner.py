@@ -209,7 +209,7 @@ def test_evaluate_restoration_strategy():
     strategy = modules.auto_scanner.evaluate_restoration_strategy(profile)
     assert strategy["mode"] == "hybrid"
     assert strategy["sync_method"] == "dtw"
-    assert strategy["enhance_nfe"] >= 256
+    assert strategy["enhance_nfe"] <= 128
     assert "profile" in strategy
 
 
@@ -225,7 +225,7 @@ def test_scan_and_decide_restoration_strategy(tmp_path):
 
     strategy = modules.auto_scanner.scan_and_decide_restoration_strategy(wav_file)
     assert strategy["mode"] in ("hybrid", "arnndn_speech", "denoise_only", "auto_ffmpeg_native")
-    assert strategy["enhance_nfe"] >= 256
+    assert strategy["enhance_nfe"] <= 128
 
 
 def test_scan_and_decide_fallback_on_read_failure(tmp_path):

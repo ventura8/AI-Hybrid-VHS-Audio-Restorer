@@ -1,0 +1,7 @@
+{
+  "fixtures": [
+    {"name": "short", "duration_seconds": 8, "defects": ["hiss", "hum", "whistle", "rumble", "azimuth"]},
+    {"name": "mid", "duration_seconds": 45, "defects": ["hiss", "hum", "whistle", "rumble", "azimuth", "clicks", "clip"]},
+    {"name": "longform", "duration_seconds": 300, "defects": ["hiss", "hum", "whistle", "rumble", "azimuth", "drift", "dropout"]}
+  ]
+}

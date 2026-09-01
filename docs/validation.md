@@ -67,6 +67,39 @@ if ($tomlFiles.Count -gt 0) {
     --threshold 90.0
 ```
 
+## Hardware Validation Matrix
+
+Hardware validation is opt-in and supplements the canonical quality gate.
+The host audit and core dry run are required for applicable audio, DSP, sync,
+and hardware changes. Physical fixture execution remains opt-in.
+
+The Piper catalog covers 50 language-native voices with checksum-pinned downloads.
+Piper is installed in `tools/piper-tts/.venv`, separate from the application's
+CUDA/TensorRT environment, so its CPU ONNX Runtime cannot change GPU provider
+selection.
+
+```powershell
+.\.venv\Scripts\python.exe -m poetry run python scripts/audit_hardware.py
+.\.venv\Scripts\python.exe -m poetry run python `
+    scripts/generate_audio_matrix.py core --language all
+$env:AI_RESTORE_HARDWARE_TESTS = "1"
+.\.venv\Scripts\python.exe -m poetry run pytest tests/hardware -v
+```
+
+Hardware this machine does not have is validated on a machine that does,
+over SSH:
+
+```bash
+scripts/remote_validate.sh <user>@<host> --stage execute
+```
+
+See [remote_validation.md](remote_validation.md) for the stages, the host
+requirements, and what the reports contain.
+
+Use `scripts/run_hardware_validation.py --execute` only on a prepared machine;
+it drives selected modes through temporary video fixtures and writes timing and
+peak-VRAM data beneath `artifacts/`.
+
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment

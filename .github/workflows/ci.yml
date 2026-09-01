@@ -9,13 +9,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  POETRY_VERSION: "2.4.1"
+  POETRY_VERSION: "2.4.3"
 
 jobs:
   validation:
     name: "🔍 Static Quality Verification + Automated Pipeline Validation"
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       # actions/checkout@v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -35,10 +40,15 @@ jobs:
         shell: bash
         run: |
           poetry config virtualenvs.in-project true
-      - name: Refresh Poetry Lockfile
+      # Verify the committed lock, never regenerate it. `poetry lock` re-resolved from
+      # scratch on every run: the torch/torchvision/torchaudio multiple-constraint
+      # dependencies span the cu130 index and a separate Darwin branch, and resolving that
+      # explosion outran GitHub's 6-hour job ceiling -- three runs were killed at 6h0m19s
+      # having never reached step 7. It was also self-defeating: regenerating the lock meant
+      # CI validated a lock nobody ships, while the committed one went untested.
+      - name: Verify Poetry Lockfile
         shell: bash
         run: |
-          poetry lock --no-interaction
           poetry check --lock
       - name: Sync Test/Light Dependencies
         shell: bash
@@ -177,6 +187,7 @@ jobs:
     name: "📊 Analytics & Coverage Reporting"
     needs: validation
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       # actions/checkout@v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -199,6 +210,7 @@ jobs:
   ubuntu_docker_e2e:
     name: "🐳 Ubuntu Docker Real-Dependency Test"
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: validation
     steps:
       # actions/checkout@v7.0.1
@@ -214,6 +226,7 @@ jobs:
     name: "🍏 macOS Apple Silicon Real-Dependency Validation"
     # macos-26 is GitHub's latest Apple Silicon hosted runner.
     runs-on: macos-26
+    timeout-minutes: 60
     needs: validation
     steps:
       # actions/checkout@v7.0.1
@@ -244,6 +257,7 @@ jobs:
   windows_e2e:
     name: "🪟 Windows Real-Dependency Validation"
     runs-on: windows-latest
+    timeout-minutes: 60
     needs: validation
     steps:
       # actions/checkout@v7.0.1

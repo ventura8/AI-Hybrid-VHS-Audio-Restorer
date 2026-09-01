@@ -38,6 +38,11 @@ def test_parse_loudnorm_json_with_trailing_stderr():
         "}{",
         '{"input_i": "-37.2"}',  # incomplete: missing the other measured values
         "{not valid json}",
+        (
+            '{\n"input_i" : "-inf",\n"input_tp" : "-19.30",\n"input_lra" : "7.70",\n'
+            '"input_thresh" : "-47.40",\n"output_i" : "-16.02",\n"output_tp" : "-1.00",\n'
+            '"output_lra" : "7.00",\n"output_thresh" : "-26.00",\n"target_offset" : "inf"\n}'
+        ),
     ],
 )
 def test_parse_loudnorm_json_rejects_unusable_output(stderr):
@@ -67,7 +72,7 @@ def test_two_pass_expression_applies_measured_args_and_limiter():
     measurements = modules.processing._parse_loudnorm_json(LOUDNORM_ANALYSIS_JSON)
     args = modules.processing._measured_loudnorm_args(measurements)
 
-    with patch("modules.processing.ENABLE_LOUDNORM", True):
+    with patch("modules.config.ENABLE_LOUDNORM", True):
         expr = modules.processing._build_mix_filter_expression(None, None, args)
     assert f"loudnorm={args}" in expr
     assert expr.endswith(f"{modules.processing.LOUDNORM_TRUE_PEAK_LIMITER}[mixed]")
@@ -82,7 +87,7 @@ def test_two_pass_expression_applies_measured_args_and_limiter():
 )
 def test_resolve_loudnorm_args_skips_measurement_when_disabled(resolver):
     """No loudness stage means no analysis pass should be run at all."""
-    with patch("modules.processing.ENABLE_LOUDNORM", False):
+    with patch("modules.config.ENABLE_LOUDNORM", False):
         with patch("modules.processing._run_loudness_analysis") as mock_measure:
             assert resolver() is None
             mock_measure.assert_not_called()
@@ -97,7 +102,7 @@ def test_resolve_loudnorm_args_skips_measurement_when_disabled(resolver):
 )
 def test_resolve_loudnorm_args_falls_back_when_measurement_fails(resolver):
     """A failed analysis pass must degrade to single-pass, not break the render."""
-    with patch("modules.processing.ENABLE_LOUDNORM", True):
+    with patch("modules.config.ENABLE_LOUDNORM", True):
         with patch("modules.processing._run_loudness_analysis", return_value=None):
             assert resolver() is None
 
@@ -110,7 +115,7 @@ def test_loudness_analysis_survives_ffmpeg_failure():
 
 def test_single_track_modes_get_the_same_mastering_chain():
     """denoise_only and the native modes must not skip loudness and limiting."""
-    with patch("modules.processing.ENABLE_LOUDNORM", True):
+    with patch("modules.config.ENABLE_LOUDNORM", True):
         expr = modules.processing._build_single_audio_filter_expression()
     assert expr.startswith("[1:a]loudnorm=")
     assert f"aresample={modules.processing.PIPELINE_SAMPLE_RATE}" in expr
