@@ -38,6 +38,10 @@ def test_parse_loudnorm_json_with_trailing_stderr():
         "}{",
         '{"input_i": "-37.2"}',  # incomplete: missing the other measured values
         "{not valid json}",
+        (
+            '{\n"input_i" : "-inf",\n"input_tp" : "-19.30",\n"input_lra" : "7.70",\n'
+            '"input_thresh" : "-47.40",\n"output_i" : "-16.02",\n"target_offset" : "inf"\n}'
+        ),
     ],
 )
 def test_parse_loudnorm_json_rejects_unusable_output(stderr):

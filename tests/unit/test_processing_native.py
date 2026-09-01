@@ -11,7 +11,7 @@ Tests coverage across:
 """
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -243,10 +243,11 @@ def test_process_ffmpeg_native_mode(mock_filter, mock_align, mock_mux, tmp_path)
     mock_mux.assert_called_once()
 
 
+@patch("modules.processing._filter_precondition_step", side_effect=lambda orig, precond, *args, **kwargs: orig)
 @patch("modules.processing._final_mux_single_audio_step")
 @patch("modules.processing._align_stems")
 @patch("modules.processing._filter_arnndn_step")
-def test_process_arnndn_speech_mode(mock_filter, mock_align, mock_mux, tmp_path):
+def test_process_arnndn_speech_mode(mock_filter, mock_align, mock_mux, mock_precond, tmp_path):
     """Verify arnndn_speech mode pipeline orchestrates filter -> sync -> remux."""
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -281,10 +282,9 @@ def test_process_auto_ffmpeg_native_mode(mock_filter, mock_align, mock_mux, tmp_
     mock_mux.assert_called_once()
 
 
-@patch("modules.processing._process_multipass_mode")
-@patch("modules.processing._process_hybrid_mode")
 @patch("modules.auto_scanner.scan_and_decide_restoration_strategy")
-def test_process_auto_mode_dispatches_selected_strategy(mock_scan, mock_hybrid, mock_multi, tmp_path):
+@patch("modules.modes.registry.get_mode_instance")
+def test_process_auto_mode_dispatches_selected_strategy(mock_instance, mock_scan, tmp_path):
     """Verify _process_auto_mode scans audio and runs the chosen pipeline without duplicate scanning."""
     strategy = {"mode": "hybrid", "reason": "Test", "enhance_nfe": 256}
     mock_scan.return_value = strategy
@@ -293,17 +293,23 @@ def test_process_auto_mode_dispatches_selected_strategy(mock_scan, mock_hybrid, 
     orig = tmp_path / "orig.wav"
     video = tmp_path / "video.mp4"
     final_out = tmp_path / "video_Auto_Cleaned.mp4"
+    handler = MagicMock()
+    mock_instance.return_value.execute = handler
 
     with patch("modules.config.ENABLE_MULTIPASS", False):
         modules.processing._process_auto_mode(work_dir, orig, video, final_out, 10.0)
     mock_scan.assert_called_once_with(orig)
-    mock_hybrid.assert_called_once()
+    mock_instance.assert_called_once_with("hybrid")
+    handler.assert_called_once()
 
     mock_scan.reset_mock()
+    mock_instance.reset_mock()
+    handler.reset_mock()
     with patch("modules.config.ENABLE_MULTIPASS", True):
         modules.processing._process_auto_mode(work_dir, orig, video, final_out, 10.0)
     mock_scan.assert_called_once_with(orig)
-    mock_multi.assert_called_once_with(work_dir, orig, video, final_out, 10.0, strategy=strategy)
+    mock_instance.assert_called_once_with("multipass_auto")
+    handler.assert_called_once_with(work_dir, orig, video, final_out, 10.0, strategy=strategy)
 
 
 def test_build_precondition_filter_string():
@@ -410,54 +416,48 @@ def test_execute_pure_restoration(mock_sep, mock_den_voc, mock_den_bg, mock_dees
     mock_mix.assert_called_once()
 
 
-@patch("modules.processing._process_auto_pure_mode")
-@patch("modules.processing._process_multipass_mode")
-@patch("modules.processing._process_auto_mode")
-@patch("modules.processing._process_hybrid_mode")
-@patch("modules.processing._process_arnndn_speech_mode")
-@patch("modules.processing._process_auto_ffmpeg_native_mode")
-@patch("modules.processing._process_ffmpeg_native_mode")
-@patch("modules.processing._process_denoise_only_mode")
-def test_run_processing_mode_dispatch(
-    mock_denoise, mock_ffmpeg, mock_auto_ffmpeg, mock_arnndn, mock_hybrid, mock_auto, mock_multipass, mock_pure, tmp_path
-):
-    """Verify dispatcher directs to the correct mode orchestrator."""
+@patch("modules.modes.registry.get_mode_instance")
+def test_run_processing_mode_dispatch(mock_instance, tmp_path):
+    """Verify registry dispatches every non-auto mode to its mode instance."""
     work_dir = tmp_path / "work"
     orig = tmp_path / "orig.wav"
     video = tmp_path / "video.mp4"
     final_out = tmp_path / "out.mp4"
 
-    with patch("modules.processing.PROCESS_MODE", "multipass_auto"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_multipass.assert_called_once()
+    handler = MagicMock()
+    mock_instance.return_value.execute = handler
+    for mode in (
+        "multipass_auto",
+        "auto_pure",
+        "auto_pure_linear",
+        "denoise_only",
+        "ffmpeg_native",
+        "auto_ffmpeg_native",
+        "arnndn_speech",
+        "hybrid",
+        "cathar",
+    ):
+        with patch("modules.processing.PROCESS_MODE", mode):
+            modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
+    assert mock_instance.call_args_list == [
+        ((mode,), {})
+        for mode in (
+            "multipass_auto",
+            "auto_pure",
+            "auto_pure_linear",
+            "denoise_only",
+            "ffmpeg_native",
+            "auto_ffmpeg_native",
+            "arnndn_speech",
+            "hybrid",
+            "cathar",
+        )
+    ]
+    assert handler.call_count == 9
 
-    with patch("modules.processing.PROCESS_MODE", "auto_pure"):
+    with patch("modules.processing.PROCESS_MODE", "auto"), patch("modules.processing._process_auto_mode") as mock_auto:
         modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_pure.assert_called_once()
-
-    with patch("modules.processing.PROCESS_MODE", "auto"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_auto.assert_called_once()
-
-    with patch("modules.processing.PROCESS_MODE", "denoise_only"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_denoise.assert_called_once()
-
-    with patch("modules.processing.PROCESS_MODE", "ffmpeg_native"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_ffmpeg.assert_called_once()
-
-    with patch("modules.processing.PROCESS_MODE", "auto_ffmpeg_native"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_auto_ffmpeg.assert_called_once()
-
-    with patch("modules.processing.PROCESS_MODE", "arnndn_speech"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_arnndn.assert_called_once()
-
-    with patch("modules.processing.PROCESS_MODE", "hybrid"):
-        modules.processing._run_processing_mode(work_dir, orig, video, final_out, 5.0)
-        mock_hybrid.assert_called_once()
+    mock_auto.assert_called_once()
 
 
 def test_deess_vocals_step_disabled(tmp_path):
@@ -504,11 +504,11 @@ def test_expand_background_step_active(mock_valid, mock_run, tmp_path):
 
 def test_build_mix_filter_expression_variations():
     """Verify loudness normalization inclusion in amix filter expression."""
-    with patch("modules.processing.ENABLE_LOUDNORM", False):
+    with patch("modules.config.ENABLE_LOUDNORM", False):
         expr = modules.processing._build_mix_filter_expression()
         assert "loudnorm" not in expr
 
-    with patch("modules.processing.ENABLE_LOUDNORM", True):
+    with patch("modules.config.ENABLE_LOUDNORM", True):
         expr = modules.processing._build_mix_filter_expression()
         assert f"loudnorm={modules.processing._loudnorm_target_args()}" in expr
         # loudnorm leaves the graph at 96 kHz unless it is resampled back, and its
@@ -536,9 +536,9 @@ def test_sanitize_mix_level_variations(raw_input, expected):
 def test_build_mix_filter_expression_neutralizes_injection():
     """Verify _build_mix_filter_expression neutralizes filter injection in mix volumes."""
     with (
-        patch("modules.processing.VOCAL_MIX_VOL", "1.0;movie=http://attacker"),
-        patch("modules.processing.BACKGROUND_MIX_VOL", 0.5),
-        patch("modules.processing.ENABLE_LOUDNORM", False),
+        patch("modules.config.VOCAL_MIX_VOL", "1.0;movie=http://attacker"),
+        patch("modules.config.BACKGROUND_MIX_VOL", 0.5),
+        patch("modules.config.ENABLE_LOUDNORM", False),
     ):
         expr = modules.processing._build_mix_filter_expression()
         assert expr == "[1:a]volume=1.0[v];[2:a]volume=0.5[b];[v][b]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mixed]"

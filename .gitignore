@@ -73,6 +73,7 @@ benchmark_*.json
 scratch_*.json
 
 # --- Artifacts ---
+artifacts/
 start.bat
 start_workflow.bat
 
@@ -93,3 +94,5 @@ radon-mi-report.txt
 radon-mi-report.json
 radon-raw-report.txt
 radon-hal-report.txt
+scratch
+experiments

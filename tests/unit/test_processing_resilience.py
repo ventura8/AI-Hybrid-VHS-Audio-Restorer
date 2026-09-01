@@ -199,6 +199,7 @@ def test_final_mix_step_existing_unlink(tmp_path):
             assert out.exists()
 
 
+@patch("modules.processing._filter_precondition_step", side_effect=lambda orig, precond, *args, **kwargs: orig)
 @patch("modules.processing.get_video_duration_sec", return_value=10)
 @patch("modules.processing._extract_audio_step")
 @patch("modules.processing._denoise_full_audio_step", return_value=Path("df.wav"))
@@ -218,6 +219,7 @@ def test_process_hybrid_audio_denoise_only(
     mock_full_denoise,
     mock_extract,
     mock_dur,
+    mock_precond,
     tmp_path,
 ):
     """Ensure denoise_only mode bypasses separation/enhancement branches."""
@@ -234,6 +236,22 @@ def test_process_hybrid_audio_denoise_only(
     mock_sep.assert_not_called()
     mock_enhance.assert_not_called()
     mock_bg_denoise.assert_not_called()
+
+
+@patch("modules.processing._process_single_track_pipeline")
+@patch("modules.processing._filter_precondition_step", return_value=Path("preconditioned.wav"))
+@patch("modules.processing._separate_stems_step")
+def test_auto_pure_linear_uses_preconditioned_full_mix(mock_separate, mock_precondition, mock_pipeline, tmp_path):
+    """The linear mode omits stem separation while retaining pure pre-conditioning."""
+    strategy = {"denoise_model": "UVR-DeNoise-Lite.pth", "precondition_filters": {"highpass": 2}, "sync_method": "dtw"}
+    original, video, output = tmp_path / "original.wav", tmp_path / "input.mp4", tmp_path / "output.mp4"
+
+    modules.processing._process_auto_pure_linear_mode(tmp_path, original, video, output, 12.0, strategy=strategy)
+
+    mock_precondition.assert_called_once_with(original, tmp_path / "preconditioned_audio.wav", {"highpass": 2}, total_duration=12.0)
+    assert mock_pipeline.call_args.args[1] == Path("preconditioned.wav")
+    assert mock_pipeline.call_args.kwargs["sync_method"] == "dtw"
+    mock_separate.assert_not_called()
 
 
 # Hardware Coverage Booster
@@ -288,3 +306,82 @@ def test_get_gpu_name_pytorch_exception():
             name = modules.hardware.get_gpu_name()
             # It should fall back to nvidia-smi or generic
             assert name is not None
+
+
+def test_resolve_adaptive_denoise_model():
+    """Verify adaptive denoise model selection picks Lite on quiet tapes."""
+    strategy_quiet = {"profile": {"noise_floor_db": -55.0}}
+    assert modules.processing._resolve_adaptive_denoise_model(strategy_quiet, "UVR-DeNoise.pth") == "UVR-DeNoise-Lite.pth"
+
+    strategy_noisy = {"profile": {"noise_floor_db": -42.0}}
+    assert modules.processing._resolve_adaptive_denoise_model(strategy_noisy, "UVR-DeNoise.pth") == "UVR-DeNoise.pth"
+
+    assert modules.processing._resolve_adaptive_denoise_model({}, "UVR-DeNoise.pth") == "UVR-DeNoise.pth"
+
+
+def test_pre_denoise_surgical_step(tmp_path):
+    """Verify pre-denoise surgical step builds filter and runs filter file."""
+    precond = tmp_path / "precond.wav"
+    precond.write_text("audio")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    with (
+        patch("modules.processing.is_valid_audio", side_effect=[True, False, True]),
+        patch("modules.processing.build_pre_denoise_surgical_filter", return_value="highpass=f=60"),
+        patch("modules.processing._run_dsp_filter_file") as mock_run,
+    ):
+        mock_run.return_value = out_dir / "surgical_precond.wav"
+        res = modules.processing._pre_denoise_surgical_step(precond, out_dir)
+        assert res == out_dir / "surgical_precond.wav"
+        mock_run.assert_called_once()
+
+    with patch("modules.processing.is_valid_audio", return_value=False):
+        assert modules.processing._pre_denoise_surgical_step(precond, out_dir) == precond
+
+
+def test_post_denoise_cleanup_step(tmp_path):
+    """Verify post-denoise cleanup step builds filter and runs filter file."""
+    denoised = tmp_path / "denoised.wav"
+    denoised.write_text("audio")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    with (
+        patch("modules.processing.is_valid_audio", side_effect=[True, False, True]),
+        patch("modules.processing.build_post_denoise_cleanup_filter", return_value="bandreject=f=50:w=40"),
+        patch("modules.processing._run_dsp_filter_file") as mock_run,
+    ):
+        mock_run.return_value = out_dir / "cleaned_denoised.wav"
+        res = modules.processing._post_denoise_cleanup_step(denoised, out_dir)
+        assert res == out_dir / "cleaned_denoised.wav"
+        mock_run.assert_called_once()
+
+    with patch("modules.processing.is_valid_audio", return_value=False):
+        assert modules.processing._post_denoise_cleanup_step(denoised, out_dir) == denoised
+
+
+def test_denoise_and_polish_full_audio_step_cascades(tmp_path):
+    """Verify _denoise_and_polish_full_audio_step chains pre-surgical, denoise, post-cleanup, polish."""
+    orig = tmp_path / "orig.wav"
+    orig.write_text("audio")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    strategy = {"profile": {"noise_floor_db": -52.0}}
+
+    with (
+        patch("modules.processing._pre_denoise_surgical_step", return_value=tmp_path / "surg.wav") as mock_surg,
+        patch("modules.processing._denoise_full_audio_step", return_value=tmp_path / "den.wav") as mock_den,
+        patch("modules.processing._post_denoise_cleanup_step", return_value=tmp_path / "clean.wav") as mock_clean,
+        patch("modules.processing._polish_full_audio_step", return_value=tmp_path / "pol.wav") as mock_pol,
+    ):
+        res = modules.processing._denoise_and_polish_full_audio_step(
+            orig, out_dir, total_duration=10.0, denoise_model="UVR-DeNoise.pth", strategy=strategy, apply_air=True
+        )
+        assert res == tmp_path / "pol.wav"
+        mock_surg.assert_called_once_with(orig, out_dir, total_duration=10.0, strategy=strategy)
+        mock_den.assert_called_once_with(
+            tmp_path / "surg.wav", out_dir / "neural_denoised", total_duration=10.0, denoise_model="UVR-DeNoise-Lite.pth"
+        )
+        mock_clean.assert_called_once_with(tmp_path / "den.wav", out_dir, total_duration=10.0, strategy=strategy)
+        mock_pol.assert_called_once_with(tmp_path / "clean.wav", out_dir, total_duration=10.0, strategy=strategy, apply_air=True)

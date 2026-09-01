@@ -478,3 +478,79 @@ def test_mains_candidates_constrained_by_line_rate(line_rate_hz, hum_hz, expecte
     t = np.arange(32768, dtype=np.float64) / sr
     signal = (0.5 * np.sin(2.0 * np.pi * hum_hz * t)).astype(np.float32)
     assert modules.filters._detect_mains_buzz_notch(signal, sr, line_rate_hz) == expected
+
+
+def test_build_pre_denoise_surgical_filter():
+    """Verify pre-denoise surgical filter graph builds correct notches and rumble cutoff."""
+    strategy = {
+        "profile": {"notch_hz": 50.0, "crt_notch_hz": 15625.0},
+        "precondition_filters": {"highpass_hz": 75, "notch_hz": 50.0, "crt_notch_hz": 15625.0},
+    }
+    filter_str = modules.filters.build_pre_denoise_surgical_filter(strategy)
+    expected_tokens = (
+        "highpass=f=75",
+        "bandreject=f=50.0:width_type=q:w=30",
+        "bandreject=f=100.0:width_type=q:w=30",
+        "bandreject=f=150.0:width_type=q:w=30",
+        "bandreject=f=200.0:width_type=q:w=30",
+        "bandreject=f=250.0:width_type=q:w=30",
+        "bandreject=f=15625.0:width_type=q:w=50",
+    )
+    assert all(token in filter_str for token in expected_tokens)
+    assert modules.filters.build_pre_denoise_surgical_filter({}) is None
+
+
+def test_build_pre_denoise_surgical_filter_strategy_fallback():
+    """Verify rumble cutoff and notch frequencies resolve from strategy profile fallback."""
+    strategy = {
+        "profile": {"highpass_hz": 80, "notch_hz": 60.0, "crt_notch_hz": 15734.0},
+    }
+    filter_str = modules.filters.build_pre_denoise_surgical_filter(strategy)
+    assert "highpass=f=80" in filter_str
+    assert "bandreject=f=60.0:width_type=q:w=30" in filter_str
+    assert "bandreject=f=15734.0:width_type=q:w=50" in filter_str
+
+
+def test_build_post_denoise_cleanup_filter():
+    """Verify post-denoise cleanup filter builds surgical residual notches."""
+    strategy = {
+        "profile": {"notch_hz": 60.0, "crt_notch_hz": 15734.0},
+        "precondition_filters": {"notch_hz": 60.0, "crt_notch_hz": 15734.0},
+    }
+    filter_str = modules.filters.build_post_denoise_cleanup_filter(strategy)
+    assert "bandreject=f=60.0:width_type=q:w=40" in filter_str
+    assert "bandreject=f=15734.0:width_type=q:w=80" in filter_str
+
+    assert modules.filters.build_post_denoise_cleanup_filter({}) is None
+
+
+def test_cathar_find_quiet_window_bounds(tmp_path):
+    """Verify quiet window returns 0.0 when audio is shorter than window duration."""
+    import modules.cathar as cathar
+
+    short_wav = tmp_path / "short.wav"
+    with patch("modules.cathar._read_mono_samples", return_value=(np.zeros(100, dtype=np.float32), 44100)):
+        assert cathar._find_quiet_window(short_wav, duration_s=1.0) == 0.0
+
+
+def test_cathar_noiseprint_step_regenerates_corrupt_json(tmp_path):
+    """Verify corrupt existing noiseprint JSON is unlinked and regenerated."""
+    import modules.cathar as cathar
+
+    in_wav = tmp_path / "corrupt_test.wav"
+    out_dir = tmp_path / "work"
+    out_dir.mkdir()
+    corrupt_json = out_dir / "noise_corrupt_test.np.json"
+    corrupt_json.write_text("{invalid json content")
+
+    def fake_execute(slice_wav, output_json):
+        assert not corrupt_json.exists()
+        return corrupt_json
+
+    with (
+        patch("modules.cathar._extract_noiseprint_slice", return_value=True),
+        patch("modules.cathar._execute_noiseprint", side_effect=fake_execute) as mock_exec,
+    ):
+        result = cathar._cathar_noiseprint_step(in_wav, out_dir)
+        assert result == corrupt_json
+        mock_exec.assert_called_once()

@@ -9,7 +9,6 @@ Orchestrates multi-stage audio restoration pipelines across four modes:
 - arnndn_speech: FFmpeg RNNoise recurrent neural network speech denoiser + Sync + Remux.
 """
 
-import json
 import re
 import shutil
 import subprocess
@@ -25,24 +24,31 @@ try:
 except ImportError:
     torch = None
 
+from . import mastering as _mastering
 from . import utils as _utils
 from .config import (
-    BACKGROUND_MIX_VOL,
+    ADAPTIVE_DENOISE_THRESHOLD_DB,
+    DEFAULT_DENOISE_MODEL,
     DENOISE_MODEL,
     ENABLE_DEESSER,
     ENABLE_DYNAMIC_EXPANDER,
-    ENABLE_LOUDNORM,
     ENHANCE_NFE,
     ENHANCE_TAU,
     KEEP_INPUT_FILES,
     OUTPUT_SUFFIX_BY_MODE,
     PRESERVE_ORIGINAL_AUDIO_TRACK,
     PROCESS_MODE,
-    VOCAL_MIX_VOL,
     VOCALS_MODEL,
-    _parse_mix_float,
 )
-from .filters import _filter_arnndn_step, _filter_auto_vhs_native_step, _filter_precondition_step, _filter_vhs_native_step
+from .filters import (
+    _filter_arnndn_step,
+    _filter_auto_vhs_native_step,
+    _filter_precondition_step,
+    _filter_vhs_native_step,
+    build_full_audio_polish_filter,
+    build_post_denoise_cleanup_filter,
+    build_pre_denoise_surgical_filter,
+)
 from .hardware import CPU_THREADS, CUDA_ENV, CUDA_VISIBLE_DEVICE, GPU_BATCH_SIZE
 from .sync import _align_stems
 from .utils import (
@@ -614,205 +620,6 @@ def _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=No
     )
 
 
-AUDIO_CODEC_ARGS_BY_EXT = {
-    ".mp4": ["-c:a", "aac", "-b:a", "320k"],
-    ".m4v": ["-c:a", "aac", "-b:a", "320k"],
-    ".mpg": ["-c:a", "mp2", "-b:a", "384k"],
-    ".mpeg": ["-c:a", "mp2", "-b:a", "384k"],
-    ".ts": ["-c:a", "aac", "-b:a", "320k"],
-    ".m2ts": ["-c:a", "aac", "-b:a", "320k"],
-    ".avi": ["-c:a", "pcm_s16le"],
-}
-
-
-def _get_audio_encoding_args(video_suffix):
-    """Returns codec arguments for transparent remuxing.
-
-    Args:
-        video_suffix (str): Container extension (e.g. '.mp4', '.mkv', '.avi').
-
-    Returns:
-        list: FFmpeg audio codec arguments.
-    """
-    return AUDIO_CODEC_ARGS_BY_EXT.get(video_suffix.lower(), ["-c:a", "pcm_f32le"])
-
-
-def _preserved_audio_args(video_suffix, audio_args):
-    """Returns a compatible codec configuration for the preserved source stream."""
-    if video_suffix.lower() in {".avi", ".mpg", ".mpeg"}:
-        return _scope_audio_args_for_stream(audio_args, 1)
-    return ["-c:a:1", "copy"]
-
-
-def _sanitize_mix_level(vol_val):
-    """Normalizes a configured mix volume, falling back to unity gain."""
-    val = _parse_mix_float(vol_val)
-    return 1.0 if val is None else val
-
-
-LOUDNORM_TARGET_I = -16.0
-LOUDNORM_TARGET_TP = -1.0
-LOUDNORM_TARGET_LRA = 11.0
-LOUDNORM_ANALYSIS_TIMEOUT = 900
-
-
-def _loudnorm_analysis_timeout(total_duration):
-    """Scales the analysis-pass timeout with media duration, never below the floor."""
-    if not total_duration or total_duration <= 0:
-        return LOUDNORM_ANALYSIS_TIMEOUT
-    return max(LOUDNORM_ANALYSIS_TIMEOUT, int(total_duration * 8))
-
-
-# loudnorm's linear mode hits the LUFS target but does not guarantee the ceiling:
-# a measured run peaked at -0.9 dBTP against -1.0, with intersample peaks above the
-# -0.95 dBFS sample peak. The limiter runs after the resample, where the final
-# sample grid is fixed, and costs nothing in loudness.
-LOUDNORM_TRUE_PEAK_LIMITER = "alimiter=limit=-1dB:level=disabled"
-# ffmpeg reports these five under these names in its analysis pass.
-LOUDNORM_MEASURE_KEYS = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
-
-
-def _loudnorm_target_args():
-    """Loudness target shared by the measurement pass and the applied pass."""
-    return f"I={LOUDNORM_TARGET_I}:TP={LOUDNORM_TARGET_TP}:LRA={LOUDNORM_TARGET_LRA}"
-
-
-def _has_loudnorm_measurements(measurements):
-    """Confirms an analysis block carries every value the applied pass needs."""
-    return all(key in measurements for key in LOUDNORM_MEASURE_KEYS)
-
-
-def _extract_valid_loudnorm_object(text, decoder):
-    """Attempts to decode a valid loudnorm measurement object from text."""
-    try:
-        measurements, _ = decoder.raw_decode(text)
-        return measurements if isinstance(measurements, dict) and _has_loudnorm_measurements(measurements) else None
-    except ValueError:
-        return None
-
-
-def _parse_loudnorm_json(stderr_text):
-    """Extracts the measurement block that loudnorm's analysis pass prints."""
-    pos = 0
-    decoder = json.JSONDecoder()
-    while (start := stderr_text.find("{", pos)) >= 0:
-        if (measurements := _extract_valid_loudnorm_object(stderr_text[start:], decoder)) is not None:
-            return measurements
-        pos = start + 1
-    return None
-
-
-def _measured_loudnorm_args(measurements):
-    """Builds second-pass loudnorm arguments from the measured programme values."""
-    return (
-        f"{_loudnorm_target_args()}"
-        f":measured_I={measurements['input_i']}"
-        f":measured_TP={measurements['input_tp']}"
-        f":measured_LRA={measurements['input_lra']}"
-        f":measured_thresh={measurements['input_thresh']}"
-        f":offset={measurements['target_offset']}"
-        ":linear=true"
-    )
-
-
-def _build_mix_base_expression(vocal_mix_vol, bg_mix_vol):
-    """Volume-scaled two-stem amix, with no loudness stage attached."""
-    vocal_vol = _sanitize_mix_level(_resolve_override(vocal_mix_vol, VOCAL_MIX_VOL))
-    bg_vol = _sanitize_mix_level(_resolve_override(bg_mix_vol, BACKGROUND_MIX_VOL))
-    return f"[1:a]volume={vocal_vol}[v];[2:a]volume={bg_vol}[b];[v][b]amix=inputs=2:duration=first:dropout_transition=0:normalize=0"
-
-
-def _build_mix_filter_expression(vocal_mix_vol=None, bg_mix_vol=None, loudnorm_args=None):
-    """Builds amix expression optionally with EBU R128 loudness normalization.
-
-    Args:
-        vocal_mix_vol (float, optional): Strategy-selected vocal gain override.
-        bg_mix_vol (float, optional): Strategy-selected background gain override.
-        loudnorm_args (str, optional): Measured second-pass loudnorm arguments.
-
-    Returns:
-        str: FFmpeg filter_complex expression combining vocal and background stems.
-    """
-    base_filter = _build_mix_base_expression(vocal_mix_vol, bg_mix_vol)
-    if not ENABLE_LOUDNORM:
-        return f"{base_filter}[mixed]"
-
-    return f"{base_filter},{_mastering_chain(loudnorm_args, 'mixed')}"
-
-
-def _run_loudness_analysis(input_paths, expression, total_duration=None):
-    """Runs loudnorm's analysis pass over a built filter graph.
-
-    Single-pass loudnorm only approximates the target; a measured run landed at
-    -15.3 LUFS against a -16 target and -0.9 dBTP against a -1.0 ceiling. Feeding
-    the measured values back lets the applied pass hit both exactly.
-    """
-    cmd = [FFMPEG_BIN, "-hide_banner", "-nostdin"]
-    for path in input_paths:
-        cmd.extend(["-i", str(path)])
-    cmd.extend(["-filter_complex", expression, "-map", "[mastered]", "-f", "null", "-"])
-    try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=_loudnorm_analysis_timeout(total_duration))
-    except Exception:
-        return None
-    return _parse_loudnorm_json(completed.stderr or "")
-
-
-def _resolve_measured_loudnorm(input_paths, analysis_expression, total_duration=None):
-    """Measures programme loudness so normalisation can be applied accurately."""
-    if not ENABLE_LOUDNORM:
-        return None
-
-    log_msg("    [Mastering] Measuring programme loudness (pass 1 of 2)...")
-    measurements = _run_loudness_analysis(input_paths, analysis_expression, total_duration=total_duration)
-    if measurements is None:
-        log_msg("    [Warning] Loudness measurement unavailable; using single-pass normalisation.", is_error=True)
-        return None
-    return _measured_loudnorm_args(measurements)
-
-
-def _mastering_chain(loudnorm_args, label):
-    """Applied loudness chain shared by the mix and single-track paths."""
-    applied = _resolve_override(loudnorm_args, _loudnorm_target_args())
-    return f"loudnorm={applied},aresample={PIPELINE_SAMPLE_RATE},{LOUDNORM_TRUE_PEAK_LIMITER}[{label}]"
-
-
-def _build_single_audio_filter_expression(loudnorm_args=None):
-    """Mastering graph for single-track modes, matching the two-stem mix path.
-
-    Returns None when loudness is disabled, so the mux maps the track directly.
-    """
-    if not ENABLE_LOUDNORM:
-        return None
-    return f"[1:a]{_mastering_chain(loudnorm_args, 'mastered')}"
-
-
-def _resolve_loudnorm_args(video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=None):
-    """Measures the finished two-stem mix before normalisation is applied."""
-    base_filter = _build_mix_base_expression(vocal_mix_vol, bg_mix_vol)
-    expression = f"{base_filter},loudnorm={_loudnorm_target_args()}:print_format=json[mastered]"
-    return _resolve_measured_loudnorm((video_path, aligned_vocals, aligned_background), expression, total_duration=total_duration)
-
-
-def _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=None):
-    """Measures a single processed track before normalisation is applied."""
-    expression = f"[1:a]loudnorm={_loudnorm_target_args()}:print_format=json[mastered]"
-    return _resolve_measured_loudnorm((video_path, processed_audio_wav), expression, total_duration=total_duration)
-
-
-def _scope_audio_arg(arg, prefix):
-    """Appends stream prefix to audio codec or bitrate flags."""
-    if arg in ("-c:a", "-b:a"):
-        return f"{arg}{prefix}"
-    return arg
-
-
-def _scope_audio_args_for_stream(audio_args, stream_index=0):
-    """Scopes audio flags like -c:a and -b:a to a specific audio output stream index."""
-    prefix = f":{stream_index}"
-    return [_scope_audio_arg(arg, prefix) for arg in audio_args]
-
-
 def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None):
     """Generates FFmpeg arguments for final 2-stem mix.
 
@@ -1032,13 +839,22 @@ def _bind_step_model(step_func, model_kwarg, model_name):
 
 
 def _process_single_track_pipeline(
-    work_dir, original_wav, video_path, final_output_video, video_dur, step_func, dir_name, sync_label, sync_method=None
+    work_dir,
+    original_wav,
+    video_path,
+    final_output_video,
+    video_dur,
+    step_func,
+    dir_name,
+    sync_label,
+    sync_method=None,
+    ref_wav=None,
 ):
     """Executes single-track pipeline pattern: filter -> sync -> remux.
 
     Args:
         work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original extracted audio WAV file.
+        original_wav (pathlib.Path): Audio WAV file to process through step_func.
         video_path (pathlib.Path): Original video container file.
         final_output_video (pathlib.Path): Final destination video file.
         video_dur (float): Video duration in seconds.
@@ -1046,6 +862,7 @@ def _process_single_track_pipeline(
         dir_name (str): Intermediate folder name.
         sync_label (str): Label for progress logging.
         sync_method (str, optional): Strategy-selected alignment method override.
+        ref_wav (pathlib.Path, optional): Original reference audio for smart sync.
     """
     audio_dir = work_dir / dir_name
     audio_dir.mkdir(exist_ok=True)
@@ -1054,47 +871,33 @@ def _process_single_track_pipeline(
 
     log_msg(f"  [Step 3/4] Smart Audio Sync ({sync_label})...")
     aligned_audio = work_dir / f"aligned_{filtered_audio_wav.name}"
-    _align_stems(original_wav, filtered_audio_wav, aligned_audio, sync_method=sync_method)
+    sync_reference = ref_wav or original_wav
+    _align_stems(sync_reference, filtered_audio_wav, aligned_audio, sync_method=sync_method)
 
     _final_mux_single_audio_step(video_path, aligned_audio, final_output_video, total_duration=video_dur)
 
 
-def _process_denoise_only_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    """Full audio track denoising with UVR-DeNoise.
+def _resolve_preconditioned_audio(work_dir, original_wav, video_dur, mode, strategy):
+    """Ensures strategy is available and applies analog pre-conditioning filters."""
+    if strategy is None:
+        from .auto_scanner import scan_and_decide_restoration_strategy
 
-    Args:
-        work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original audio WAV file.
-        video_path (pathlib.Path): Source video file.
-        final_output_video (pathlib.Path): Output video file.
-        video_dur (float): Video duration in seconds.
-        strategy (dict, optional): Pre-computed acoustic restoration strategy.
-    """
-    step_func = _bind_step_model(_denoise_full_audio_step, "denoise_model", _strategy_value(strategy, "denoise_model", None))
-    _process_single_track_pipeline(
-        work_dir,
-        original_wav,
-        video_path,
-        final_output_video,
-        video_dur,
-        step_func,
-        "denoised_full_audio",
-        "Full-Audio",
-        sync_method=_strategy_value(strategy, "sync_method", None),
-    )
+        strategy = scan_and_decide_restoration_strategy(original_wav, executed_mode=mode)
+    precond_wav = work_dir / "preconditioned_audio.wav"
+    precond_cfg = strategy.get("precondition_filters", {})
+    clean_wav = _filter_precondition_step(original_wav, precond_wav, precond_cfg, total_duration=video_dur)
+    return clean_wav, strategy
+
+
+def _process_denoise_only_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
+    """Full audio track denoising with UVR-DeNoise and preconditioning."""
+    from .modes import DenoiseOnlyMode
+
+    DenoiseOnlyMode().execute(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
 
 def _process_ffmpeg_native_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    """FFmpeg native DSP filter chain restoration.
-
-    Args:
-        work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original audio WAV file.
-        video_path (pathlib.Path): Source video file.
-        final_output_video (pathlib.Path): Output video file.
-        video_dur (float): Video duration in seconds.
-        strategy (dict, optional): Pre-computed acoustic restoration strategy.
-    """
+    """FFmpeg native DSP filter chain restoration."""
     _process_single_track_pipeline(
         work_dir,
         original_wav,
@@ -1109,16 +912,7 @@ def _process_ffmpeg_native_mode(work_dir, original_wav, video_path, final_output
 
 
 def _process_auto_ffmpeg_native_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    """Intelligent adaptive FFmpeg native DSP restoration with auto-tuned acoustic scan.
-
-    Args:
-        work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original audio WAV file.
-        video_path (pathlib.Path): Source video file.
-        final_output_video (pathlib.Path): Output video file.
-        video_dur (float): Video duration in seconds.
-        strategy (dict, optional): Pre-computed acoustic restoration strategy.
-    """
+    """Intelligent adaptive FFmpeg native DSP restoration with auto-tuned acoustic scan."""
     _process_single_track_pipeline(
         work_dir,
         original_wav,
@@ -1133,20 +927,12 @@ def _process_auto_ffmpeg_native_mode(work_dir, original_wav, video_path, final_o
 
 
 def _process_arnndn_speech_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    """FFmpeg RNNoise recurrent neural network speech restoration.
-
-    Args:
-        work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original audio WAV file.
-        video_path (pathlib.Path): Source video file.
-        final_output_video (pathlib.Path): Output video file.
-        video_dur (float): Video duration in seconds.
-        strategy (dict, optional): Pre-computed acoustic restoration strategy.
-    """
+    """FFmpeg RNNoise recurrent neural network speech restoration."""
+    clean_wav, strategy = _resolve_preconditioned_audio(work_dir, original_wav, video_dur, "arnndn_speech", strategy)
     step_func = _bind_step_model(_filter_arnndn_step, "model_name", _strategy_value(strategy, "arnndn_model", None))
     _process_single_track_pipeline(
         work_dir,
-        original_wav,
+        clean_wav,
         video_path,
         final_output_video,
         video_dur,
@@ -1154,6 +940,7 @@ def _process_arnndn_speech_mode(work_dir, original_wav, video_path, final_output
         "arnndn_speech_audio",
         "ARNNDN Speech",
         sync_method=_strategy_value(strategy, "sync_method", None),
+        ref_wav=original_wav,
     )
 
 
@@ -1220,6 +1007,76 @@ def _expand_background_step(background_wav, denoised_bg_dir, total_duration=None
     log_msg("    [AI Background Polish] Applying Downward Dynamic Noise Expander...")
     exp_filter = "compand=attacks=0.1:decays=0.3:points=-80/-90|-45/-45|0/0"
     return _run_dsp_filter_file(background_wav, output_wav, exp_filter, "Expanding Background", total_duration)
+
+
+def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strategy=None, apply_air=False):
+    """Applies optional high-frequency air shelf and adaptive downward dynamic expansion."""
+    if not is_valid_audio(denoised_wav):
+        return denoised_wav
+    polish_filter = build_full_audio_polish_filter(strategy=strategy, apply_air=apply_air)
+    if not polish_filter:
+        return denoised_wav
+    output_wav = polish_dir / f"polished_{denoised_wav.name}"
+    if is_valid_audio(output_wav):
+        return output_wav
+    log_msg("    [AI Full-Audio Polish] Applying Air Polish and Downward Dynamic Expander...")
+    return _run_dsp_filter_file(denoised_wav, output_wav, polish_filter, "Polishing Full Audio", total_duration)
+
+
+def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None):
+    """Pass 2.5: Pre-denoise surgical DSP notching (mains harmonics, CRT whistle, rumble)."""
+    if not is_valid_audio(precond_wav):
+        return precond_wav
+    surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy)
+    if not surgical_filter:
+        return precond_wav
+    output_wav = audio_dir / f"surgical_{precond_wav.name}"
+    if is_valid_audio(output_wav):
+        return output_wav
+    log_msg("    [Surgical Pre-Denoise DSP] Applying Pre-Denoising Tonal Notches & Rumble Filter...")
+    return _run_dsp_filter_file(precond_wav, output_wav, surgical_filter, "Pre-Denoise Surgical DSP", total_duration)
+
+
+def _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=None, strategy=None):
+    """Pass 3.5: Post-denoise high-Q surgical cleanup for lingering tonal residuals."""
+    if not is_valid_audio(denoised_wav):
+        return denoised_wav
+    cleanup_filter = build_post_denoise_cleanup_filter(strategy=strategy)
+    if not cleanup_filter:
+        return denoised_wav
+    output_wav = audio_dir / f"cleaned_{denoised_wav.name}"
+    if is_valid_audio(output_wav):
+        return output_wav
+    log_msg("    [Surgical Post-Denoise DSP] Notching Residual Tones Post-Denoise...")
+    return _run_dsp_filter_file(denoised_wav, output_wav, cleanup_filter, "Post-Denoise Residual Cleanup", total_duration)
+
+
+def _resolve_adaptive_denoise_model(strategy, default_model):
+    """Picks lighter UVR-DeNoise model on clean recordings to prevent over-processing."""
+    profile = (strategy or {}).get("profile", {})
+    raw_nf = profile.get("noise_floor_db")
+    if raw_nf is not None:
+        try:
+            nf_val = float(raw_nf)
+            if nf_val < ADAPTIVE_DENOISE_THRESHOLD_DB:
+                log_msg(
+                    f"    [Adaptive Denoise] Quiet source ({nf_val:.1f} dB); overriding {default_model} with {DEFAULT_DENOISE_MODEL} to preserve transients."
+                )
+                return DEFAULT_DENOISE_MODEL
+        except (ValueError, TypeError):
+            pass
+    return default_model
+
+
+def _denoise_and_polish_full_audio_step(original_wav, audio_dir, total_duration=None, denoise_model=None, strategy=None, apply_air=False):
+    """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
+    model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
+    surgical_wav = _pre_denoise_surgical_step(original_wav, audio_dir, total_duration=total_duration, strategy=strategy)
+    denoise_sub_dir = audio_dir / "neural_denoised"
+    denoise_sub_dir.mkdir(exist_ok=True)
+    denoised_wav = _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use)
+    cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
+    return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)
 
 
 def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None):
@@ -1298,7 +1155,8 @@ def _execute_hybrid_restoration(work_dir, input_wav, original_wav, video_path, f
 
 
 def _process_hybrid_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    _execute_hybrid_restoration(work_dir, original_wav, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+    clean_wav, strategy = _resolve_preconditioned_audio(work_dir, original_wav, video_dur, "hybrid", strategy)
+    _execute_hybrid_restoration(work_dir, clean_wav, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
 
 def _execute_pure_restoration(work_dir, input_wav, original_wav, video_path, final_output_video, video_dur, strategy=None):
@@ -1340,47 +1198,31 @@ def _execute_pure_restoration(work_dir, input_wav, original_wav, video_path, fin
 
 
 def _process_auto_pure_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    """4-Pass Cascaded Pure Restoration: Pre-Scan -> Pre-Conditioning -> Separation & Denoise -> Mix.
+    """4-Pass Cascaded Pure Restoration: Pre-Scan -> Pre-Conditioning -> Separation & Denoise -> Mix."""
+    from .modes import AutoPureMode
 
-    Args:
-        work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original extracted audio WAV file.
-        video_path (pathlib.Path): Source video file.
-        final_output_video (pathlib.Path): Destination output video file.
-        video_dur (float): Video duration in seconds.
-        strategy (dict, optional): Pre-computed acoustic restoration strategy.
-    """
-    if strategy is None:
-        from .auto_scanner import scan_and_decide_restoration_strategy
+    AutoPureMode().execute(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
-        strategy = scan_and_decide_restoration_strategy(original_wav, executed_mode="auto_pure")
 
-    precond_wav = work_dir / "preconditioned_audio.wav"
-    precond_cfg = strategy.get("precondition_filters", {})
-    clean_wav = _filter_precondition_step(original_wav, precond_wav, precond_cfg, total_duration=video_dur)
-    _execute_pure_restoration(work_dir, clean_wav, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+def _process_auto_pure_linear_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
+    """Runs pure full-mix restoration without stem separation."""
+    from .modes import AutoPureLinearMode
+
+    AutoPureLinearMode().execute(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+
+
+def _process_cathar_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
+    """Executes pure-Rust Cathar DSP restoration pipeline tailored for VHS captures."""
+    from .modes import CatharMode
+
+    CatharMode().execute(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
 
 def _process_multipass_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
-    """4-Pass Cascaded Restoration: Pre-Scan -> Pre-Conditioning -> AI Separation -> Polish & Sync.
+    """4-Pass Cascaded Restoration: Pre-Scan -> Pre-Conditioning -> AI Separation -> Polish & Sync."""
+    from .modes import MultiPassMode
 
-    Args:
-        work_dir (pathlib.Path): Working directory path.
-        original_wav (pathlib.Path): Original extracted audio WAV file.
-        video_path (pathlib.Path): Source video file.
-        final_output_video (pathlib.Path): Destination output video file.
-        video_dur (float): Video duration in seconds.
-        strategy (dict, optional): Pre-computed acoustic restoration strategy.
-    """
-    if strategy is None:
-        from .auto_scanner import scan_and_decide_restoration_strategy
-
-        strategy = scan_and_decide_restoration_strategy(original_wav, executed_mode="multipass_auto")
-
-    precond_wav = work_dir / "preconditioned_audio.wav"
-    precond_cfg = strategy.get("precondition_filters", {})
-    clean_wav = _filter_precondition_step(original_wav, precond_wav, precond_cfg, total_duration=video_dur)
-    _execute_hybrid_restoration(work_dir, clean_wav, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+    MultiPassMode().execute(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
 
 def _get_mode_pipeline_handler(target_mode):
@@ -1392,19 +1234,9 @@ def _get_mode_pipeline_handler(target_mode):
     Returns:
         callable: Function implementing the target restoration pipeline.
     """
-    mode_map = {
-        "multipass_auto": _process_multipass_mode,
-        "multipass": _process_multipass_mode,
-        "auto_pure": _process_auto_pure_mode,
-        "pure": _process_auto_pure_mode,
-        "denoise_only": _process_denoise_only_mode,
-        "auto_ffmpeg_native": _process_auto_ffmpeg_native_mode,
-        "auto_vhs_native": _process_auto_ffmpeg_native_mode,
-        "ffmpeg_native": _process_ffmpeg_native_mode,
-        "vhs_native": _process_ffmpeg_native_mode,
-        "arnndn_speech": _process_arnndn_speech_mode,
-    }
-    return mode_map.get(target_mode, _process_hybrid_mode)
+    from .modes.registry import get_mode_instance
+
+    return get_mode_instance(target_mode).execute
 
 
 def _dispatch_mode_pipeline(target_mode, work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
@@ -1439,7 +1271,7 @@ def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, v
     strategy = scan_and_decide_restoration_strategy(original_wav)
     target_mode = strategy["mode"]
     if ENABLE_MULTIPASS and target_mode == "hybrid":
-        _process_multipass_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+        _dispatch_mode_pipeline("multipass_auto", work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
         return
     _dispatch_mode_pipeline(target_mode, work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
@@ -1503,3 +1335,37 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
 
     finally:
         _cleanup_work_dir(work_dir, final_output_video)
+
+
+# Re-export mastering symbols for backward compatibility with existing tests and imports
+AUDIO_CODEC_ARGS_BY_EXT = _mastering.AUDIO_CODEC_ARGS_BY_EXT
+LOUDNORM_ANALYSIS_TIMEOUT = _mastering.LOUDNORM_ANALYSIS_TIMEOUT
+LOUDNORM_MEASURE_KEYS = _mastering.LOUDNORM_MEASURE_KEYS
+LOUDNORM_TARGET_I = _mastering.LOUDNORM_TARGET_I
+LOUDNORM_TARGET_LRA = _mastering.LOUDNORM_TARGET_LRA
+LOUDNORM_TARGET_TP = _mastering.LOUDNORM_TARGET_TP
+LOUDNORM_TRUE_PEAK_LIMITER = _mastering.LOUDNORM_TRUE_PEAK_LIMITER
+_build_mix_base_expression = _mastering._build_mix_base_expression
+_build_mix_filter_expression = _mastering._build_mix_filter_expression
+_build_single_audio_filter_expression = _mastering._build_single_audio_filter_expression
+_extract_valid_loudnorm_object = _mastering._extract_valid_loudnorm_object
+_get_audio_encoding_args = _mastering._get_audio_encoding_args
+_has_loudnorm_measurements = _mastering._has_loudnorm_measurements
+_loudnorm_analysis_timeout = _mastering._loudnorm_analysis_timeout
+_loudnorm_target_args = _mastering._loudnorm_target_args
+_mastering_chain = _mastering._mastering_chain
+_measured_loudnorm_args = _mastering._measured_loudnorm_args
+_parse_loudnorm_json = _mastering._parse_loudnorm_json
+_preserved_audio_args = _mastering._preserved_audio_args
+_resolve_loudnorm_args = _mastering._resolve_loudnorm_args
+_resolve_measured_loudnorm = _mastering._resolve_measured_loudnorm
+_resolve_single_track_loudnorm_args = _mastering._resolve_single_track_loudnorm_args
+_run_loudness_analysis = _mastering._run_loudness_analysis
+_sanitize_mix_level = _mastering._sanitize_mix_level
+_scope_audio_arg = _mastering._scope_audio_arg
+_scope_audio_args_for_stream = _mastering._scope_audio_args_for_stream
+
+# Re-export config symbols for test compatibility
+ENABLE_LOUDNORM = _mastering.ENABLE_LOUDNORM
+VOCAL_MIX_VOL = _mastering.VOCAL_MIX_VOL
+BACKGROUND_MIX_VOL = _mastering.BACKGROUND_MIX_VOL

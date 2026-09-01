@@ -69,6 +69,9 @@ def _get_active_models_label():
         "multipass": "AI Multi-Pass Cascaded Restoration (4-Pass Engine)",
         "auto_pure": "AI Pure Speech & Ambient Denoising (4-Pass Non-Generative Engine)",
         "pure": "AI Pure Speech & Ambient Denoising (4-Pass Non-Generative Engine)",
+        "auto_pure_linear": "AI Pure Linear Full-Mix Denoising",
+        "cathar": "Cathar Pure-Rust DSP Restoration (VHS Specialized)",
+        "cathar_vhs": "Cathar Pure-Rust DSP Restoration (VHS Specialized)",
         "hybrid": f"{VOCALS_MODEL} / UVR-DeNoise",
         "denoise_only": "UVR-DeNoise-Lite",
         "auto_ffmpeg_native": "Adaptive FFmpeg DSP (Auto-Tuned Scan)",
@@ -82,7 +85,7 @@ def _get_active_models_label():
 
 def _print_banner(cpu_name, gpu_name, torch_backend):
     print("=" * 60)
-    print("   AI HYBRID VHS AUDIO RESTORER - v1.1.0")
+    print("   AI HYBRID VHS AUDIO RESTORER - v1.2.0")
     print(f"   Running on: {platform.system()} {platform.release()}")  # pragma: no cover
     print("=" * 60 + "\n")  # pragma: no cover
 

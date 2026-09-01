@@ -16,6 +16,52 @@
 - [docs/validation.md](docs/validation.md) - Local and CI validation process.
 - [docs/instructions.md](docs/instructions.md) - Contributor instructions and
   workflow rules.
+- [.agent/workflows/run_hardware_validation.md](.agent/workflows/run_hardware_validation.md)
+  - Reproducible Piper fixture generation and physical accelerator validation.
+
+## Hardware Validation Fixtures
+
+The optional hardware-validation suite generates deterministic Piper VITS speech
+at short, mid, and long-form durations, then injects reproducible VHS defects
+such as tape hiss, mains hum, CRT line whistle, rumble, stereo azimuth offset,
+clicks, clipping, dropout, and drift markers. It does not download a voice
+model or run accelerator inference as part of normal tests.
+
+First audit the local machine:
+
+```powershell
+poetry run python scripts/audit_hardware.py
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit_hardware.ps1
+```
+
+Piper runs from its own Poetry-managed environment at
+`tools/piper-tts/.venv`. The installer provisions it automatically, keeping
+Piper's CPU ONNX Runtime separate from the main CUDA/TensorRT runtime. To
+provision it in an existing checkout, rerun `install_dependencies.ps1`.
+
+The catalog contains 50 language-native, checksum-pinned Piper voices. Generate
+the short and mid fixture set for every language (or repeat `--language` with
+specific ISO codes for a focused run):
+
+```powershell
+poetry run python scripts/generate_audio_matrix.py core --language all
+poetry run python scripts/run_hardware_validation.py core
+```
+
+The generated files live under `artifacts/`, which should remain untracked.
+Physical checks are opt-in through `AI_RESTORE_HARDWARE_TESTS=1`; this keeps
+normal CI and developer tests independent of GPU availability.
+
+## Acknowledgments
+
+The optional Cathar restoration path is inspired by and gratefully acknowledges
+[Cathar](https://github.com/vbasky/cathar), a transparent pure-Rust audio
+restoration toolkit by vbasky. Cathar's inspectable DSP approach helped inform
+the project's native restoration design.
+
+Cathar's repository does not currently publish a dedicated donation link. If
+you find it useful, please consider starring or contributing to
+[Cathar on GitHub](https://github.com/vbasky/cathar).
 
 ## 🛠️ Restoration Pipeline
 
@@ -25,7 +71,13 @@ A specialized audio restoration pipeline designed to remaster VHS recordings.
 
 The pipeline supports multiple execution modes controlled by `process_mode`:
 
-1. **`auto_pure` (4-pass pure speech & ambient denoising engine - default)**
+1. **`auto_pure_linear` (linear full-mix pure denoising - default)**
+
+- Reuses `auto_pure` profiling, analog pre-conditioning, sync, mastering, and
+  remuxing, but skips stem separation and applies UVR-DeNoise to the full mix.
+- Output suffix: `*_PureLinear_Cleaned.<ext>`.
+
+1. **`auto_pure` (4-pass pure speech & ambient denoising engine)**
 
 - Extract audio.
 - Pass 1: Dual-resolution acoustic scan (profiling speech, music, ambience,
@@ -112,11 +164,28 @@ The pipeline supports multiple execution modes controlled by `process_mode`:
   for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
   configured PCM-capable containers).
 
+1. **`cathar` (pure-Rust DSP restoration suite; `cathar_vhs` alias)**
+
+- Extract audio.
+- Pass 1: Analog pre-conditioning (DC offset blocker, dewind rumble filter,
+  stereo azimuth alignment, correlation phase recovery).
+- Pass 2: Tape defect repair (AR declicker, decrackle surface noise filter,
+  SPADE de-clipper for saturated preamp stages).
+- Pass 3: Surgical dehumming (adaptive notch tracking for detected 50/60 Hz
+  mains hum + harmonics) and dewow analog transport pitch drift smoothing.
+- Pass 4: Coherent spectral subtraction / Wiener denoising and dynamic noise
+  expansion polish.
+- Sync restored track to original timing (`shift` or `dtw`).
+- Final remux into output video.
+- Output suffix: `*_Cathar_Cleaned.<ext>`.
+
 Output naming is mode-specific:
 
 - `auto` -> `*_Auto_Cleaned.<ext>`
 - `multipass_auto` -> `*_MultiPass_Cleaned.<ext>`
 - `auto_pure` -> `*_Pure_Cleaned.<ext>`
+- `auto_pure_linear` -> `*_PureLinear_Cleaned.<ext>`
+- `cathar` (`cathar_vhs` alias) -> `*_Cathar_Cleaned.<ext>`
 - `hybrid` -> `*_Hybrid_Cleaned.<ext>`
 - `denoise_only` -> `*_Denoised_Cleaned.<ext>`
 - `auto_ffmpeg_native` -> `*_AutoFFmpeg_Cleaned.<ext>`
@@ -155,7 +224,12 @@ classDef output fill:#E1E2E6,stroke:#44474E,stroke-width:1.5px,color:#1A1C1E,rx:
 A(["📼 Input Video/Audio"]):::input --> B(["Extract Audio<br/>(32-bit Float)"]):::processing
 B --> MODE{"process_mode"}:::model
 
-MODE -->|"auto_pure (default)"| PP["Analog Pre-Conditioning"]:::processing
+MODE -->|"auto_pure_linear (default)"| LP1["Acoustic Scan +<br/>Analog Pre-Conditioning"]:::processing
+LP1 --> LP2["UVR-DeNoise on the<br/>Full Pre-Conditioned Mix"]:::model
+LP2 --> LP3["Sync Full Mix +<br/>EBU R128 + Limiter"]:::processing
+LP3 --> LPOUT(["💾 Output: PureLinear_Cleaned"]):::output
+
+MODE -->|"auto_pure"| PP["Analog Pre-Conditioning"]:::processing
 PP --> PS["BS-Roformer Separation"]:::model
 PS --> PV["Speech Stem"]
 PS --> PB["Background Stem"]
@@ -187,6 +261,12 @@ MODE -->|"denoise_only"| FD["Full-Audio Denoise<br/>(UVR-DeNoise-Lite)"]:::proce
 FD --> FS["Sync Full Audio"]:::processing
 FS --> FMUX["FFmpeg Final Remux"]:::processing
 FMUX --> FOUT(["💾 Output: Denoised_Cleaned"]):::output
+
+MODE -->|"cathar / cathar_vhs"| CP1["Analog Pre-Conditioning +<br/>Tape Defect Repair"]:::processing
+CP1 --> CP2["Surgical Dehumming +<br/>Transport Dewow"]:::processing
+CP2 --> CP3["Coherent Denoise +<br/>De-Esser + SBR Enhance"]:::processing
+CP3 --> CP4["Sync Audio + Remux"]:::processing
+CP4 --> CPOUT(["💾 Output: Cathar_Cleaned"]):::output
 
 MODE -->|"auto_ffmpeg_native"| AFN["Auto-Tuned DSP Chain<br/>(highpass + adeclick + afftdn + notches)"]:::processing
 AFN --> AFS["Sync Full Audio"]:::processing

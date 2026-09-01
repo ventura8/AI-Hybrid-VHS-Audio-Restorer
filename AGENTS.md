@@ -31,6 +31,9 @@ alignment:
   video line rate allows and always notched at its fundamental, 15.625k/15.734k
   CRT flyback whistle located by band search, and enclosure acoustic resonance
   gated so speech formants are never notched.
+- **Cathar DSP Engine**: Pure-Rust multi-stage restoration (dewind, azimuth,
+  declick, decrackle, AR inpaint, deplosive, declip, adaptive dehum, dewow,
+  noiseprint learning, phase-coherent denoise, de-esser, and SBR enhancement).
 - **ARNNDN Neural Denoising**: FFmpeg RNNoise recurrent neural network denoiser
   (`.rnnn` models, with `cb.rnnn` as the canonical default).
 - **Sub-Sample Audio Synchronization**: Cross-correlation lag estimation and
@@ -45,8 +48,15 @@ ______________________________________________________________________
 
 ## 2. Restoration Modes Matrix
 
-The engine supports 8 execution modes configured in `config.yaml`:
+The engine supports 10 execution modes configured in `config.yaml`:
 
+- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`):
+  - Stages: Dual-resolution scan $\\rightarrow$ analog pre-conditioning
+    $\\rightarrow$ pre-denoise surgical bandreject $\\rightarrow$ UVR-DeNoise
+    full-mix $\\rightarrow$ post-cleanup $\\rightarrow$ linear air polish
+    $\\rightarrow$ shift/DTW sync $\\rightarrow$ remux.
+  - Use case: Clean dialogue and high-throughput restoration without stem
+    separation.
 - **`auto`** (`*_Auto_Cleaned.<ext>`):
   - Stages: AI acoustic profiling $\\rightarrow$ dynamic engine & model
     selection $\\rightarrow$ shift/DTW sync (DTW on drift, shift otherwise,
@@ -63,6 +73,14 @@ The engine supports 8 execution modes configured in `config.yaml`:
     UVR-DeNoise (bypassing vocoder synthesis) $\\rightarrow$ DTW Sync
     $\\rightarrow$ mix.
   - Use case: Pure speech/ambient denoising without artificial synthesis.
+- **`cathar`** (`*_Cathar_Cleaned.<ext>`):
+  - Stages: Multi-stage Rust DSP pipeline: dewind $\\rightarrow$ azimuth
+    $\\rightarrow$ mono-below $\\rightarrow$ declick $\\rightarrow$ decrackle
+    $\\rightarrow$ inpaint $\\rightarrow$ deplosive $\\rightarrow$ declip
+    $\\rightarrow$ dehum $\\rightarrow$ repair $\\rightarrow$ noiseprint denoise
+    $\\rightarrow$ de-esser $\\rightarrow$ SBR enhance $\\rightarrow$ sync.
+  - Use case: Impulsive defects, high-order harmonic hum, CRT whistle, zero AI
+    hallucination for music and ambient archives. (`cathar_vhs` is an alias).
 - **`hybrid`** (`*_Hybrid_Cleaned.<ext>`):
   - Stages: BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$
     UVR-DeNoise $\\rightarrow$ DTW Sync $\\rightarrow$ amix.
@@ -86,10 +104,12 @@ The engine supports 8 execution modes configured in `config.yaml`:
 
 ______________________________________________________________________
 
-## 3. Required Local Quality Gate
+## 3. Required Local Quality Gate & Hardware Validation
 
-Before declaring any task or feature complete, run the canonical local quality
-gate command:
+### Canonical Local Quality Gate
+
+Before declaring any task or review wave complete, run the canonical local
+quality gate command:
 
 ```bash
 # On Linux / macOS:
@@ -113,6 +133,27 @@ This runner orchestrates the complete local/CI quality gate set:
 1. **Test Suite & Coverage**: `pytest` with strict per-file $\\ge 90.00%$
    coverage gate.
 1. **Coverage Badge Regeneration**: Updates `assets/coverage.svg`.
+
+### Mandatory Hardware Validation on Code Changes & Review Waves
+
+Whenever audio restoration, filtering, DSP, sync, or hardware routines are
+modified (including during every CodeRabbit review wave):
+
+1. **Host Hardware Audit & Dry-Run Checks**: Run
+   `poetry run python scripts/audit_hardware.py` and
+   `poetry run python scripts/run_hardware_validation.py core` to verify device
+   capabilities, generate `artifacts/hardware-validation.json`, and ensure
+   reproducible dry-run planning without requiring physical inference.
+1. **Real Tape Capture Validation (Opt-In Execution)**: When physical hardware
+   or an explicitly provisioned validation mode is enabled
+   (`AI_RESTORE_HARDWARE_TESTS=1` or `--execute`), execute and measure
+   restoration quality on real analog tapes (both local captures and curated
+   Internet Archive European and American clips in `experiments/ia_corpus/`).
+1. **Acoustic Metrics Verification (Opt-In Execution)**: When physical
+   validation is provisioned, run `analyze_audio_quality()` via
+   `scripts/compare_restoration_quality.py` to confirm actual noise floor
+   reduction, peak-to-noise ratio, CRT whistle elimination, and rumble
+   suppression on physical audio data before finishing.
 
 ______________________________________________________________________
 
@@ -158,19 +199,6 @@ ______________________________________________________________________
   - CI and local dev environments install runtime plus development dependencies
     (`poetry install --with dev`).
 - **CUDA Runtime Stack**: Preserve NVIDIA CUDA 13.2 runtime stack compatibility.
-- **Prefer Installed Dependencies Over Building From Source**: Never rebuild a
-  dependency that is already installed at the pinned revision. Before any
-  source or VCS install (`pip install git+...`, source archives, portable
-  binary downloads), check what is already present and skip the build when it
-  matches.
-  - Verify identity, not just presence. For VCS installs compare the recorded
-    commit in the distribution's `direct_url.json` against the pinned ref; a
-    version string alone can stay unchanged across revisions.
-  - Rebuild only when the check fails, when the pin changes, or when an
-    explicit force flag is set.
-  - Rationale: re-cloning and rebuilding on every install wastes network and
-    build time, and needlessly reverts files that
-    `scripts/apply_patches.py` has already patched.
 
 ______________________________________________________________________
 
@@ -188,6 +216,8 @@ The repository defines the following modular skills in `.agents/skills/`:
   runners with coverage floor verification.
 - [audio-restoration-engine](.agents/skills/audio-restoration-engine/SKILL.md):
   Deep restoration domain knowledge, DSP graphs, and DTW sync.
+- [hardware-validation](.agents/skills/hardware-validation/SKILL.md): Deterministic
+  fixtures, host hardware auditing, and restoration validation.
 - [markdown-quality](.agents/skills/markdown-quality/SKILL.md): Read-only
   Markdown validation via `mdformat --check` and `pymarkdown`.
 - [poetry-runtime-and-ci](.agents/skills/poetry-runtime-and-ci/SKILL.md): Poetry
@@ -207,6 +237,8 @@ Targeted workflow playbooks are maintained under `.agent/workflows/`:
 
 - [run_full_quality_gate.md](.agent/workflows/run_full_quality_gate.md): Running
   and troubleshooting the full quality pipeline.
+- [run_hardware_validation.md](.agent/workflows/run_hardware_validation.md): Host
+  hardware audit and validation playbook.
 - [resolve_pr_review.md](.agent/workflows/resolve_pr_review.md): Step-by-step PR
   review resolution.
 - [add_restoration_feature.md](.agent/workflows/add_restoration_feature.md):

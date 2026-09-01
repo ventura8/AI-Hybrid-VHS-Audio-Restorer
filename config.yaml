@@ -74,6 +74,7 @@ background_mix_volume: 1.0
 vocals_model: "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 background_model: "UVR-MDX-NET-Inst_HQ_3.onnx"
 denoise_model: "UVR-DeNoise-Lite.pth"
+adaptive_denoise_threshold_db: -50.0
 
 # ------------------------------------------------------------------------------
 # Enhancement Settings (Resemble-Enhance)
@@ -82,9 +83,11 @@ denoise_model: "UVR-DeNoise-Lite.pth"
 #
 # enhance_nfe (Number of Function Evaluations):
 #   - Type: Integer
-#   - Suggested range: 32 to 256
-#   - Min behavior (32): Fastest processing, but more artifacts and less detail.
-#   - Max behavior (256): Best detail/cleanup quality, but much slower processing.
+#   - Supported range: 1 to 128
+#   - Min behavior (1): Absolute minimum evaluations, fastest processing with coarse synthesis.
+#   - Values below 32: Aggressive speed optimization trading off neural detail and synthesis quality.
+#   - Baseline quality (32): Fast processing, but more artifacts and less detail than 128.
+#   - Max behavior (128): Best detail/cleanup quality, but slower processing.
 #   - Practical default: 128 (quality/speed balance).
 #
 # enhance_tau (Temperature/Scale):
@@ -135,7 +138,9 @@ dtw_resolution: 25
 #   - Eliminates AI hallucination and phase smearing caused by tape clicks and hum.
 #
 # process_mode:
-#   - 'auto_pure'          : Multi-Step Pure Speech & Ambient Denoising Engine (*_Pure_Cleaned). (Default)
+#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned). (Default)
+#                            Runs dual-resolution scan, analog pre-conditioning, and full-mix UVR-DeNoise.
+#   - 'auto_pure'          : Multi-Step Pure Speech & Ambient Denoising Engine (*_Pure_Cleaned).
 #                            Denoises voice without generative AI vocoder synthesis while cleanly
 #                            conserving and denoising original music and ambient acoustics.
 #   - 'auto'               : AI Auto-Detection & Restoration Engine with Multi-Pass Scan.
@@ -151,8 +156,12 @@ dtw_resolution: 25
 #                            Best for tape hiss, mechanical rumble, and electrical clicks without GPU.
 #   - 'arnndn_speech'      : FFmpeg Recurrent Neural Network (RNNoise) speech denoiser.
 #                            Best for VHS recordings containing dialogue and spoken voice.
+#   - 'cathar'             : Pure-Rust Audio Restoration Engine (*_Cathar_Cleaned).
+#                            Specialized multi-stage DSP for VHS: dewind, azimuth, declick,
+#                            decrackle, declip, adaptive dehum, dewow, and phase-coherent denoise.
+#   - 'cathar_vhs'         : Compatibility alias for 'cathar'.
 # ------------------------------------------------------------------------------
-process_mode: "auto_pure"
+process_mode: "auto_pure_linear"
 enable_multipass: true
 
 # ------------------------------------------------------------------------------
@@ -162,12 +171,16 @@ enable_multipass: true
 #
 # afftdn_nr (Noise Reduction dB):
 #   - Type: Float
-#   - Suggested range: 8.0 to 15.0 dB (Default: 12.0)
+#   - Suggested range: 8.0 to 15.0 dB (Default: 10.0)
 #   - Recommendation: Avoid values >18 dB to prevent metallic chirping or phase artifacts.
+#   - Empirical multi-pass finding (26 tape-passes): 10.0 dB reduces over-processing
+#     on cleaner tapes while preserving dialogue transients and dynamic range.
 #
 # afftdn_nf (Noise Floor dB):
 #   - Type: Float
-#   - Suggested range: -80.0 to -20.0 dB (Default: -45.0)
+#   - Suggested range: -80.0 to -20.0 dB (Default: -55.0)
+#   - Empirical multi-pass finding (26 tape-passes): -55.0 dB provides transparent
+#     tracking baseline across diverse VHS captures (NF -20 to -59 dB).
 #
 # afftdn_tn (Continuous Noise Tracking):
 #   - Type: Boolean
@@ -175,22 +188,26 @@ enable_multipass: true
 #
 # highpass_freq (Mechanical Rumble Cutoff in Hz):
 #   - Type: Integer
-#   - Default: 60 (Cuts sub-audible motor rumble below 60 Hz; set 0 to disable)
+#   - Default: 80 (Empirical: rumble detected at 45–75 Hz across 4/21 tapes;
+#     80 Hz safely eliminates all observed rumble including the 75 Hz case
+#     without impacting programme bass content above 80 Hz)
 #
 # enable_adeclick (Impulsive Click/Pop Interpolation):
 #   - Type: Boolean
-#   - Default: true (Detects and interpolates electrical clicks and tape dropouts)
+#   - Default: true (Empirical: click_density_high=true in ALL 21 tested tapes)
 #
 # notch_freq (Hi-Fi Switching Buzz Notch Filter in Hz):
 #   - Type: Float
-#   - Default: 0.0 (Set to 50.0 or 59.94 / 60.0 to notch out power/head-switching buzz; 0 to disable)
+#   - Default: 50.0 (Empirical: 50 Hz PAL mains hum detected in 13/21 tapes;
+#     100 Hz 2nd harmonic auto-detected separately by auto_ffmpeg_native scan;
+#     set to 60.0 for NTSC captures, 0.0 to disable entirely)
 # ------------------------------------------------------------------------------
-afftdn_nr: 12.0
-afftdn_nf: -45.0
+afftdn_nr: 10.0
+afftdn_nf: -55.0
 afftdn_tn: true
-highpass_freq: 60
+highpass_freq: 80
 enable_adeclick: true
-notch_freq: 0.0
+notch_freq: 50.0
 
 # ------------------------------------------------------------------------------
 # ARNNDN Speech Settings (for 'arnndn_speech' mode)
@@ -199,25 +216,130 @@ notch_freq: 0.0
 # The application automatically downloads the specified model into 'models/arnndn/'
 # if it is not already present locally on your system.
 #
-# Available / Recommended RNNoise (.rnnn) Models:
+# arnndn_model:
 #   - "cb.rnnn"         : Standard balanced speech model trained on diverse noise profiles (Default).
 #   - "bd.rnnn"         : Optimized for clear studio/broadcast dialogue captures with background noise.
 #   - "lq.rnnn"         : Upstream general-purpose model for speech with varied noise.
 #   - "mp.rnnn"         : Tuned for mixed speech and medium persistent background interference.
 #   - "sh.rnnn"         : Specialized model for aggressive high-frequency hiss attenuation.
+#                         (Recommended for tapes with NF > -40 dB and high hiss content)
 #
 # Custom Models:
 #   You can also specify custom model filenames placed inside 'models/arnndn/' or 'models/'.
 #
 # arnndn_highpass_freq:
-#   - Cuts sub-audible mechanical rumble before neural inference (Default: 60 Hz)
+#   - Cuts sub-audible mechanical rumble before neural inference (Default: 80 Hz)
+#   - Empirical finding: rumble at 45–75 Hz across 4/21 tapes; 80 Hz safely
+#     clears all observed rumble without attenuating programme bass.
 #
 # arnndn_enable_adeclick:
 #   - Cleans impulsive clicks before neural inference (Default: true)
+#   - Empirical finding: ALL 21 tested tapes show click_density_high=true;
+#     pre-click removal prevents ARNNDN from treating impulsive artifacts as
+#     speech transients and smearing them into the output.
 # ------------------------------------------------------------------------------
 arnndn_model: "cb.rnnn"
-arnndn_highpass_freq: 60
+arnndn_highpass_freq: 80
 arnndn_enable_adeclick: true
+
+# ------------------------------------------------------------------------------
+# Cathar Restoration Settings (for 'cathar' mode)
+# ------------------------------------------------------------------------------
+# Controls the pure-Rust Cathar audio restoration engine tailored for VHS captures.
+# Provides transparent, non-neural DSP filtering without hallucination.
+#
+# cathar_denoise_method:
+#   - Allowed values: 'spectral' (spectral subtraction) or 'wiener' (Wiener filter)
+#   - Default: 'spectral'
+#
+# cathar_alpha:
+#   - Noise subtraction aggressiveness factor (suggested: 1.0 to 6.0, default: 2.5)
+#   - Empirical tuning: reduced from 3.0 to 2.5 for more transparent restoration
+#     on cleaner tapes (NF < -50 dB); prevents musical noise artifacts without
+#     sacrificing effective hiss removal on noisier captures.
+#
+# cathar_beta:
+#   - Spectral floor to prevent musical noise artifacts (suggested: 0.005 to 0.05, default: 0.01)
+#
+# cathar_enable_coherent:
+#   - Phase-coherent stereo processing (default: true)
+#
+# cathar_enable_dewind:
+#   - Sub-audible mechanical rumble filter (default: true, cutoff 80 Hz)
+#   - Empirical: rumble at 45–75 Hz; 80 Hz cutoff clears all observed cases.
+#
+# cathar_enable_azimuth:
+#   - Inter-channel phase delay correction (default: true)
+#
+# cathar_enable_declick:
+#   - Impulse click / head-switching dropout repair (default: true)
+#
+# cathar_declick_threshold:
+#   - Empirical tuning: lowered from 10.0 to 8.0 — all 21 tapes show high click
+#     density; lower threshold catches subtler head-switching dropouts.
+#
+# cathar_enable_decrackle:
+#   - Tape surface crackle repair (default: true)
+#
+# cathar_decrackle_sensitivity:
+#   - Empirical tuning: raised from 5 to 6 — ubiquitous high click density
+#     across all 21 tapes warrants slightly higher crackle sensitivity.
+#
+# cathar_enable_declip:
+#   - Analog saturation / preamp de-clipping (default: true)
+#
+# cathar_enable_dehum:
+#   - Adaptive mains buzz filter (default: true)
+#
+# cathar_enable_repair:
+#   - Specialized non-linear transient spectral spike and dropout repair (default: true)
+#
+# cathar_repair_strength:
+#   - Repair aggressiveness factor (suggested: 1 to 10, default: 4)
+#   - Eliminates stubborn intermittent VHS head-switching bursts and dropouts.
+#
+# cathar_enable_dewow:
+#   - Tape transport wow and flutter pitch drift correction (default: false, experimental)
+# ------------------------------------------------------------------------------
+cathar_denoise_method: "spectral"
+cathar_alpha: 2.5
+cathar_beta: 0.01
+cathar_enable_coherent: true
+cathar_enable_dewind: true
+cathar_dewind_cutoff: 80
+cathar_enable_azimuth: true
+cathar_azimuth_method: "gcc-phat"
+cathar_azimuth_max_ms: 5.0
+cathar_enable_declick: true
+cathar_declick_threshold: 8.0
+cathar_enable_decrackle: true
+cathar_decrackle_sensitivity: 6
+cathar_enable_inpaint: true
+cathar_inpaint_max_gap_ms: 50
+cathar_inpaint_iterations: 3
+cathar_enable_declip: true
+cathar_declip_threshold: 0.95
+cathar_enable_dehum: true
+cathar_enable_repair: true
+cathar_repair_strength: 4
+cathar_enable_dewow: false
+cathar_enable_enhance: true
+cathar_enhance_method: "replicate"
+cathar_enable_noiseprint: true
+cathar_noiseprint_duration_s: 0.75
+cathar_dehum_adaptive: true
+cathar_dehum_harmonics: 8
+cathar_enable_mono_below: true
+cathar_mono_below_hz: 100
+cathar_enable_deplosive: true
+cathar_deplosive_strength: 4
+cathar_enable_deesser: true
+cathar_deesser_bands: 3
+cathar_deesser_freq: 4000
+cathar_deesser_threshold: -24
+cathar_enable_dereverb: false
+cathar_dereverb_wpe: true
+cathar_dereverb_strength: 2.0
 
 # ------------------------------------------------------------------------------
 # Advanced Audio Polish & Archival Preservation
@@ -234,6 +356,10 @@ arnndn_enable_adeclick: true
 #   - true:  Applies smooth downward dynamic expansion on background track during dialogue pauses (Default).
 #   - false: Disabled.
 #
+# enable_linear_air:
+#   - true:  Applies calibrated high-frequency presence air curve (+2.0 dB @ 7.5 kHz) to linear tracks (Default).
+#   - false: Disabled.
+#
 # preserve_original_audio_track:
 #   - true:  Preserves original untouched audio as Stream 2 alongside restored audio in container.
 #   - false: Output container contains restored clean audio track only (Default).
@@ -241,6 +367,8 @@ arnndn_enable_adeclick: true
 enable_deesser: true
 enable_loudnorm: true
 enable_dynamic_expander: true
+enable_linear_air: true
+linear_air_gain_db: 2.0
 preserve_original_audio_track: false
 
 # ------------------------------------------------------------------------------

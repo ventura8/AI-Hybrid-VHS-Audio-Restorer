@@ -286,6 +286,50 @@ def test_calculate_cross_correlation_lag_raises_when_scipy_missing():
             modules.sync._calculate_cross_correlation_lag(ref_audio, proc_audio, 44100)
 
 
+@pytest.mark.parametrize("invalid_val", [np.nan, np.inf, -np.inf])
+def test_calculate_cross_correlation_lag_handles_nan_processed_audio(invalid_val):
+    """NaN/inf samples in the processed stream must not produce a spurious full-clip lag.
+
+    Regression guard for the case where ARNNDN (or any denoiser) produces NaN/inf
+    on heavily-degraded audio; the guard must clamp the returned lag to ±25 % of
+    the reference length rather than returning an index that swallows the entire clip.
+    """
+    sr = 44100
+    # Reference: clean sine, processed: non-finite values (fully suppressed denoiser output).
+    ref_audio = np.sin(np.linspace(0, 2 * np.pi, 1000)).astype(np.float32)
+    proc_audio = np.full(1000, invalid_val, dtype=np.float32)
+
+    lag = modules.sync._calculate_cross_correlation_lag(ref_audio, proc_audio, sr)
+
+    # Lag must be within ±25 % of reference length (250 samples) and must be finite.
+    assert np.isfinite(lag), "Lag must be finite even when processed audio is non-finite"
+    assert abs(lag) <= len(ref_audio) // 4, "Lag must be clamped to ±25 % of ref length"
+
+
+def test_calculate_cross_correlation_lag_clamps_to_quarter_length():
+    """All-zeros processed audio should produce lag=0, not an out-of-bounds full-clip shift.
+
+    Verifies the ±25 % clamping mask: when the processed stream carries no signal,
+    the best valid-lag index must still fall within the allowed window.
+    """
+    sr = 44100
+    ref_audio = np.random.default_rng(42).standard_normal(4000).astype(np.float32)
+    proc_audio = np.zeros(4000, dtype=np.float32)
+
+    lag = modules.sync._calculate_cross_correlation_lag(ref_audio, proc_audio, sr)
+
+    max_allowed = len(ref_audio) // 4
+    assert abs(lag) <= max_allowed, f"Lag {lag} exceeds ±25 % clamp ({max_allowed} samples)"
+
+
+def test_correlation_lag_never_exceeds_short_processed_stream():
+    """A much shorter processed stream cannot select an unusable lag."""
+    reference = np.ones(1000, dtype=np.float32)
+    processed = np.ones(100, dtype=np.float32)
+    lag = modules.sync._calculate_cross_correlation_lag(reference, processed, 44100)
+    assert abs(lag) <= len(processed) - 1
+
+
 def test_load_optional_returns_none_on_import_error():
     """_load_optional should gracefully return None when import fails."""
     with patch("modules.sync.importlib.import_module", side_effect=ImportError("missing")):

@@ -26,3 +26,5 @@ the Antigravity agent system.
   changelog curation, release documentation, and commit message preparation.
 - [installer-tester/SKILL.md](installer-tester/SKILL.md): End-user Windows
   installation scripts and CUDA runtime provisioning.
+- [hardware-validation/SKILL.md](hardware-validation/SKILL.md): Deterministic
+  Piper fixture generation, accelerator audit, and opt-in hardware validation.

@@ -1,0 +1,13 @@
+[tool.poetry]
+name = "ai-hybrid-vhs-piper-runtime"
+version = "1.0.0"
+description = "Isolated Piper runtime for hardware-validation fixtures"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+piper-tts = "1.7.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

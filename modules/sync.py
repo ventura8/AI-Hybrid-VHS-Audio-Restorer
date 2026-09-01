@@ -386,8 +386,24 @@ def _warp_aligned_audio(processed_wav, output_wav, path, ref_features_len, proc_
     sys.stdout.write("\n")
 
 
+def _select_correlation_peak(correlation, lags, max_lag):
+    """Finds best lag index within bounded mask or returns 0 when correlation is silent."""
+    if not np.any(correlation != 0):
+        return 0
+    valid_mask = np.abs(lags) <= max_lag
+    masked_corr = np.where(valid_mask, correlation, -np.inf)
+    return lags[np.argmax(masked_corr)]
+
+
 def _calculate_cross_correlation_lag(ref_audio, proc_audio, sr):
-    """Calculates lag using cross correlation."""
+    """Calculates lag using cross correlation.
+
+    Guards against NaN/inf values that arise when a denoiser (e.g. ARNNDN)
+    suppresses heavily-degraded audio to near-silence.  Any non-finite samples
+    are zeroed before the FFT correlation is computed, and the resulting lag is
+    clamped to ±25 % of the reference length so a silent output cannot produce
+    a shift that swallows the entire clip.
+    """
     # Convert stereo to mono for correlation
     if len(ref_audio.shape) > 1:
         ref_audio = np.mean(ref_audio, axis=1)
@@ -397,10 +413,19 @@ def _calculate_cross_correlation_lag(ref_audio, proc_audio, sr):
     if scipy_signal is None:
         raise ImportError("scipy is required for shift synchronization (cross-correlation); install scipy to continue.")
 
+    # Sanitize: replace NaN/inf with 0 to prevent fft convolution warnings and
+    # spurious argmax results on completely silent or clipped denoised outputs.
+    ref_clean = np.where(np.isfinite(ref_audio), ref_audio, 0.0)
+    proc_clean = np.where(np.isfinite(proc_audio), proc_audio, 0.0)
+
     draw_progress_bar(50, "Sync: Calculating Correlation...")
-    correlation = scipy_signal.correlate(ref_audio, proc_audio, mode="full", method="fft")
-    lags = scipy_signal.correlation_lags(len(ref_audio), len(proc_audio), mode="full")
-    lag = lags[np.argmax(correlation)]
+    correlation = scipy_signal.correlate(ref_clean, proc_clean, mode="full", method="fft")
+    lags = scipy_signal.correlation_lags(len(ref_clean), len(proc_clean), mode="full")
+
+    # Clamp correlation lags to ±25 % of reference length to prevent a
+    # degenerate (silent) processed stream from triggering a full-clip shift.
+    max_lag = max(1, len(ref_clean) // 4)
+    lag = _select_correlation_peak(correlation, lags, max_lag)
 
     log_msg(f"    Detected Lag: {lag} samples ({lag / sr * 1000:.2f} ms)")
     return lag

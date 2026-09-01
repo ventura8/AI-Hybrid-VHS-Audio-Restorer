@@ -128,6 +128,67 @@ else {
     Write-Information "Local FFmpeg already installed in .venv."
 }
 
+# 3b. Install Cathar Audio Restoration Toolkit (Local & Portable)
+Write-Information "`nStep 2b: Checking local Cathar audio restoration toolkit..."
+$localCatharPath = "$VenvScripts\cathar.exe"
+$cargoCatharPath = "$env:USERPROFILE\.cargo\bin\cathar.exe"
+$CatharExpectedVersion = "0.7.0"
+$CatharVersionPattern = "^cathar 0\.7\.0$"
+
+function Test-CatharExecutable {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) {
+        return $false
+    }
+    $verOut = & $Path "--version" 2>$null
+    if ($LASTEXITCODE -eq 0 -and ($verOut -join " ") -match $CatharVersionPattern) {
+        return $true
+    }
+    return $false
+}
+
+if (-not (Test-CatharExecutable $localCatharPath)) {
+    if (Test-Path $localCatharPath) {
+        Write-Warning "Removing stale or mismatched Cathar executable from .venv\Scripts..."
+        Remove-Item $localCatharPath -Force -ErrorAction SilentlyContinue
+    }
+    if ((Test-Path $cargoCatharPath) -and (Test-CatharExecutable $cargoCatharPath)) {
+        Write-Information "Found valid cargo cathar executable ($CatharExpectedVersion). Copying to .venv\Scripts..."
+        Copy-Item $cargoCatharPath $VenvScripts -Force
+        if (Test-CatharExecutable $localCatharPath) {
+            Write-Information "Cathar CLI $CatharExpectedVersion installed to .venv\Scripts."
+        }
+        else {
+            Write-Warning "Cathar CLI copy completed but binary validation failed."
+        }
+    }
+    elseif (Get-Command "cargo" -ErrorAction SilentlyContinue) {
+        Write-Information "Compiling and installing cathar-cli==$CatharExpectedVersion via cargo..."
+        $cargoCmd = (Get-Command "cargo").Source
+        try {
+            Invoke-CheckedCommand $cargoCmd @("install", "cathar-cli", "--version", $CatharExpectedVersion, "--root", "$PSScriptRoot\.venv")
+            if (Test-Path "$PSScriptRoot\.venv\bin\cathar.exe") {
+                Copy-Item "$PSScriptRoot\.venv\bin\cathar.exe" $VenvScripts -Force
+            }
+            if (Test-CatharExecutable $localCatharPath) {
+                Write-Information "Cathar CLI $CatharExpectedVersion installed to .venv."
+            }
+            else {
+                Write-Warning "Cathar CLI installation completed but binary validation failed."
+            }
+        }
+        catch {
+            Write-Warning "Cathar compilation/installation failed: $_. Continuing without Cathar."
+        }
+    }
+    else {
+        Write-Warning "Cathar CLI not found and cargo is not available. Cathar mode will require cargo install cathar-cli --version $CatharExpectedVersion."
+    }
+}
+else {
+    Write-Information "Local Cathar $CatharExpectedVersion already installed and verified in .venv."
+}
+
 # 4. Install runtime dependencies with Poetry (verbose)
 Write-Information "`nStep 3: Installing runtime dependencies with Poetry..."
 Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "--upgrade", "pip")
@@ -145,6 +206,38 @@ $env:POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON = "false"
 
 Invoke-CheckedCommand $VenvPy @("-m", "poetry", "config", "--local", "virtualenvs.in-project", "true")
 Invoke-CheckedCommand $VenvPy @("-m", "poetry", "config", "--local", "virtualenvs.create", "false")
+
+$PiperProject = "$PSScriptRoot\tools\piper-tts"
+Write-Information "Provisioning isolated Piper fixture runtime..."
+$PreviousPiperVenvCreate = $env:POETRY_VIRTUALENVS_CREATE
+$PreviousPiperVenvInProject = $env:POETRY_VIRTUALENVS_IN_PROJECT
+try {
+    $env:POETRY_VIRTUALENVS_CREATE = "true"
+    $env:POETRY_VIRTUALENVS_IN_PROJECT = "true"
+    $env:POETRY_REQUESTS_TIMEOUT = "600"
+    $env:PIP_DEFAULT_TIMEOUT = "600"
+    $piperMaxAttempts = 3
+    $piperAttempt = 1
+    while ($piperAttempt -le $piperMaxAttempts) {
+        try {
+            Invoke-CheckedCommand $VenvPy @("-m", "poetry", "--directory", $PiperProject, "install", "--only", "main", "--no-root", "--no-interaction")
+            break
+        }
+        catch {
+            if ($piperAttempt -ge $piperMaxAttempts) {
+                Write-Warning "Piper runtime installation failed after $piperMaxAttempts attempts. Continuing without fixture generation support."
+                break
+            }
+            Write-Warning "Piper install attempt $piperAttempt failed ($($_.Exception.Message)). Retrying in 10 seconds..."
+            Start-Sleep -Seconds 10
+            $piperAttempt++
+        }
+    }
+}
+finally {
+    $env:POETRY_VIRTUALENVS_CREATE = $PreviousPiperVenvCreate
+    $env:POETRY_VIRTUALENVS_IN_PROJECT = $PreviousPiperVenvInProject
+}
 
 if (-not (Test-Path "$PSScriptRoot\poetry.lock")) {
     Write-Information "poetry.lock not found. Generating lock file..."
@@ -207,6 +300,23 @@ else {
         "--no-deps",
         "--force-reinstall"
     )
+}
+
+Write-Information "Provisioning Resemble-Enhance model weights..."
+$weightsMaxAttempts = 3
+for ($weightsAttempt = 1; $weightsAttempt -le $weightsMaxAttempts; $weightsAttempt++) {
+    try {
+        Invoke-CheckedCommand $VenvPy @(
+            "-c",
+            "from resemble_enhance.enhancer.download import download; download()"
+        )
+        break
+    }
+    catch {
+        if ($weightsAttempt -ge $weightsMaxAttempts) { throw $_ }
+        Write-Warning "Resemble-Enhance weight download attempt $weightsAttempt failed. Retrying in 10 seconds..."
+        Start-Sleep -Seconds 10
+    }
 }
 
 Write-Information "Applying runtime patches (DeepSpeed removal + Torchaudio fixes)..."

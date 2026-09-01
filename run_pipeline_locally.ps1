@@ -127,8 +127,11 @@ try {
         Invoke-PoetryCommand @("check", "--lock")
     }
 
-    Invoke-Step "Sync test/light dependencies" {
-        Invoke-PoetryCommand @("sync", "--only", "main,dev", "--no-root")
+    Invoke-Step "Install test and ML dependencies" {
+        # `sync` prunes installer-managed runtime packages such as the pinned
+        # Resemble-Enhance VCS build. Install the lockfile's groups without
+        # pruning so a quality-gate run cannot break GPU restoration afterward.
+        Invoke-PoetryCommand @("install", "--with", "ml,dev", "--no-root")
     }
 
     Invoke-Step "Re-bootstrap Poetry CLI" {

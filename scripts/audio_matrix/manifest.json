@@ -1,0 +1,8 @@
+{
+  "catalog": "languages.json",
+  "fixtures": [
+    {"name": "short", "duration_seconds": 8, "text": "This deterministic short sample verifies restoration model loading and audio format handling.", "defects": ["hiss", "hum", "whistle", "rumble", "azimuth"]},
+    {"name": "mid", "duration_seconds": 45, "text": "This is a realistic dialogue sequence for validating stable restoration. The recording includes deliberate quiet pauses, predictable analog noise, and a test phrase repeated for alignment analysis.", "defects": ["hiss", "hum", "whistle", "rumble", "azimuth", "clicks", "clip"]},
+    {"name": "longform", "duration_seconds": 300, "text": "Long form deterministic speech validates sustained processing, chunk boundaries, speed drift tolerance, and memory stability during archival restoration.", "defects": ["hiss", "hum", "whistle", "rumble", "azimuth", "drift", "dropout"]}
+  ]
+}

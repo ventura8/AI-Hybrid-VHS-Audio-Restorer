@@ -38,34 +38,54 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run_pipeline_locally.ps1
 ## Fast Spot Checks
 
 ```powershell
-.\.venv\Scripts\python.exe -m poetry run ruff check modules tests `
+.\.poetry-venv\Scripts\poetry.exe run ruff check modules tests `
     restore_audio_hybrid.py scripts/apply_patches.py
-.\.venv\Scripts\python.exe -m poetry run black --check modules tests `
+.\.poetry-venv\Scripts\poetry.exe run black --check modules tests `
     restore_audio_hybrid.py scripts/apply_patches.py
-.\.venv\Scripts\python.exe -m poetry run isort --check-only --diff `
+.\.poetry-venv\Scripts\poetry.exe run isort --check-only --diff `
     modules tests `
     restore_audio_hybrid.py scripts/apply_patches.py
-.\.venv\Scripts\python.exe -m poetry run flake8 modules tests `
+.\.poetry-venv\Scripts\poetry.exe run flake8 modules tests `
     restore_audio_hybrid.py scripts/apply_patches.py
 $tomlFiles = @(git ls-files "*.toml")
 if ($tomlFiles.Count -gt 0) {
-    .\.venv\Scripts\python.exe -m poetry run taplo fmt --check $tomlFiles
+    .\.poetry-venv\Scripts\poetry.exe run taplo fmt --check $tomlFiles
 }
-.\.venv\Scripts\python.exe -m poetry run bandit -ll -ii -r modules `
+.\.poetry-venv\Scripts\poetry.exe run bandit -ll -ii -r modules `
     restore_audio_hybrid.py scripts/apply_patches.py
-.\.venv\Scripts\python.exe -m poetry run pip-audit
-.\.venv\Scripts\python.exe -m poetry run radon cc `
+.\.poetry-venv\Scripts\poetry.exe run pip-audit
+.\.poetry-venv\Scripts\poetry.exe run radon cc `
     modules `
     tests\conftest.py tests\unit tests\integration restore_audio_hybrid.py `
     scripts/apply_patches.py -s
-.\.venv\Scripts\python.exe -m poetry run pytest -o addopts= `
+.\.poetry-venv\Scripts\poetry.exe run pytest -o addopts= `
     --cov=restore_audio_hybrid --cov=modules --cov-branch `
     --cov-report=xml --cov-report=json --cov-report=term `
     --cov-fail-under=90 tests/
-.\.venv\Scripts\python.exe -m poetry run python `
+.\.poetry-venv\Scripts\poetry.exe run python `
     tests/tooling/quality_gate.py coverage.json `
     --threshold 90.0
 ```
+
+## Optional Hardware Matrix
+
+Hardware validation is opt-in and supplements the canonical quality gate. The
+Piper catalog covers 50 language-native voices with checksum-pinned downloads.
+Piper is installed in `tools/piper-tts/.venv`, separate from the application's
+CUDA/TensorRT environment, so its CPU ONNX Runtime cannot change GPU provider
+selection.
+
+```powershell
+.\.poetry-venv\Scripts\poetry.exe run python scripts/audit_hardware.py
+.\.poetry-venv\Scripts\poetry.exe run python `
+    scripts/generate_audio_matrix.py core --language all
+$env:AI_RESTORE_HARDWARE_TESTS = "1"
+.\.poetry-venv\Scripts\poetry.exe run pytest tests/hardware -v
+```
+
+Use `scripts/run_hardware_validation.py --execute` only on a prepared machine;
+it drives selected modes through temporary video fixtures and writes timing and
+peak-VRAM data beneath `artifacts/`.
 
 ## CI Parity
 

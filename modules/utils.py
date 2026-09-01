@@ -45,14 +45,28 @@ def _get_scripts_dirs(base_dir):
     return [p for p in candidates if p.exists()]
 
 
-def _resolve_binary(binary_name, candidate_dirs):
-    exts = [".exe", ""] if sys.platform == "win32" else ["", ".exe"]
-    for scripts_dir in candidate_dirs:
-        for ext in exts:
+def _binary_extensions():
+    return [".exe", ""] if sys.platform == "win32" else ["", ".exe"]
+
+
+def _cargo_bin_dirs():
+    """Returns the Cargo binary directory when it exists."""
+    cargo_bin = Path.home() / ".cargo" / "bin"
+    return [cargo_bin] if cargo_bin.exists() else []
+
+
+def _candidate_binary_dirs(candidate_dirs, extra_dirs=None):
+    """Combines standard candidates with explicitly requested extra directories."""
+    return list(candidate_dirs) + list(extra_dirs or [])
+
+
+def _resolve_binary(binary_name, candidate_dirs, extra_dirs=None):
+    for scripts_dir in _candidate_binary_dirs(candidate_dirs, extra_dirs):
+        for ext in _binary_extensions():
             candidate = scripts_dir / f"{binary_name}{ext}"
             if candidate.exists():
                 return str(candidate)
-    return binary_name
+    return shutil.which(binary_name) or binary_name
 
 
 scripts_dirs = _get_scripts_dirs(project_dir)
@@ -61,6 +75,7 @@ primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / ".venv
 # 1. Base Binary Paths
 FFMPEG_BIN = _resolve_binary("ffmpeg", scripts_dirs)
 FFPROBE_BIN = _resolve_binary("ffprobe", scripts_dirs)
+CATHAR_BIN = _resolve_binary("cathar", scripts_dirs, extra_dirs=_cargo_bin_dirs())
 
 # 2. NVIDIA / CUDA Library Injection (Critical for Hybrid GPUs & Linux / Windows)
 extra_paths = [str(p) for p in scripts_dirs]
@@ -97,7 +112,12 @@ def _should_print_log(console, effective_level):
 def _print_log_message(message):
     sys.stdout.write("\r\033[K")
     sys.stdout.flush()
-    print(f"   {message}" if not message.startswith("   ") else message)
+    text = f"   {message}" if not message.startswith("   ") else message
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", "utf-8") or "utf-8"
+        print(text.encode(encoding, errors="backslashreplace").decode(encoding))
 
 
 def _append_log_file(effective_level, clean_msg):
@@ -258,6 +278,17 @@ def _probe_stream_types(file_path):
     except Exception:
         return set()
     return {line.strip() for line in output.decode("utf-8", "replace").splitlines() if line.strip()}
+
+
+def ffmpeg_has_filter(filter_name):
+    """Checks whether the resolved FFmpeg executable supports a given filter."""
+    cmd = [FFMPEG_BIN, "-filters"]
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=15)
+        text = output.decode("utf-8", "replace")
+        return any(parts[1] == filter_name for line in text.splitlines() if len(parts := line.split()) >= 2)
+    except Exception:
+        return False
 
 
 def is_verified_video(file_path):
@@ -759,12 +790,30 @@ def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):
 # I need 'import torch' at top.
 
 
+def _check_ai_mode_tools(mode, record_missing):
+    if mode in ("hybrid", "denoise_only", "auto", "multipass_auto", "multipass", "auto_pure", "pure", "auto_pure_linear"):
+        record_missing("Audio-Separator", ["audio-separator", "--help"])
+    if mode in ("hybrid", "multipass_auto", "multipass", "auto"):
+        record_missing("Resemble-Enhance", [sys.executable, "-c", "import resemble_enhance"])
+
+
+def _check_mode_specific_tools(mode, record_missing):
+    _check_ai_mode_tools(mode, record_missing)
+    if mode in ("cathar", "cathar_vhs"):
+        record_missing("Cathar", [CATHAR_BIN, "--version"])
+    if mode == "arnndn_speech" and not ffmpeg_has_filter("arnndn"):
+        record_missing("FFmpeg-arnndn-filter", None)
+
+
 def check_dependencies(process_mode=None):
     """Verifies external tools and library dependencies based on active process mode."""
     mode = process_mode or PROCESS_MODE
     missing = []
 
     def _record_missing(name, command):
+        if command is None:
+            missing.append(name)
+            return
         try:
             result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=10)
             if result.returncode != 0:
@@ -775,13 +824,7 @@ def check_dependencies(process_mode=None):
     # FFmpeg and FFprobe are universally required across all modes
     _record_missing("FFmpeg", [FFMPEG_BIN, "-version"])
     _record_missing("FFprobe", [FFPROBE_BIN, "-version"])
-
-    # AI stem separation and enhancement dependencies are mode-specific
-    if mode in ("hybrid", "denoise_only", "auto", "multipass_auto", "multipass", "auto_pure", "pure"):
-        _record_missing("Audio-Separator", ["audio-separator", "--help"])
-
-    if mode in ("hybrid", "multipass_auto", "multipass", "auto"):
-        _record_missing("Resemble-Enhance", [sys.executable, "-c", "import resemble_enhance"])
+    _check_mode_specific_tools(mode, _record_missing)
 
     if missing:
         log_msg(f"CRITICAL: Missing: {', '.join(missing)}", is_error=True)

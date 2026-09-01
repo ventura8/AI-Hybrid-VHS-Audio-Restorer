@@ -88,6 +88,49 @@ else
     exit 1
 fi
 
+FFMPEG_DETECTED="$(command -v ffmpeg 2>/dev/null || echo "$VENV_DIR/bin/ffmpeg")"
+if [ -x "$FFMPEG_DETECTED" ]; then
+    if ! "$FFMPEG_DETECTED" -filters 2>/dev/null | grep -q "arnndn"; then
+        echo "WARNING: Detected FFmpeg does not support the 'arnndn' filter. 'arnndn_speech' mode will be unavailable." >&2
+    fi
+fi
+
+# Step 3b: Verify Cathar Audio Restoration Toolkit
+echo -e "\nStep 3b: Checking Cathar audio restoration toolkit..."
+CATHAR_EXPECTED_VER="0.7.0"
+
+check_cathar_ver() {
+    local bin="$1"
+    if [ -x "$bin" ]; then
+        local ver
+        ver="$("$bin" --version 2>/dev/null || true)"
+        if echo "$ver" | grep -q "^cathar 0\.7\.3$"; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+if check_cathar_ver "$VENV_DIR/bin/cathar"; then
+    echo "Found verified venv Cathar CLI ($CATHAR_EXPECTED_VER): $VENV_DIR/bin/cathar"
+else
+    rm -f "$VENV_DIR/bin/cathar"
+    if check_cathar_ver "$(which cathar 2>/dev/null)"; then
+        echo "Found system Cathar CLI ($CATHAR_EXPECTED_VER): $(which cathar)"
+        cp "$(which cathar)" "$VENV_DIR/bin/cathar"
+    elif check_cathar_ver "$HOME/.cargo/bin/cathar"; then
+        echo "Found cargo Cathar CLI ($CATHAR_EXPECTED_VER): $HOME/.cargo/bin/cathar"
+        cp "$HOME/.cargo/bin/cathar" "$VENV_DIR/bin/cathar"
+    elif command -v cargo >/dev/null 2>&1; then
+        echo "Installing cathar-cli==$CATHAR_EXPECTED_VER via cargo into venv..."
+        if ! cargo install cathar-cli --version "$CATHAR_EXPECTED_VER" --root "$VENV_DIR"; then
+            echo "WARNING: Cathar compilation/installation failed. Continuing without Cathar."
+        fi
+    else
+        echo "WARNING: Cathar CLI not found. Run 'cargo install cathar-cli --version $CATHAR_EXPECTED_VER' to enable cathar mode."
+    fi
+fi
+
 # Step 4: Install Dependencies via Poetry
 echo -e "\nStep 4: Installing Dependencies via Poetry..."
 "$VENV_PY" -m pip install --upgrade pip
@@ -96,13 +139,28 @@ echo -e "\nStep 4: Installing Dependencies via Poetry..."
 "$VENV_PY" -m poetry config --local virtualenvs.in-project true
 "$VENV_PY" -m poetry config --local virtualenvs.create false
 
+echo "Provisioning isolated Piper fixture runtime..."
+export POETRY_REQUESTS_TIMEOUT=600
+export PIP_DEFAULT_TIMEOUT=600
+for piper_attempt in 1 2 3; do
+  if POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true \
+    "$VENV_PY" -m poetry --directory "$SCRIPT_DIR/tools/piper-tts" install \
+    --only main --no-root --no-interaction; then
+    break
+  fi
+  if [ "$piper_attempt" = 3 ]; then
+    echo "WARNING: Piper runtime installation failed after 3 attempts."
+  else
+    echo "WARNING: Piper install attempt $piper_attempt failed; retrying in 10 seconds..."
+    sleep 10
+  fi
+done
+
 if [ ! -f "poetry.lock" ]; then
     echo "Generating poetry.lock..."
     "$VENV_PY" -m poetry lock --no-interaction
 fi
 
-export POETRY_REQUESTS_TIMEOUT=300
-export PIP_DEFAULT_TIMEOUT=300
 
 # The ml group pulls audio-separator -> librosa -> numba -> llvmlite. numba
 # stopped publishing macOS x86_64 (Intel) wheels at 0.61, and llvmlite has no

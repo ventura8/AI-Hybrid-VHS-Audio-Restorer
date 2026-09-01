@@ -4,29 +4,33 @@
   (`vocal_mix_volume`, `background_mix_volume`), sync behavior, process mode,
   native filter parameters, and file extensions.
 - **Defaults**: If `config.yaml` is missing, the script defaults to neutral mix
-  levels (1.0), `process_mode: auto_pure`, and standard video extensions
+  levels (1.0), `process_mode: auto_pure_linear`, and standard video extensions
   (`.mp4`, `.mkv`, `.avi`, `.mov`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`).
 
 ## Process Modes
 
+- `auto_pure_linear` (default):
+  - Full-mix pure-denoising mode for natural archival fidelity.
+  - Uses dual-resolution analysis and analog pre-conditioning, then denoises
+    once with UVR-DeNoise without stem separation, speech synthesis, or mixing.
+  - Output suffix: `*_PureLinear_Cleaned`.
+- `cathar` / `cathar_vhs`:
+  - Deterministic high-fidelity DSP restoration engine.
+  - Applies 8-harmonic adaptive de-hum, surgical CRT whistle notch filter,
+    spectral noise print subtraction, de-click/de-crackle, and azimuth phase alignment.
+  - `cathar_vhs` is an alias for `cathar`.
+  - Output suffix: `*_Cathar_Cleaned`.
 - `auto`:
-  - AI Auto-Detection & Restoration Engine.
-  - Automatically scans audio characteristics across speech formants,
-    environmental textures (birds, cars, ambiance), musical harmonics, and
-    analog tape defects to dynamically select the optimal AI/DSP pipeline and
-    best AI models (`BS-Roformer`, `UVR-DeNoise`). The selected target is
-    `hybrid`, `denoise_only`, or `auto_ffmpeg_native` (or `multipass_auto`
-    when `enable_multipass` is enabled); `arnndn_speech` is an explicit
-    process mode.
-  - Output suffix: `*_Auto_Cleaned`.
+  - Intelligent acoustic profile scan dynamically selects the optimal restoration
+    engine and model parameters based on measured noise, clicks, and hum.
+  - Suffix: `*_Auto_Cleaned`.
 - `multipass_auto` / `multipass`:
-  - Explicit 4-Pass Cascaded Restoration Engine.
-  - Pass 1 (Dual-Resolution Scan) -> Pass 2 (Analog Pre-Conditioning DSP) ->
-    Pass 3 (AI Neural Separation & Speech Reconstruction) -> Pass 4 (Residual
-    Background Polish & DTW Sync).
+  - Maximum-quality 4-pass cascaded restoration.
+  - Dual-resolution acoustic scan -> analog pre-conditioning -> stem separation
+    & Resemble-Enhance -> residual polish -> DTW Sync -> final master mix.
   - `multipass` is an alias for `multipass_auto`.
-  - Output suffix: `*_MultiPass_Cleaned`.
-- `auto_pure` (default) / `pure`:
+  - Suffix: `*_MultiPass_Cleaned`.
+- `auto_pure` / `pure`:
   - Pure speech & ambient restoration without generative vocoder synthesis.
   - Dual-resolution acoustic scan -> analog pre-conditioning -> AI stem
     separation -> dedicated speech/background UVR-DeNoise + de-esser ->
@@ -53,10 +57,10 @@
   - Best for continuous tape hiss, mechanical rumble, and impulsive electrical
     clicks without GPU.
   - `vhs_native` is an alias for `ffmpeg_native`.
-  - Parameters: `afftdn_nr` (dB reduction, default 12.0), `afftdn_nf` (dB noise
-    floor, default -45.0), `afftdn_tn` (adaptive noise tracking),
-    `highpass_freq` (rumble cutoff, default 60 Hz), `enable_adeclick` (click
-    removal), `notch_freq` (head switching buzz).
+  - Parameters: `afftdn_nr` (dB reduction, default 10.0), `afftdn_nf` (dB noise
+    floor, default -55.0), `afftdn_tn` (adaptive noise tracking),
+    `highpass_freq` (rumble cutoff, default 80 Hz), `enable_adeclick` (click
+    removal), `notch_freq` (head switching buzz, default 50.0 Hz).
   - Output suffix: `*_FFmpeg_Cleaned`.
 - `arnndn_speech`:
   - FFmpeg Recurrent Neural Network (RNNoise) speech/dialogue denoiser.

@@ -35,9 +35,11 @@ Core goals:
 
 | Mode | Alias | Output suffix |
 |---|---|---|
-| `auto_pure` (default) | `pure` | `*_Pure_Cleaned` |
+| `auto_pure_linear` (default) | — | `*_PureLinear_Cleaned` |
+| `auto_pure` | `pure` | `*_Pure_Cleaned` |
 | `auto` | — | `*_Auto_Cleaned` |
 | `multipass_auto` | `multipass` | `*_MultiPass_Cleaned` |
+| `cathar` | `cathar_vhs` | `*_Cathar_Cleaned` |
 | `hybrid` | — | `*_Hybrid_Cleaned` |
 | `denoise_only` | — | `*_Denoised_Cleaned` |
 | `auto_ffmpeg_native` | `auto_vhs_native` | `*_AutoFFmpeg_Cleaned` |
@@ -47,8 +49,9 @@ Core goals:
 ## Mode Dispatch
 
 Every run extracts audio first, then branches on `process_mode`. `auto`,
-`auto_pure`, and `multipass_auto` scan the audio and select a restoration
-strategy; only `auto` may dispatch that strategy to a different process mode.
+`auto_pure_linear`, `auto_pure`, and `multipass_auto` scan the audio and select
+a restoration strategy; only `auto` may dispatch that strategy to a different
+process mode.
 
 ```mermaid
 flowchart TD
@@ -62,18 +65,22 @@ flowchart TD
     SKIP -->|yes| DONE(["Skip, keep existing"]):::io
     SKIP -->|no| MODE{"process_mode"}:::gate
 
+    MODE -->|auto_pure_linear| M0["Linear full-mix pure restoration"]:::ai
     MODE -->|auto_pure / pure| M1["4-pass pure restoration"]:::ai
     MODE -->|auto| M2["Scan, then dispatch"]:::ai
     MODE -->|multipass_auto| M3["4-pass cascaded restoration"]:::ai
+    MODE -->|cathar / cathar_vhs| MC["Cathar multi-stage DSP"]:::step
     MODE -->|hybrid| M4["2-stem separation + enhancement"]:::ai
     MODE -->|denoise_only| M5["Full-track neural denoise"]:::ai
     MODE -->|auto_ffmpeg_native| M6["Auto-tuned FFmpeg DSP"]:::step
     MODE -->|vhs_native| M7["Fixed FFmpeg DSP"]:::step
     MODE -->|arnndn_speech| M8["RNNoise speech denoise"]:::step
 
-    M1 --> OUT(["Restored container<br/>video stream copied"]):::io
+    M0 --> OUT(["Restored container<br/>video stream copied"]):::io
+    M1 --> OUT
     M2 --> OUT
     M3 --> OUT
+    MC --> OUT
     M4 --> OUT
     M5 --> OUT
     M6 --> OUT
@@ -203,7 +210,7 @@ measurement pass, resample, and limiter are the same code. The mastered stream i
 routed through a `filter_complex` label rather than `-af`, because the optional
 archival track is a second audio output that must not be normalized.
 
-## Mode: `auto_pure` (default)
+## Mode: `auto_pure`
 
 Pure speech and ambient restoration with no generative vocoder synthesis. The
 speech stem is denoised and de-essed, never resynthesized.
@@ -232,6 +239,21 @@ flowchart TD
 
 De-essed output is written to a dedicated `polished_vocals/` directory so a
 resumed run cannot mistake an already de-essed file for a fresh stem.
+
+## Mode: `auto_pure_linear` (default)
+
+```mermaid
+flowchart TD
+    A(["Extracted PCM f32 WAV"]) --> S["Pass 1: acoustic scan"]
+    S --> P["Pass 2: analog pre-conditioning\nDC, balance, azimuth, declip, notches"]
+    P --> D["Pass 3: UVR-DeNoise on the full pre-conditioned mix"]
+    D --> Y["Pass 4: shift or DTW alignment"]
+    Y --> M["Single-track EBU R128 mastering\ntrue-peak limiter and 44.1 kHz resample"]
+    M --> O(["*_PureLinear_Cleaned\nvideo stream copied"])
+```
+
+This mode intentionally has no BS-RoFormer separation, speech de-esser,
+background expander, or `amix` stage.
 
 ## Mode: `auto`
 

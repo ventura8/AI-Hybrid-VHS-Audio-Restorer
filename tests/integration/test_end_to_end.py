@@ -13,11 +13,13 @@ MODE_BY_SUFFIX = {
     "Auto_Cleaned": "auto",
     "MultiPass_Cleaned": "multipass_auto",
     "Pure_Cleaned": "auto_pure",
+    "PureLinear_Cleaned": "auto_pure_linear",
     "Denoised_Cleaned": "denoise_only",
     "Hybrid_Cleaned": "hybrid",
     "FFmpeg_Cleaned": "ffmpeg_native",
     "AutoFFmpeg_Cleaned": "auto_ffmpeg_native",
     "Speech_Cleaned": "arnndn_speech",
+    "Cathar_Cleaned": "cathar",
 }
 
 # Single source of truth for every mode-specific output suffix.

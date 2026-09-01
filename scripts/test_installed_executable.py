@@ -11,7 +11,6 @@ Tests all operational scenarios including:
 """
 
 import argparse
-import os
 import re
 import shutil
 import subprocess

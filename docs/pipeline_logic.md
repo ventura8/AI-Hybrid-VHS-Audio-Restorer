@@ -1,10 +1,11 @@
 # Key Logic & Pipeline
 
-The script `restore_audio_hybrid.py` supports eight primary restoration flows:
-`auto`, `multipass_auto`, `auto_pure`, `hybrid`, `denoise_only`,
-`auto_ffmpeg_native`, `vhs_native`, and `arnndn_speech`. The descriptions and
-diagram below focus on the representative direct pipelines; `multipass`,
-`pure`, `ffmpeg_native`, and `auto_vhs_native` are compatibility aliases.
+The script `restore_audio_hybrid.py` supports ten primary restoration flows:
+`auto`, `multipass_auto`, `auto_pure`, `auto_pure_linear`, `cathar`, `hybrid`,
+`denoise_only`, `auto_ffmpeg_native`, `vhs_native`, and `arnndn_speech`. The
+descriptions and diagram below focus on the representative direct pipelines;
+`multipass`, `pure`, `ffmpeg_native`, `auto_vhs_native`, and `cathar_vhs` are
+compatibility aliases.
 
 ## `hybrid` flow
 
@@ -21,6 +22,38 @@ diagram below focus on the representative direct pipelines; `multipass`,
    with container-dependent audio encoding (AAC for `.mp4`/`.m4v`, MP2 for
    `.mpg`/`.mpeg`, and 32-bit PCM only for configured PCM-capable
    containers).
+
+## `auto_pure_linear` flow (default)
+
+1. **Extraction**: FFmpeg extracts audio as `pcm_f32le` (32-bit float).
+1. **Pass 1 (Acoustic Scan)**: Dual-resolution acoustic profile analysis
+   (measuring noise floor, mains hum, rumble, and wow/flutter speed drift).
+1. **Pass 2 (Pre-Conditioning)**: Non-destructive analog hardware
+   pre-conditioning DSP (DC blocker, stereo balance handling, correlation-gated
+   azimuth delay, declip, and notch filters).
+1. **Pass 3 (Full-Mix UVR Denoise)**: Single-pass UVR-DeNoise applied directly to
+   the full pre-conditioned mix without stem separation or generative speech
+   synthesis, preserving original musical acoustics, vocal transients, and room
+   ambience.
+1. **Pass 4 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
+   EBU R128 loudness normalization (-16 LUFS / -1.0 dBTP true-peak limiter), and
+   transparent container remuxing into `*_PureLinear_Cleaned.<ext>`.
+
+## `cathar` flow
+
+1. **Extraction**: FFmpeg extracts audio as `pcm_f32le` (32-bit float).
+1. **Deterministic DSP Modular Restoration**:
+   - **Declick / Decrackle**: Impulsive click detection and interpolation.
+   - **Repair & Inpainting**: AR model inpainting over dropout intervals.
+   - **Declip**: Soft-knee cubic reconstruction of clipped peaks.
+   - **Adaptive Dehum**: Up to 8 harmonics tracking 50 Hz / 60 Hz mains interference.
+   - **Spectral Denoising**: Empirical noise profile subtraction using learned
+     quiet-window noiseprint.
+   - **De-esser & HF Polish**: Selective high-frequency harmonic synthesis and
+     multiband de-essing.
+1. **Smart Sync**: Aligns cleaned audio against original reference timing.
+1. **Mastering & Final Remux**: Two-pass EBU R128 loudness normalization and
+   remux into `*_Cathar_Cleaned.<ext>`.
 
 ## `auto_pure` flow
 
@@ -62,9 +95,9 @@ diagram below focus on the representative direct pipelines; `multipass`,
 
 1. **Extraction**: FFmpeg extracts audio as `pcm_f32le` (32-bit float).
 1. **Native VHS Filtering**: FFmpeg multi-threaded DSP filter chain:
-   - Mechanical rumble removal (`highpass=f=60`).
+   - Mechanical rumble removal (`highpass=f=80`).
    - Impulsive click & pop interpolation (`adeclick`).
-   - Continuous adaptive noise floor tracking (`afftdn=nr=12:nf=-45:tn=1`).
+   - Continuous adaptive noise floor tracking (`afftdn=nr=10:nf=-55:tn=1`).
    - Optional Hi-Fi head-switching notch filter (`bandreject`).
 1. **Smart Sync**: The filtered track is aligned to original timing (`shift` or
    `dtw`).
@@ -77,7 +110,7 @@ diagram below focus on the representative direct pipelines; `multipass`,
 
 1. **Extraction**: FFmpeg extracts audio as `pcm_f32le` (32-bit float).
 1. **ARNNDN Speech Denoising**: FFmpeg Recurrent Neural Network denoiser:
-   - Rumble and click suppression (`highpass=f=60`, `adeclick`).
+   - Rumble and click suppression (`highpass=f=80`, `adeclick`).
    - Deep-learning RNNoise speech denoiser (`arnndn=m=cb.rnnn`).
 1. **Smart Sync**: The speech-denoised track is aligned to original timing
    (`shift` or `dtw`).
@@ -128,6 +161,19 @@ flowchart TD
 
     M -->|auto / multipass_auto / auto_pure| A1[Select or run AI restoration]
     A1 --> A2[Sync and remux]
+
+    M -->|cathar / cathar_vhs| C1[Cathar DSP restoration]
+    C1 --> C2[Shift or DTW synchronization]
+    C2 --> C3[EBU R128 mastering]
+    C3 --> C4[Final remux]
+    C4 --> CO[Output Cathar_Cleaned]
+
+    M -->|auto_pure_linear| L1[Scan and analog pre-condition]
+    L1 --> L2[UVR-DeNoise full pre-conditioned mix]
+    L2 --> L3[Shift or DTW alignment]
+    L3 --> L4[EBU R128 mastering]
+    L4 --> L5[Final remux]
+    L5 --> LO[Output PureLinear_Cleaned]
 
     M -->|auto_ffmpeg_native| F1[Auto-tuned native filters]
     F1 --> F2[Sync and remux]
