@@ -35,11 +35,11 @@ Core goals:
 
 | Mode | Alias | Output suffix |
 |---|---|---|
-| `auto_pure_linear` | — | `*_PureLinear_Cleaned` |
+| `auto_pure_linear` (default) | — | `*_PureLinear_Cleaned` |
 | `auto_pure` | `pure` | `*_Pure_Cleaned` |
 | `auto` | — | `*_Auto_Cleaned` |
 | `multipass_auto` | `multipass` | `*_MultiPass_Cleaned` |
-| `cathar` (default) | `cathar_vhs` | `*_Cathar_Cleaned` |
+| `cathar` | `cathar_vhs` | `*_Cathar_Cleaned` |
 | `hybrid` | — | `*_Hybrid_Cleaned` |
 | `denoise_only` | — | `*_Denoised_Cleaned` |
 | `auto_ffmpeg_native` | `auto_vhs_native` | `*_AutoFFmpeg_Cleaned` |
@@ -247,8 +247,12 @@ resumed run cannot mistake an already de-essed file for a fresh stem.
 flowchart TD
     A(["Extracted PCM f32 WAV"]) --> S["Pass 1: acoustic scan"]
     S --> P["Pass 2: analog pre-conditioning\nDC, balance, azimuth, declip, notches"]
-    P --> D["Pass 3: UVR-DeNoise on the full pre-conditioned mix"]
-    D --> Y["Pass 4: shift or DTW alignment"]
+    P --> R["Pass 3: gated physical repair\ndepop, decrackle, declip, azimuth, inpaint"]
+    R --> H["Pass 4: hum cancellation\ntracked per harmonic, ahead of the probe"]
+    H --> B["Pass 5: plosive control\nevent-gated low-band expander"]
+    B --> N["Pass 6: noise-profile subtraction\n4 s probe, learned per-bin blend"]
+    N --> D["Pass 7: UVR-DeNoise on the full mix"]
+    D --> Y["Pass 8: shift or DTW alignment"]
     Y --> M["Single-track EBU R128 mastering\ntrue-peak limiter and 44.1 kHz resample"]
     M --> O(["*_PureLinear_Cleaned\nvideo stream copied"])
 ```

@@ -64,8 +64,8 @@ On Debian or Ubuntu:
 sudo apt install python3.12 python3.12-venv ffmpeg
 ```
 
-Rust is **not** a prerequisite. `cathar` is the default restoration mode and is a
-Rust binary, so `install_dependencies.sh` provisions one: a system `cargo` is
+Rust is **not** a prerequisite. `cathar` is a restoration mode built as a Rust
+binary, so `install_dependencies.sh` provisions one: a system `cargo` is
 used when present, otherwise a toolchain is bootstrapped into `.venv/rustup` and
 `.venv/cargo` and `cathar-cli` is compiled there. Nothing is installed
 system-wide.

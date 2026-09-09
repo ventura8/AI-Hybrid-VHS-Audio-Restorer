@@ -100,6 +100,342 @@ Use `scripts/run_hardware_validation.py --execute` only on a prepared machine;
 it drives selected modes through temporary video fixtures and writes timing and
 peak-VRAM data beneath `artifacts/`.
 
+## Fixtures That Predict Real Tape
+
+Every synthetic fixture set used to tune `auto_pure_linear` before v1.2.1 agreed
+with real tape about *which* stage mattered and disagreed about what it was
+worth: the subtraction factor, the margin gate, the tonal cleanup, the mains
+dehum and the DeepFilterNet stage each ranked one way on fixtures and the other
+way on the corpus. A fixture set earns its keep only by predicting real tape, so
+there is now a calibrated set and a check that says whether it does.
+
+```powershell
+.\.venv\Scripts\python.exe -m poetry run python `
+    scripts/expand_ia_corpus.py
+.\.venv\Scripts\python.exe -m poetry run python `
+    scripts/make_realistic_fixtures_v2.py `
+    --catalog experiments/ia_corpus_1000/catalog_all.json --noise-windows 48
+.\.venv\Scripts\python.exe -m poetry run python `
+    scripts/validate_fixture_realism.py
+```
+
+### The corpus behind it
+
+`expand_ia_corpus.py` widened the Internet Archive corpus the set is calibrated
+against from 192 clips of 192 tapes to 1,982 clips of 847 tapes: nineteen
+searches with genre labels that mean what they say (children's television,
+sport, documentary, comedy, music, adverts, home video, and tapes in other
+languages), PAL and NTSC, paged, up to three 15 s slices of each tape at
+different offsets -- only the offsets a tape reaches, since the extractor's
+fallback to the opening had labelled 167 openings as later slices before they
+were found by hash and dropped. The tape-noise bank samples 48 captures from
+the whole merged catalog,
+and a window qualifies as noise on steadiness, crest factor and level together
+-- sampled by level alone, eight windows in twelve were fades, dropouts or
+speech, and one was a test tone -- with the capture's line whine and mains
+series notched out, since each is a class of its own.
+
+### The set
+
+`make_realistic_fixtures_v2.py` writes 460 paired fixtures under
+`artifacts/realistic-v2`, each 15 s like the corpus clips: five Piper voices,
+speech-led and music-led programme at five margins with and without mains hum,
+and 32 defect classes on the speech-led base -- every fault in
+`docs/vhs_audio_defects_research.md`, the ten the preservation literature
+added to it, and a crowd under commentary.
+Each fixture carries three files: `_vhs` (the tape), `_clean` (everything the
+tape carried, the room and the voice across it included) and `_target` (the
+programme wanted back), and each property was set against a measurement of the
+corpus, recorded beside the knob in the generator. The ones that decided the
+inversions:
+
+| Property | Real tape | Fixtures |
+| :--- | ---: | ---: |
+| Frame level above the floor, p20 | 2.3 dB | 2.2 dB |
+| Frame level above the floor, median | 8.1 dB | 6.8 dB |
+| Frame level above the floor, p90 | 14.5 dB | 11.4 dB |
+| Noise removed, speech reading a 10-11 dB margin | 8.1-8.4 dB | 9.5-11.5 dB |
+| Programme deviation, speech classes | 0.33 dB | 0.37 dB |
+| Loud frames, 2400-4800 Hz against 300-600 | -11 dB | -11 dB |
+
+The level profile took three changes: no inserted pauses, since a tape's
+quietest fifth is quiet programme rather than silence; a slow gain control that
+rides programme and reference alike; and tape hiss added after it, where a tape
+adds it. The DeepFilterNet verdict took a room, because dry synthesised speech
+is exactly what a speech enhancer was trained to keep. The voice itself carries
+the tilt a tape's does -- relative to its 300-600 Hz band a real tape's loud
+frames hold 600-1200 Hz at -1.5 dB and 2400-4800 at -11, where Piper's hold
+-7 and -17, so a presence shelf and a low shelf put on what a microphone and a
+broadcast chain put on -- and it breathes before its phrases, since real quiet
+frames vary 11-14 dB per band frame to frame and a synthesiser's varied 5.
+
+### Does it predict real tape
+
+`validate_fixture_realism.py` reruns the four comparisons whose real-tape
+verdict is known, on the metric those verdicts were reached with, and reports
+whether each ranks the same way. On this release's build every one does:
+
+| Comparison | Real tape | Fixtures |
+| :--- | :--- | :--- |
+| Factor 3.0 vs 1.8, speech-led | +3.35 dB for +0.07 | +2.30 dB for +0.31 |
+| Probe (now 4 s) against 0.75 s | +3.39 dB for +0.12 | +3.02 dB for +0.13 |
+| UVR-DeNoise against DeepFilterNet | 0.22 against 0.66 | 0.71 against 1.05 |
+| Tonal gate on tonal material | 0.49 to 0.33 | 1.26 to 0.89 |
+
+The first two rows read noise removed for programme deviation, both in dB; the
+last two read programme deviation in dB, the winner first.
+
+The factor row is judged on the speech-led classes -- speech, and speech over
+a music bed, thirty of the forty fixtures and what the corpus is made of --
+and its real-tape verdict was re-measured with this release's chain: +3.35 dB
+of removal for +0.07 of deviation on 50 mixed clips, +2.52 for +0.23 on the
+most tonal third, +2.77 for +0.00 on the most tonal tenth. The two music-only
+classes read the factor the other way, -1.34 dB of removal for +2.36 of
+deviation over their ten fixtures, which no real subset does: a fixture with
+no quiet frames that are noise reads a stronger factor as programme lost. The
+check prints that reading under the table as a known blind spot and excuses
+it from the exit status, the way it does the two classes the scanner cannot
+see. Judged over all forty the row had agreed by 5.6:1 at the 4 s probe and
+read 4.2:1 on the gated hum canceller, against the 5:1 rule: the ungated
+canceller had been cancelling the music fixtures' chord partials, which the
+metric's broadband gain match read as deviation avoided, and against the
+clean reference the gated chain is the better one on both classes.
+
+Two things the check makes explicit. The full-reference scores against the
+clean fixture, SI-SDR and log-spectral distance on the finished output, are
+reported but cannot rank subtraction strength at these margins: fed a noise-free
+fixture the finished chain comes back at 16.9 dB SI-SDR, because the polish,
+expander and loudness stages colour the waveform, and at a 14 dB margin that
+colour is a larger error than the noise was. They catch destruction --
+DeepFilterNet on music-led programme lands at -9 dB -- and nothing finer.
+
+The last gap was the metric reading the fixture's length. On an 8 s fixture
+holding one 1.2 s pause, the quietest fifth the metric reads is that pause and
+nothing else, and the chain took 15 dB out of it; on a 15 s tape the quietest
+fifth runs on into quiet speech and the chain takes 9. Margins are compared as
+the scanner reads them, since a fixture built at a nominal 15 dB reads 11 and
+a real tape's margin is only ever a reading: at the clips' own length, with the
+synthesiser's pauses trimmed to what a breath needs but one, the speech class
+reading 10 dB gives up 9.5 dB and the class reading 11 gives up 11.5, against
+8.1-8.4 on real tapes reading up to 13, and they deviate 0.24 against real
+tape's 0.15-0.47. Each class is five voices under five draws of noise window
+and room, and the five spread from 6.0 to 14.9 dB of removal at the one margin
+and 7.1 to 14.0 at the other. That is the width a median of five draws
+carries, and the reason the check judges rank agreement rather than a
+magnitude.
+
+### What the scanner sees
+
+The check runs the scanner and the dropout detector over every defect class and
+reports which detector each trips against what the class was built to trip.
+Every class trips its own detector on at least three voices in five, with two
+exceptions, both recorded in the check as known and excused from its exit
+status: the enclosure resonance, a 16 dB ring at a Q of 5, which the scanner
+does not read at all, because its width test walks off the ring at the first
+dip between the voice's harmonics; and the worn tape's mains hum, which under
+that class's 9 dB margin of noise reads on two voices in five where the same
+hum at a 15 dB margin reads on seven captures in ten. Any other class going
+blind to its own detector, any comparison ranking against real tape, or a
+repair stage hurting an undamaged class fails the check. The matrix is also
+the record of what the scanner, which is shared with `cathar` and therefore
+left alone in this release, sees on material that does not have the fault:
+
+| Detector | Fires on material without the fault |
+| :--- | :--- |
+| Clicks | every class, plain speech included, with corpus noise |
+| CRT whistle | 40-100% of every class; noise alone clears its prominence |
+| Drift | flutter (right), music-led programme, and noise with no whine |
+| Mains hum | 20-80% of hum-free classes, the codec and the buzz most |
+| DC bias | rumble and clipping |
+| Rumble | mains hum, and music-led programme |
+
+The matrix exists for two reasons. A class its own detector could not see would
+exercise nothing, which is what the exit gate above catches (the crackle class
+is read on every voice); and a detector that fires on everything runs its
+stage on everything -- pop removal and `decrackle` run on nearly every tape,
+which is why both are held to being free there. Both are findings the set now
+measures rather than the chain assumes.
+
+### Repair on undamaged material
+
+The repair stages are run on and off over every class and held to the real-tape
+verdict that gated repair is close to free: across 174 captures it moved removal
+from 9.66 to 9.74 dB and deviation from 0.48 to 0.50. On the 28 classes carrying
+no physical damage the two configurations land within 0.5 dB of removal and
+0.1 dB of deviation of each other on every one. On the damaged classes the
+finished-output metrics show the azimuth stage working (+4.2 dB SI-SDR, -3.8 dB
+log-spectral distance) and the crackle, dropout, clipping and head-switching
+stages changing almost nothing -- the defect-region metric of
+`scripts/score_defect_repair.py` reads decrackle and inpaint as inert on
+crackle drawn at eight pops a second with bright tails and on dropouts drawn at
+5-50 ms, where the stepped fixtures they were adopted on read them at +10 dB.
+
+Every knob was then tried. `decrackle` at sensitivity 5 through 10 and
+`declick` at thresholds 8 down to 1 recover 0.3-2.3 dB inside the damaged
+samples whatever the crackle -- dense and 20-30 dB down at a hundred a second,
+or sparse and 6 dB down at three a second, with tails of four samples or
+sixty-four -- and `declick` at 1 costs 7 dB of collateral on undamaged speech.
+FFmpeg's `adeclick`, which the pre-conditioning already runs, takes minutes per
+fixture at the settings that would do more. `inpaint` is a different case: on
+the exact dropout spans it fills every hole, with programme-like audio 13.5 dB
+under the level of what was lost, which the defect-region metric reads as +156
+dB of spectral repair and +0.6 dB of sample repair -- the hole is no longer a
+hole, and the waveform is not the one that was lost, which is what
+autoregressive interpolation is. The impulse tools the chain had did not
+remove pops the size a tape carries in the noise a tape carries them in, so
+`modules/impulse_repair.py` now does: a short autoregressive model per block,
+a pop where the prediction residual stands seven robust scales out, a
+least-squares autoregressive refill of each isolated span. At the true pop
+positions of the crackle class it repairs +5.5 dB (98% of pops found); on
+undamaged speech it changes 40 dB under the programme; on the music-led
+classes, once spans crowded by other outliers were left alone, 34 dB under on
+music with speech and nothing on music alone; across 50 real captures noise
+removal and deviation move by 0.00 dB. The finished-output metrics still do not
+show it, for the reason they show none of the impulse stages: the chain's own
+colour is a larger error inside a pop's few milliseconds than the pop was.
+
+The set is also what the per-bin blend is fitted on, through
+`scripts/build_blend_dataset.py --reference target` pointed at
+`artifacts/realistic-v2`, using the shipping chain's own subtraction so the
+features the model learns from are the features it is asked about. Three
+retrains on it captured 63-77% of the fixture headroom and moved nothing on
+real tape; the shipped weights stay.
+
+### The mode's own stages
+
+v1.3.0 gives `auto_pure_linear` stages of its own for the rows where `cathar`'s
+cascade still led on paper, and each was adopted or held back on the same
+terms as the repair stages: measured on the calibrated classes, then on real
+tape, and free on undamaged material.
+
+**Hum.** The mode's hum canceller (`modules/hum_cancel.py`) tracks each mains
+harmonic that stands out as a line of its own in the quietest frames -- at the
+frequency it actually sits at, since on the tapes measured the harmonics sit
+one to eight hertz off the exact series -- and subtracts it per channel ahead
+of the noise probe. Two gates decide it. `scripts/measure_hum.py --mains auto`
+reads the harmonic excess at whichever of 50 and 60 Hz the recording's
+harmonics support, on the 48 corpus tapes that carry hum; run alone on their
+source audio the stage removes a median 3.01 dB of excess (upper quartile
+5.98) at 0.155 dB of low-band movement, where `cathar`'s `dehum` at the right
+frequency removes 2.07 at 0.25. In the chain, through the subtraction and
+the neural stage, hum removed goes from a median 0.19 dB to 2.49, better on
+34 of 48 tapes and worse by more than a decibel on none, with the low band
+moving 1.41 to 1.48 dB and the broadband trade 12.91/0.33 to 12.90/0.35 --
+inside the free band. Four tapes whose lines wander more than five hertz
+between frames are not helped; they are recorded, not forced. On the
+calibrated set the realism check now runs the shipped configuration against
+`no_hum_cancel` over every class, held to the repair stages' free band.
+
+Two readings were added to the hum instrument after the stage was adopted.
+The excess reading is blind to a chain that lowers the floor around a line it
+left behind -- the line then stands out more although it is no louder -- so
+`hum_line_drop_db` reads the summed power at the harmonics themselves on
+gain-matched audio, and the instrument now refuses the saturated or
+constant-level sources the trade metric refuses (15 of the 48), on which the
+gain-matched low band moved by tens of dB identically for both modes. On the
+33 readable tapes the final chain removes a median 1.19 dB of excess against
+`cathar`'s -0.74 and takes the lines themselves down 3.04 dB against 0.75,
+ahead of `cathar` on 24 and 26 of the 33. Two switches for the notches that
+precede the canceller were measured there, before the gates, and left at
+their defaults: the mode's own third-to-fifth harmonic notches earn their
+place (without them hum removal fell 2.43 to 1.71 dB, worse by more than a
+decibel on 8 tapes),
+and leaving the two pre-conditioned harmonics out of the canceller's plan
+changes nothing.
+
+The check also caught the canceller firing on the music-only class -- a chord's
+partials sit near multiples of 50 Hz, a G major at 98, 147 and 196 Hz reading as
+the second to fourth harmonics of 49 Hz -- and both instruments above are blind
+to programme removed at mains multiples by construction. A series whose lines
+place the fundamental outside the canceller's half-hertz window is now refused
+as a chord, and a second gate follows the physics of a mains line: it sits at an
+exact multiple of the fundamental, wobbling with the transport by a fraction of
+a hertz, so a gated line further off its multiple than half the band the
+canceller tracks it in (0.75 Hz at the fundamental, a quarter more per harmonic,
+to 2.5 Hz) is a partial and is left alone -- the fixtures' chord partials at 98,
+147 and 196 Hz sit 1.1 to 2.0 Hz off. A tighter tolerance was measured and lost
+the strongest real hum tapes: their lines wobble past it with the transport, and
+a 40-harmonic series was refused whole. A third gate, a line's level in the loud
+frames against the quiet ones, was tried and dropped: programme energy shares a
+line's bins when the programme is loud, and on the strongest real hum tapes
+every harmonic read 15 to 65 dB louder there and the whole series was refused. A
+third gate stands: a series with nothing at the fundamental is not hum -- the
+`ep` class put the canceller on a synthesised voice whose pitch sits at twice a
+mains-like fundamental, every harmonic on the series and steady, and the lines
+it took were in the clean reference -- so it is refused unless the shared
+scanner reported the hum and the pre-conditioning notched the fundamental ahead
+of the stage. With the three gates the canceller stands aside on every
+music-only and `ep` fixture, and both classes read the same with it as without
+(13.67/1.69 and 9.71/0.58). On two real tonal tapes the low band moved 0.91 and
+1.50 dB before the refusal and 0.11 and 0.01 after: what read as hum removal
+there was programme. On the 33 readable hum tapes the chain then removes a
+median 1.19 dB of excess and takes the lines themselves down 3.04 dB, against
+`cathar`'s -0.74 and 0.75, ahead of it on 24 and 26 of the 33, with the low band
+moved 0.48 dB against `cathar`'s 0.55 -- less hum removed than the 2.43 dB the
+ungated canceller read, and less programme taken with it.
+
+**Plosives.** The plosive tamer (`modules/plosive_tamer.py`) finds a blast as
+a run of hops where the low band stands 12 dB over its own running level and
+leads the mid band's rise by 6 dB, peaks within three hops, lasts 10-120 ms
+and stands alone, and takes each down to the level the band held just before
+it -- a downward expander on the low band, bit-identical elsewhere. The
+calibrated `plosive` class injects its bursts into the reference (they were
+recorded, not added by the tape) and its target differs from that reference
+everywhere, so `scripts/score_defect_repair.py --reference target` reads the
+damage from the low-band difference between the two files and measures the
+error against the target inside those spans. There the stage recovers 0.89
+dB at 0.03 dB of collateral, against `cathar deplosive`'s 1.55 at 0.34; on the
+undamaged classes it costs 0.00-0.01 dB where `deplosive` costs 0.5-0.9 and
+reads -6.7 dB on music-led programme. On 50 real captures it is free:
+10.02/0.23 to 10.02/0.23, 37 captures untouched to the hundredth.
+
+**Held back.** A per-bin MMSE log-spectral suppressor in the subtraction slot
+(`modules/spectral_suppress.py`) is the branch's second DeepFilterNet: on the
+calibrated classes it lands at 5.9-6.2 dB of log-spectral distance where the
+subtraction lands at 10-12.9, and on 50 real captures it removes 5.83 dB at
+0.19 against 10.02 at 0.22 (3.06 against 7.96 on the tonal 45). It keeps the
+low-level programme the quiet frames hold, and the trade metric reads that
+as noise left behind. The Mel-Roformer denoiser measured 9.39/0.22 against
+UVR-DeNoise's 10.02/0.23, and Resemble-Enhance's denoiser 10.78/0.58 -- more
+removal, the programme moved two and a half times as far, and 12 captures won
+outright against `cathar` where UVR-DeNoise wins 28. A canceller for
+persistent lines
+(`modules/tone_cancel.py`) at its first setting read sustained notes and
+missed mains lines as persistent lines in the speech range and cost 0.06 dB
+of deviation on 50 captures; restricted to lines above 4 kHz it finds lines
+on 19 of the 50 and moves the medians not at all, 10.02/0.23 to 10.02/0.23,
+while one capture loses 10.45 dB of noise removal to it. A line that holds
+still is already in the noise profile, and the subtraction removes it
+outright where the tracker's smoothed envelope leaves a residual; a line
+that wanders defeats both. It stays off.
+
+### A perceptual cross-check
+
+The trade metric is blind to what it does not measure, and every ranking on
+this branch rests on it. `scripts/score_perceptual.py` reads DNSMOS P.835
+(Microsoft's non-intrusive estimator of P.835 listening scores: speech
+quality SIG, background BAK, overall OVRL, plus a P.808 overall MOS; fetched
+by `scripts/download_dnsmos.py`, CC BY 4.0) on the source and on each mode's
+restoration of every clip. It is speech-trained and reads at 16 kHz, so on a
+corpus that carries music and archive material it is a cross-check and not a
+gate: a change the trade metric and the defect gates approve and that DNSMOS
+reads clearly worse is a change to listen to before it ships. On the 174
+restored clips of the v1.2.1 corpus run it reads:
+
+| Configuration | SIG | BAK | OVRL | P808 | OVRL vs source (paired median) |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| source | 1.67 | 1.37 | 1.32 | 2.45 | |
+| `cathar` | 2.16 | 2.22 | 1.62 | 2.45 | +0.07 |
+| `auto_pure_linear` | 2.38 | 2.95 | 1.82 | 2.50 | +0.30 |
+
+`auto_pure_linear` reads better than `cathar` on 111 of 174 clips for speech
+quality, 149 for background and 132 for overall, and leaves fewer clips
+reading worse than their own source (31 against 65 on OVRL). The scale is
+compressed -- the source reads 1.3 on a 1-5 scale, where a clean studio
+recording reads above 4 -- which is what a tape corpus looks like to a model
+trained on suppressor outputs, and the reason the figure is read paired,
+clip by clip, rather than as an absolute.
+
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment

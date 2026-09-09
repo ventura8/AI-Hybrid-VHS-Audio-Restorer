@@ -32,6 +32,7 @@ from .config import (
     AFFTDN_NF,
     AFFTDN_NR,
     AFFTDN_TN,
+    APL_SURGICAL_MAINS_NOTCH,
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
@@ -548,6 +549,24 @@ def _estimate_noise_floor_and_reduction(signal_data):
     noise_floor_db = float(np.clip(20.0 * np.log10(p10_rms + 1e-6), -80.0, -20.0))
     nr_db = _pick_reduction_db(noise_floor_db)
     return round(noise_floor_db, 1), round(nr_db, 1)
+
+
+def estimate_snr_margin_db(wav_path):
+    """Returns how far the programme sits above its own noise floor, in dB.
+
+    This is the quantity that predicts whether neural denoising can help. Absolute noise
+    floor does not: a quiet capture and a healthy one can share a floor and behave
+    completely differently. Measured on paired fixtures, auto_pure_linear is inert at a
+    8.9 dB margin and effective at 14.3 dB.
+
+    Returns None when the audio cannot be read, so callers can skip rather than guess.
+    """
+    mono_signal, _sr = _read_audio_for_analysis(wav_path)
+    if mono_signal is None or len(mono_signal) == 0 or np is None:
+        return None
+    rms_db = float(20.0 * np.log10(float(np.sqrt(np.mean(mono_signal**2))) + 1e-9))
+    noise_floor_db, _reduction = _estimate_noise_floor_and_reduction(mono_signal)
+    return round(rms_db - noise_floor_db, 2)
 
 
 def _compute_peak_ratio(fft_mag, freqs, target_freq):
@@ -1160,15 +1179,18 @@ def _extract_notch_and_crt(strategy):
     return notch_hz, crt_hz
 
 
-def build_pre_denoise_surgical_filter(strategy=None):
+def build_pre_denoise_surgical_filter(strategy=None, hum_cancel=False):
     """Builds surgical DSP filter graph executed before neural denoising in auto_pure_linear.
 
     Eliminates higher mains hum harmonics via narrow bandreject filters before handing
-    the audio to UVR-DeNoise, preventing neural model over-processing.
+    the audio to UVR-DeNoise, preventing neural model over-processing. Where the mode's
+    own hum canceller runs and the configuration leaves the harmonics to it, the notches
+    are skipped: the canceller tracks each line at the frequency it actually sits at.
     """
     stages = []
     notch_hz, _ = _extract_notch_and_crt(strategy)
-    _append_pre_denoise_harmonics(stages, notch_hz)
+    if APL_SURGICAL_MAINS_NOTCH or not hum_cancel:
+        _append_pre_denoise_harmonics(stages, notch_hz)
     return ",".join(stages) if stages else None
 
 

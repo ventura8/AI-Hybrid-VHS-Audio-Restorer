@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import modules.apl_chain
 import modules.hardware
 import modules.processing
 
@@ -361,8 +362,8 @@ def test_get_gpu_name_pytorch_exception():
 
 def test_resolve_adaptive_denoise_model():
     """Verify adaptive denoise model selection picks Lite on quiet tapes."""
-    threshold = modules.processing.ADAPTIVE_DENOISE_THRESHOLD_DB
-    default_denoise = modules.processing.DEFAULT_DENOISE_MODEL
+    threshold = modules.apl_chain.ADAPTIVE_DENOISE_THRESHOLD_DB
+    default_denoise = modules.apl_chain.DEFAULT_DENOISE_MODEL
 
     strategy_quiet = {"profile": {"noise_floor_db": threshold - 5.0}}
     assert modules.processing._resolve_adaptive_denoise_model(strategy_quiet, "UVR-DeNoise.pth") == default_denoise
@@ -433,9 +434,140 @@ def test_denoise_and_polish_full_audio_step_cascades(tmp_path):
             orig, out_dir, total_duration=10.0, denoise_model="UVR-DeNoise.pth", strategy=strategy, apply_air=True
         )
         assert res == tmp_path / "pol.wav"
-        mock_surg.assert_called_once_with(orig, out_dir, total_duration=10.0, strategy=strategy)
-        mock_den.assert_called_once_with(
-            tmp_path / "surg.wav", out_dir / "neural_denoised", total_duration=10.0, denoise_model="UVR-DeNoise-Lite.pth"
-        )
+        mock_surg.assert_called_once_with(orig, out_dir, total_duration=10.0, strategy=strategy, hum_cancel=False)
+        neural_dir = modules.processing._neural_denoise_dir(out_dir, tmp_path / "surg.wav", "UVR-DeNoise-Lite.pth")
+        assert neural_dir.name.startswith("neural_denoised_") and neural_dir != out_dir / "neural_denoised"
+        mock_den.assert_called_once_with(tmp_path / "surg.wav", neural_dir, total_duration=10.0, denoise_model="UVR-DeNoise-Lite.pth")
         mock_clean.assert_called_once_with(tmp_path / "den.wav", out_dir, total_duration=10.0, strategy=strategy)
         mock_pol.assert_called_once_with(tmp_path / "clean.wav", out_dir, total_duration=10.0, strategy=strategy, apply_air=True)
+
+
+def test_the_optional_neural_stage_writes_apart_from_the_fallback_and_stale_output_is_cleared(tmp_path):
+    """DeepFilterNet gets a directory of its own, and a dfn_* file left in the UVR directory is removed first.
+
+    The UVR step takes any valid WAV already in its directory as a finished result, so a
+    DeepFilterNet output there -- partial, or from an earlier build -- would be returned as
+    the fallback's own.
+    """
+    orig = tmp_path / "orig.wav"
+    orig.write_text("audio")
+    out_dir = tmp_path / "out"
+    neural_dir = modules.processing._neural_denoise_dir(out_dir, tmp_path / "surg.wav", None)
+    neural_dir.mkdir(parents=True)
+    stale = neural_dir / "dfn_surg.wav"
+    stale.write_text("partial")
+    seen = {}
+
+    def fake_denoise_or(source, output_dir, wanted, fallback):
+        seen["dir"] = output_dir
+        seen["wanted"] = wanted
+        return fallback()
+
+    with (
+        patch("modules.processing._pre_denoise_surgical_step", return_value=tmp_path / "surg.wav"),
+        patch("modules.processing._deepfilter.denoise_or", side_effect=fake_denoise_or),
+        patch("modules.processing._denoise_full_audio_step", return_value=tmp_path / "den.wav"),
+        patch("modules.processing._post_denoise_cleanup_step", side_effect=lambda wav, *_a, **_k: wav),
+        patch("modules.processing._polish_full_audio_step", side_effect=lambda wav, *_a, **_k: wav),
+    ):
+        res = modules.processing._denoise_and_polish_full_audio_step(orig, out_dir, deepfilternet=True)
+    assert res == tmp_path / "den.wav"
+    assert seen == {"dir": out_dir / "deepfilter_denoised", "wanted": True}
+    assert not stale.exists()
+
+
+def test_the_neural_cache_is_keyed_by_input_and_model(tmp_path):
+    """A rerun with another input or model must not be handed the previous run's denoised file."""
+    surgical = tmp_path / "surgical_abc.wav"
+    surgical.write_bytes(b"x" * 10)
+    first = modules.processing._neural_denoise_dir(tmp_path, surgical, "UVR-DeNoise.pth")
+    assert first == modules.processing._neural_denoise_dir(tmp_path, surgical, "UVR-DeNoise.pth")
+    assert first != modules.processing._neural_denoise_dir(tmp_path, surgical, "UVR-DeNoise-Lite.pth")
+    assert first != modules.processing._neural_denoise_dir(tmp_path, tmp_path / "surgical_def.wav", "UVR-DeNoise.pth")
+    surgical.write_bytes(b"x" * 11)
+    assert first != modules.processing._neural_denoise_dir(tmp_path, surgical, "UVR-DeNoise.pth")
+
+
+def test_a_stale_neural_file_that_cannot_be_removed_sends_the_fallback_to_a_clean_directory(tmp_path):
+    """An undeletable DeepFilterNet file must not be reachable by the UVR step's own-result scan."""
+    from modules import denoise_cache
+
+    neural_dir = tmp_path / "neural_denoised_abc"
+    neural_dir.mkdir()
+    stale = neural_dir / "dfn_surg.wav"
+    stale.write_text("partial")
+    with patch.object(type(stale), "unlink", side_effect=PermissionError("locked")):
+        chosen = denoise_cache.without_stale_neural_output(neural_dir)
+    assert chosen == tmp_path / "neural_denoised_abc_clean" and chosen.is_dir()
+    assert stale.exists()
+    assert denoise_cache.without_stale_neural_output(neural_dir) == neural_dir
+    assert not stale.exists()
+
+
+def test_pre_denoise_surgical_step_tells_the_builder_whether_the_canceller_runs(tmp_path):
+    """The step hands the canceller's request through, so the builder can leave the harmonics to it."""
+    precond = tmp_path / "precond.wav"
+    precond.write_text("audio")
+    with (
+        patch("modules.processing.is_valid_audio", return_value=True),
+        patch("modules.processing.build_pre_denoise_surgical_filter", return_value=None) as builder,
+    ):
+        assert modules.processing._pre_denoise_surgical_step(precond, tmp_path, hum_cancel=True) == precond
+    assert builder.call_args.kwargs["hum_cancel"] is True
+
+
+def test_the_cascade_tells_the_surgical_step_whether_the_canceller_runs(tmp_path):
+    """The surgical step learns from the cascade whether the canceller was requested."""
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    seen = []
+
+    def surgical(wav, _dir, **kwargs):
+        seen.append(kwargs["hum_cancel"])
+        return wav
+
+    with (
+        patch("modules.processing._pre_denoise_surgical_step", side_effect=surgical),
+        patch("modules.apl_chain.run", side_effect=lambda wav, _plan: (wav, [])),
+        patch("modules.processing._denoise_full_audio_step", side_effect=lambda wav, _d, **_k: wav),
+        patch("modules.processing._post_denoise_cleanup_step", side_effect=lambda wav, *_a, **_k: wav),
+        patch("modules.processing._polish_full_audio_step", side_effect=lambda wav, *_a, **_k: wav),
+    ):
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, hum_cancel=True)
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, hum_cancel=False)
+    assert seen == [True, False]
+
+
+def test_the_cascade_leaves_the_neural_stage_out_when_the_material_says_so(tmp_path):
+    """With the neural stage not wanted, the chain's output goes straight to the cleanup."""
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    seen = []
+    with (
+        patch("modules.processing._pre_denoise_surgical_step", side_effect=lambda wav, _d, **_k: wav),
+        patch("modules.apl_chain.run", side_effect=lambda wav, _plan: (wav, [])),
+        patch("modules.spectral_denoise.neural_wanted", return_value=False),
+        patch("modules.processing._denoise_full_audio_step", side_effect=lambda wav, _d, **_k: seen.append("uvr") or wav),
+        patch("modules.processing._post_denoise_cleanup_step", side_effect=lambda wav, *_a, **_k: seen.append(wav.name) or wav),
+        patch("modules.processing._polish_full_audio_step", side_effect=lambda wav, *_a, **_k: wav),
+    ):
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, spectral_denoise=True)
+    assert seen == ["orig.wav"]
+
+
+def test_a_caller_outside_the_chain_keeps_its_model_and_always_runs_the_neural_stage(tmp_path):
+    """denoise_only did not opt into the chain: the named model and the tonal skip are not its settings."""
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    seen = []
+    with (
+        patch("modules.processing.APL_NEURAL_MODEL", "some_other_model.ckpt"),
+        patch("modules.processing._pre_denoise_surgical_step", side_effect=lambda wav, _d, **_k: wav),
+        patch("modules.apl_chain.run", side_effect=lambda wav, _plan: (wav, [])),
+        patch("modules.spectral_denoise.neural_wanted", return_value=False),
+        patch("modules.processing._denoise_full_audio_step", side_effect=lambda wav, _d, **kw: seen.append(kw["denoise_model"]) or wav),
+        patch("modules.processing._post_denoise_cleanup_step", side_effect=lambda wav, *_a, **_k: wav),
+        patch("modules.processing._polish_full_audio_step", side_effect=lambda wav, *_a, **_k: wav),
+    ):
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, denoise_model="UVR-DeNoise-Lite.pth")
+    assert seen == ["UVR-DeNoise-Lite.pth"]

@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+"""Sweeps denoise settings against the real-tape trade metric.
+
+Three constants on this branch were set from synthetic fixtures and turned out wrong on real
+tape, so the remaining untested choices are swept the same way the corrected ones were:
+against noise removal and programme damage measured separately, on real captures.
+
+The settings under test are shared with the `cathar` mode. Sweeping them here only measures;
+anything that wins has to become an `apl_*` setting of its own, because `cathar` shipped in
+v1.2.0 and must not move.
+
+**A setting has to be patched where it is actually resolved.** `load_config` merges the
+tracked `config.yaml` over the defaults dict, so patching `modules/config.py` for a key the
+YAML also names is silently overwritten -- which made three variants report byte-identical
+medians and no measurable difference on any clip. The `cathar_*` keys are pinned in
+`config.yaml`; the `apl_*` keys are not, and resolve from the typed defaults in
+`modules/config.py`. Each variant therefore names its own file, every substitution must
+match, and the resolved configuration is re-read before a run is spent on it.
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import statistics
+import subprocess
+import sys
+from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+CONFIG_PY = Path("modules/config.py")
+CONFIG_YAML = Path("config.yaml")
+SPECTRAL_PY = Path("modules/spectral_denoise.py")
+PROCESSING_PY = Path("modules/processing.py")
+
+# name -> [(file, pattern, replacement), ...]. YAML patterns are multiline-anchored so a
+# commented-out example of the same key cannot absorb the substitution.
+VARIANTS = {
+    "wiener": [(CONFIG_YAML, r'^cathar_denoise_method: "spectral"$', 'cathar_denoise_method: "wiener"')],
+    "noiseprint_2s5": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5")],
+    "beta_008": [(CONFIG_YAML, r"^cathar_beta: [0-9.]+$", "cathar_beta: 0.08")],
+    "no_coherent": [(CONFIG_YAML, r"^cathar_enable_coherent: true$", "cathar_enable_coherent: false")],
+    "lite_model": [(SPECTRAL_PY, r'^DEEP_DENOISE_MODEL = "UVR-DeNoise\.pth"$', 'DEEP_DENOISE_MODEL = "UVR-DeNoise-Lite.pth"')],
+    "alpha_4": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 4.0, 0.0)')],
+    "alpha_2_5": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 2.5, 0.0)')],
+    # A 2.5 s noise probe bought +3.39 dB of removal for +0.12 dB of deviation, the largest
+    # single gain measured on this branch. These bracket it to find where it stops paying:
+    # the probe takes the quietest stretch of the capture, so a long enough one must
+    # eventually reach into programme and start subtracting content.
+    "np_1s5": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 1.5")],
+    "np_2s5_repeat": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5")],
+    "np_4s": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 4.0")],
+    "np_6s": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 6.0")],
+    # Does the neural separator still earn its place now that a 2.5 s profile is subtracted
+    # before it? Choosing between the deep and the lite model moved both metrics by 0.01,
+    # which says the choice does not matter but not that the stage does nothing. Skipping it
+    # outright is the question the ablation plan listed as "none" and never measured.
+    "no_neural": [
+        (
+            PROCESSING_PY,
+            r"        lambda: _denoise_full_audio_step\(surgical_wav, denoise_sub_dir, .*\),$",
+            "        lambda: surgical_wav,",
+        )
+    ],
+    # The blend was last judged at a 0.75 s probe. Settings on this branch have interacted
+    # before -- the blend looked like a coin flip at alpha 1.8 and won clearly at 3.0 -- so
+    # it is re-checked rather than assumed at the probe that now ships.
+    "no_blend": [(CONFIG_PY, r'^(\s*)\("apl_enable_learned_blend", True\),$', r'\1("apl_enable_learned_blend", False),')],
+    # Tonal material: on the most tonal third of the corpus auto_pure_linear deviates 0.49
+    # against cathar's 0.32, where on the noisiest third it is 0.32 against 0.56. These test
+    # the candidate mechanisms -- subtraction too strong for sustained tones, a probe that
+    # learns a held note as noise, the blend reading stationarity as noise.
+    "alpha_2": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 2.0, 0.0)')],
+    "no_subtraction": [(CONFIG_PY, r'^(\s*)\("apl_enable_spectral_denoise", True\),$', r'\1("apl_enable_spectral_denoise", False),')],
+    "apl_probe_0s75": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 0.75, 0.0)')
+    ],
+    "no_repair": [(CONFIG_PY, r'^(\s*)\("apl_enable_physical_repair", True\),$', r'\1("apl_enable_physical_repair", False),')],
+    "deepfilternet": [(CONFIG_PY, r'^(\s*)\("apl_use_deepfilternet", False\),$', r'\1("apl_use_deepfilternet", True),')],
+    # Fixture-realism checks: the factor real tape rejected, and the tonal gate switched off
+    # (a flatness ceiling of 0 fires on nothing) so alpha can be compared without it.
+    "alpha_1_8": [
+        (CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 1.8, 0.0)'),
+        (CONFIG_PY, r'\("apl_tonal_flatness_max", float, [0-9.]+, 0\.0\)', '("apl_tonal_flatness_max", float, 0.0, 0.0)'),
+    ],
+    "no_tonal_gate": [(CONFIG_PY, r'\("apl_tonal_flatness_max", float, [0-9.]+, 0\.0\)', '("apl_tonal_flatness_max", float, 0.0, 0.0)')],
+    "np_2s5_alpha4": [
+        (CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5"),
+        (CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 4.0, 0.0)'),
+    ],
+    # The mode's own harmonic hum canceller, ahead of the noise probe: switched off, and its
+    # two settings moved -- the envelope bandwidth at the fundamental and how far up the
+    # series it looks. Read with measure_hum.py --mains auto over the kept work directories
+    # as well as here.
+    # The notches that predate the canceller: the mode's own at the third to fifth harmonics
+    # (skipped where the canceller runs) and the pre-conditioning's at the first two (left to
+    # it, out of the canceller's plan and its refinement).
+    "no_surgical_notch": [(CONFIG_PY, r'^(\s*)\("apl_surgical_mains_notch", True\),$', r'\1("apl_surgical_mains_notch", False),')],
+    "hum_skip_notched": [(CONFIG_PY, r'^(\s*)\("apl_hum_skip_notched", False\),$', r'\1("apl_hum_skip_notched", True),')],
+    "no_surgical_notch_skip": [
+        (CONFIG_PY, r'^(\s*)\("apl_surgical_mains_notch", True\),$', r'\1("apl_surgical_mains_notch", False),'),
+        (CONFIG_PY, r'^(\s*)\("apl_hum_skip_notched", False\),$', r'\1("apl_hum_skip_notched", True),'),
+    ],
+    # Tonal material: a probe length of its own and the neural stage left out.
+    "tonal_probe_1s": [(CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 1.0, 0.0)')],
+    "tonal_probe_2s5": [(CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 2.5, 0.0)')],
+    "tonal_no_neural": [(CONFIG_PY, r'^(\s*)\("apl_tonal_skip_neural", False\),$', r'\1("apl_tonal_skip_neural", True),')],
+    "tonal_probe_2s5_no_neural": [
+        (CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 2.5, 0.0)'),
+        (CONFIG_PY, r'^(\s*)\("apl_tonal_skip_neural", False\),$', r'\1("apl_tonal_skip_neural", True),'),
+    ],
+    "no_hum_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_hum_cancel", True\),$', r'\1("apl_enable_hum_cancel", False),')],
+    "hum_cancel_bw_1": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 1.0, 0.1)')],
+    "hum_cancel_bw_3": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 3.0, 0.1)')],
+    "hum_cancel_h8": [(CONFIG_PY, r'\("apl_hum_max_harmonics", int, [0-9]+, 1, 128\)', '("apl_hum_max_harmonics", int, 8, 1, 128)')],
+    # The mode's own suppressor in cathar's subtraction slot, at the noise estimate as
+    # measured and raised by half, at a deeper gain floor, at the textbook decision-directed
+    # smoothing, and without the blend that was fitted on cathar's subtraction.
+    "native_suppress": [(CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),')],
+    "native_suppress_b1_5": [
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, r'\("apl_suppress_noise_bias", float, [0-9.]+, 0\.0\)', '("apl_suppress_noise_bias", float, 1.5, 0.0)'),
+    ],
+    "native_suppress_floor30": [
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, r'\("apl_suppress_gain_floor_db", float, -[0-9.]+, None\)', '("apl_suppress_gain_floor_db", float, -30.0, None)'),
+    ],
+    "native_suppress_dd_0_98": [
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
+    ],
+    # The removal ceiling: this mode's own probe around the 4 s that ships (2.5 s shipped in
+    # v1.2.1; on the full corpus 4 s removes 9.99 dB against 8.73 at the same 0.32 dB of
+    # deviation). The np_* variants above move the shared cathar value, which this mode no
+    # longer reads.
+    "apl_probe_2s5": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 2.5, 0.0)')
+    ],
+    "apl_probe_4s": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 4.0, 0.0)')
+    ],
+    "apl_probe_6s": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 6.0, 0.0)')
+    ],
+    "apl_probe_8s": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 8.0, 0.0)')
+    ],
+    # The neural stage's candidates, faithful models only: the Mel-Roformer denoiser the
+    # separator can load, and Resemble-Enhance's denoiser with its enhancer left off.
+    "roformer": [(CONFIG_PY, r'"apl_neural_model": "",', '"apl_neural_model": "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",')],
+    "resemble_denoise": [(CONFIG_PY, r'^(\s*)\("apl_use_resemble_denoise", False\),$', r'\1("apl_use_resemble_denoise", True),')],
+    # Persistent non-mains lines: a recorded whine, a buzz, a whistle off the notch.
+    "tone_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_tone_cancel", False\),$', r'\1("apl_enable_tone_cancel", True),')],
+    # Event-gated plosive control: switched off, and at a lower excess threshold.
+    "no_plosive_tamer": [(CONFIG_PY, r'^(\s*)\("apl_enable_plosive_tamer", True\),$', r'\1("apl_enable_plosive_tamer", False),')],
+    "plosive_tamer_9db": [(CONFIG_PY, r'\("apl_plosive_excess_db", float, [0-9.]+, 0\.0\)', '("apl_plosive_excess_db", float, 9.0, 0.0)')],
+    "native_suppress_no_blend": [
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, r'^(\s*)\("apl_enable_learned_blend", True\),$', r'\1("apl_enable_learned_blend", False),'),
+    ],
+}
+
+# Variants whose effect is invisible to the resolved configuration, because they patch a
+# module constant rather than a setting. These skip the resolved-change check.
+NOT_A_SETTING = {"lite_model", "no_neural"}
+
+
+def _fresh_interpreter():
+    """Runs a child interpreter that cannot read or leave stale bytecode.
+
+    Python validates a cached .pyc by the source's (mtime, size). Every value this sweep
+    substitutes is the same byte length as the one it replaces, and a restore-then-patch
+    lands inside one mtime tick, so the pair matches and a child silently imports the
+    *previous* variant's module: patched to 2.5 on disk, resolved as 4.0. Discarding the
+    caches and refusing to write new ones is what makes each variant independent.
+    """
+    for cache in Path("modules").rglob("__pycache__"):
+        shutil.rmtree(cache, ignore_errors=True)
+    return [sys.executable, "-B"], dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+
+
+def _git_restore(paths):
+    """Returns tracked files to HEAD exactly.
+
+    Restoring from a copy held in memory is not enough: this script crashed part-way once
+    and left a cathar setting patched in the working tree. `git checkout --` is exact and
+    works even when the run died before any bookkeeping could happen.
+    """
+    if paths:
+        subprocess.run(["git", "checkout", "--", *sorted(paths)], check=False, timeout=120)
+
+
+def _require_clean(paths):
+    """Refuses to start while any file the sweep will patch carries uncommitted changes.
+
+    The restore is `git checkout --`, which discards whatever is in the working tree; run
+    over an edit in progress it would take the edit with the patch. This bit once, with an
+    uncommitted setting wiped part-way through a run.
+    """
+    if not paths:
+        return
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--", *sorted(paths)], capture_output=True, text=True, check=False, timeout=120
+    )
+    dirty = [line[3:] for line in status.stdout.splitlines() if line.strip()]
+    if dirty:
+        raise SystemExit("uncommitted changes in files the sweep patches and restores; commit or stash first: " + ", ".join(dirty))
+
+
+def _files_touched(names):
+    """Every file any requested variant patches, for restoring afterwards."""
+    return {str(target) for name in names for target, _pattern, _replacement in VARIANTS[name]}
+
+
+def _apply(name):
+    """Applies one variant's substitutions, raising if any pattern fails to match."""
+    for target, pattern, replacement in VARIANTS[name]:
+        source = target.read_text(encoding="utf-8")
+        patched, count = re.subn(pattern, replacement, source, flags=re.MULTILINE)
+        if count == 0:
+            raise SystemExit(f"variant {name}: pattern did not match in {target}, refusing to measure the default: {pattern}")
+        target.write_text(patched, encoding="utf-8", newline="\n")
+
+
+def _resolved_config(name):
+    """Returns the configuration as the pipeline will actually see it.
+
+    A variant that patches the losing file resolves back to the default, and the sweep then
+    reports a real measurement of nothing. Reading the merged result is the only check that
+    catches that, and it is cheap next to the run it guards.
+    """
+    probe = "import json; from modules import config; print(json.dumps({k: str(v) for k, v in config.CONFIG.items()}))"
+    interpreter, env = _fresh_interpreter()
+    result = subprocess.run([*interpreter, "-c", probe], capture_output=True, text=True, check=False, timeout=300, env=env)
+    if result.returncode != 0:
+        raise SystemExit(f"variant {name}: configuration failed to import:\n{result.stderr}")
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def _run(name, limit, catalog=None, keep_work=False):
+    """Measures one variant and returns its report path.
+
+    The work directory holds the restored outputs; it is removed afterwards unless kept,
+    which the hum and rumble readings need, since they measure those outputs afterwards.
+    """
+    work = Path(f"experiments/sweep_{name}")
+    report = Path(f"experiments/sweep_{name}.json")
+    shutil.rmtree(work, ignore_errors=True)
+    # An earlier run's report must not stand in for this one if the child fails.
+    report.unlink(missing_ok=True)
+    interpreter, env = _fresh_interpreter()
+    command = [
+        *interpreter,
+        "scripts/measure_tradeoff.py",
+        "--limit",
+        str(limit),
+        "--modes",
+        "auto_pure_linear",
+        "--work-dir",
+        str(work),
+        "--report",
+        str(report),
+    ]
+    if catalog is not None:
+        command += ["--catalog", str(catalog)]
+    subprocess.run(command, check=False, timeout=7200, env=env)
+    if not keep_work:
+        shutil.rmtree(work, ignore_errors=True)
+    return report if report.exists() else None
+
+
+def _median(report, key):
+    """Median of one metric from a variant report."""
+    rows = json.loads(report.read_text(encoding="utf-8"))["auto_pure_linear"]
+    return statistics.median(row[key] for row in rows) if rows else None
+
+
+def _report_line(name, report, base_noise, base_dev):
+    """Formats one variant's comparison against the in-run baseline."""
+    if report is None:
+        return f"{name:<20}{'(not measured)':>15}"
+    noise, dev = _median(report, "noise_removed_db"), _median(report, "programme_deviation_db")
+    if noise is None or dev is None:
+        return f"{name:<20}{'(no clips measured)':>15}"
+    if noise > base_noise and dev < base_dev:
+        verdict = "BETTER ON BOTH"
+    elif noise < base_noise and dev > base_dev:
+        verdict = "worse on both"
+    else:
+        verdict = "trade"
+    return f"{name:<20}{noise:>15.2f}{dev:>12.2f}   {noise - base_noise:+.2f} / {dev - base_dev:+.2f}  {verdict}"
+
+
+def _measure_variant(name, baseline_config, limit, catalog=None, keep_work=False):
+    """Patches, verifies the patch reaches the pipeline, and measures one variant."""
+    _apply(name)
+    resolved = _resolved_config(name)
+    changed = {key: (baseline_config.get(key), value) for key, value in resolved.items() if baseline_config.get(key) != value}
+    if name in NOT_A_SETTING:
+        print(f"  module constant patched (not a setting); resolved config unchanged: {not changed}")
+    elif not changed:
+        print("  SKIPPED: the patched file is not what resolves this setting, so the run would measure the default")
+        return None
+    else:
+        print(f"  resolved change: {changed}")
+    return _run(name, limit, catalog, keep_work)
+
+
+def main():
+    """Runs every variant and prints the comparison."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--limit", type=int, default=25)
+    # No external baseline: it is measured here, on the same clips, in the same run. A
+    # variant scored on 2 clips against a baseline scored on 40 different ones reports the
+    # difference between the samples, not the settings -- which briefly made two unrelated
+    # variants look identically and dramatically better.
+    parser.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
+    parser.add_argument("--catalog", type=Path, default=None, help="Sweep a clip subset instead of the whole corpus")
+    parser.add_argument("--keep-work", action="store_true", help="Keep each variant's restored outputs for measure_hum.py to read")
+    args = parser.parse_args()
+
+    targets = _files_touched(args.variants)
+    _require_clean(targets)
+    results = {}
+    try:
+        baseline_config = _resolved_config("current")
+        print("\n=== current (baseline) ===")
+        results["current"] = _run("current", args.limit, args.catalog, args.keep_work)
+        for name in args.variants:
+            print(f"\n=== {name} ===")
+            results[name] = _measure_variant(name, baseline_config, args.limit, args.catalog, args.keep_work)
+            _git_restore(targets)
+    finally:
+        _git_restore(targets)
+
+    base_report = results.pop("current", None)
+    if base_report is None:
+        raise SystemExit("The in-run baseline failed; nothing can be compared against it.")
+    base_noise, base_dev = _median(base_report, "noise_removed_db"), _median(base_report, "programme_deviation_db")
+    if base_noise is None or base_dev is None:
+        raise SystemExit("The in-run baseline measured no clips; nothing can be compared against it.")
+    print(f"\n{'variant':<20}{'noise removed':>15}{'deviation':>12}   verdict")
+    print(f"{'current':<20}{base_noise:>15.2f}{base_dev:>12.2f}")
+    for name, report in results.items():
+        print(_report_line(name, report, base_noise, base_dev))
+
+
+if __name__ == "__main__":
+    main()

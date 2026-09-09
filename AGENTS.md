@@ -50,13 +50,20 @@ ______________________________________________________________________
 
 The engine supports 10 execution modes configured in `config.yaml`:
 
-- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`):
+- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`, the default):
   - Stages: Dual-resolution scan $\\rightarrow$ analog pre-conditioning
-    $\\rightarrow$ pre-denoise surgical bandreject $\\rightarrow$ UVR-DeNoise
-    full-mix $\\rightarrow$ post-cleanup $\\rightarrow$ linear air polish
-    $\\rightarrow$ shift/DTW sync $\\rightarrow$ remux.
+    $\\rightarrow$ pre-denoise surgical bandreject $\\rightarrow$ gated physical
+    damage repair $\\rightarrow$ tracked hum cancellation $\\rightarrow$
+    event-gated plosive control $\\rightarrow$ noise-profile subtraction
+    $\\rightarrow$ learned per-bin blend $\\rightarrow$ UVR-DeNoise full-mix
+    $\\rightarrow$ post-cleanup $\\rightarrow$ linear air polish
+    $\\rightarrow$ shift/DTW sync $\\rightarrow$ remux. The stages between
+    pre-conditioning and the neural denoiser run through
+    `modules/apl_chain.py`, each behind its own `apl_enable_*` switch.
   - Use case: Clean dialogue and high-throughput restoration without stem
-    separation.
+    separation. Removes more tape noise than `cathar` while disturbing the
+    programme less, and removes mains hum where neither mode used to; see
+    `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`.
 - **`auto`** (`*_Auto_Cleaned.<ext>`):
   - Stages: AI acoustic profiling $\\rightarrow$ dynamic engine & model
     selection $\\rightarrow$ shift/DTW sync (DTW on drift, shift otherwise,
@@ -79,7 +86,7 @@ The engine supports 10 execution modes configured in `config.yaml`:
     $\\rightarrow$ inpaint $\\rightarrow$ deplosive $\\rightarrow$ declip
     $\\rightarrow$ dehum $\\rightarrow$ repair $\\rightarrow$ noiseprint denoise
     $\\rightarrow$ de-esser $\\rightarrow$ SBR enhance $\\rightarrow$ sync.
-  - Use case: Impulsive defects, high-order harmonic hum, CRT whistle, zero AI
+  - Use case: Spectral spikes, sustained tonal programme, zero AI
     hallucination for music and ambient archives. (`cathar_vhs` is an alias).
 - **`hybrid`** (`*_Hybrid_Cleaned.<ext>`):
   - Stages: BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$
@@ -152,6 +159,17 @@ modified (including during every CodeRabbit review wave):
    captures or `experiments/ia_corpus/` are explicitly provisioned, run the
    relevant tuning or IA benchmark command and record its corpus selection,
    report path, and acoustic metrics.
+1. **Calibrated Fixtures Before Tuning (Opt-In)**: A restoration setting is
+   chosen on `artifacts/realistic-v2`, never on the hardware fixtures. Build
+   the set with `scripts/make_realistic_fixtures_v2.py` and run
+   `scripts/validate_fixture_realism.py`; a change that ranks one way there
+   and the other way on real tape is a fixture defect to fix before the
+   setting is judged. See `docs/validation.md`, "Fixtures That Predict Real
+   Tape". `scripts/expand_ia_corpus.py` widens the corpus the set is
+   calibrated against. The validator and `scripts/sweep_denoise_settings.py`
+   patch `modules/config.py` in the checkout they run in and restore it
+   afterwards: never edit or commit that file while either runs, and run
+   them from a git worktree when the main checkout is being worked on.
 1. **Acoustic Metrics Verification (Opt-In Execution)**: When physical
    validation is provisioned, run `analyze_audio_quality()` via
    `scripts/compare_restoration_quality.py` to confirm actual noise floor

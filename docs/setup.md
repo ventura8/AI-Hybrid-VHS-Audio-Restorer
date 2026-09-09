@@ -9,7 +9,7 @@
 - **Python**: Python 3.12.x in PATH.
 - Internet access for first dependency install.
 
-`cathar` is the default `process_mode` and is a Rust binary, so the installer
+`cathar` is a `process_mode` built as a Rust binary, so the installer
 provisions one. If the machine has no `cargo`, it bootstraps a Rust toolchain
 **inside `.venv`** (`.venv/rustup`, `.venv/cargo`) and compiles `cathar-cli`
 there. Nothing is written outside the project directory, nothing is added to
