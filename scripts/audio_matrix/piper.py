@@ -47,7 +47,11 @@ def synthesize(text, model_path, output_path, python_executable=None):
         "--length-scale",
         "1.0",
     ]
-    subprocess.run(command, input=text, text=True, check=True, timeout=120)
+    # UTF-8 explicitly: text=True alone encodes stdin with the platform default, which on
+    # Windows is a legacy codepage. Every non-Latin voice then dies with a charmap
+    # UnicodeEncodeError before Piper sees a byte -- Arabic, Hindi, Japanese, Greek and the
+    # rest of the fixture languages simply could not be generated on Windows.
+    subprocess.run(command, input=text, text=True, encoding="utf-8", check=True, timeout=120)
 
 
 def ensure_voice(voice, expected_md5, voices_dir, python_executable=None):

@@ -18,11 +18,15 @@ systems, each with distinct noise characteristics:
 | :--- | :--- | :--- |
 | **Tape Speed** | 1.31 ips (33.35 mm/s) | 0.44 ips (11.12 mm/s) |
 | **Track Width** | ~1.0 mm (mono) / ~0.35 mm (stereo) | Same physical width |
-| **Frequency Response** | 100 Hz – 10 kHz | 100 Hz – 4–7 kHz |
-| **SNR** | ~40–42 dB | ~35–38 dB |
+| **Frequency Response** | 100 Hz–10 kHz NTSC, 80 Hz–8 kHz PAL | peak 4 kHz |
+| **SNR** | ~41–42 dB | ~35–38 dB |
 | **Dynamic Range** | ~40–50 dB | ~35–42 dB |
 
-- Recorded by a **stationary head** along the tape edge.
+- Recorded by a **stationary head** along the tape edge. The response
+  and SNR rows are the published format figures
+  ([Wikipedia: VHS](https://en.wikipedia.org/wiki/VHS)); against a compact
+  cassette's 1.875 ips, a linear track runs at roughly two thirds of that
+  speed at SP and under a quarter at EP/SLP.
 - Inherently low-fidelity: narrow track, slow speed, high
   hiss floor.
 - **Stereo linear** splits the already-narrow track into two
@@ -33,11 +37,17 @@ systems, each with distinct noise characteristics:
 | Parameter | Value |
 | :--- | :--- |
 | **Frequency Response** | 20 Hz – 20 kHz |
-| **SNR** | ~70–80 dB |
-| **Dynamic Range** | ~80+ dB |
-| **Recording Method** | FM modulated, helical scan with video heads |
+| **SNR** | ~70 dB quoted; 45–50 dB off the heads before companding |
+| **Dynamic Range** | ~90 dB quoted |
+| **Recording Method** | AFM, 1.3 / 1.7 MHz carriers, under the video |
 
-- Recorded **beneath** the video signal by the rotating drum.
+- Recorded **beneath** the video signal by the rotating drum: the
+  carriers go on first and deeper, the video is re-recorded over them
+  ([Wikipedia: VHS](https://en.wikipedia.org/wiki/VHS)).
+- A dbx-like compander that cannot be switched off lifts the 45–50 dB
+  the FM signal has off the heads to the quoted figure; it is also the
+  source of the breathing in 2.18
+  ([Tapeheads](https://www.tapeheads.net/threads/why-needed-vhs-hifi-nr.63936/)).
 - Near-CD quality when tracking is optimal.
 - Introduces unique artifacts: head-switching buzz, tracking
   noise, intermodulation with video signal.
@@ -135,7 +145,12 @@ ______________________________________________________________________
     audible pitch wobble on sustained notes
   - **Flutter**: Fast fluctuations (6–100 Hz rate), causes
     roughness or "gargling" quality
-  - VHS spec: \<=0.3% weighted wow & flutter (SP mode)
+  - Consumer linear tracks are specified in the 0.1–0.3% weighted
+    range; a Hi-Fi track, riding the video heads, measures around
+    0.005%. The linear track's figure is "much higher" than Hi-Fi's
+    ([Wikipedia](https://en.wikipedia.org/wiki/Wow_and_flutter_measurement)),
+    and a clean measured capture on this branch's corpus sits at
+    0.0006% against the line whine.
 - **Characteristics**:
   - Worse on EP/SLP (slower tape = more sensitive to speed
     variation)
@@ -299,6 +314,191 @@ ______________________________________________________________________
   - WPE dereverberation for room reflections
   - High-shelf compensation for budget microphone roll-off
 
+### 2.15 Print-Through (Pre-Echo)
+
+- **Source**: The magnetic pattern of one tape layer imprints
+  the layer wound against it. Governed by wavelength, coating
+  thickness and the coercivity spread of the particles
+  ([IASA TC-04 5.4](https://www.iasa-web.org/tc04/removal-storage-related-signal-artefacts)).
+  The linear track of a video cassette "may still have some
+  print effects" ([Wikipedia](https://en.wikipedia.org/wiki/Print-through)).
+- **Characteristics**: A faint copy of the programme one wrap
+  ahead (pre-echo) and one wrap behind; one wrap is 3.5 s near
+  the hub of a VHS pack at SP and about 11 s at the rim.
+  Typically 40-60 dB below the programme, loudest before a loud
+  passage that follows silence.
+- **Correction**: None in the chain. Print-through is
+  indistinguishable from programme to a denoiser, and the
+  archival guidance is to note it, not to remove it.
+
+### 2.16 Sticky-Shed Squeal
+
+- **Source**: Binder hydrolysis leaves a tacky surface that
+  sticks and slips at the heads and guides; the Library of
+  Congress characterises the syndrome by the deposit it leaves
+  and "an audible squeal"
+  ([LoC](https://www.loc.gov/preservation/scientists/projects/sticky_shed.html)).
+  The BAVC glossary lists squeal separately: debris on a guide
+  or head, or lost lubrication
+  ([BAVC](https://cool.culturalheritage.org/byorg/bavc/bavcterm.html)).
+- **Characteristics**: A loud tone, typically 1.5-4 kHz, that
+  wanders with the stick-slip cycle and modulates the programme
+  at the slip rate; the chatter also adds flutter. Playing a
+  squealing tape damages it further.
+- **Correction**: Baking the tape before transfer; a wandering
+  notch after the fact only where the tone is narrow enough to
+  follow.
+
+### 2.17 Modulation Noise
+
+- **Source**: Noise made by the recording process itself --
+  tape vibration, amplitude modulation of the bias, head
+  magnetisation -- that "increases as record level increases
+  and disappears when no signal is present"
+  ([National Audio Company glossary](https://www.nationalaudiocompany.com/cassette-glossary/)).
+- **Characteristics**: A noise skirt around the programme,
+  absent in pauses. A noise profile learned in a pause does not
+  describe it, which is why spectral subtraction leaves a
+  "halo" around loud passages on some tapes.
+- **Correction**: Only the neural stage sees it; subtraction
+  cannot.
+
+### 2.18 Hi-Fi Compander Breathing
+
+- **Source**: VHS Hi-Fi runs a dbx-like companding noise
+  reduction that cannot be switched off; the FM signal off the
+  heads carries 45-50 dB of signal-to-noise and the compander
+  lifts that to the quoted 70 dB (1.1). When the carrier off the tape
+  is weak -- mistracking between the recording and playback
+  decks -- the expander mistracks the level
+  ([Tapeheads](https://www.tapeheads.net/threads/why-needed-vhs-hifi-nr.63936/)).
+- **Characteristics**: "Pumping" or "breathing": the noise
+  floor swells after loud passages and settles with the
+  compander's release time, tens to hundreds of milliseconds.
+- **Correction**: A noise profile is the wrong tool -- the
+  noise is not stationary. A neural denoiser, or a transfer
+  from a better-tracking deck.
+
+### 2.19 Hi-Fi Carrier Loss and Track Switching
+
+- **Source**: Most consumer Hi-Fi decks "could not track Hi-Fi
+  without dropouts and buzz" ([Wikipedia](https://en.wikipedia.org/wiki/VHS)),
+  and a deck losing the FM carrier falls back to the linear
+  track until it locks again.
+- **Characteristics**: The audio jumps from wideband and quiet
+  to 4-8 kHz and hissy for a stretch of seconds and back, often
+  with a click at each switch. On a stereo Hi-Fi tape the
+  fallback is mono.
+- **Correction**: None that restores the missing band;
+  matching the level and tilt across the switch is the most a
+  chain can do.
+
+### 2.20 Undecoded Dolby B on the Linear Track
+
+- **Source**: Stereo linear tracks halved the track width and
+  "manufacturers applied Dolby B noise reduction" to counter the
+  hiss ([Wikipedia](https://en.wikipedia.org/wiki/VHS)). A
+  capture through a deck without the decoder, or with it off,
+  leaves the encoding in; IASA notes that a fluctuating
+  background hiss level is the sign of a wrong playback setting
+  ([IASA TC-04 5.4](https://www.iasa-web.org/book/export/html/480)).
+- **Characteristics**: Quiet passages come back bright and
+  hissy -- the encoder boosted their top end and nothing took it
+  back out -- while loud passages sound right.
+- **Correction**: A level-dependent high shelf, the mirror of
+  the encoder; not in the chain.
+
+### 2.21 Edge Damage and Level Fluctuation
+
+- **Source**: The linear track lives on the tape's edge, and a
+  creased or curled edge -- "physical distortion of the top or
+  bottom edge of the magnetic tape, usually caused by pack
+  problems" -- affects the audio track and sometimes stops
+  playback ([BAVC](https://cool.culturalheritage.org/byorg/bavc/bavcterm.html)).
+  Tape memory from poor storage reduces head contact the same
+  way ([IASA TC-04 5.4](https://www.iasa-web.org/book/export/html/480)).
+- **Characteristics**: A slow wobble in level, 0.3-2 Hz, with
+  the top of the band going with it as contact comes and goes.
+- **Correction**: Slow gain riding; the roll-off is not
+  recoverable.
+
+### 2.22 Head Clogging
+
+- **Source**: Debris and shed oxide on the audio head gap
+  ([BAVC](https://cool.culturalheritage.org/byorg/bavc/bavcterm.html)).
+- **Characteristics**: The top of the band comes and goes over
+  seconds as debris passes; in the limit the track mutes.
+- **Correction**: Cleaning the deck and transferring again.
+
+### 2.23 Lossy Capture Codec
+
+- **Source**: Not the tape: the archive. Every capture on the
+  Internet Archive that this branch measured is an MP4 with AAC
+  audio, most at 96-128 kbit/s, and every restoration runs on
+  the decoded file.
+- **Characteristics**: A hard cut-off around 16 kHz, pre-echo
+  before transients, "birdies" in the hiss where the codec
+  gates quiet bands on and off.
+- **Correction**: None; the fixtures carry it so the chain is
+  measured on the material it actually receives.
+
+### 2.24 Incomplete Erasure
+
+- **Source**: A tape recorded over: the erase head leaves a
+  remnant of the earlier recording, loudest where the new
+  programme is quiet.
+- **Characteristics**: A faint, band-limited second programme
+  underneath, continuous, unrelated to the picture.
+- **Correction**: None; it is programme to every stage.
+
+### 2.25 Constant Speed Error
+
+- **Source**: A deck running off speed, or an SP recording
+  played at the wrong speed setting; IASA treats speed
+  inaccuracy as a documented replay fault distinct from wow and
+  flutter ([IASA TC-04 5.4](https://www.iasa-web.org/book/export/html/480)).
+- **Characteristics**: A fixed pitch and tempo offset, one to a
+  few percent.
+- **Correction**: Resampling by the measured ratio, with the
+  line whine as the reference. Not in the chain, and not in the
+  fixtures: neither metric can read a constant time-base offset.
+
+### 2.26 Scrape Flutter
+
+- **Source**: The tape vibrating against a fixed head or guide as it
+  is dragged past -- stick-slip in the tape itself rather than in the
+  transport. The wow-and-flutter measurement standards (IEC 386, DIN
+  45507, AES6-2008) put it above 100 Hz
+  ([Wikipedia](https://en.wikipedia.org/wiki/Wow_and_flutter_measurement));
+  the AV Artifact Atlas lists it as an artefact of its own
+  ([AVAA](https://www.avartifactatlas.com/tags.html)).
+- **Characteristics**: Too fast to hear as pitch: a roughness or noise
+  skirt around sustained tones, present only with signal, much like
+  modulation noise. Worse on a dirty or worn tape path and on
+  hydrolysed tape.
+- **Correction**: None after the fact; a clean, lubricated tape path
+  at transfer.
+
+### 2.27 EMI Buzz
+
+- **Source**: A switching power supply, a fluorescent fitting, a dimmer
+  or a ground loop with a sharp waveform, picked up by the camcorder,
+  the deck or the capture card. The AV Artifact Atlas separates "Hum
+  and Buzz" and "Electromagnetic Interference" from the smooth mains
+  hum of a transformer
+  ([AVAA](https://www.avartifactatlas.com/tags.html)); the VCR service
+  literature reports hum or buzz on one channel from the deck's own
+  electronics
+  ([Sci.Electronics.Repair FAQ](https://www.repairfaq.org/REPAIR/F_vcrfaq6.html)).
+- **Characteristics**: A mains-rate series whose harmonics do not roll
+  off -- tens of them at nearly even strength, reaching several kHz --
+  so it reads as a rasp rather than a low hum. It drifts with tape
+  speed like the hum does when it was recorded on the tape.
+- **Correction**: An eight-harmonic dehum takes the bottom of it and
+  leaves the rasp; a comb filter tracking the fundamental over the
+  whole series, or spectral gating, is what it needs. Not in the
+  chain.
+
 ______________________________________________________________________
 
 ## 3. Spectral Subtraction: Musical Noise Problem
@@ -379,6 +579,70 @@ ______________________________________________________________________
 | Room reverb | Broadband late | WPE dereverberation | 13 |
 | Wow/flutter | Pitch modulation | Instantaneous freq correction | 14 |
 
+Defects the catalog added after the literature check, with no priority
+assigned in the chain:
+
+| Defect | Freq Range | DSP Correction |
+| :--- | :---: | :--- |
+| Video crosstalk | 2-8 kHz buzz | Notch / gating |
+| Enclosure resonance | 1.5-3.5 kHz | Gated bandreject |
+| Channel imbalance | Level | Balance |
+| Quiet capture | Level | Gain staging |
+| Print-through | Pre-echo | none |
+| Sticky-shed squeal | 1.5-4 kHz tone | Tape baking |
+| Modulation noise | Around programme | Neural only |
+| Compander breathing | Noise floor swell | Neural only |
+| Track switching | Band and hiss jump | none |
+| Undecoded Dolby B | HF in quiet passages | Level-dependent shelf |
+| Edge damage | Slow level wobble | Gain riding |
+| Head clog | HF comes and goes | Re-transfer |
+| Lossy codec | >16 kHz cut, pre-echo | none |
+| Incomplete erasure | Faint second programme | none |
+| Scrape flutter | >100 Hz speed modulation | none |
+| EMI buzz | Mains series to several kHz | Tracking comb |
+| Constant speed error | Fixed pitch offset | Resample |
+
+### Fixture coverage
+
+| Defect | Fixture class |
+| :--- | :--- |
+| DC offset | `dc`, `worn` |
+| Motor rumble | `rumble` |
+| Mains hum | `*_hum`, `worn` |
+| Handling pops | `plosive`, `handling` |
+| Clicks/pops | `crackle`, `hifibuzz`, `worn` |
+| Tape dropout | `dropout`, `ep`, `worn` |
+| Clipping | `clip` |
+| Tape hiss | every class |
+| CRT whistle | `whistle`, `flutter` |
+| Azimuth skew | `azimuth` |
+| HF roll-off | `sprolloff`, `ep`, `bandlimited` |
+| Sibilance | -- |
+| Room reverb | every speech class |
+| Wow/flutter | `flutter`, `ep`, `worn` |
+| Video crosstalk | `crosstalk` |
+| Enclosure resonance | `resonance` |
+| Channel imbalance | `imbalance` |
+| Quiet capture | `low_level` |
+| Print-through | `printthrough` |
+| Sticky-shed squeal | `squeal` |
+| Modulation noise | `modnoise` |
+| Compander breathing | `breathing` |
+| Track switching | `trackswitch` |
+| Undecoded Dolby B | `dolbyb` |
+| Edge damage | `edgedamage` |
+| Head clog | `headclog` |
+| Lossy codec | `codec` |
+| Incomplete erasure | `ghost` |
+| Scrape flutter | `scrapeflutter` |
+| EMI buzz | `buzz` |
+| Crowd under commentary | `crowd` |
+| Constant speed error | -- |
+
+Every class is generated by `scripts/make_realistic_fixtures_v2.py` on a
+speech programme conditioned to the corpus, and `scripts/validate_fixture_realism.py`
+reports which detector each class trips. See `docs/validation.md`.
+
 ______________________________________________________________________
 
 ## 6. Key Insights for Our Pipeline
@@ -431,8 +695,12 @@ commit and benchmark run identifier beside each generated report.
 
 ______________________________________________________________________
 
-*Last updated: 2026-09-05*
-*Sources: iZotope RX Documentation, IASA Technical Guidelines,
-VideoHelp Forums, Digital FAQ, gotape.eu, richardhess.com,
-IIT Bombay spectral subtraction research, and empirical
-analysis of 39 Internet Archive VHS captures.*
+*Last updated: 2026-09-11*
+*Sources: iZotope RX Documentation, IASA TC-04 (5.4 Reproduction of
+Analogue Magnetic Tapes; 5.4.13 Removal of Storage Related Signal
+Artefacts), Library of Congress Preservation Science sticky-shed
+research, the BAVC Video Preservation Glossary, VideoHelp Forums,
+Tapeheads.net Hi-Fi service threads, the Sci.Electronics.Repair VCR
+FAQ, the AV Artifact Atlas, the vhs-decode audio notes, Digital FAQ, gotape.eu,
+richardhess.com, IIT Bombay spectral subtraction research, and
+empirical analysis of Internet Archive VHS captures.*

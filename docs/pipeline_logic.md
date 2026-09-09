@@ -31,11 +31,22 @@ compatibility aliases.
 1. **Pass 2 (Pre-Conditioning)**: Non-destructive analog hardware
    pre-conditioning DSP (DC blocker, stereo balance handling, correlation-gated
    azimuth delay, declip, and notch filters).
-1. **Pass 3 (Full-Mix UVR Denoise)**: Single-pass UVR-DeNoise applied directly to
-   the full pre-conditioned mix without stem separation or generative speech
-   synthesis, preserving original musical acoustics, vocal transients, and room
-   ambience.
-1. **Pass 4 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
+1. **Pass 3 (Damage Repair)**: Physical tape damage repaired where it is
+   detected, and only there: surface crackle, dropouts, saturation, and azimuth
+   phase skew. Runs ahead of the subtraction because the noise profile is learned
+   from the quietest stretch of the capture, and on a damaged tape that stretch
+   is a dropout.
+1. **Pass 4 (Noise-Profile Subtraction)**: A noise profile learned from 2.5 s of
+   the quietest audio is subtracted, then blended back toward the original per
+   frequency bin by a fitted model, which repairs over-subtraction rather than
+   trading fidelity against it.
+1. **Pass 5 (Full-Mix UVR Denoise)**: Single-pass UVR-DeNoise applied directly to
+   the full mix without stem separation or generative speech synthesis,
+   preserving original musical acoustics, vocal transients, and room ambience.
+   This is the default; with `apl_use_deepfilternet` on, DeepFilterNet3 runs
+   in its place where it is installed, streamed in overlapping chunks, and
+   falls back to UVR-DeNoise when it is absent or fails.
+1. **Pass 6 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
    EBU R128 loudness normalization (-16 LUFS / -1.0 dBTP true-peak limiter), and
    transparent container remuxing into `*_PureLinear_Cleaned.<ext>`.
 

@@ -550,6 +550,24 @@ def _estimate_noise_floor_and_reduction(signal_data):
     return round(noise_floor_db, 1), round(nr_db, 1)
 
 
+def estimate_snr_margin_db(wav_path):
+    """Returns how far the programme sits above its own noise floor, in dB.
+
+    This is the quantity that predicts whether neural denoising can help. Absolute noise
+    floor does not: a quiet capture and a healthy one can share a floor and behave
+    completely differently. Measured on paired fixtures, auto_pure_linear is inert at a
+    8.9 dB margin and effective at 14.3 dB.
+
+    Returns None when the audio cannot be read, so callers can skip rather than guess.
+    """
+    mono_signal, _sr = _read_audio_for_analysis(wav_path)
+    if mono_signal is None or len(mono_signal) == 0 or np is None:
+        return None
+    rms_db = float(20.0 * np.log10(float(np.sqrt(np.mean(mono_signal**2))) + 1e-9))
+    noise_floor_db, _reduction = _estimate_noise_floor_and_reduction(mono_signal)
+    return round(rms_db - noise_floor_db, 2)
+
+
 def _compute_peak_ratio(fft_mag, freqs, target_freq):
     """Calculates peak-to-surrounding ratio at a target harmonic frequency."""
     idx = int(np.argmin(np.abs(freqs - target_freq)))

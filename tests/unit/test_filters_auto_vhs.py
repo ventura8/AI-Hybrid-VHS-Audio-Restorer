@@ -566,3 +566,32 @@ def test_cathar_noiseprint_step_regenerates_corrupt_json(tmp_path):
         result = cathar._cathar_noiseprint_step(in_wav, out_dir)
         assert result == corrupt_json
         mock_exec.assert_called_once()
+
+
+def test_snr_margin_measures_programme_above_its_noise_floor(tmp_path):
+    """The margin is what decides whether neural denoising can help at all.
+
+    Absolute noise floor cannot make that call: a quiet capture and a healthy one can share
+    a floor and behave completely differently. Measured on paired fixtures the mode is
+    inert at a 8.9 dB margin and effective at 14.3 dB.
+    """
+    import soundfile as sf
+
+    rate = 44100
+    rng = np.random.default_rng(3)
+    time = np.arange(rate * 2) / rate
+    loud = (0.3 * np.sin(2 * np.pi * 220 * time)).astype(np.float32)
+    quiet_tail = rng.normal(0.0, 0.001, rate).astype(np.float32)
+    path = tmp_path / "margin.wav"
+    sf.write(str(path), np.concatenate([loud, quiet_tail]), rate, subtype="FLOAT")
+
+    margin = modules.filters.estimate_snr_margin_db(path)
+    assert margin is not None
+    assert margin > 10.0
+
+
+def test_snr_margin_returns_none_for_unreadable_audio(tmp_path):
+    """An unmeasurable input is reported as unknown so callers skip rather than guess."""
+    broken = tmp_path / "broken.wav"
+    broken.write_text("not audio")
+    assert modules.filters.estimate_snr_margin_db(broken) is None

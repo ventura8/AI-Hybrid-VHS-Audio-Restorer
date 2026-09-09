@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 try:
     import soundfile as sf
@@ -26,8 +27,12 @@ try:
 except ImportError:
     torch = None
 
+from . import deepfilter_denoise as _deepfilter
+from . import denoise_cache as _denoise_cache
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import physical_repair as _physical_repair
+from . import spectral_denoise as _spectral_denoise
 from . import utils as _utils
 from .config import (
     ADAPTIVE_DENOISE_THRESHOLD_DB,
@@ -1098,13 +1103,45 @@ def _resolve_adaptive_denoise_model(strategy, default_model):
     return DEFAULT_DENOISE_MODEL
 
 
-def _denoise_and_polish_full_audio_step(original_wav, audio_dir, total_duration=None, denoise_model=None, strategy=None, apply_air=False):
+# The UVR step's directory choice lives with the cache rules it enforces; the private
+# aliases keep the call sites and their tests where they were.
+_neural_denoise_dir = _denoise_cache.neural_denoise_dir
+_without_stale_neural_output = _denoise_cache.without_stale_neural_output
+
+
+def _denoise_and_polish_full_audio_step(
+    original_wav,
+    audio_dir,
+    total_duration=None,
+    denoise_model=None,
+    strategy=None,
+    apply_air=False,
+    spectral_denoise=False,
+    physical_repair=False,
+    deepfilternet=False,
+):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(original_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    denoise_sub_dir = audio_dir / "neural_denoised"
-    denoise_sub_dir.mkdir(exist_ok=True)
-    denoised_wav = _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use)
+    if physical_repair:
+        # Ahead of subtraction, not after it. The noise profile is learned from the quietest
+        # stretch of the capture, and on a tape with dropouts that stretch is a dropout --
+        # so an unrepaired hole would be learned as the noise floor and the subtraction
+        # would have nothing to remove.
+        surgical_wav = _physical_repair.apply_when_needed(surgical_wav, audio_dir, strategy=strategy, total_duration=total_duration)
+    if spectral_denoise:
+        surgical_wav = _spectral_denoise.apply_tonal_cleanup(surgical_wav, audio_dir, strategy=strategy, total_duration=total_duration)
+        subtracted_wav = _spectral_denoise.apply_when_needed(surgical_wav, audio_dir, total_duration=total_duration)
+        if subtracted_wav != surgical_wav:
+            model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
+        surgical_wav = subtracted_wav
+    denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
+    denoised_wav = _deepfilter.denoise_or(
+        surgical_wav,
+        audio_dir / "deepfilter_denoised",
+        deepfilternet,
+        lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
+    )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)
 

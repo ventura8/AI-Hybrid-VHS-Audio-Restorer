@@ -5,6 +5,18 @@ import pytest
 import modules.config
 
 
+def test_a_crossed_dropout_span_falls_back_to_both_defaults(capsys):
+    """A minimum above the maximum is refused as a pair, so the repair stage never re-clamps a configured maximum."""
+    defaults = modules.config._typed_config_defaults()
+    defaults.update({"apl_mute_min_ms": 300.0, "apl_mute_max_ms": 100.0})
+    modules.config._normalize_typed_config_fields(defaults)
+    assert (defaults["apl_mute_min_ms"], defaults["apl_mute_max_ms"]) == (15.0, 200.0)
+    assert "apl_mute_min_ms" in capsys.readouterr().out
+    defaults.update({"apl_mute_min_ms": 20.0, "apl_mute_max_ms": 150.0})
+    modules.config._normalize_typed_config_fields(defaults)
+    assert (defaults["apl_mute_min_ms"], defaults["apl_mute_max_ms"]) == (20.0, 150.0)
+
+
 def test_config_paths_prioritize_launch_directory(monkeypatch, tmp_path):
     """A user config beside the launcher takes precedence over bundled settings."""
     monkeypatch.chdir(tmp_path)

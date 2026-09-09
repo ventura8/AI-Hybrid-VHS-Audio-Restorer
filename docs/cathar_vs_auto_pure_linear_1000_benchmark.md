@@ -2,184 +2,259 @@
 
 ## Summary
 
-Measured on the shipping build with `cathar-cli` 0.7.3 across 174 Internet Archive
+Measured on the v1.2.1 build with `cathar-cli` 0.7.3 across 136 Internet Archive
 VHS clips spanning European PAL (50 Hz mains, 15,625 Hz CRT line whistle) and
-American NTSC (60 Hz mains, 15,734 Hz CRT line whistle).
+American NTSC (60 Hz mains, 15,734 Hz CRT line whistle). 174 were run; 38 are
+excluded as degenerate sources, explained below.
 
-**`cathar` is the stronger general-purpose mode.** It leads on every metric in
-both regions. The two modes are at parity on CRT line whistle: both remove it
-completely on the clips that carry one. The gap is in broadband noise and mains
-hum, and it is widest on NTSC, where `auto_pure_linear` leaves the noise floor
-essentially unchanged.
+**`auto_pure_linear` is now the stronger mode on broadband noise, and it leads
+without trading programme fidelity to get there.** This reverses the v1.2.0
+finding in every particular, including on NTSC, which was previously the mode's
+worst region by a wide margin.
 
-| Metric (median, all 174 clips) | `cathar` | `auto_pure_linear` |
+| Metric (median, 136 clips) | `cathar` | `auto_pure_linear` |
 | :--- | ---: | ---: |
-| Noise reduction (dB) | **6.85** | 1.04 |
-| SNR gain (dB) | **9.45** | 0.70 |
-| CRT attenuation (x) | **2.58** | 0.87 |
-| Mains attenuation (x) | **7.19** | 1.83 |
-| Rumble reduction (pp) | **2.40** | 0.65 |
+| Noise removed (dB, higher better) | 6.02 | **8.75** |
+| Programme deviation (dB, lower better) | 0.44 | **0.33** |
+
+`auto_pure_linear` removes more noise on 113 of 136 clips and disturbs the
+programme less on 86 of 136. On 74 clips it wins both at once, against 11 where
+`cathar` wins both.
+
+This did not come from a new algorithm. The mode learned its noise profile from
+a 0.75 s probe, which is too little audio to estimate a noise floor from.
+Taking 2.5 s instead accounts for essentially the whole change.
 
 ______________________________________________________________________
 
 ## How to read these numbers
 
-**Medians, not means.** CRT and mains attenuation are ratios of the form
-`original / max(restored, 0.05)`. When a mode removes a tone completely the
-denominator hits that 0.05 clamp and the ratio explodes, so a handful of clips
-dominate any average. The mean CRT attenuation for this same run is 742.02 for
-`cathar` and 849.69 for `auto_pure_linear` -- which would suggest
-`auto_pure_linear` is the better de-whistler, and it is not. Every headline
-figure in this document is a median.
+**The metrics changed between v1.2.0 and v1.2.1, and the old ones should not be
+compared against these.** The previous edition of this document ranked the modes
+on attenuation ratios and a `noise_reduction_db` figure. Those were withdrawn
+because they cannot distinguish the two things a restoration does:
 
-**Most clips do not carry the defect being measured.** Of the 174 clips:
+> An attenuation ratio rises whether a mode removed the defect or removed the
+> programme along with it.
 
-- 59 carry a genuine CRT whistle (original whistle-to-background ratio >= 3)
-- 45 carry genuine mains hum (original hum-to-background ratio >= 3)
+That is not hypothetical. Measured against clean references, the deterministic
+dehum stage those metrics rewarded cuts 6.7-10.7 dB *below* the truth in the hum
+harmonic bins, because speech shares the 50-400 Hz range with mains hum. The
+metric scored that as an improvement. It is now off by default in this mode.
 
-A corpus-wide attenuation average therefore mixes clips with a defect to remove
-and clips with nothing to remove, where the ratio is measuring noise against
-noise. The conditioned figures below are the ones that describe restoration
-quality.
+The two figures above are measured separately and never combined:
+
+- **Noise removed** is the level drop in the frames the *source* says are quiet.
+  Those frames are mostly noise, so a drop there is noise going away.
+- **Programme deviation** is how far the restored spectrum moves in the frames
+  the source says are loud, inside the 300-3400 Hz speech band. Those frames are
+  dominated by content, so movement there is the restoration altering it.
+
+Both are computed after gain-matching on the loud frames, so the final loudness
+normalisation can neither flatter nor penalise either number. Which of the two
+matters more is a judgement; collapsing them into one score is precisely the
+mistake this replaces.
+
+**Medians, not means.** Every headline figure here is a median.
+
+**38 sources are excluded, and the reason is the metric's own premise.** It
+reads noise from the frames the source says are quiet and programme from the
+frames it says are loud. On 38 of the 174 clips those are the same frames: the
+20th and 70th percentile frame levels sit within 3 dB of each other, and on 20
+of them the crest factor is under 1.3 dB -- a saturated or constant-level track,
+not audio. On those the metric reports deviations of 20-50 dB *identically for
+both modes* and a "noise removed" as low as -69 dB. That is the metric failing,
+not a restoration, and an earlier edition of this document reported those
+figures as a fidelity tail. The metric now refuses a source with under 3 dB of
+quiet-to-loud spread, and every figure below is over the 136 it can read.
 
 ______________________________________________________________________
 
 ## 1. Regional results (median)
 
-### Europe, PAL (97 clips)
+### Europe, PAL (69 clips)
 
 | Metric | `cathar` | `auto_pure_linear` |
 | :--- | ---: | ---: |
-| Noise reduction (dB) | **10.55** | 3.11 |
-| SNR gain (dB) | **11.44** | 1.46 |
-| CRT attenuation (x) | **1.40** | 0.51 |
-| Mains attenuation (x) | **8.57** | 2.54 |
-| Rumble reduction (pp) | **2.26** | 0.65 |
+| Noise removed (dB) | 7.76 | **10.66** |
+| Programme deviation (dB) | 0.32 | 0.32 |
 
-### America, NTSC (77 clips)
+`auto_pure_linear` removes more noise on 59 of 69 clips and deviates less on
+46\. On PAL the two modes are level on the median deviation; the lead is in
+noise removal, and in the count of clips it disturbs less.
+
+### America, NTSC (67 clips)
 
 | Metric | `cathar` | `auto_pure_linear` |
 | :--- | ---: | ---: |
-| Noise reduction (dB) | **4.32** | -0.05 |
-| SNR gain (dB) | **6.66** | 0.42 |
-| CRT attenuation (x) | **2.66** | 1.02 |
-| Mains attenuation (x) | **5.89** | 1.36 |
-| Rumble reduction (pp) | **3.00** | 0.65 |
+| Noise removed (dB) | 4.68 | **7.17** |
+| Programme deviation (dB) | 0.57 | **0.41** |
 
-NTSC is where the modes diverge most. `auto_pure_linear`'s median noise
-reduction is -0.05 dB: on half of the American clips it leaves the measured
-noise floor no better than it found it.
+NTSC was the mode's worst region in v1.2.0, with a median noise reduction of
+-0.05 dB: on half the American clips it left the floor no better than it found
+it. It now leads by 2.48 dB there, removing more noise on 54 of 67 clips and
+deviating less on 40 -- and NTSC is where its fidelity lead lives.
 
 ______________________________________________________________________
 
-## 2. Conditioned on the defect actually being present
-
-### CRT line whistle, 59 clips that carry one
-
-| Region | Clips | `cathar` | `auto_pure_linear` |
-| :--- | ---: | ---: | ---: |
-| All | 59 | 719.80 | 719.80 |
-| Europe (PAL) | 35 | 973.40 | **1118.60** |
-| America (NTSC) | 24 | 189.50 | **228.10** |
-
-**The two modes are equivalent here.** Both drive the whistle below the
-measurement floor, so the ratio saturates against the 0.05 clamp and the
-remaining spread reflects the original tone strength rather than any difference
-in removal. The corpus-wide CRT figures in the summary table are dominated by
-the 115 clips with no whistle to remove and should not be read as a quality gap.
-
-### Mains hum, 45 clips that carry it
-
-| Metric | `cathar` | `auto_pure_linear` |
-| :--- | ---: | ---: |
-| Mains attenuation (x) | **17.98** | 2.74 |
-
-This gap is real. `cathar` cancels mains hum up to 8 harmonics with adaptive
-tracking; `auto_pure_linear` applies fixed narrow notches at the fundamental and
-a small set of harmonics.
-
-### Noise floor regressions
+## 2. Noise floor regressions
 
 Both modes are normalised to the same loudness target at the final mux, so a
 mode that raises the programme level without removing noise raises the measured
-floor with it.
+floor with it. This was `auto_pure_linear`'s dominant defect in v1.2.0.
 
-| | Clips where the floor got worse | NTSC only |
+| | Floor got worse | NTSC only |
 | :--- | ---: | ---: |
-| `cathar` | 45/174 (26%) | 23/77 (30%) |
-| `auto_pure_linear` | 82/174 (47%) | 40/77 (52%) |
+| `cathar` | 18/136 (13%) | 12/67 (18%) |
+| `auto_pure_linear` | **4/136 (3%)** | **3/67 (4%)** |
 
-On quiet captures `UVR-DeNoise` removes very little, and the subsequent
-normalisation amplifies the untouched hiss along with the programme. Measured on
-the worst affected clips, pre-gaining the input to the model's nominal operating
-range before inference changes this by less than 0.3 dB, so it is not a
-gain-staging problem: the model finds little to remove in this material at any
-input level. `cathar`'s noiseprint-based spectral denoise suppresses the same
-floor by roughly 29 dB on the same clip.
+For comparison, the v1.2.0 figures for `auto_pure_linear` were 82/174 (47%) and
+40/77 (52%), over the unfiltered corpus.
 
-______________________________________________________________________
+The distribution shows the same thing without relying on a threshold. At the
+tenth percentile -- the worst tenth of the corpus -- `auto_pure_linear` still
+removes 2.32 dB where `cathar` adds 1.21 dB:
 
-## 3. Architecture
-
-### `cathar` (Python-orchestrated Rust CLI DSP pipeline)
-
-The Python pipeline invokes the separately installed Rust `cathar` CLI through
-subprocess calls. The installers provision `cathar-cli` 0.7.3 from the verified
-upstream release; the runtime resolves `CATHAR_BIN` from its executable search
-paths, including the Cargo bin directory.
-
-#### Cathar strengths
-
-- Broad physical defect coverage: pops (`declick`), surface crackle
-  (`decrackle`), gap dropouts (`inpaint`), saturation (`declip`), mains hum to
-  8 harmonics (`dehum`), spectral spikes (`repair`), tape azimuth phase skew.
-- Deterministic mathematics throughout: no neural vocoder hallucination, so
-  instruments, brass and applause are not warped.
-- Transient integrity: fast attacks and drums stay punchy.
-- Spectral Band Replication exciter restores lost tape harmonics.
-
-#### Cathar weaknesses
-
-- Does not separate vocal formants from complex background music.
-- Computationally heavy across its cascaded DSP stages.
-
-### `auto_pure_linear` (full-mix neural denoising engine)
-
-#### Auto Pure Linear strengths
-
-- Removes continuous broadband tape hiss via `UVR-DeNoise` where the material
-  is at a normal recording level.
-- Surgical pre-denoise notching and post-denoise residual cleanup keep tonal
-  content away from the neural stage.
-- Linear air high-shelf restores presence on muffled dialogue.
-- Fewer DSP stages than `cathar`.
-
-#### Auto Pure Linear weaknesses
-
-- Little click, crackle or dropout repair; impulsive scratches survive.
-- Mains hum cancellation is far weaker than `cathar`'s (2.74x vs 17.98x on
-  clips that carry hum).
-- On quiet captures it leaves the noise floor largely intact, which after
-  loudness normalisation reads as a floor regression on 47% of the corpus.
+| Noise removed (dB) | p10 | p25 | median | p75 | p90 |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `cathar` | -1.21 | 1.70 | 6.02 | 9.45 | 17.14 |
+| `auto_pure_linear` | **2.32** | **5.34** | **8.75** | **14.56** | **33.30** |
 
 ______________________________________________________________________
 
-## 4. Which mode to use
+## 3. What changed in v1.2.1
 
-- **Default, and anything with mains hum, clicks, dropouts or a damaged tape**
-  -> `cathar`. It leads on noise reduction, SNR, mains and rumble in both
-  regions, and is the only mode with dropout inpainting and spike repair.
-- **Quiet or low-level captures** -> `cathar`. This is where
-  `auto_pure_linear`'s neural stage contributes least.
-- **CRT line whistle** -> either. Both remove it completely; pick on other
-  grounds.
-- **Dialogue at a healthy level with constant broadband hiss, where a quiet
-  background matters more than transient fidelity** -> `auto_pure_linear`.
+- **A 2.5 s noise probe, for this mode only.** The shared 0.75 s value is what
+  held the mode back, and it hid behind a settings sweep that could not move it:
+  the value is pinned in `config.yaml`, which overrides the defaults the sweep
+  was patching, so every earlier attempt reported no effect. On 25 real captures
+  2.5 s removes 3.39 dB more noise for 0.12 dB more deviation, reproduced
+  exactly on a repeat run. `cathar`'s own probe stays at 0.75 s.
+
+- **A learned per-bin blend** between the subtracted signal and the original,
+  which repairs over-subtraction rather than trading against it. Fitted across
+  five voices and held out by voice.
+
+- **Context features for that blend.** Capacity was not the limit -- a model
+  four times wider bought 1% of the available headroom -- so the blend now also
+  sees bin stationarity and its spectral and temporal neighbourhood. Worth
+  +0.069 dB held out, winning all five folds.
+
+- **Deterministic tonal cleanup off by default**, on the ground-truth evidence
+  described above.
+
+- **Physical damage repair**, gated per defect. Crackle, dropouts, clipping and
+  azimuth skew are now repaired where they are detected; three further `cathar`
+  stages were measured and rejected for making undamaged material worse. Across
+  the corpus it is close to free: noise removal moves from 9.66 to 9.74 dB and
+  deviation from 0.48 to 0.50. It is switchable with
+  `apl_enable_physical_repair`.
+
+  A 25-clip sample had put the cost at 0.43 dB of noise removal, and the full
+  corpus does not bear that out. The smaller measurement was paired and correct
+  for its own clips; it simply did not generalise, which is worth stating because
+  it is the second time on this branch that a figure from a small sample has
+  pointed the wrong way.
+
+`cathar` is unchanged and is verified so: its decoded output is bit-identical to
+the v1.2.0 build on every clip tested.
+
+______________________________________________________________________
+
+## 4. Defect coverage
+
+The headline metrics measure broadband noise against programme fidelity. They do
+not see impulsive damage at all -- a click is a handful of samples, and
+log-spectral distance averages it away -- so physical repair is measured
+separately, against paired fixtures that carry the damage, with the repair and
+its collateral reported apart.
+
+| Defect | `cathar` | `auto_pure_linear` |
+| :--- | :--- | :--- |
+| Broadband tape hiss | noiseprint subtraction | subtraction, blend, neural |
+| Surface crackle, pops | `decrackle` | pop removal, then `decrackle`, gated |
+| Gap dropouts | `inpaint` | `inpaint`, gated on detection |
+| Saturation / clipping | `declip` | `declip`, gated on detection |
+| Azimuth phase skew | `azimuth` | `azimuth`, gated on detection |
+| CRT line whistle | surgical notch | surgical notch |
+| Rumble / wind | `dewind` | shared highpass |
+| Mains hum | 8-harmonic, measured -0.58 dB | off by default, measured 0.00 dB |
+| Spectral spikes | `repair` | not adopted -- see below |
+| Plosives | `deplosive` | not adopted -- see below |
+
+Each `auto_pure_linear` stage is gated on its own defect being detected, which is
+a correctness requirement rather than an optimisation: applied to everything,
+`decrackle` scores -11.09 dB on material whose only defect is azimuth skew.
+
+The stages were adopted on stepped synthetic damage, and the calibrated fixture
+set that arrived later in the release reads them very differently: on crackle at
+eight pops a second, dropouts at 5-50 ms in real tape noise, and clipping and
+azimuth skew drawn from ranges, `declip` recovers +4.86 dB and `azimuth` +10.99,
+where `decrackle` recovers +1.19 (+10.00 on the stepped clicks) and `inpaint`
++0.43 (+115.71 dB spectral on the clean 50 ms hole). Inside the finished chain
+neither of the last two moves the metrics on its class. They cost nothing on
+undamaged material, so they stay; the case for them is now the tape's to make.
+The gap on pops is closed by a stage of the mode's own -- residual-outlier
+detection and autoregressive refill -- which repairs +5.5 dB at the pop
+positions of the same class and is free on real tape. See
+`docs/validation.md`, "Fixtures That Predict Real Tape".
+
+**Three of `cathar`'s stages were measured and deliberately not adopted.**
+`repair` and `deplosive` fail on the controls rather than on their targets: on
+fixtures carrying no physical damage at all, `repair` scores -15.89 dB and lifts
+injected error to -4.68 dB against the programme, and `deplosive` -5.60 and
+-15.61. Both make clean material worse. `declick` is dominated by `decrackle` on
+the same defect, +1.02 dB against +10.00, and degrades as its threshold is
+lowered. They remain available in `cathar`, which applies them as a fixed
+cascade.
+
+### Where `cathar` still leads
+
+- **Mains hum: neither mode, and the earlier claim is withdrawn.** v1.2.0
+  reported `cathar` attenuating hum 17.98x against 2.74x. Measured on this
+  build across the 48 tapes that carry hum, with harmonic excess rather than a
+  saturating ratio, `cathar` removes **-0.58 dB** and `auto_pure_linear`
+  **0.00 dB**. `cathar`'s dehum runs at whatever frequency the shared scanner
+  reports, and the scanner reports 0 Hz whenever it misses, which it does on
+  nearly half of hum-carrying tapes. The stage itself works when run at the
+  right frequency (a median 2.07 dB on those tapes), but in
+  `auto_pure_linear`'s chain that collapses to +0.66 dB on a coin flip, so it
+  ships available and off (`apl_enable_dehum`). What `cathar` retains is the
+  capability; on this corpus it does not deliver it.
+- **Spike repair and plosive control**, on the terms above.
+- **Deterministic mathematics throughout**, so instruments, brass and applause
+  are not warped.
+
+______________________________________________________________________
+
+## 5. Which mode to use
+
+- **General restoration, and any capture with audible tape hiss** ->
+  `auto_pure_linear`. It removes more noise than `cathar` in both regions while
+  disturbing the programme less, and it no longer degrades quiet captures.
+- **Crackle, dropouts, clipping or azimuth skew** -> either. Both repair these
+  now; `auto_pure_linear` runs the stages only where the defect is detected,
+  where `cathar` applies its cascade throughout.
+- **Strong mains hum** -> neither removes it by default on this corpus. `cathar`'s
+  stage runs at the wrong frequency whenever the scanner misses; `auto_pure_linear`
+  can switch dehum on (`apl_enable_dehum`) for a marginal, measured gain.
+- **Spectral spikes, or plosive-heavy dialogue** -> `cathar`. Those two stages
+  measured harmful on undamaged material and are not in the other mode.
 - **Muffled or muddy speech** -> `auto_pure_linear`, for the linear air shelf.
+- **CRT line whistle** -> either; both remove it completely.
+
+Physical repair can be switched off with `apl_enable_physical_repair: false`.
+Across the corpus it costs nothing measurable to leave on -- noise removal 9.66
+to 9.74 dB, deviation 0.48 to 0.50 -- so the switch is there for control rather
+than because the default has a price worth paying attention to.
+
+`cathar` remains the default mode. It is the safer choice on unknown material
+because its defect coverage is broader, and changing a released default is a
+decision for a release, not a benchmark.
 
 ______________________________________________________________________
 
-## 5. Reproducing this
+## 6. Reproducing this
 
 - **Corpus provisioning** builds the clip set:
 
@@ -190,37 +265,25 @@ ______________________________________________________________________
     --workers 8
   ```
 
-- **Benchmark** measures both modes:
+- **Benchmark** measures both modes on the trade metric:
 
   ```bash
-  poetry run python scripts/benchmark_ia_corpus_batch.py \
-    --catalog experiments/ia_corpus_1000/catalog_1000.json \
+  poetry run python scripts/measure_tradeoff.py \
     --corpus-dir experiments/ia_corpus_1000 \
     --modes cathar auto_pure_linear \
-    --output-dir experiments/benchmark_results \
-    --gpu "NVIDIA GeForce RTX 5090"
+    --limit 192 \
+    --report experiments/v13_full.json
   ```
 
-  Run into a clean `--output-dir`. The script checkpoints and resumes, so an
-  existing directory will return earlier results rather than re-measuring.
+  192 is the catalog's clip count, so the limit takes every clip: 174 of them
+  restored and were scored, and of those the metric refuses the 38 whose
+  quiet-to-loud spread is under 3 dB, leaving the 136 every figure above is
+  over.
 
-- **Detector attribution** explains why a mode did or did not act on a clip:
+- **Settings sweep** re-runs the variant comparison behind the tuned constants.
+  Each variant patches the file that actually resolves the setting and the
+  merged configuration is re-read before a run is spent on it:
 
   ```bash
-  poetry run python scripts/diagnose_apl_gap.py \
-    --corpus-dir experiments/ia_corpus_1000
+  poetry run python scripts/sweep_denoise_settings.py --limit 25
   ```
-
-- **Provenance.** Metrics are computed by `scripts/ia_benchmark_common.py`.
-  Results are only comparable across runs that share both that file and the
-  `cathar-cli` version, since either changes the numbers. The figures here were
-  produced with `cathar-cli` 0.7.3.
-
-- **Not re-measured in this run.** Per-clip processing latency is not recorded
-  by the benchmark report, so no throughput comparison is claimed here. Use
-  `scripts/run_hardware_validation.py --execute`, which reports elapsed time and
-  a real-time factor per mode.
-
-- Corpus clips and result JSON are excluded from version control due to
-  Internet Archive stream licensing and size, so a clean checkout cannot verify
-  these numbers without re-running the commands above.
