@@ -34,6 +34,7 @@ def generate_badge(xml_file, output_path="assets/coverage.svg"):
         str(xml_path),
         "-o",
         str(output_path_obj),
+        "--local",
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)

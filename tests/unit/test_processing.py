@@ -382,6 +382,7 @@ def test_final_mix_step(mock_is_valid_vid, mock_dur, mock_retry, tmp_path):
     mock_retry.assert_called_once()
 
 
+@patch("modules.processing._filter_precondition_step", side_effect=lambda orig, precond, *args, **kwargs: orig)
 @patch("modules.processing._extract_audio_step")
 @patch("modules.processing._separate_stems_step")
 @patch("modules.processing._enhance_vocals_step")
@@ -391,7 +392,7 @@ def test_final_mix_step(mock_is_valid_vid, mock_dur, mock_retry, tmp_path):
 @patch("modules.processing.is_valid_audio", return_value=False)
 @patch("modules.processing.shutil.rmtree")
 @patch("modules.processing.shutil.copy")
-def test_full_pipeline_coverage(mc, mr, mv, s6, s5, s4, s3, s2, s1, tmp_path):
+def test_full_pipeline_coverage(mc, mr, mv, s6, s5, s4, s3, s2, s1, m_prec, tmp_path):
     """Test full pipeline coverage."""
     v = tmp_path / "v.mp4"
     v.write_text("d")
@@ -412,6 +413,7 @@ def test_full_pipeline_coverage(mc, mr, mv, s6, s5, s4, s3, s2, s1, tmp_path):
         assert modules.processing.process_hybrid_audio(v, "GPU", out) is True
 
 
+@patch("modules.processing._filter_precondition_step", side_effect=lambda orig, precond, *args, **kwargs: orig)
 @patch("modules.processing._extract_audio_step")
 @patch("modules.processing._denoise_full_audio_step", return_value=Path("denoised.wav"))
 @patch("modules.processing._align_stems")
@@ -429,6 +431,7 @@ def test_process_hybrid_audio_denoise_only_mode(
     mock_align,
     mock_full_denoise,
     mock_extract,
+    mock_precond,
     tmp_path,
 ):
     video = tmp_path / "v.mp4"
@@ -514,6 +517,7 @@ def test_process_hybrid_audio_preservation(
     assert "Preservation: Keeping" in captured.out
 
 
+@patch("modules.processing._filter_precondition_step", side_effect=lambda orig, precond, *args, **kwargs: orig)
 @patch("modules.processing._extract_audio_step")
 @patch("modules.processing._separate_stems_step", return_value=(Path("v.wav"), Path("b.wav")))
 @patch("modules.processing._enhance_vocals_step", return_value=Path("ev.wav"))
@@ -531,6 +535,7 @@ def test_process_rmtree_errors(
     mock_enh,
     mock_sep,
     mock_ext,
+    mock_precond,
     tmp_path,
 ):
     """Test rmtree failure handling."""

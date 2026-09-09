@@ -33,6 +33,9 @@ def test_load_config_fail(mock_exists):
         "multipass_auto",
         "multipass",
         "auto_pure",
+        "auto_pure_linear",
+        "cathar",
+        "cathar_vhs",
         "pure",
         "hybrid",
         "denoise_only",
@@ -58,35 +61,35 @@ def test_load_config_fallback_process_mode(mock_exists):
     mock_yaml.safe_load.return_value = {"process_mode": "INVALID_MODE"}
     with patch.object(modules.config, "yaml", mock_yaml), patch("builtins.open", MagicMock()):
         conf, _ = modules.config.load_config()
-        assert conf["process_mode"] == "auto_pure"
+        assert conf["process_mode"] == "cathar"
 
 
 @patch("builtins.print")
 def test_normalize_process_mode_warns_for_non_string(mock_print):
     result = modules.config._normalize_process_mode(None)
-    assert result == "auto_pure"
+    assert result == "cathar"
     mock_print.assert_called_once()
 
 
 @patch("builtins.print")
 def test_normalize_process_mode_warns_for_unknown_string(mock_print):
     result = modules.config._normalize_process_mode(" invalid_mode ")
-    assert result == "auto_pure"
+    assert result == "cathar"
     mock_print.assert_called_once()
 
 
 @patch("modules.config.Path.exists", return_value=True)
 def test_load_config_defaults_when_pyyaml_missing_and_config_exists(mock_exists):
     expected_defaults = {
-        "process_mode": "auto_pure",
-        "afftdn_nr": 12.0,
-        "afftdn_nf": -45.0,
+        "process_mode": "cathar",
+        "afftdn_nr": 10.0,
+        "afftdn_nf": -55.0,
         "afftdn_tn": True,
-        "highpass_freq": 60,
+        "highpass_freq": 80,
         "enable_adeclick": True,
-        "notch_freq": 0.0,
+        "notch_freq": 50.0,
         "arnndn_model": "cb.rnnn",
-        "arnndn_highpass_freq": 60,
+        "arnndn_highpass_freq": 80,
         "arnndn_enable_adeclick": True,
     }
     with patch.object(modules.config, "yaml", None):
@@ -102,7 +105,7 @@ def test_load_config_non_mapping_yaml(mock_exists):
     with patch.object(modules.config, "yaml", mock_yaml), patch("builtins.open", MagicMock()):
         conf, src = modules.config.load_config()
         assert src == "Defaults (invalid config.yaml)"
-        assert conf["process_mode"] == "auto_pure"
+        assert conf["process_mode"] == "cathar"
         assert conf["arnndn_model"] == "cb.rnnn"
 
 
@@ -153,12 +156,24 @@ def test_load_config_sanitizes_mix_volumes(mock_exists):
         ("highpass_freq", float("nan"), 60),
         ("arnndn_highpass_freq", "sixty", 60),
         ("notch_freq", ["x"], 0.0),
+        ("cathar_inpaint_iterations", -1, 3),
+        ("cathar_inpaint_iterations", 0, 3),
+        ("cathar_dehum_harmonics", -5, 8),
+        ("cathar_dehum_harmonics", 0, 8),
+        ("cathar_deesser_bands", 0, 3),
+        ("cathar_deesser_freq", 0, 4000),
     ],
 )
 @patch("builtins.print")
 def test_coerce_number_rejects_invalid_and_null(mock_print, field, bad_value, expected):
-    caster = dict((name, cast) for name, cast, _ in modules.config._NUMERIC_CONFIG_FIELDS)[field]
-    assert modules.config._coerce_number(bad_value, caster, field, expected) == expected
+    metadata = next(entry for entry in modules.config._NUMERIC_CONFIG_FIELDS if entry[0] == field)
+    field_name, caster, default, min_val, *_ = metadata
+    # `expected` is a sentinel chosen to differ from the registered default (highpass_freq is
+    # registered as 80 and probed here with 60). Passing the registered default instead would
+    # weaken the test: a _coerce_number that ignored its argument and returned the registry
+    # value would still pass. The registry's own defaults are covered by the load_config tests.
+    assert (field_name, caster in (int, float), default is not None) == (field, True, True)
+    assert modules.config._coerce_number(bad_value, caster, field, expected, min_val=min_val) == expected
     mock_print.assert_called_once()
 
 
@@ -196,8 +211,8 @@ def test_load_config_normalizes_typed_fields(mock_exists):
     }
     with patch.object(modules.config, "yaml", mock_yaml), patch("builtins.open", MagicMock()):
         conf, _ = modules.config.load_config()
-    assert conf["afftdn_nr"] == 12.0
-    assert conf["highpass_freq"] == 60
+    assert conf["afftdn_nr"] == 10.0
+    assert conf["highpass_freq"] == 80
     assert conf["afftdn_tn"] is False
     assert conf["preserve_original_audio_track"] is True
 

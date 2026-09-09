@@ -1,0 +1,306 @@
+{
+  "schema_version": 1,
+  "voices": [
+    {
+      "language": "en",
+      "voice": "en_US-lessac-medium",
+      "md5": "2fc642b535197b6305c7c8f92dc8b24f",
+      "text": "The quick brown fox jumps over the lazy dog. This recording verifies English speech recognition on this machine."
+    },
+    {
+      "language": "es",
+      "voice": "es_ES-davefx-medium",
+      "md5": "dc515cd4ecc5f6f72fe14a941188fc9c",
+      "text": "El veloz zorro marrón salta sobre el perro perezoso. Esta grabación verifica el reconocimiento de voz en español."
+    },
+    {
+      "language": "fr",
+      "voice": "fr_FR-siwis-medium",
+      "md5": "20e876e8c839e9b11a26085858f2300c",
+      "text": "Le vif renard brun saute par-dessus le chien paresseux. Cet enregistrement vérifie la reconnaissance vocale en français."
+    },
+    {
+      "language": "de",
+      "voice": "de_DE-thorsten-medium",
+      "md5": "a129b00fb3078df43c96bab6c94535c0",
+      "text": "Der schnelle braune Fuchs springt über den faulen Hund. Diese Aufnahme prüft die deutsche Spracherkennung."
+    },
+    {
+      "language": "it",
+      "voice": "it_IT-paola-medium",
+      "md5": "3a44e73b12ca5d0c21a72e388b5847c8",
+      "text": "La rapida volpe marrone salta sopra il cane pigro. Questa registrazione verifica il riconoscimento vocale italiano."
+    },
+    {
+      "language": "pt",
+      "voice": "pt_BR-cadu-medium",
+      "md5": "6f3a6e23694c9088e3696a15191af2cc",
+      "text": "A rápida raposa marrom salta sobre o cão preguiçoso. Esta gravação verifica o reconhecimento de fala em português."
+    },
+    {
+      "language": "nl",
+      "voice": "nl_BE-nathalie-medium",
+      "md5": "ab0c38b5f66764b59ad9e3e98b1c2172",
+      "text": "De snelle bruine vos springt over de luie hond. Deze opname controleert de Nederlandse spraakherkenning."
+    },
+    {
+      "language": "pl",
+      "voice": "pl_PL-darkman-medium",
+      "md5": "27bf2d71e934b112657544fd0b100a7a",
+      "text": "Szybki brązowy lis przeskakuje nad leniwym psem. To nagranie sprawdza polskie rozpoznawanie mowy."
+    },
+    {
+      "language": "ru",
+      "voice": "ru_RU-denis-medium",
+      "md5": "76c2f14e521fef3ed574f97ad492728e",
+      "text": "Быстрая коричневая лиса прыгает через ленивую собаку. Эта запись проверяет распознавание русской речи."
+    },
+    {
+      "language": "uk",
+      "voice": "uk_UA-ukrainian_tts-medium",
+      "md5": "3366c3d4f31cb77966fb14d042956b4f",
+      "text": "Швидка руда лисиця стрибає через лінивого пса. Цей запис перевіряє розпізнавання української мови."
+    },
+    {
+      "language": "ar",
+      "voice": "ar_JO-kareem-medium",
+      "md5": "c0697df8a7fb180079cc5ac523f91a8e",
+      "text": "الثعلب البني السريع يقفز فوق الكلب الكسول. هذا التسجيل يتحقق من التعرف على الكلام العربي."
+    },
+    {
+      "language": "bg",
+      "voice": "bg_BG-dimitar-medium",
+      "md5": "fc1ce62a4f04f089e22b8c3a13bde28a",
+      "text": "Бързата кафява лисица прескача мързеливото куче. Този запис проверява разпознаването на българска реч."
+    },
+    {
+      "language": "bn",
+      "voice": "bn_BD-google-medium",
+      "md5": "2a365b2d91bb9cb7ed62c57d9ee0ec48",
+      "text": "দ্রুত বাদামী শিয়ালটি অলস কুকুরের উপর দিয়ে লাফ দেয়। এই রেকর্ডিং বাংলা কথা শনাক্তকরণ যাচাই করে।"
+    },
+    {
+      "language": "ca",
+      "voice": "ca_ES-upc_ona-medium",
+      "md5": "58ff3b049b6b721a4c353a551ec5ef3a",
+      "text": "La ràpida guineu marró salta sobre el gos mandrós. Aquest enregistrament verifica el reconeixement de veu en català."
+    },
+    {
+      "language": "cs",
+      "voice": "cs_CZ-jirka-medium",
+      "md5": "da2deb0a3f93226a3f9b6e40d43c46ca",
+      "text": "Rychlá hnědá liška skáče přes líného psa. Tato nahrávka ověřuje české rozpoznávání řeči."
+    },
+    {
+      "language": "cy",
+      "voice": "cy_GB-gwryw_gogleddol-medium",
+      "md5": "76ca79c170b0048b190758c3609e9ab9",
+      "text": "Mae'r llwynog brown cyflym yn neidio dros y ci diog. Mae'r recordiad hwn yn gwirio adnabod lleferydd Cymraeg."
+    },
+    {
+      "language": "da",
+      "voice": "da_DK-talesyntese-medium",
+      "md5": "9c05494a3e0c1136337581e01222395d",
+      "text": "Den hurtige brune ræv springer over den dovne hund. Denne optagelse verificerer dansk talegenkendelse."
+    },
+    {
+      "language": "el",
+      "voice": "el_GR-joy-medium",
+      "md5": "080895960699531c30e70415a75a604d",
+      "text": "Η γρήγορη καφέ αλεπού πηδάει πάνω από το τεμπέλικο σκυλί. Αυτή η ηχογράφηση ελέγχει την αναγνώριση ελληνικής ομιλίας."
+    },
+    {
+      "language": "et",
+      "voice": "et_EE-news-medium",
+      "md5": "6fba6ec8d985e84435ce680ee9d3b0bc",
+      "text": "Kiire pruun rebane hüppab üle laisa koera. See salvestus kontrollib eesti kõnetuvastust."
+    },
+    {
+      "language": "eu",
+      "voice": "eu_ES-antton-medium",
+      "md5": "4d924421c8f4f3967e79de798209e593",
+      "text": "Azeri marroi bizkorra alfer dagoen txakurraren gainetik salto egiten du. Grabaketa honek euskarazko hizketa ezagutzea egiaztatzen du."
+    },
+    {
+      "language": "fa",
+      "voice": "fa_IR-amir-medium",
+      "md5": "7c0598c9726427869e1e86447b333539",
+      "text": "روباه قهوه‌ای سریع از روی سگ تنبل می‌پرد. این ضبط تشخیص گفتار فارسی را بررسی می‌کند."
+    },
+    {
+      "language": "fi",
+      "voice": "fi_FI-harri-medium",
+      "md5": "8e96b9e765f8db3e910943520aa0f475",
+      "text": "Nopea ruskea kettu hyppää laiskan koiran yli. Tämä tallenne varmistaa suomen puheentunnistuksen."
+    },
+    {
+      "language": "he",
+      "voice": "he_IL-saspeech-medium",
+      "md5": "ffa7fbbbbeab5fa8fb7eb00bf9a0e2a5",
+      "text": "השועל החום המהיר קופץ מעל הכלב העצלן. הקלטה זו בודקת זיהוי דיבור בעברית."
+    },
+    {
+      "language": "hi",
+      "voice": "hi_IN-pratham-medium",
+      "md5": "f1e5a629a9e533a7155910530109eb86",
+      "text": "तेज़ भूरी लोमड़ी आलसी कुत्ते के ऊपर से कूदती है। यह रिकॉर्डिंग हिंदी वाक् पहचान की जाँच करती है।"
+    },
+    {
+      "language": "hu",
+      "voice": "hu_HU-anna-medium",
+      "md5": "3796f9fa28bd8d390d17828e2e2e952d",
+      "text": "A gyors barna róka átugrik a lusta kutyán. Ez a felvétel a magyar beszédfelismerést ellenőrzi."
+    },
+    {
+      "language": "hy",
+      "voice": "hy_AM-gor-medium",
+      "md5": "fd726714c656f1cad828bcf102059aa1",
+      "text": "Արագ դարչնագույն աղվեսը ցատկում է ծույլ շան վրայով։ Այս ձայնագրությունը ստուգում է հայերեն խոսքի ճանաչումը։"
+    },
+    {
+      "language": "id",
+      "voice": "id_ID-news_tts-medium",
+      "md5": "17de01db7ac654655436b6e509893c72",
+      "text": "Rubah cokelat yang cepat melompati anjing yang malas. Rekaman ini memverifikasi pengenalan ucapan bahasa Indonesia."
+    },
+    {
+      "language": "is",
+      "voice": "is_IS-bui-medium",
+      "md5": "08332bb41a67b52a3361bd1e8e36fb10",
+      "text": "Skjóti brúni refurinn stekkur yfir lata hundinn. Þessi upptaka staðfestir íslenska talgreiningu."
+    },
+    {
+      "language": "ja",
+      "voice": "ja_JA-hi_fi_captain-medium",
+      "md5": "f9daab8970d06d7e9fc895a879854542",
+      "text": "素早い茶色の狐が怠け者の犬を飛び越えます。この録音は日本語の音声認識を検証します。"
+    },
+    {
+      "language": "ka",
+      "voice": "ka_GE-natia-medium",
+      "md5": "83bd40f8d176a83d3d8d605fada2a5e7",
+      "text": "სწრაფი ყავისფერი მელა ხტება ზარმაცი ძაღლის თავზე. ეს ჩანაწერი ამოწმებს ქართული მეტყველების ამოცნობას."
+    },
+    {
+      "language": "kk",
+      "voice": "kk_KZ-issai-high",
+      "md5": "d5a97c25feb0949c187ae5f8e72753e3",
+      "text": "Жылдам қоңыр түлкі жалқау иттің үстінен секіреді. Бұл жазба қазақ сөзін тануды тексереді."
+    },
+    {
+      "language": "ko",
+      "voice": "ko_KR-kss-medium",
+      "md5": "bebbd298dffe5ee7b88f2ce41bb4e3a9",
+      "text": "빠른 갈색 여우가 게으른 개를 뛰어넘습니다. 이 녹음은 한국어 음성 인식을 확인합니다."
+    },
+    {
+      "language": "lb",
+      "voice": "lb_LU-marylux-medium",
+      "md5": "966856e665a46cee45cb0cd2c475f8d5",
+      "text": "De séiere brongen Fuuss spréngt iwwer de faule Hond. Dës Opnam iwwerpréift d'Lëtzebuergesch Spracherkennung."
+    },
+    {
+      "language": "lv",
+      "voice": "lv_LV-aivars-medium",
+      "md5": "5b48c6f958aea5b7e9ff34f6a10882dd",
+      "text": "Ātrā brūnā lapsa pārlec pāri slinkajam sunim. Šis ieraksts pārbauda latviešu runas atpazīšanu."
+    },
+    {
+      "language": "ml",
+      "voice": "ml_IN-arjun-medium",
+      "md5": "4f20109c108aa80f46df85ab9cda5daa",
+      "text": "വേഗമുള്ള തവിട്ടുനിറമുള്ള കുറുക്കൻ മടിയനായ നായയുടെ മുകളിലൂടെ ചാടുന്നു. ഈ റെക്കോർഡിംഗ് മലയാളം സംസാര തിരിച്ചറിയൽ പരിശോധിക്കുന്നു."
+    },
+    {
+      "language": "mr",
+      "voice": "mr_IN-google-medium",
+      "md5": "331957abd31bff58aaa10934cd3ac58f",
+      "text": "चपळ तपकिरी कोल्हा आळशी कुत्र्यावरून उडी मारतो. ही ध्वनिमुद्रिका मराठी भाषण ओळख तपासते."
+    },
+    {
+      "language": "ne",
+      "voice": "ne_NP-chitwan-medium",
+      "md5": "74cdb5b32816c366af74b55ed7494e25",
+      "text": "छिटो खैरो स्याल अल्छी कुकुरमाथि उफ्रन्छ। यो रेकर्डिङले नेपाली बोली पहिचान जाँच गर्छ।"
+    },
+    {
+      "language": "no",
+      "voice": "no_NO-talesyntese-medium",
+      "md5": "9fc876e7edc6593086b4f2f34889f44b",
+      "text": "Den raske brune reven hopper over den late hunden. Dette opptaket verifiserer norsk talegjenkjenning."
+    },
+    {
+      "language": "ro",
+      "voice": "ro_RO-mihai-medium",
+      "md5": "45f4253916c93d3d05ad3fe1b07ea4f3",
+      "text": "Vulpea maro rapidă sare peste câinele leneș. Această înregistrare verifică recunoașterea vorbirii în limba română."
+    },
+    {
+      "language": "sk",
+      "voice": "sk_SK-lili-medium",
+      "md5": "836e078518042448bda8416a8ea52984",
+      "text": "Rýchla hnedá líška skáče cez lenivého psa. Táto nahrávka overuje slovenské rozpoznávanie reči."
+    },
+    {
+      "language": "sl",
+      "voice": "sl_SI-artur-medium",
+      "md5": "ca0aac61139e446bebf98561e8cf9407",
+      "text": "Hitra rjava lisica skoči čez lenega psa. Ta posnetek preverja slovensko razpoznavanje govora."
+    },
+    {
+      "language": "sq",
+      "voice": "sq_AL-edon-medium",
+      "md5": "01888cba8f112271d2cdb6c9de17aae7",
+      "text": "Dhelpra e shpejtë kafe kërcen mbi qenin dembel. Ky regjistrim verifikon njohjen e të folurit shqip."
+    },
+    {
+      "language": "sr",
+      "voice": "sr_RS-serbski_institut-medium",
+      "md5": "02c6e27ac7b4dfa84272df89edca9feb",
+      "text": "Брза смеђа лисица прескаче лењог пса. Овај снимак проверава препознавање српског говора."
+    },
+    {
+      "language": "sv",
+      "voice": "sv_SE-nst-medium",
+      "md5": "20266cf58e93ca2140444b77398aea04",
+      "text": "Den snabba bruna räven hoppar över den lata hunden. Denna inspelning verifierar svensk taligenkänning."
+    },
+    {
+      "language": "sw",
+      "voice": "sw_CD-lanfrica-medium",
+      "md5": "7b28078f0e76cb201dc8b512ea4bf4d6",
+      "text": "Mbweha wa kahawia mwepesi anaruka juu ya mbwa mvivu. Rekodi hii inathibitisha utambuzi wa hotuba ya Kiswahili."
+    },
+    {
+      "language": "te",
+      "voice": "te_IN-maya-medium",
+      "md5": "604fa4083118495c0fff55826ffccefe",
+      "text": "వేగవంతమైన గోధుమ రంగు నక్క సోమరి కుక్క మీదుగా దూకుతుంది. ఈ రికార్డింగ్ తెలుగు ప్రసంగ గుర్తింపును ధృవీకరిస్తుంది."
+    },
+    {
+      "language": "tr",
+      "voice": "tr_TR-dfki-medium",
+      "md5": "f51287b350a042dd8d67b2b215145e5a",
+      "text": "Hızlı kahverengi tilki tembel köpeğin üzerinden atlar. Bu kayıt Türkçe konuşma tanımayı doğrular."
+    },
+    {
+      "language": "ur",
+      "voice": "ur_PK-aegis_female-medium",
+      "md5": "81f9f9772025785f548e1aa0de3361b7",
+      "text": "تیز بھوری لومڑی سست کتے کے اوپر سے کودتی ہے۔ یہ ریکارڈنگ اردو تقریر کی شناخت کی تصدیق کرتی ہے۔"
+    },
+    {
+      "language": "vi",
+      "voice": "vi_VN-vais1000-medium",
+      "md5": "5e42428c4f6131f75557cf156c9c1526",
+      "text": "Con cáo nâu nhanh nhẹn nhảy qua con chó lười biếng. Bản ghi này xác minh nhận dạng giọng nói tiếng Việt."
+    },
+    {
+      "language": "zh",
+      "voice": "zh_CN-huayan-medium",
+      "md5": "40cdb7930ff91b81574d5f0489e076ea",
+      "text": "敏捷的棕色狐狸跳过了懒惰的狗。这段录音用于验证中文语音识别。"
+    }
+  ]
+}
+

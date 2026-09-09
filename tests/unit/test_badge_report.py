@@ -1,7 +1,34 @@
 import xml.etree.ElementTree as ET
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from tests.tooling import badge_report
+
+
+def test_generate_badge_uses_the_local_svg_template(tmp_path):
+    """Keep badge generation independent of Shields network availability."""
+    coverage_file = tmp_path / "coverage.xml"
+    coverage_file.touch()
+    badge_path = tmp_path / "assets" / "coverage.svg"
+
+    with patch("tests.tooling.badge_report.subprocess.run") as run:
+        badge_report.generate_badge(coverage_file, badge_path)
+
+    assert run.call_args == call(
+        [
+            badge_report.sys.executable,
+            "-m",
+            "genbadge.main",
+            "coverage",
+            "-i",
+            str(coverage_file),
+            "-o",
+            str(badge_path),
+            "--local",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_get_complexity_returns_unavailable_on_failure(tmp_path, capsys):

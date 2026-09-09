@@ -119,6 +119,7 @@ def test_scan_files_excludes_cleaned_outputs(tmp_path, capsys):
         ("multipass_auto", "cb.rnnn", "AI Multi-Pass Cascaded Restoration"),
         ("auto_pure", "cb.rnnn", "AI Pure Speech & Ambient Denoising"),
         ("pure", "cb.rnnn", "AI Pure Speech & Ambient Denoising"),
+        ("auto_pure_linear", "cb.rnnn", "AI Pure Linear Full-Mix Denoising"),
         ("hybrid", "cb.rnnn", "UVR-DeNoise"),
         ("denoise_only", "cb.rnnn", "UVR-DeNoise-Lite"),
         ("auto_ffmpeg_native", "cb.rnnn", "Adaptive FFmpeg DSP (Auto-Tuned Scan)"),

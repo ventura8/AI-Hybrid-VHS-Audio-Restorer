@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  POETRY_VERSION: "2.4.1"
+  POETRY_VERSION: "2.4.3"
 
 jobs:
   validate:
@@ -316,8 +316,8 @@ jobs:
 
       - name: Create GitHub Release (authored notes)
         if: steps.notes.outputs.use_body == 'true'
-        # softprops/action-gh-release@v3.0.2
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        # softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
           tag_name: ${{ env.TAG }}
           name: "AI Hybrid VHS Audio Restorer v${{ env.VERSION }}"
@@ -328,8 +328,8 @@ jobs:
 
       - name: Create GitHub Release (generated fallback notes)
         if: steps.notes.outputs.use_body == 'false'
-        # softprops/action-gh-release@v3.0.2
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        # softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
           tag_name: ${{ env.TAG }}
           name: "AI Hybrid VHS Audio Restorer v${{ env.VERSION }}"

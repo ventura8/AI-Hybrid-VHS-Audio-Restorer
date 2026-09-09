@@ -36,11 +36,27 @@ from .config import (
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
     ENABLE_ADECLICK,
+    ENABLE_DYNAMIC_EXPANDER,
+    ENABLE_LINEAR_AIR,
     HIGHPASS_FREQ,
+    LINEAR_AIR_GAIN_DB,
     NOTCH_FREQ,
 )
 from .hardware import CPU_THREADS
-from .utils import FFMPEG_BIN, MODELS_DIR, attempt_cpu_run_with_retry, is_valid_audio, log_msg
+from .utils import (
+    FFMPEG_BIN,
+    MODELS_DIR,
+    attempt_cpu_run_with_retry,
+    ffmpeg_has_filter,
+    is_valid_audio,
+    log_msg,
+)
+
+__all__ = [
+    "build_post_denoise_cleanup_filter",
+    "build_pre_denoise_surgical_filter",
+    "build_full_audio_polish_filter",
+]
 
 ARNNDN_REMOTE_HOST = "raw.githubusercontent.com"
 ARNNDN_REMOTE_PATH_PREFIX = "/GregorR/rnnoise-models/master"
@@ -330,7 +346,7 @@ def _fetch_remote_model_bytes(model_name):
     expected_hash = _get_pinned_arnndn_digest(model_name)
     conn = http.client.HTTPSConnection(ARNNDN_REMOTE_HOST, timeout=30)
     try:
-        conn.request("GET", _get_remote_model_url_path(model_name), headers={"User-Agent": "AI-Hybrid-VHS-Audio-Restorer/1.1.0"})
+        conn.request("GET", _get_remote_model_url_path(model_name), headers={"User-Agent": "AI-Hybrid-VHS-Audio-Restorer/1.2.0"})
         resp = conn.getresponse()
         if resp.status != 200:
             raise RuntimeError(f"HTTP response error {resp.status}: {resp.reason}")
@@ -485,6 +501,8 @@ def _filter_arnndn_step(original_wav, filtered_audio_dir, total_duration=None, m
         return output_wav
 
     selected_model = ARNNDN_MODEL if model_name is None else model_name
+    if not ffmpeg_has_filter("arnndn"):
+        raise RuntimeError("The available FFmpeg executable does not support the 'arnndn' filter.")
     model_path = _resolve_arnndn_model_path(selected_model)
     if not model_path.is_file():
         raise FileNotFoundError(f"ARNNDN model file not found: {selected_model}. Place it in models/arnndn/ or models/.")
@@ -772,18 +790,39 @@ def _analyze_vhs_audio_profile(wav_path):
     Returns:
         dict: Extracted acoustic noise parameters.
     """
-    mono_signal, sr = _read_audio_for_analysis(wav_path)
-    if mono_signal is None or sr is None:
-        return {"nr": 12.0, "nf": -45.0, "tn": True, "highpass": 60, "adeclick": True, "notch": 0.0}
+    stereo_data, sr = _read_stereo_audio_for_analysis(wav_path)
+    if stereo_data is None or sr is None:
+        return {
+            "nr": 12.0,
+            "nf": -45.0,
+            "tn": True,
+            "highpass": 80,
+            "adeclick": True,
+            "notch": 0.0,
+            "clipping": False,
+            "azimuth": 0.0,
+            "dc_block": False,
+            "balance": 0.0,
+            "crt_notch": 0.0,
+            "resonance": 0.0,
+        }
 
+    mono_signal = np.mean(stereo_data, axis=1) if stereo_data.ndim > 1 else stereo_data
     nf_db, nr_db = _estimate_noise_floor_and_reduction(mono_signal)
+    crt = _detect_crt_flyback_notch(mono_signal, sr)
     return {
         "nr": nr_db,
         "nf": nf_db,
         "tn": True,
         "highpass": _detect_low_frequency_rumble(mono_signal, sr),
         "adeclick": _detect_click_density(mono_signal),
-        "notch": _detect_mains_buzz_notch(mono_signal, sr, _detect_crt_flyback_notch(mono_signal, sr)),
+        "notch": _detect_mains_buzz_notch(mono_signal, sr, crt),
+        "clipping": _detect_analog_clipping(stereo_data),
+        "azimuth": _detect_stereo_azimuth_skew(stereo_data, sr),
+        "dc_block": _detect_dc_offset_bias(mono_signal),
+        "balance": _detect_stereo_balance_imbalance(stereo_data),
+        "crt_notch": crt,
+        "resonance": _detect_enclosure_resonance_notch(mono_signal, sr),
     }
 
 
@@ -809,6 +848,12 @@ def _build_auto_vhs_native_filter_string(wav_path):
         highpass_freq=profile["highpass"],
         enable_adeclick=profile["adeclick"],
         notch_freq=profile["notch"],
+        enable_adeclip=profile.get("clipping", False),
+        azimuth_delay_ms=profile.get("azimuth", 0.0),
+        enable_dc_block=profile.get("dc_block", False),
+        balance_db=profile.get("balance", 0.0),
+        crt_notch=profile.get("crt_notch", 0.0),
+        resonance_freq=profile.get("resonance", 0.0),
     )
 
 
@@ -1004,13 +1049,15 @@ def _detect_enclosure_resonance_notch(signal_data, sr):
     return round(float(band_freqs[peak_idx]), 1)
 
 
-def _filter_precondition_step(original_wav, output_wav, precond_config, total_duration=None):
-    """Pass 2: Non-destructive analog pre-conditioning DSP (adeclick + highpass + notch)."""
-    if is_valid_audio(output_wav):
-        log_msg("  [Pass 2/4] Skipping Analog Pre-Conditioning (exists)")
-        return output_wav
-    filter_str = _build_precondition_filter_string(
-        highpass_freq=int(precond_config.get("highpass_hz", 60)),
+def _precondition_filter_from_config(precond_config):
+    """Maps a scanned precondition config onto its pre-conditioning filter graph.
+
+    Extracted so the graph can be asserted without running FFmpeg. Every restoration mode
+    is pre-conditioned through this one mapping, so a golden-snapshot test over it is what
+    proves a scanner change has not moved an existing mode's audio.
+    """
+    return _build_precondition_filter_string(
+        highpass_freq=int(precond_config.get("highpass_hz", 80)),
         enable_adeclick=bool(precond_config.get("enable_adeclick", True)),
         notch_freq=float(precond_config.get("notch_hz", 0.0)),
         enable_adeclip=bool(precond_config.get("enable_adeclip", False)),
@@ -1020,6 +1067,14 @@ def _filter_precondition_step(original_wav, output_wav, precond_config, total_du
         crt_notch=float(precond_config.get("crt_notch_hz", 0.0)),
         resonance_freq=float(precond_config.get("resonance_hz", 0.0)),
     )
+
+
+def _filter_precondition_step(original_wav, output_wav, precond_config, total_duration=None):
+    """Pass 2: Non-destructive analog pre-conditioning DSP (adeclick + highpass + notch)."""
+    if is_valid_audio(output_wav):
+        log_msg("  [Pass 2/4] Skipping Analog Pre-Conditioning (exists)")
+        return output_wav
+    filter_str = _precondition_filter_from_config(precond_config)
     return _run_ffmpeg_filter_step(
         original_wav=original_wav,
         output_wav=output_wav,
@@ -1029,3 +1084,114 @@ def _filter_precondition_step(original_wav, output_wav, precond_config, total_du
         error_desc="Pre-conditioning DSP failed",
         total_duration=total_duration,
     )
+
+
+def _build_full_audio_expander_filter(noise_floor_db=None):
+    """Constructs an adaptive downward dynamic expander curve based on noise floor."""
+    if noise_floor_db is None:
+        return "compand=attacks=0.04:decays=0.18:points=-90/-100|-65/-72|-45/-45|0/0"
+    knee = max(-60.0, min(-35.0, float(noise_floor_db) + 4.0))
+    mid = round((knee - 90.0) / 2.0, 1)
+    return f"compand=attacks=0.04:decays=0.18:points=-90/-100|{mid:.1f}/{mid - 7.0:.1f}|{knee:.1f}/{knee:.1f}|0/0"
+
+
+def _build_linear_air_filter(gain_db=None):
+    """Constructs a gentle high-shelf presence curve compensating for tape head loss."""
+    gain_db = LINEAR_AIR_GAIN_DB if gain_db is None else gain_db
+    if not ENABLE_LINEAR_AIR or gain_db <= 0.0:
+        return None
+    return f"treble=g={gain_db:.1f}:f=7500"
+
+
+def _append_linear_air_stage(stages, apply_air):
+    """Appends high-shelf presence filter if air enhancement is requested."""
+    if apply_air:
+        air = _build_linear_air_filter()
+        if air:
+            stages.append(air)
+
+
+def _append_expander_stage(stages, strategy):
+    """Appends adaptive downward dynamic expander stage if enabled."""
+    if ENABLE_DYNAMIC_EXPANDER:
+        noise_floor_db = (strategy or {}).get("profile", {}).get("noise_floor_db")
+        stages.append(_build_full_audio_expander_filter(noise_floor_db))
+
+
+def build_full_audio_polish_filter(strategy=None, apply_air=False):
+    """Assembles the chained polish filter with optional linear air and dynamic expander."""
+    stages = []
+    _append_linear_air_stage(stages, apply_air)
+    _append_expander_stage(stages, strategy)
+    return ",".join(stages) if stages else None
+
+
+def _append_pre_denoise_harmonics(stages, notch_hz):
+    """Append higher mains harmonics not handled by pre-conditioning.
+
+    Pre-cleans tonal mains noise before neural denoising so the neural model
+    does not over-process or distort programme content trying to cancel hum.
+    """
+    if not notch_hz or notch_hz <= 0:
+        return
+    fundamental = MAINS_FUNDAMENTAL_BY_HARMONIC.get(notch_hz, notch_hz)
+    # From the third harmonic: _append_mains_notches already covers the fundamental and the
+    # second. Starting at 2 cascaded a Q=15 and a Q=30 bandreject on the same 100/120 Hz tone,
+    # cutting far deeper than either stage intends -- and contradicting this function's purpose.
+    for harmonic_idx in range(3, 6):
+        freq = round(fundamental * harmonic_idx, 2)
+        stages.append(f"bandreject=f={freq}:width_type=q:w=30")
+
+
+def _get_strategy_freq(strategy, key):
+    """Retrieves a frequency value from profile or precondition_filters."""
+    if not isinstance(strategy, dict):
+        return 0.0
+    val = strategy.get("profile", {}).get(key)
+    if val is None:
+        val = strategy.get("precondition_filters", {}).get(key, 0.0)
+    return float(val)
+
+
+def _extract_notch_and_crt(strategy):
+    """Extracts detected mains notch and CRT line whistle frequencies from strategy."""
+    notch_hz = _get_strategy_freq(strategy, "notch_hz")
+    crt_hz = _get_strategy_freq(strategy, "crt_notch_hz")
+    return notch_hz, crt_hz
+
+
+def build_pre_denoise_surgical_filter(strategy=None):
+    """Builds surgical DSP filter graph executed before neural denoising in auto_pure_linear.
+
+    Eliminates higher mains hum harmonics via narrow bandreject filters before handing
+    the audio to UVR-DeNoise, preventing neural model over-processing.
+    """
+    stages = []
+    notch_hz, _ = _extract_notch_and_crt(strategy)
+    _append_pre_denoise_harmonics(stages, notch_hz)
+    return ",".join(stages) if stages else None
+
+
+def _append_post_denoise_mains(stages, notch_hz):
+    """Appends a narrow fundamental mains notch to catch post-denoising residual tone."""
+    if notch_hz and notch_hz > 0:
+        fundamental = MAINS_FUNDAMENTAL_BY_HARMONIC.get(notch_hz, notch_hz)
+        stages.append(f"bandreject=f={fundamental}:width_type=q:w=40")
+
+
+def _append_post_denoise_crt(stages, crt_hz):
+    """Appends ultra-narrow notch for residual CRT flyback whistle that survived denoising."""
+    if crt_hz and crt_hz > 0:
+        stages.append(f"bandreject=f={crt_hz}:width_type=q:w=80")
+
+
+def build_post_denoise_cleanup_filter(strategy=None):
+    """Builds surgical residual cleanup filter applied between neural denoising and polish.
+
+    Uses high-Q surgical notches to catch any lingering mains fundamental or CRT whistle.
+    """
+    stages = []
+    notch_hz, crt_hz = _extract_notch_and_crt(strategy)
+    _append_post_denoise_mains(stages, notch_hz)
+    _append_post_denoise_crt(stages, crt_hz)
+    return ",".join(stages) if stages else None
