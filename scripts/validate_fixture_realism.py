@@ -428,6 +428,7 @@ def _report_repair(results):
 STAGE_CHECKS = (
     ("current", "no_hum_cancel", ("speech_hum", "music_hum", "worn", "buzz", "hifibuzz")),
     ("plosive_tamer", "current", ("plosive", "handling")),
+    ("tone_cancel", "current", ("ep", "flutter", "whistle", "buzz", "recordedwhine")),
 )
 
 

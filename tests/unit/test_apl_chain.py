@@ -14,8 +14,8 @@ def test_the_stages_run_in_the_documented_order(tmp_path):
     """Physical repair before the tonal stages, and subtraction last, ahead of the neural stage."""
     plan = apl_chain.stage_plan(tmp_path, 10.0, {"profile": {}}, physical_repair=True, spectral_denoise=True)
     names = [name for name, _wanted, _stage in plan]
-    assert names == ["physical_repair", "hum_cancel", "plosive_tamer", "tonal_cleanup", "spectral_denoise"]
-    assert [wanted for _name, wanted, _stage in plan] == [True, False, False, True, True]
+    assert names == ["physical_repair", "hum_cancel", "tone_cancel", "plosive_tamer", "tonal_cleanup", "spectral_denoise"]
+    assert [wanted for _name, wanted, _stage in plan] == [True, False, False, False, True, True]
 
 
 def test_a_mode_that_opts_into_nothing_runs_nothing(tmp_path):

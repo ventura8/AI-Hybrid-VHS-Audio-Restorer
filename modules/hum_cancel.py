@@ -78,6 +78,11 @@ LINE_TOLERANCE_BINS = 2
 MAX_REFINE_HZ = 0.5
 REFINE_SEARCH_FACTOR = 1.5
 REFINE_SAMPLES = 1 << 20
+# The running median steadies a line that stays put; a line tracked with a wide band is one
+# that moves, and its baseband turns a good part of a cycle inside the median's span, where
+# a median of the parts of a turning phasor is no estimate of it. Past this bandwidth the
+# low-pass works alone.
+MEDIAN_MAX_BANDWIDTH_HZ = 10.0
 # Below this many frames the envelope filter has nothing to settle on.
 MIN_FRAMES = 64
 TOP_MARGIN_HZ = 100.0
@@ -181,19 +186,19 @@ def refine_f0(mono_signal, sample_rate, f0, harmonics):
     return f0 + float(np.clip(np.median(offsets), -MAX_REFINE_HZ, MAX_REFINE_HZ))
 
 
-def _demod_kernel(freqs_hz, sample_rate):
+def _demod_kernel(freqs_hz, sample_rate, length=ANALYSIS_WINDOW):
     """The windowed demodulation kernel, (window x lines), normalised so a sinusoid of amplitude A reads A."""
-    window = np.hanning(ANALYSIS_WINDOW)
-    samples = np.arange(ANALYSIS_WINDOW)[:, None]
+    window = np.hanning(length)
+    samples = np.arange(length)[:, None]
     phase = -2j * np.pi * samples * np.asarray(freqs_hz)[None, :] / sample_rate
     return (2.0 / window.sum()) * window[:, None] * np.exp(phase)
 
 
-def _frame_starts(offset, available):
+def _frame_starts(offset, available, hop, length):
     """Absolute start samples of every analysis frame that fits in the buffered stretch."""
-    first = -(-offset // ANALYSIS_HOP) * ANALYSIS_HOP
-    last = offset + available - ANALYSIS_WINDOW
-    return np.arange(first, last + 1, ANALYSIS_HOP) if last >= first else np.zeros(0, dtype=np.int64)
+    first = -(-offset // hop) * hop
+    last = offset + available - length
+    return np.arange(first, last + 1, hop) if last >= first else np.zeros(0, dtype=np.int64)
 
 
 def _absolute_phase(freqs_hz, starts, sample_rate):
@@ -202,28 +207,30 @@ def _absolute_phase(freqs_hz, starts, sample_rate):
     return np.exp(-2j * np.pi * turns)
 
 
-def _demodulate(buffer, offset, kernel, freqs_hz, sample_rate):
+def _demodulate(buffer, offset, kernel, freqs_hz, sample_rate, hop):
     """One buffered stretch's frames, demodulated: (frames x channels x lines), and the next buffer offset."""
-    starts = _frame_starts(offset, len(buffer))
+    starts = _frame_starts(offset, len(buffer), hop, len(kernel))
     if not len(starts):
         return np.zeros((0, buffer.shape[1], kernel.shape[1]), dtype=np.complex64), offset
-    frames = np.lib.stride_tricks.sliding_window_view(buffer, ANALYSIS_WINDOW, axis=0)[starts - offset]
+    frames = np.lib.stride_tricks.sliding_window_view(buffer, len(kernel), axis=0)[starts - offset]
     baseband = np.einsum("fcw,wl->fcl", frames, kernel) * _absolute_phase(freqs_hz, starts, sample_rate)[:, None, :]
-    return baseband.astype(np.complex64), int(starts[-1] + ANALYSIS_HOP)
+    return baseband.astype(np.complex64), int(starts[-1] + hop)
 
 
-def analyse(source_wav, freqs_hz):
+def analyse(source_wav, freqs_hz, hop=ANALYSIS_HOP, window=ANALYSIS_WINDOW):
     """Every line's baseband across the recording, per channel: (frames x channels x lines), and the sample rate.
 
     Streamed a block at a time on an absolute frame grid, so the frames are the same
-    whatever the block size.
+    whatever the block size. A finer hop raises the frame rate and with it the widest
+    envelope band a line can be tracked with; a shorter window lets a line that moves
+    inside a frame's span still read as one line.
     """
     with sf.SoundFile(str(source_wav)) as handle:
-        kernel = _demod_kernel(freqs_hz, handle.samplerate)
+        kernel = _demod_kernel(freqs_hz, handle.samplerate, window)
         buffer, offset, pieces = np.zeros((0, handle.channels), dtype=np.float32), 0, []
         for block in handle.blocks(blocksize=BLOCK_SAMPLES, dtype="float32", always_2d=True):
             buffer = np.concatenate((buffer, block))
-            baseband, next_offset = _demodulate(buffer, offset, kernel, freqs_hz, handle.samplerate)
+            baseband, next_offset = _demodulate(buffer, offset, kernel, freqs_hz, handle.samplerate, hop)
             pieces.append(baseband)
             consumed = next_offset - offset
             buffer, offset = buffer[consumed:], next_offset
@@ -248,7 +255,9 @@ def smooth_envelope(baseband, bandwidths_hz, frame_rate):
     """
     smoothed = np.empty_like(baseband)
     for line, bandwidth in enumerate(bandwidths_hz):
-        steadied = _median_over(baseband[..., line], frame_rate / bandwidth)
+        steadied = baseband[..., line]
+        if bandwidth < MEDIAN_MAX_BANDWIDTH_HZ:
+            steadied = _median_over(steadied, frame_rate / bandwidth)
         sos = scipy.signal.butter(4, bandwidth, fs=frame_rate, output="sos")
         smoothed[..., line] = scipy.signal.sosfiltfilt(sos, steadied, axis=0)
     return smoothed
@@ -276,9 +285,9 @@ def cap_envelope(envelope, frame_rate):
     return envelope * np.minimum(1.0, bound / (magnitude + 1e-30))
 
 
-def _synthesise(envelope, freqs_hz, start, count, sample_rate):
+def _synthesise(envelope, freqs_hz, start, count, sample_rate, hop, window):
     """The lines' waveform over one block of samples, from the frame-rate envelope interpolated to sample rate."""
-    times = (np.arange(len(envelope)) * ANALYSIS_HOP + ANALYSIS_WINDOW / 2.0) / sample_rate
+    times = (np.arange(len(envelope)) * hop + window / 2.0) / sample_rate
     samples = np.arange(start, start + count)
     hum = np.zeros((count, envelope.shape[1]), dtype=np.float64)
     for line, hz in enumerate(freqs_hz):
@@ -290,7 +299,7 @@ def _synthesise(envelope, freqs_hz, start, count, sample_rate):
     return hum
 
 
-def subtract(source_wav, target_wav, envelope, freqs_hz):
+def subtract(source_wav, target_wav, envelope, freqs_hz, hop=ANALYSIS_HOP, window=ANALYSIS_WINDOW):
     """Writes the source less the resynthesised lines, a block at a time."""
     with (
         sf.SoundFile(str(source_wav)) as handle,
@@ -298,20 +307,20 @@ def subtract(source_wav, target_wav, envelope, freqs_hz):
     ):
         start = 0
         for block in handle.blocks(blocksize=BLOCK_SAMPLES, dtype="float32", always_2d=True):
-            hum = _synthesise(envelope, freqs_hz, start, len(block), handle.samplerate)
+            hum = _synthesise(envelope, freqs_hz, start, len(block), handle.samplerate, hop, window)
             out.write((block - hum).astype(np.float32))
             start += len(block)
     return target_wav
 
 
-def cancel_lines(source_wav, target_wav, freqs_hz, bandwidths_hz, floors):
+def cancel_lines(source_wav, target_wav, freqs_hz, bandwidths_hz, floors, hop=ANALYSIS_HOP, window=ANALYSIS_WINDOW):
     """Cancels the given spectral lines from a recording; returns the target, or None when too short to track."""
-    baseband, sample_rate = analyse(source_wav, freqs_hz)
+    baseband, sample_rate = analyse(source_wav, freqs_hz, hop, window)
     if len(baseband) < MIN_FRAMES:
         return None
-    frame_rate = sample_rate / ANALYSIS_HOP
+    frame_rate = sample_rate / hop
     envelope = cap_envelope(shrink_to_floor(smooth_envelope(baseband, bandwidths_hz, frame_rate), floors, bandwidths_hz), frame_rate)
-    return subtract(source_wav, target_wav, envelope, freqs_hz)
+    return subtract(source_wav, target_wav, envelope, freqs_hz, hop, window)
 
 
 def cancel_mains(source_wav, target_wav, f0, gated):

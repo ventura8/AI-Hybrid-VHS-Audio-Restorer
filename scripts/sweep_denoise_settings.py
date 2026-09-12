@@ -117,6 +117,8 @@ VARIANTS = {
         (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
         (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
     ],
+    # Persistent non-mains lines: a recorded whine, a buzz, a whistle off the notch.
+    "tone_cancel": [(CONFIG_PY, r'\("apl_enable_tone_cancel", False\)', '("apl_enable_tone_cancel", True )')],
     # Event-gated plosive control, at the shipped excess threshold and a lower one.
     "plosive_tamer": [(CONFIG_PY, r'\("apl_enable_plosive_tamer", False\)', '("apl_enable_plosive_tamer", True )')],
     "plosive_tamer_9db": [

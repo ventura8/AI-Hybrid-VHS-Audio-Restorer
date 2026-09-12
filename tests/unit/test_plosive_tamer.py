@@ -222,5 +222,5 @@ def test_the_stage_is_wired_after_the_hum_canceller(tmp_path):
 
     plan = apl_chain.stage_plan(tmp_path, None, None, physical_repair=True, spectral_denoise=True, hum_cancel=True, plosive_tamer=True)
     names = [name for name, _wanted, _stage in plan]
-    assert names.index("plosive_tamer") == names.index("hum_cancel") + 1
-    assert names.index("plosive_tamer") < names.index("tonal_cleanup")
+    assert names.index("plosive_tamer") == names.index("tone_cancel") + 1
+    assert names.index("hum_cancel") < names.index("plosive_tamer") < names.index("tonal_cleanup")

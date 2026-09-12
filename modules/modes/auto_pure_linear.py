@@ -49,6 +49,7 @@ class AutoPureLinearMode(BaseRestorationMode):
                 # is what lets a sweep of that switch reach the chain.
                 hum_cancel=True,
                 plosive_tamer=True,
+                tone_cancel=True,
             )
 
         processing._process_single_track_pipeline(
