@@ -48,6 +48,7 @@ input on a defect has restored nothing, which is easy to miss when only modes ar
 
 import argparse
 import json
+import re
 import statistics
 import subprocess
 import sys
@@ -249,7 +250,10 @@ def _residual_noise_db(reference, estimate, frame=1024):
 def score_pair(clean_path, candidate_path, variant=None, band_hz=SCORE_BAND_HZ):
     """Returns every full-reference metric for one restored candidate."""
     reference, sample_rate = _read_mono(clean_path)
-    estimate, _rate = _read_mono(candidate_path)
+    estimate, candidate_rate = _read_mono(candidate_path)
+    if candidate_rate != sample_rate:
+        print(f"    {Path(candidate_path).name}: {candidate_rate} Hz against the reference's {sample_rate}; not scored")
+        return None
     reference, estimate, lag = _align(reference, estimate)
     if len(reference) < STFT_FRAME:
         return None
@@ -290,11 +294,23 @@ def _restore(degraded_wav, mode, work_dir, gpu_name):
     restored_video = _run_mode_restoration(video_path, mode, work_dir, gpu_name)
     if restored_video is None:
         return None
-    return _extract_audio(restored_video, work_dir / f"{degraded_wav.stem}_{mode}.wav")
+    try:
+        return _extract_audio(restored_video, work_dir / f"{degraded_wav.stem}_{mode}.wav")
+    except subprocess.TimeoutExpired:
+        print(f"    extraction timed out: {degraded_wav.name} ({mode})")
+        return None
+
+
+# Fixture names are "<stem><two-digit segment index>_<variant>", and both halves may carry
+# underscores and the stem may carry digits, so the variant is anchored on the index.
+_FIXTURE_NAME = re.compile(r"^.*?\d{2}_(.+)$")
 
 
 def _fixture_variant(name):
-    """Returns the defect family a fixture name encodes."""
+    """Returns the defect family a fixture name encodes: everything after the segment index."""
+    match = _FIXTURE_NAME.match(name)
+    if match:
+        return match.group(1)
     return name.split("_", 1)[1] if "_" in name else name
 
 

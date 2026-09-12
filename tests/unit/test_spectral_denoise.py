@@ -277,11 +277,13 @@ def test_tonal_cleanup_survives_a_failed_stage(quiet_wav, tmp_path):
     """A failure leaves the audio usable rather than failing the restoration."""
     strategy = {"profile": {"notch_hz": 50.0, "highpass_hz": 0}}
     with (
-        patch.object(spectral_denoise, "APL_ENABLE_TONAL_CLEANUP", True),
+        patch.object(spectral_denoise, "APL_ENABLE_DEHUM", True),
+        patch.object(spectral_denoise, "detect_mains_hz", return_value=50.0),
         patch("modules.cathar._require_cathar_binary"),
-        patch("modules.cathar._cathar_dehum_step", side_effect=RuntimeError("cathar exploded")),
+        patch("modules.cathar._cathar_dehum_step", side_effect=RuntimeError("cathar exploded")) as mock_dehum,
     ):
         assert spectral_denoise.apply_tonal_cleanup(quiet_wav, tmp_path, strategy=strategy) == quiet_wav
+    mock_dehum.assert_called_once()
 
 
 def _material_wav(tmp_path, name, tonal, seconds=3.0):

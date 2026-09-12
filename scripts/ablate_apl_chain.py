@@ -348,7 +348,7 @@ def _run_chain(degraded, chain, work_dir, context):
     for stage_name in chain:
         try:
             produced = STAGES[stage_name](current, work_dir, context)
-        except (OSError, RuntimeError, ValueError) as exc:
+        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
             print(f"    {stage_name} failed: {exc}")
             return None
         if produced is None or not Path(produced).exists():

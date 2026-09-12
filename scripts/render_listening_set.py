@@ -22,7 +22,7 @@ from scripts.ia_benchmark_common import _run_mode_restoration
 def _extract(video, target):
     """Pulls the audio out of a container as 16-bit PCM for easy playback; None when ffmpeg fails or times out."""
     try:
-        subprocess.run(
+        completed = subprocess.run(
             [FFMPEG_BIN, "-y", "-i", str(video), "-vn", "-acodec", "pcm_s16le", "-ar", "44100", str(target)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -31,6 +31,10 @@ def _extract(video, target):
         )
     except subprocess.TimeoutExpired:
         sys.stderr.write(f"  extraction timed out: {Path(video).name}\n")
+        completed = None
+    if completed is None or completed.returncode != 0:
+        # Whatever ffmpeg left behind is not this render; a partial file must not pass as one.
+        Path(target).unlink(missing_ok=True)
         return None
     return target if target.exists() else None
 

@@ -147,7 +147,11 @@ def _quietest_window(mono, window):
 def _extract_mono(video_path, work_wav):
     """Pulls 44.1 kHz float audio out of a corpus clip."""
     command = [FFMPEG_BIN, "-y", "-i", str(video_path), "-vn", "-acodec", "pcm_f32le", "-ar", str(TARGET_RATE), str(work_wav)]
-    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=120)
+    try:
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=120)
+    except subprocess.TimeoutExpired:
+        # A stalled decode is one capture lost to the bank, not the whole bank.
+        return None
     if not work_wav.exists():
         return None
     samples, _rate = sf.read(str(work_wav), dtype="float32", always_2d=True)
@@ -601,8 +605,11 @@ def inject_codec(mono, rate, work_dir):
     sf.write(str(source), mono.astype(np.float32), rate, subtype="FLOAT")
     encode = [FFMPEG_BIN, "-y", "-i", str(source), "-c:a", "aac", "-b:a", CODEC_BITRATE, str(coded)]
     decode = [FFMPEG_BIN, "-y", "-i", str(coded), "-acodec", "pcm_f32le", "-ar", str(rate), str(decoded)]
-    for command in (encode, decode):
-        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=120)
+    try:
+        for command in (encode, decode):
+            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=120)
+    except subprocess.TimeoutExpired:
+        return mono.astype(np.float32)
     if not decoded.exists():
         return mono.astype(np.float32)
     out, _rate = sf.read(str(decoded), dtype="float32", always_2d=True)

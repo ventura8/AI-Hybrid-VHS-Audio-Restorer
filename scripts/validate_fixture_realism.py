@@ -37,8 +37,10 @@ class was built to trip: a crackle fixture that does not read as clicks exercise
 And the repair stages are run on and off over every class, held to the real-tape verdict
 that gated repair is close to free -- across 174 captures it moved removal from 9.66 to
 9.74 dB and deviation from 0.48 to 0.50 -- so on a class carrying no physical damage the
-two must land within that distance of each other, and on a class that does the stage must
-have fired.
+two must land within that distance of each other. On a class that does carry damage the
+stage's effect is reported, not gated: the trade metric reads the finished mux, and a pop
+or a dropout is a few milliseconds inside it, so an impulse repair that measures +5.5 dB
+at the damaged samples (scripts/score_defect_repair.py) can read as nothing here.
 
 Each comparison patches the configuration the way the settings sweep does, so it measures
 the setting that actually resolves, and restores the tree afterwards.

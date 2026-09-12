@@ -233,10 +233,12 @@ left alone in this release, sees on material that does not have the fault:
 | DC bias | rumble and clipping |
 | Rumble | mains hum, and music-led programme |
 
-A crackle fixture the scanner cannot see exercises nothing; a detector that
-fires on everything runs its stage on everything -- pop removal and `decrackle`
-run on nearly every tape, which is why both are held to being free there. Both
-are findings the set now measures rather than the chain assumes.
+The matrix exists for two reasons. A class its own detector could not see would
+exercise nothing, which is what the exit gate above catches (the crackle class
+is read on every voice); and a detector that fires on everything runs its
+stage on everything -- pop removal and `decrackle` run on nearly every tape,
+which is why both are held to being free there. Both are findings the set now
+measures rather than the chain assumes.
 
 ### Repair on undamaged material
 

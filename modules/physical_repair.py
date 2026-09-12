@@ -62,8 +62,9 @@ from .utils import log_msg
 AZIMUTH_MIN_MS = 0.05
 # What a stage can fail with without that being the restoration's failure: the CLI absent or
 # an output it cannot write (OSError), a Cathar step that reports its own error or an audio
-# file the wrapper rejects (RuntimeError), a capture a stage's arithmetic refuses (ValueError).
-STAGE_FAILURES = (OSError, RuntimeError, ValueError)
+# file the wrapper rejects (RuntimeError), a capture a stage's arithmetic refuses (ValueError),
+# a capture the host cannot hold for a stage that works in memory (MemoryError).
+STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
 
 
 def _profile_value(strategy, key, default):
@@ -231,11 +232,11 @@ def apply_when_needed(source_wav, audio_dir, strategy=None, total_duration=None)
     or when the Cathar CLI is unavailable, so a host that never provisioned it can still run
     the mode.
     """
-    if not APL_ENABLE_PHYSICAL_REPAIR:
+    if not APL_ENABLE_PHYSICAL_REPAIR or not _cli_available():
         return source_wav
     source_wav = Path(source_wav)
     plan = _stage_plan(source_wav, strategy)
-    if not any(plan.values()) or not _cli_available():
+    if not any(plan.values()):
         return source_wav
 
     output_dir = Path(audio_dir) / "physical_repair"

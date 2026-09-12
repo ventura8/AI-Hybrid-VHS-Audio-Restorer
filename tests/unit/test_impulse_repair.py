@@ -7,8 +7,6 @@ cannot read. The stage earned its place on the calibrated crackle class, where i
 +5.5 dB inside the pops against cathar's decrackle at +1.7.
 """
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 import soundfile as sf
@@ -141,7 +139,15 @@ def test_the_stage_is_wired_in_ahead_of_decrackle():
     steps = physical_repair._steps()
     assert list(steps)[:2] == ["depop", "decrackle"]
     assert steps["depop"].keywords == {"threshold": physical_repair.APL_DEPOP_THRESHOLD}
-    assert Path(physical_repair.__file__).read_text(encoding="utf-8").count("impulse_repair.depop") == 1
+    assert steps["depop"].func is impulse_repair.depop
+
+
+def test_a_capture_the_host_cannot_hold_is_left_unrepaired(tmp_path, monkeypatch):
+    """Running out of memory inside the stage skips it rather than ending the restoration."""
+    source = tmp_path / "in.wav"
+    sf.write(str(source), _voiced(0.5), RATE, subtype="FLOAT")
+    monkeypatch.setattr(impulse_repair, "remove_pops", lambda *_a, **_k: (_ for _ in ()).throw(MemoryError()))
+    assert impulse_repair.depop(source, tmp_path / "out") is None
 
 
 def test_an_empty_file_yields_an_empty_repair(tmp_path):

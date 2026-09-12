@@ -55,8 +55,10 @@ ISOLATION_MAX_DENSITY = 0.01
 
 def _ar_coefficients(samples, order):
     """Prediction coefficients [1, a1..ap] by the autocorrelation method (Levinson-Durbin)."""
-    zero_lag, last_lag = len(samples) - 1, len(samples) + order
-    autocorrelation = np.correlate(samples, samples, mode="full")[zero_lag:last_lag]
+    # Only the lags the model needs, each a dot product: the full correlation is quadratic
+    # in the block and computes thousands of lags that are thrown away.
+    count = len(samples)
+    autocorrelation = np.array([np.dot(samples[: count - lag], samples[lag:]) for lag in range(order + 1)])
     autocorrelation[0] += 1e-9 * autocorrelation[0] + 1e-12
     tail = scipy.linalg.solve_toeplitz(autocorrelation[:order], -autocorrelation[1:])
     return np.concatenate(([1.0], tail))
@@ -153,6 +155,16 @@ def remove_pops(samples, threshold=DEFAULT_THRESHOLD):
     return repaired.astype(np.float32), count
 
 
+def _repaired_channels(audio, threshold):
+    """Every channel of a capture with its pops refilled, and how many spans that took."""
+    repaired = np.empty_like(audio)
+    total = 0
+    for channel in range(audio.shape[1]):
+        repaired[:, channel], count = remove_pops(audio[:, channel], threshold)
+        total += count
+    return repaired, total
+
+
 def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=None):
     """Removes pops from a WAV, channel by channel; returns the output path or None.
 
@@ -163,13 +175,14 @@ def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=Non
         return None
     try:
         audio, rate = sf.read(str(input_wav), dtype="float32", always_2d=True)
+        repaired, total = _repaired_channels(audio, threshold)
     except (OSError, RuntimeError, ValueError):
         return None
-    repaired = np.empty_like(audio)
-    total = 0
-    for channel in range(audio.shape[1]):
-        repaired[:, channel], count = remove_pops(audio[:, channel], threshold)
-        total += count
+    except MemoryError:
+        # A capture the host cannot hold twice over is left unrepaired rather than ending
+        # the restoration.
+        log_msg("    [Repair] depop skipped: not enough memory for this capture.")
+        return None
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / f"depopped_{Path(input_wav).name}"

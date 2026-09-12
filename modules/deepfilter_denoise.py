@@ -43,9 +43,10 @@ CHUNK_SECONDS = 60.0
 OVERLAP_SECONDS = 0.5
 # What a model that is installed can still fail with: a missing checkpoint or an unreadable
 # file (OSError), a CUDA or inference fault (RuntimeError), a shape or rate it rejects
-# (ValueError), a build whose API moved (AttributeError, TypeError). Each is a supported
-# state of an optional stage, and each falls back to UVR-DeNoise.
-STAGE_FAILURES = (OSError, RuntimeError, ValueError, AttributeError, TypeError)
+# (ValueError), a build whose API moved (AttributeError, TypeError), a block the host cannot
+# allocate (MemoryError). Each is a supported state of an optional stage, and each falls
+# back to UVR-DeNoise.
+STAGE_FAILURES = (OSError, RuntimeError, ValueError, AttributeError, TypeError, MemoryError)
 
 _MODEL = {}
 

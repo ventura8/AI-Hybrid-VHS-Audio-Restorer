@@ -28,6 +28,7 @@ blends each block with enough context either side that its interior comes out id
 whole-file processing.
 """
 
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -172,7 +173,7 @@ def _read_weights(path):
     try:
         with np.load(path) as data:
             return {name: data[name] for name in data.files}
-    except (OSError, ValueError):
+    except (OSError, ValueError, EOFError, zipfile.BadZipFile):
         return None
 
 
@@ -215,7 +216,18 @@ def _values_usable(_layers, model):
 
 
 # Each rule a weights file has to satisfy, with what to say when it does not.
+def _features_named(model):
+    """A file that carries its feature names was fitted on this feature set, by name and not only by width.
+
+    Older artifacts carry no names and are held to the width rule alone.
+    """
+    if "feature_names" not in model:
+        return True
+    return tuple(str(name) for name in model["feature_names"]) == tuple(FEATURE_NAMES)
+
+
 _SCHEMA_RULES = (
+    (lambda _layers, model: _features_named(model), "the weights were fitted on a different feature set"),
     (_layers_agree, "a layer's weight and bias disagree"),
     (_layers_chain, "the layers do not chain to one output"),
     (_normalisation_fits, "the feature normalisation does not fit the first layer"),
@@ -237,9 +249,15 @@ def schema_error(model):
 
 
 def _shape_error(layers, model):
-    """The first shape rule a complete weights file breaks, or None."""
-    broken = [problem for holds, problem in _SCHEMA_RULES if not holds(layers, model)]
-    return broken[0] if broken else None
+    """The first shape rule a complete weights file breaks, or None.
+
+    The rules run in order and stop at the first failure: a later rule reads shapes an
+    earlier one has already found wrong, and would raise rather than report.
+    """
+    for holds, problem in _SCHEMA_RULES:
+        if not holds(layers, model):
+            return problem
+    return None
 
 
 def load_model(model_path=None):

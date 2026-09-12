@@ -248,7 +248,16 @@ def main():
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     weights = {name: tensor.detach().cpu().numpy() for name, tensor in model.state_dict().items()}
-    np.savez(args.output, feature_mean=mean, feature_std=std, hidden=np.array(args.hidden), **weights)
+    # The feature names travel with the weights, so a later change to the feature set is
+    # refused by name and not only by width.
+    np.savez(
+        args.output,
+        feature_mean=mean,
+        feature_std=std,
+        feature_names=np.array(blend_weights.FEATURE_NAMES),
+        hidden=np.array(args.hidden),
+        **weights,
+    )
     print(f"\nwrote {args.output}")
 
 

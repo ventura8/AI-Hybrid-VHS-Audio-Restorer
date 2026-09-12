@@ -197,13 +197,25 @@ def test_every_defect_class_builds_a_matching_triple(name, tmp_path):
     assert not np.allclose(degraded, reference)
 
 
-def test_every_class_stream_is_seeded_by_the_voice():
-    """Five voices under one noise window would be one draw; each voice's streams differ from the next's."""
-    import inspect
+def test_every_class_stream_is_seeded_by_the_voice(tmp_path, monkeypatch):
+    """Five voices under one noise window would be one draw: each helper's stream must differ by voice."""
+    draws = {}
 
-    source = inspect.getsource(gen._build)
-    for offset in ("[seed, voice]", "[seed + 1, voice]", "[seed + 2, voice]"):
-        assert offset in source
+    def recorder(name):
+        def record(*args):
+            draws.setdefault(name, []).append(int(args[-1].integers(1 << 30)))
+            return []
+
+        return record
+
+    monkeypatch.setattr(gen, "_build_speech_led", recorder("speech"))
+    monkeypatch.setattr(gen, "_build_music_led", recorder("music"))
+    monkeypatch.setattr(gen, "_build_defect_classes", recorder("defects"))
+    for voice in (0, 1, 1):
+        gen._build([], tmp_path, RATE, 1, [np.zeros(RATE)], [], 4242, voice)
+    assert {name: seen[1] == seen[2] for name, seen in draws.items()} == {"speech": True, "music": True, "defects": True}
+    assert {name: seen[0] != seen[1] for name, seen in draws.items()} == {"speech": True, "music": True, "defects": True}
+    assert len({seen[0] for seen in draws.values()}) == 3, "the three helpers share a stream"
 
 
 def test_stereo_classes_come_out_stereo_and_the_rest_mono():

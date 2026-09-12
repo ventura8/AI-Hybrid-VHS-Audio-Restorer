@@ -184,6 +184,28 @@ def test_block_processing_equals_whole_file_processing(tmp_path, seconds):
     assert not (tmp_path / "blended.magnitudes").exists()
 
 
+def test_a_corrupt_weights_file_is_refused_at_load(tmp_path):
+    """A file that is not an archive at all, or a truncated one, skips the blend rather than raising."""
+    garbage = tmp_path / "garbage.npz"
+    garbage.write_bytes(b"PK\x03\x04 not really a zip")
+    assert blend_weights.load_model(garbage) is None
+    truncated = tmp_path / "truncated.npz"
+    np.savez(truncated, **_complete_model())
+    truncated.write_bytes(truncated.read_bytes()[:200])
+    assert blend_weights.load_model(truncated) is None
+
+
+def test_weights_named_for_another_feature_set_are_refused():
+    """A file that carries its feature names is checked by name, not only by width."""
+    model = _complete_model()
+    model["feature_names"] = np.array(blend_weights.FEATURE_NAMES)
+    assert blend_weights.schema_error(model) is None
+    renamed = list(blend_weights.FEATURE_NAMES)
+    renamed[0], renamed[1] = renamed[1], renamed[0]
+    model["feature_names"] = np.array(renamed)
+    assert blend_weights.schema_error(model) is not None
+
+
 def test_a_partial_weights_file_is_refused_at_load(tmp_path):
     """A truncated or stale file skips the blend instead of raising KeyError from the arithmetic."""
     partial = tmp_path / "partial.npz"

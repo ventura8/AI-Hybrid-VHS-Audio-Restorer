@@ -13,12 +13,17 @@ from .utils import log_msg
 def neural_denoise_dir(audio_dir, surgical_wav, model):
     """The UVR step's directory for this input and model, keyed so another pair cannot reuse it.
 
-    The key is the input's name (which carries every upstream stage's fingerprint) and
-    size, and the model. A rerun after a settings change lands in a different directory
-    and denoises afresh.
+    The key is the input's name (which carries every upstream stage's fingerprint), its
+    size and modification time, and the model. A rerun after a settings change lands in a
+    different directory and denoises afresh, and so does a rerun after the same path was
+    rewritten with different audio.
     """
-    size = surgical_wav.stat().st_size if surgical_wav.exists() else 0
-    key = hashlib.sha256(f"{surgical_wav.name}|{size}|{model}".encode("utf-8")).hexdigest()[:12]
+    if surgical_wav.exists():
+        stat = surgical_wav.stat()
+        revision = f"{stat.st_size}|{stat.st_mtime_ns}"
+    else:
+        revision = "0|0"
+    key = hashlib.sha256(f"{surgical_wav.name}|{revision}|{model}".encode("utf-8")).hexdigest()[:12]
     return audio_dir / f"neural_denoised_{key}"
 
 
