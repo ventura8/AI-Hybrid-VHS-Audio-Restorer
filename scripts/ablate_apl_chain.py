@@ -230,6 +230,30 @@ def _stage_cathar_denoise_soft(source, work_dir, _context):
     return _cathar_denoise_with_alpha(source, work_dir, 1.8)
 
 
+def _stage_cathar_denoise_apl(source, work_dir, _context):
+    """Cathar subtraction exactly as auto_pure_linear ships it: factor 3.0 from a 2.5 s probe."""
+    noiseprint = cathar_mod._cathar_noiseprint_step(source, work_dir, duration_s=2.5)
+    return cathar_mod._cathar_denoise_step(source, work_dir, alpha=3.0, noiseprint_path=noiseprint)
+
+
+def _native_suppress_with_bias(source, work_dir, bias):
+    """The mode's own MMSE log-spectral suppressor from the same 2.5 s probe, at a noise bias."""
+    from modules import spectral_suppress
+
+    target = work_dir / f"native_{bias}_{source.name}"
+    return spectral_suppress.suppress_or_none(source, target, noise_bias=bias, gain_floor_db=-20.0, dd_alpha=0.96, probe_s=2.5)
+
+
+def _stage_native_suppress(source, work_dir, _context):
+    """The native suppressor at the noise estimate as measured."""
+    return _native_suppress_with_bias(source, work_dir, 1.0)
+
+
+def _stage_native_suppress_biased(source, work_dir, _context):
+    """The native suppressor with the noise estimate raised by half, the over-subtraction analogue."""
+    return _native_suppress_with_bias(source, work_dir, 1.5)
+
+
 def _neural_stage(source, work_dir, model):
     """Runs the UVR separator, which needs a directory of its own per invocation."""
     target_dir = work_dir / f"neural_{model.split('.')[0]}"
@@ -280,6 +304,9 @@ STAGES = {
     "cathar_denoise": _stage_cathar_denoise,
     "cathar_denoise_gentle": _stage_cathar_denoise_gentle,
     "cathar_denoise_soft": _stage_cathar_denoise_soft,
+    "cathar_denoise_apl": _stage_cathar_denoise_apl,
+    "native_suppress": _stage_native_suppress,
+    "native_suppress_b1_5": _stage_native_suppress_biased,
     "cathar_denoise_long_print": _stage_cathar_denoise_long_print,
     "cathar_denoise_twice": _stage_cathar_denoise_twice,
     "uvr_full": _stage_uvr_full,
@@ -336,6 +363,13 @@ CHAINS = {
     "soft_then_dehum": ["cathar_denoise_soft", "cathar_dehum"],
     "dehum_soft_dehum": ["cathar_dehum", "cathar_denoise_soft", "cathar_dehum"],
     "notched_then_dehum": ["apl_notches", "cathar_dehum"],
+    # The mode's own suppressor against the subtraction it would replace, alone and with
+    # the learned blend and the neural stage behind each, on the calibrated fixtures.
+    "cathar_denoise_apl": ["cathar_denoise_apl"],
+    "native_suppress": ["native_suppress"],
+    "native_suppress_b1_5": ["native_suppress_b1_5"],
+    "apl_learned_uvr": ["cathar_denoise_apl", "learned_blend", "uvr_full"],
+    "native_learned_uvr": ["native_suppress", "learned_blend", "uvr_full"],
 }
 
 

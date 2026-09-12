@@ -68,7 +68,7 @@ def _series(f0, harmonics, level=0.05, rolloff=0.0):
 
 
 def _harmonics_of(gated):
-    return [harmonic for harmonic, _floor in gated]
+    return [harmonic for harmonic, _line, _floor in gated]
 
 
 @pytest.fixture(name="humming")
@@ -271,7 +271,7 @@ def test_a_short_recording_with_hum_is_reported_as_too_short(tmp_path):
     source = _write(tmp_path / "brief.wav", [_hum()[: RATE * 1] + _hiss()[: RATE * 1]])
     with (
         patch.object(hum_cancel, "APL_ENABLE_HUM_CANCEL", True),
-        patch.object(hum_cancel, "_plan", return_value=((50.3, [(1, 1e-9)]), None)),
+        patch.object(hum_cancel, "_plan", return_value=((50.3, [(1, 50.3, 1e-9)]), None)),
         patch("modules.hum_cancel.log_msg") as log,
     ):
         assert hum_cancel.apply_when_needed(source, tmp_path / "work") == source

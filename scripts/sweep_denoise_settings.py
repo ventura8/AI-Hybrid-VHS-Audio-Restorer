@@ -109,6 +109,26 @@ VARIANTS = {
         (CONFIG_PY, r'\("apl_enable_hum_cancel", False\)', '("apl_enable_hum_cancel", True )'),
         (CONFIG_PY, r'\("apl_hum_max_harmonics", int, [0-9]+, 1, 128\)', '("apl_hum_max_harmonics", int, 8, 1, 128)'),
     ],
+    # The mode's own suppressor in cathar's subtraction slot, at the noise estimate as
+    # measured and raised by half, at a deeper gain floor, at the textbook decision-directed
+    # smoothing, and without the blend that was fitted on cathar's subtraction.
+    "native_suppress": [(CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )')],
+    "native_suppress_b1_5": [
+        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'\("apl_suppress_noise_bias", float, [0-9.]+, 0\.0\)', '("apl_suppress_noise_bias", float, 1.5, 0.0)'),
+    ],
+    "native_suppress_floor30": [
+        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'\("apl_suppress_gain_floor_db", float, -[0-9.]+, None\)', '("apl_suppress_gain_floor_db", float, -30.0, None)'),
+    ],
+    "native_suppress_dd_0_98": [
+        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
+    ],
+    "native_suppress_no_blend": [
+        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'\("apl_enable_learned_blend", True\)', '("apl_enable_learned_blend", False)'),
+    ],
 }
 
 # Variants whose effect is invisible to the resolved configuration, because they patch a

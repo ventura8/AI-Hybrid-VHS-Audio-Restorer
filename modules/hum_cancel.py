@@ -68,6 +68,9 @@ CAP_WINDOW_S = 2.0
 # is higher past the mains series proper, where a line is more likely to be programme.
 HARMONIC_MIN_EXCESS_DB = 3.0
 EXTENDED_MIN_EXCESS_DB = 6.0
+# How far, in bins of the quiet-frame spectrum, a line may sit from its nominal harmonic
+# and still be that harmonic: two bins is 5.4 Hz, which covers what the tapes showed.
+LINE_TOLERANCE_BINS = 2
 # Fundamental refinement: real mains sits within this of its nominal value, and a wider
 # range would let a bass note pull the series off the hum. The search looks a little past
 # the range so a line just outside it is still read and then held to the edge, rather than
@@ -97,26 +100,35 @@ def _stands_out(harmonic, peak, floor):
     return _excess_db(peak, floor) >= bar
 
 
-def _is_line(freqs, psd, hz):
-    """Whether the spectrum peaks at the given frequency itself, rather than on a neighbour leaking into it.
+def _line_near(freqs, psd, hz):
+    """Where the spectrum's line nearest the given frequency sits, or None when the peak there belongs to a neighbour.
 
-    A programme partial a few hertz off a line raises the line's bins through its own
-    main lobe; the maximum of the neighbourhood then sits on the partial, not on the line.
+    Real hum harmonics are not exact multiples of one fundamental: on the tapes measured,
+    lines sit one to eight hertz off the series, past any envelope band, so each is
+    cancelled at the frequency it has. A programme partial a few hertz further off raises
+    the line's bins through its own main lobe, and then the neighbourhood's maximum sits
+    on the partial rather than near the line, which is the case refused here.
     """
     index = int(np.argmin(np.abs(freqs - hz)))
-    peak_lo, peak_hi = max(index - 1, 0), index + 2
     around_lo, around_hi = max(index - 4, 0), index + 5
-    return bool(psd[peak_lo:peak_hi].max() >= psd[around_lo:around_hi].max())
+    local = around_lo + int(np.argmax(psd[around_lo:around_hi]))
+    if abs(local - index) > LINE_TOLERANCE_BINS or local in (0, len(psd) - 1):
+        return None
+    before, after = local - 1, local + 2
+    left, centre, right = np.log(psd[before:after] + 1e-30)
+    denominator = left - 2.0 * centre + right
+    shift = 0.0 if denominator >= 0.0 else 0.5 * (left - right) / denominator
+    return float(freqs[local] + shift * (freqs[1] - freqs[0]))
 
 
 def gate_harmonics(freqs, psd, f0, count, ceiling_hz):
-    """The harmonics to cancel, with each one's neighbourhood floor: those that stand above it as lines of their own."""
-    triples = harmonic_triples(freqs, psd, f0, count)
-    return [
-        (harmonic, floor)
-        for harmonic, peak, floor in triples
-        if harmonic * f0 < ceiling_hz and _stands_out(harmonic, peak, floor) and _is_line(freqs, psd, harmonic * f0)
-    ]
+    """The harmonics to cancel as (harmonic, line frequency, neighbourhood floor): those standing out as lines of their own."""
+    gated = []
+    for harmonic, peak, floor in harmonic_triples(freqs, psd, f0, count):
+        line = _line_near(freqs, psd, harmonic * f0) if harmonic * f0 < ceiling_hz else None
+        if line is not None and _stands_out(harmonic, peak, floor):
+            gated.append((harmonic, line, floor))
+    return gated
 
 
 def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS):
@@ -132,7 +144,7 @@ def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS):
     if psd is None:
         return f0, []
     ceiling = sample_rate / 2.0 - TOP_MARGIN_HZ
-    core = [harmonic for harmonic, _floor in gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling)]
+    core = [harmonic for harmonic, _line, _floor in gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling)]
     refined = refine_f0(mono_signal, sample_rate, f0, core)
     return refined, gate_harmonics(freqs, psd, refined, count, ceiling)
 
@@ -302,11 +314,16 @@ def cancel_lines(source_wav, target_wav, freqs_hz, bandwidths_hz, floors):
     return subtract(source_wav, target_wav, envelope, freqs_hz)
 
 
-def cancel_mains(source_wav, target_wav, f0, harmonics_and_floors):
-    """Cancels the given mains harmonics at the given fundamental."""
-    harmonics = [harmonic for harmonic, _floor in harmonics_and_floors]
-    floors = [floor for _harmonic, floor in harmonics_and_floors]
-    freqs = [harmonic * f0 for harmonic in harmonics]
+def cancel_mains(source_wav, target_wav, f0, gated):
+    """Cancels the gated harmonics, each at the line frequency it was found at.
+
+    `f0` is the refined fundamental the series was gated against; the lines themselves may
+    sit a few hertz off its multiples, and that is where they are cancelled.
+    """
+    del f0
+    harmonics = [harmonic for harmonic, _line, _floor in gated]
+    freqs = [line for _harmonic, line, _floor in gated]
+    floors = [floor for _harmonic, _line, floor in gated]
     return cancel_lines(source_wav, target_wav, freqs, bandwidths_for(harmonics), floors)
 
 

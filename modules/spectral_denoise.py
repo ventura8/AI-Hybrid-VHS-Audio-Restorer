@@ -30,7 +30,11 @@ from .config import (
     APL_SPECTRAL_ALPHA,
     APL_SPECTRAL_ALPHA_TONAL,
     APL_SPECTRAL_MARGIN_DB,
+    APL_SUPPRESS_DD_ALPHA,
+    APL_SUPPRESS_GAIN_FLOOR_DB,
+    APL_SUPPRESS_NOISE_BIAS,
     APL_TONAL_FLATNESS_MAX,
+    APL_USE_NATIVE_SUPPRESS,
 )
 from .filters import _read_audio_for_analysis, estimate_snr_margin_db
 from .utils import log_msg
@@ -222,20 +226,43 @@ def _alpha_for(source_wav):
     return APL_SPECTRAL_ALPHA
 
 
+def _native_suppress(source_wav, output_dir, alpha):
+    """The mode's own suppressor in the subtraction slot, or None when it could not run.
+
+    The tonal gate carries over as a scaling of the noise bias: material subtracted at the
+    gentler factor gets the same fraction of the bias.
+    """
+    from . import spectral_suppress
+
+    return spectral_suppress.suppress_or_none(
+        source_wav,
+        output_dir / f"suppressed_{Path(source_wav).name}",
+        noise_bias=APL_SUPPRESS_NOISE_BIAS * alpha / APL_SPECTRAL_ALPHA,
+        gain_floor_db=APL_SUPPRESS_GAIN_FLOOR_DB,
+        dd_alpha=APL_SUPPRESS_DD_ALPHA,
+        probe_s=APL_NOISEPRINT_DURATION_S,
+    )
+
+
 def _subtract(source_wav, output_dir, total_duration):
-    """Learns a noise profile from a quiet window and subtracts it."""
+    """Learns a noise profile from a quiet window and subtracts it, with the engine the configuration names.
+
+    The native estimator is tried first when switched on and the cathar path stands in
+    when it returns nothing, so the stage never fails a restoration over its own engine.
+    """
     from .cathar import _cathar_denoise_step, _cathar_noiseprint_step
 
+    alpha = _alpha_for(source_wav)
+    if APL_USE_NATIVE_SUPPRESS:
+        suppressed = _native_suppress(source_wav, output_dir, alpha)
+        if suppressed is not None:
+            return suppressed
+    if not _cathar_available():
+        return None
     # Both values are passed explicitly: cathar shipped in v1.2.0 with a 0.75 s probe and
     # an alpha of its own, and those are shared settings this mode must not move.
     noiseprint = _cathar_noiseprint_step(source_wav, output_dir, duration_s=APL_NOISEPRINT_DURATION_S)
-    return _cathar_denoise_step(
-        source_wav,
-        output_dir,
-        alpha=_alpha_for(source_wav),
-        noiseprint_path=noiseprint,
-        total_duration=total_duration,
-    )
+    return _cathar_denoise_step(source_wav, output_dir, alpha=alpha, noiseprint_path=noiseprint, total_duration=total_duration)
 
 
 def apply_when_needed(source_wav, audio_dir, total_duration=None):
@@ -251,7 +278,7 @@ def apply_when_needed(source_wav, audio_dir, total_duration=None):
     margin_db = should_apply(source_wav)
     if margin_db is None:
         return source_wav
-    if not _cathar_available():
+    if not _engine_available():
         log_msg("    [Spectral Denoise] Cathar CLI unavailable; leaving the neural stage to work alone.")
         return source_wav
 
@@ -263,7 +290,15 @@ def apply_when_needed(source_wav, audio_dir, total_duration=None):
     except (OSError, RuntimeError) as exc:
         log_msg(f"    [Spectral Denoise] Skipped after failure: {exc}")
         return source_wav
+    if subtracted is None:
+        log_msg("    [Spectral Denoise] No engine could run; leaving the neural stage to work alone.")
+        return source_wav
     return _repair_over_subtraction(source_wav, subtracted, output_dir)
+
+
+def _engine_available():
+    """Whether some engine can subtract: the native one when switched on, else the Cathar CLI."""
+    return APL_USE_NATIVE_SUPPRESS or _cathar_available()
 
 
 def _repair_over_subtraction(source_wav, subtracted, output_dir):
