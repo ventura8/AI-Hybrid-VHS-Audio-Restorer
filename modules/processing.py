@@ -32,10 +32,12 @@ from . import deepfilter_denoise as _deepfilter
 from . import denoise_cache as _denoise_cache
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
 from . import utils as _utils
 from .config import (
     ADAPTIVE_DENOISE_THRESHOLD_DB,
+    APL_NEURAL_MODEL,
     DEFAULT_DENOISE_MODEL,
     DENOISE_MODEL,
     ENABLE_DEESSER,
@@ -1122,6 +1124,7 @@ def _denoise_and_polish_full_audio_step(
     hum_cancel=False,
     plosive_tamer=False,
     tone_cancel=False,
+    resemble_denoise=False,
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
@@ -1139,12 +1142,19 @@ def _denoise_and_polish_full_audio_step(
     surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
     if "spectral_denoise" in applied:
         model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
+    model_to_use = APL_NEURAL_MODEL or model_to_use
     denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
     denoised_wav = _deepfilter.denoise_or(
         surgical_wav,
         audio_dir / "deepfilter_denoised",
         deepfilternet,
-        lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
+        lambda: _resemble.denoise_or(
+            surgical_wav,
+            audio_dir / "resemble_denoised",
+            resemble_denoise,
+            lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
+            total_duration=total_duration,
+        ),
     )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)

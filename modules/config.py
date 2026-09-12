@@ -288,6 +288,10 @@ _BOOL_CONFIG_FIELDS = (
     ("apl_use_native_suppress", False),
     ("apl_enable_plosive_tamer", False),
     ("apl_enable_tone_cancel", False),
+    # Resemble-Enhance's denoiser (a masking model; its enhancer is generative and not a
+    # candidate) in place of UVR-DeNoise, where the package is installed. Off until its
+    # real-tape measurement is in this comment; absence or failure falls back to UVR.
+    ("apl_use_resemble_denoise", False),
     # Physical tape damage repair for this mode: crackle, dropouts, saturation and azimuth
     # skew, each gated on its own defect being detected. Four stages earned a place against
     # paired fixtures and three were rejected -- `repair` and `deplosive` make undamaged
@@ -520,6 +524,10 @@ def load_config():
         "cathar_denoise_method": "spectral",
         "cathar_azimuth_method": "gcc-phat",
         "cathar_enhance_method": "replicate",
+        # The neural model auto_pure_linear runs after subtraction, by file name, when set;
+        # empty follows the chain's own choice (the light UVR model, upgraded to the deep
+        # one once subtraction has run). A setting, so a candidate can be swept.
+        "apl_neural_model": "",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -650,5 +658,7 @@ APL_SUPPRESS_DD_ALPHA = float(CONFIG.get("apl_suppress_dd_alpha", 0.96))
 APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", False))
 APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
 APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
+APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))
+APL_NEURAL_MODEL = str(CONFIG.get("apl_neural_model") or "").strip()
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 2.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

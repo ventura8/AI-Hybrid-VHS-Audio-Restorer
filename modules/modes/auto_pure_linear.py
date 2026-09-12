@@ -7,7 +7,7 @@ bandreject notching, adaptive UVR-DeNoise neural inference, and linear air polis
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..config import APL_USE_DEEPFILTERNET
+from ..config import APL_USE_DEEPFILTERNET, APL_USE_RESEMBLE_DENOISE
 from .base import BaseRestorationMode
 
 
@@ -50,6 +50,7 @@ class AutoPureLinearMode(BaseRestorationMode):
                 hum_cancel=True,
                 plosive_tamer=True,
                 tone_cancel=True,
+                resemble_denoise=APL_USE_RESEMBLE_DENOISE,
             )
 
         processing._process_single_track_pipeline(

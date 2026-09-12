@@ -117,6 +117,10 @@ VARIANTS = {
         (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
         (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
     ],
+    # The neural stage's candidates, faithful models only: the Mel-Roformer denoiser the
+    # separator can load, and Resemble-Enhance's denoiser with its enhancer left off.
+    "roformer": [(CONFIG_PY, r'"apl_neural_model": "",', '"apl_neural_model": "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",')],
+    "resemble_denoise": [(CONFIG_PY, r'\("apl_use_resemble_denoise", False\)', '("apl_use_resemble_denoise", True )')],
     # Persistent non-mains lines: a recorded whine, a buzz, a whistle off the notch.
     "tone_cancel": [(CONFIG_PY, r'\("apl_enable_tone_cancel", False\)', '("apl_enable_tone_cancel", True )')],
     # Event-gated plosive control, at the shipped excess threshold and a lower one.
