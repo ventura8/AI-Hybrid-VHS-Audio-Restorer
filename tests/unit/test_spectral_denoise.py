@@ -250,6 +250,7 @@ def test_tonal_cleanup_dehums_when_mains_was_detected(quiet_wav, tmp_path):
     strategy = {"profile": {"notch_hz": 50.0, "highpass_hz": 0}}
     with (
         patch.object(spectral_denoise, "APL_ENABLE_DEHUM", True),
+        patch.object(spectral_denoise, "APL_ENABLE_HUM_CANCEL", False),
         patch.object(spectral_denoise, "detect_mains_hz", return_value=50.0),
         patch("modules.cathar._require_cathar_binary"),
         patch("modules.cathar._cathar_dehum_step", return_value=produced) as mock_dehum,
@@ -278,6 +279,7 @@ def test_tonal_cleanup_survives_a_failed_stage(quiet_wav, tmp_path):
     strategy = {"profile": {"notch_hz": 50.0, "highpass_hz": 0}}
     with (
         patch.object(spectral_denoise, "APL_ENABLE_DEHUM", True),
+        patch.object(spectral_denoise, "APL_ENABLE_HUM_CANCEL", False),
         patch.object(spectral_denoise, "detect_mains_hz", return_value=50.0),
         patch("modules.cathar._require_cathar_binary"),
         patch("modules.cathar._cathar_dehum_step", side_effect=RuntimeError("cathar exploded")) as mock_dehum,
