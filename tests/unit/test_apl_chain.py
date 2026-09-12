@@ -13,8 +13,8 @@ from modules import apl_chain
 def test_the_stages_run_in_the_documented_order(tmp_path):
     """Physical repair before the tonal stages, and subtraction last, ahead of the neural stage."""
     plan = apl_chain.stage_plan(tmp_path, 10.0, {"profile": {}}, physical_repair=True, spectral_denoise=True)
-    assert [name for name, _wanted, _stage in plan] == ["physical_repair", "tonal_cleanup", "spectral_denoise"]
-    assert all(wanted for _name, wanted, _stage in plan)
+    assert [name for name, _wanted, _stage in plan] == ["physical_repair", "hum_cancel", "tonal_cleanup", "spectral_denoise"]
+    assert [wanted for _name, wanted, _stage in plan] == [True, False, True, True]
 
 
 def test_a_mode_that_opts_into_nothing_runs_nothing(tmp_path):

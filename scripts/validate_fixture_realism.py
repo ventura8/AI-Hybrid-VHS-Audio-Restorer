@@ -204,7 +204,9 @@ def _trade_rows(config_name, fixtures_dir, work_root):
                 continue
             scored = measure(degraded, restored)
             if scored:
-                rows.append({"fixture": fixture_dir.name, "class": _class_of(fixture_dir.name), **scored})
+                rows.append(
+                    {"fixture": fixture_dir.name, "class": _class_of(fixture_dir.name), "family": _family_of(fixture_dir.name), **scored}
+                )
     return rows
 
 
@@ -212,6 +214,12 @@ def _class_of(fixture_name):
     """The programme class a fixture name encodes: speech, music, musicled or musiconly."""
     family = fixture_name.split("_", 1)[1] if "_" in fixture_name else fixture_name
     return family.split("_m", 1)[0]
+
+
+def _family_of(fixture_name):
+    """The fixture family a name encodes, margin stripped: speech, speech_hum, worn, buzz."""
+    family = fixture_name.split("_", 1)[1] if "_" in fixture_name else fixture_name
+    return re.sub(r"_m\d+", "", family)
 
 
 def _median(rows, key, classes=None):
@@ -385,20 +393,22 @@ def _class_verdict(name, on, off, damaged_classes):
     return "free, as on real tape" + (" (a stage helped)" if moved else ""), False
 
 
-def _report_stage(results, on_name, off_name, damaged_classes, label):
-    """A stage on against off, class by class: free where nothing is damaged, and fired where something is.
+def _report_stage(results, on_name, off_name, damaged, label, key="class"):
+    """A stage on against off, group by group: free where nothing is damaged, and fired where something is.
 
-    Returns the number of undamaged classes the stage hurt. The repair stages and each of
-    the mode's own later stages are held to the same band, the one real tape set.
+    Returns the number of undamaged groups the stage hurt. The repair stages and each of
+    the mode's own later stages are held to the same band, the one real tape set. Groups
+    are programme classes for repair and fixture families for the later stages, whose
+    defects (hum, a buzz) ride on a programme class rather than replacing it.
     """
     print(f"\n{label:<14}{'n':>4}{'removed on':>12}{'off':>8}{'deviation on':>14}{'off':>8}   verdict")
     failures = 0
-    for name in sorted({row["class"] for row in results[off_name]["trade"]}):
-        on = [row for row in results[on_name]["trade"] if row["class"] == name]
-        off = [row for row in results[off_name]["trade"] if row["class"] == name]
+    for name in sorted({row[key] for row in results[off_name]["trade"]}):
+        on = [row for row in results[on_name]["trade"] if row[key] == name]
+        off = [row for row in results[off_name]["trade"] if row[key] == name]
         if not on or not off:
             continue
-        verdict, failed = _class_verdict(name, on, off, damaged_classes)
+        verdict, failed = _class_verdict(name, on, off, damaged)
         failures += int(failed)
         removed = f"{_median(on, 'noise_removed_db'):>12.2f}{_median(off, 'noise_removed_db'):>8.2f}"
         deviation = f"{_median(on, 'programme_deviation_db'):>14.2f}{_median(off, 'programme_deviation_db'):>8.2f}"
@@ -412,17 +422,17 @@ def _report_repair(results):
 
 
 # The mode's own later stages, each checked the way repair is: the sweep variant that
-# switches the stage on, and the classes that carry the defect it targets. Every other
-# class must stay inside the free band. Filled in as each stage lands.
-STAGE_CHECKS = ()
+# switches the stage on, and the fixture families that carry the defect it targets. Every
+# other family must stay inside the free band. Filled in as each stage lands.
+STAGE_CHECKS = (("hum_cancel", ("speech_hum", "music_hum", "worn", "buzz", "hifibuzz")),)
 
 
 def _report_stage_checks(args, results, variants):
-    """Runs every registered stage check and returns how many undamaged classes any stage hurt."""
+    """Runs every registered stage check and returns how many undamaged families any stage hurt."""
     hurt = 0
     for variant, damaged in STAGE_CHECKS:
         results[variant] = _rescore(variant, args, variants)
-        hurt += _report_stage(results, variant, "current", damaged, f"{variant} on vs off")
+        hurt += _report_stage(results, variant, "current", damaged, f"{variant} on vs off", key="family")
     return hurt
 
 

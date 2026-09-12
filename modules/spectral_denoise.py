@@ -61,6 +61,57 @@ MAINS_HARMONICS = 8
 MAINS_DETECT_MIN_SAMPLES = 16384
 
 
+def harmonic_triples(freqs, psd, mains_hz, count):
+    """Each harmonic's peak and the median of its own neighbourhood in a spectrum, as (harmonic, peak, floor).
+
+    The series stops at the top of the spectrum; harmonics above it are not reported.
+    """
+    triples = []
+    for harmonic in range(1, count + 1):
+        target = mains_hz * harmonic
+        if target >= freqs[-1]:
+            break
+        index = int(np.argmin(np.abs(freqs - target)))
+        left_lo, left_hi = max(index - 30, 0), max(index - 2, 0)
+        right_lo, right_hi = index + 3, index + 33
+        peak_lo, peak_hi = max(index - 1, 0), index + 2
+        floor = float(np.median(np.concatenate((psd[left_lo:left_hi], psd[right_lo:right_hi])))) + 1e-20
+        peak = float(np.max(psd[peak_lo:peak_hi])) + 1e-20
+        triples.append((harmonic, peak, floor))
+    return triples
+
+
+def harmonic_peaks_and_floors(mono_signal, sample_rate, mains_hz, count=MAINS_HARMONICS):
+    """The harmonic triples of the whole recording's power spectral density, in V^2/Hz.
+
+    Density rather than power, so the floor doubles as a noise density for anything that
+    wants to know what a harmonic's neighbourhood would put into a narrow band.
+    """
+    if len(mono_signal) < MAINS_DETECT_MIN_SAMPLES:
+        return []
+    freqs, psd = scipy.signal.welch(mono_signal, sample_rate, nperseg=MAINS_DETECT_MIN_SAMPLES)
+    return harmonic_triples(freqs, psd, mains_hz, count)
+
+
+QUIET_FRACTION = 0.3
+
+
+def quiet_psd(mono_signal, sample_rate, fraction=QUIET_FRACTION):
+    """The power spectral density of the recording's quietest stretches, in V^2/Hz, or (None, None) when too short.
+
+    Hum is there when the programme is not, and a programme partial is not; a harmonic
+    read over the quietest frames alone is hum, where the same harmonic read over the whole
+    recording may be a sustained note sitting on the line.
+    """
+    if len(mono_signal) < 2 * MAINS_DETECT_MIN_SAMPLES:
+        return None, None
+    freqs, _times, spectrum = scipy.signal.stft(mono_signal, sample_rate, nperseg=MAINS_DETECT_MIN_SAMPLES, scaling="psd")
+    power = np.abs(spectrum) ** 2
+    level = power.sum(axis=0)
+    quiet = level <= np.quantile(level, fraction)
+    return freqs, power[:, quiet].mean(axis=1)
+
+
 def _harmonic_excess_db(mono_signal, sample_rate, mains_hz):
     """How far the mains harmonics stand above their own spectral neighbourhood, in dB.
 
@@ -69,20 +120,11 @@ def _harmonic_excess_db(mono_signal, sample_rate, mains_hz):
     Real hum runs to eight harmonics, and a single-bin test at the fundamental is what the
     previous detector used and what let it miss hum on 11 of 25 tapes that plainly had it.
     """
-    if len(mono_signal) < MAINS_DETECT_MIN_SAMPLES:
+    triples = harmonic_peaks_and_floors(mono_signal, sample_rate, mains_hz)
+    if not triples:
         return 0.0
-    freqs, psd = scipy.signal.welch(mono_signal, sample_rate, nperseg=MAINS_DETECT_MIN_SAMPLES)
-    peaks, floors = 0.0, 0.0
-    for harmonic in range(1, MAINS_HARMONICS + 1):
-        target = mains_hz * harmonic
-        if target >= freqs[-1]:
-            break
-        index = int(np.argmin(np.abs(freqs - target)))
-        left_lo, left_hi = max(index - 30, 0), max(index - 2, 0)
-        right_lo, right_hi = index + 3, index + 33
-        peak_lo, peak_hi = max(index - 1, 0), index + 2
-        floors += float(np.median(np.concatenate((psd[left_lo:left_hi], psd[right_lo:right_hi])))) + 1e-20
-        peaks += float(np.max(psd[peak_lo:peak_hi])) + 1e-20
+    peaks = sum(peak for _harmonic, peak, _floor in triples)
+    floors = sum(floor for _harmonic, _peak, floor in triples)
     return float(10.0 * np.log10(peaks / floors))
 
 

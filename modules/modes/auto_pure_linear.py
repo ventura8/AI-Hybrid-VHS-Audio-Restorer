@@ -45,6 +45,9 @@ class AutoPureLinearMode(BaseRestorationMode):
                 spectral_denoise=True,
                 physical_repair=True,
                 deepfilternet=APL_USE_DEEPFILTERNET,
+                # The mode's own stages read their own apl_enable_* switch; opting in here
+                # is what lets a sweep of that switch reach the chain.
+                hum_cancel=True,
             )
 
         processing._process_single_track_pipeline(

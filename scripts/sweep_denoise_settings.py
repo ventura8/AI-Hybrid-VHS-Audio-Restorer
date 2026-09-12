@@ -93,6 +93,22 @@ VARIANTS = {
         (CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5"),
         (CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 4.0, 0.0)'),
     ],
+    # The mode's own harmonic hum canceller, ahead of the noise probe, and its two settings:
+    # the envelope bandwidth at the fundamental and how far up the series it looks. Read
+    # with measure_hum.py --mains auto over the kept work directories as well as here.
+    "hum_cancel": [(CONFIG_PY, r'\("apl_enable_hum_cancel", False\)', '("apl_enable_hum_cancel", True )')],
+    "hum_cancel_bw_1": [
+        (CONFIG_PY, r'\("apl_enable_hum_cancel", False\)', '("apl_enable_hum_cancel", True )'),
+        (CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 1.0, 0.1)'),
+    ],
+    "hum_cancel_bw_3": [
+        (CONFIG_PY, r'\("apl_enable_hum_cancel", False\)', '("apl_enable_hum_cancel", True )'),
+        (CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 3.0, 0.1)'),
+    ],
+    "hum_cancel_h8": [
+        (CONFIG_PY, r'\("apl_enable_hum_cancel", False\)', '("apl_enable_hum_cancel", True )'),
+        (CONFIG_PY, r'\("apl_hum_max_harmonics", int, [0-9]+, 1, 128\)', '("apl_hum_max_harmonics", int, 8, 1, 128)'),
+    ],
 }
 
 # Variants whose effect is invisible to the resolved configuration, because they patch a
