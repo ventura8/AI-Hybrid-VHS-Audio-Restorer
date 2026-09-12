@@ -9,11 +9,12 @@ deep separator partners the subtraction only when the subtraction actually ran).
 
 from . import hum_cancel as _hum_cancel
 from . import physical_repair as _physical_repair
+from . import plosive_tamer as _plosive_tamer
 from . import spectral_denoise as _spectral_denoise
 from .utils import log_msg
 
 
-def stage_plan(audio_dir, total_duration, strategy, physical_repair, spectral_denoise, hum_cancel=False):
+def stage_plan(audio_dir, total_duration, strategy, physical_repair, spectral_denoise, hum_cancel=False, plosive_tamer=False):
     """The opted-in stages in chain order: (name, wanted, callable taking the current WAV).
 
     Physical repair runs ahead of subtraction, not after it. The noise profile is learned
@@ -30,6 +31,7 @@ def stage_plan(audio_dir, total_duration, strategy, physical_repair, spectral_de
             lambda wav: _physical_repair.apply_when_needed(wav, audio_dir, strategy=strategy, total_duration=total_duration),
         ),
         ("hum_cancel", hum_cancel, lambda wav: _hum_cancel.apply_when_needed(wav, audio_dir, strategy=strategy)),
+        ("plosive_tamer", plosive_tamer, lambda wav: _plosive_tamer.apply_when_needed(wav, audio_dir, strategy=strategy)),
         (
             "tonal_cleanup",
             spectral_denoise,

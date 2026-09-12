@@ -304,5 +304,6 @@ def test_the_stage_is_wired_between_repair_and_the_noise_probe(tmp_path):
     from modules import apl_chain
 
     plan = apl_chain.stage_plan(tmp_path, None, None, physical_repair=True, spectral_denoise=True, hum_cancel=True)
-    assert [name for name, _wanted, _stage in plan] == ["physical_repair", "hum_cancel", "tonal_cleanup", "spectral_denoise"]
+    wanted = [name for name, wanted, _stage in plan if wanted]
+    assert wanted == ["physical_repair", "hum_cancel", "tonal_cleanup", "spectral_denoise"]
     assert isinstance(Path(tmp_path), Path)

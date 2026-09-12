@@ -268,16 +268,23 @@ _BOOL_CONFIG_FIELDS = (
     # whenever it misses; the detector here is kept correct so that anyone switching this on
     # gets the frequency the recording actually carries.
     ("apl_enable_dehum", False),
-    # The mode's own stages for the rows where cathar's cascade still led on paper: a
-    # harmonic hum canceller (tracked sinusoidal subtraction per harmonic, ahead of the
-    # noise probe), a noise suppressor of its own in the subtraction slot (per-bin MMSE
-    # log-spectral gain with a tracked noise level, in place of cathar's global factor),
-    # event-gated plosive control, and a canceller for persistent non-mains tones. Each is
-    # off until its real-tape measurement is in this comment; the gates are the 48 hum
-    # tapes for the canceller (cathar's dehum at the right frequency: 2.07 dB of harmonic
-    # excess at 0.25 dB of low-band movement), the trade metric on the corpus for the
-    # suppressor, and the defect-region score against the calibrated fixtures for the rest.
-    ("apl_enable_hum_cancel", False),
+    # The mode's own hum canceller: each mains harmonic found as a line of its own in the
+    # quiet frames is tracked by complex demodulation at the frequency it actually sits at
+    # and subtracted, per channel, ahead of the noise probe. Measured on the 48 corpus tapes
+    # that carry hum, in the chain, hum removed goes from a median 0.19 dB to 2.49 (upper
+    # quartile 2.64 to 5.87), 26 tapes past the 2.07 dB cathar's dehum manages run alone at
+    # the right frequency, better on 34 of 48 and worse by more than a dB on none; the low
+    # band moves 1.41 to 1.48 dB across the chain, where cathar's stage alone costs 0.25;
+    # the broadband trade on those tapes moves 12.91/0.33 to 12.90/0.35, inside the free
+    # band. Stage alone on the same tapes: 3.01 dB at 0.155. Four tapes whose lines wander
+    # more than five hertz are not helped; they are documented, not forced.
+    ("apl_enable_hum_cancel", True),
+    # The remaining stages of the mode's own for the rows where cathar's cascade still led
+    # on paper: a noise suppressor in the subtraction slot (per-bin MMSE log-spectral gain
+    # with a tracked noise level, in place of cathar's global factor), event-gated plosive
+    # control, and a canceller for persistent non-mains tones. Each is off until its
+    # real-tape measurement is in this comment: the trade metric on the corpus for the
+    # suppressor, the defect-region score against the calibrated fixtures for the rest.
     ("apl_use_native_suppress", False),
     ("apl_enable_plosive_tamer", False),
     ("apl_enable_tone_cancel", False),
@@ -633,7 +640,7 @@ APL_ENABLE_DEHUM = bool(CONFIG.get("apl_enable_dehum", False))
 APL_HUM_MIN_EXCESS_DB = float(CONFIG.get("apl_hum_min_excess_db", 6.0))
 APL_ENABLE_TONAL_CLEANUP = bool(CONFIG.get("apl_enable_tonal_cleanup", False))
 APL_ENABLE_LEARNED_BLEND = bool(CONFIG.get("apl_enable_learned_blend", True))
-APL_ENABLE_HUM_CANCEL = bool(CONFIG.get("apl_enable_hum_cancel", False))
+APL_ENABLE_HUM_CANCEL = bool(CONFIG.get("apl_enable_hum_cancel", True))
 APL_HUM_MAX_HARMONICS = int(CONFIG.get("apl_hum_max_harmonics", 40))
 APL_HUM_BANDWIDTH_HZ = float(CONFIG.get("apl_hum_bandwidth_hz", 1.5))
 APL_USE_NATIVE_SUPPRESS = bool(CONFIG.get("apl_use_native_suppress", False))

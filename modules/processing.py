@@ -1120,11 +1120,14 @@ def _denoise_and_polish_full_audio_step(
     physical_repair=False,
     deepfilternet=False,
     hum_cancel=False,
+    plosive_tamer=False,
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(original_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    plan = _apl_chain.stage_plan(audio_dir, total_duration, strategy, physical_repair, spectral_denoise, hum_cancel=hum_cancel)
+    plan = _apl_chain.stage_plan(
+        audio_dir, total_duration, strategy, physical_repair, spectral_denoise, hum_cancel=hum_cancel, plosive_tamer=plosive_tamer
+    )
     surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
     if "spectral_denoise" in applied:
         model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL

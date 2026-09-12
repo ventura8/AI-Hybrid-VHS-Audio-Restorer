@@ -146,24 +146,40 @@ def _azimuth_skew_samples(samples):
     return int(np.argmax(np.abs(correlation)) - (len(left) - 1))
 
 
-def score_repair(clean_path, degraded_path, restored_path):
-    """Returns repair and collateral figures for one restored fixture."""
+def _trimmed(mono, lag, length):
+    """A signal on the reference's time base: the front dropped by the lag when it is negative, then cut to length."""
+    return (mono[-lag:] if lag < 0 else mono)[:length]
+
+
+def _prepare(clean_path, degraded_path, restored_path, mask_path):
+    """The aligned, trimmed mono signals -- reference, degraded, restored, and the one that marks the damage.
+
+    The degraded signal has to follow the same trim as the reference, or the three stop
+    sharing a time base and the defect mask points at the wrong samples; _align trims the
+    reference from the front only when the lag is negative. With a mask file the damage is
+    read from that file's difference from the reference, and the degraded signal is
+    gain-matched too: that is the case of a reference the degraded signal differs from
+    everywhere, the target of a camcorder-side class, which carries neither the plosives
+    nor the tape.
+    """
     clean_stereo, _rate = _read(clean_path)
     degraded_stereo, _r2 = _read(degraded_path)
     restored_stereo, _r3 = _read(restored_path)
-
-    clean, degraded, restored = _mono(clean_stereo), _mono(degraded_stereo), _mono(restored_stereo)
-    # The degraded signal has to follow the same trim as the reference, or the three stop
-    # sharing a time base and the defect mask points at the wrong samples. _align trims the
-    # reference from the front only when the lag is negative.
-    clean, restored, lag = _align(clean, restored)
-    if lag < 0:
-        degraded = degraded[-lag:]
+    clean, restored, lag = _align(_mono(clean_stereo), _mono(restored_stereo))
+    degraded = _trimmed(_mono(degraded_stereo), lag, len(clean))
     length = min(len(clean), len(degraded), len(restored))
-    clean, degraded, restored = clean[:length], degraded[:length], restored[:length]
-    restored = _match_gain(clean, restored)
+    clean, degraded, restored = clean[:length], degraded[:length], _match_gain(clean[:length], restored[:length])
+    marker = degraded
+    if mask_path is not None:
+        marker = _match_gain(clean, _trimmed(_mono(_read(mask_path)[0]), lag, length))
+        degraded = _match_gain(clean, degraded)
+    return clean, degraded, restored, marker, clean_stereo, restored_stereo
 
-    damaged, undamaged = _regions(clean, degraded)
+
+def score_repair(clean_path, degraded_path, restored_path, mask_path=None):
+    """Returns repair and collateral figures for one restored fixture."""
+    clean, degraded, restored, marker, clean_stereo, restored_stereo = _prepare(clean_path, degraded_path, restored_path, mask_path)
+    damaged, undamaged = _regions(clean, marker)
     if not damaged.any() or not undamaged.any():
         return None
 
@@ -216,7 +232,8 @@ def main():
                 continue
             language_dir = args.fixtures_dir / language
             truth = record.get(args.reference) or record["clean"]
-            scored = score_repair(language_dir / truth, language_dir / record["degraded"], restored)
+            mask = language_dir / record["clean"] if args.reference == "target" else None
+            scored = score_repair(language_dir / truth, language_dir / record["degraded"], restored, mask_path=mask)
             if scored:
                 scored.update({"name": record["name"], "language": language, "defects": record["defects"]})
                 rows.append(scored)

@@ -48,6 +48,7 @@ class AutoPureLinearMode(BaseRestorationMode):
                 # The mode's own stages read their own apl_enable_* switch; opting in here
                 # is what lets a sweep of that switch reach the chain.
                 hum_cancel=True,
+                plosive_tamer=True,
             )
 
         processing._process_single_track_pipeline(

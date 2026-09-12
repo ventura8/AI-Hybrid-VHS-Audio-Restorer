@@ -421,18 +421,24 @@ def _report_repair(results):
     return _report_stage(results, "current", "no_repair", PHYSICAL_CLASSES, "repair on vs off")
 
 
-# The mode's own later stages, each checked the way repair is: the sweep variant that
-# switches the stage on, and the fixture families that carry the defect it targets. Every
-# other family must stay inside the free band. Filled in as each stage lands.
-STAGE_CHECKS = (("hum_cancel", ("speech_hum", "music_hum", "worn", "buzz", "hifibuzz")),)
+# The mode's own later stages, each checked the way repair is: the configuration with the
+# stage on, the one with it off (one of the two is the shipped "current"), and the fixture
+# families that carry the defect it targets. Every other family must stay inside the free
+# band. Filled in as each stage lands.
+STAGE_CHECKS = (
+    ("current", "no_hum_cancel", ("speech_hum", "music_hum", "worn", "buzz", "hifibuzz")),
+    ("plosive_tamer", "current", ("plosive", "handling")),
+)
 
 
 def _report_stage_checks(args, results, variants):
     """Runs every registered stage check and returns how many undamaged families any stage hurt."""
     hurt = 0
-    for variant, damaged in STAGE_CHECKS:
-        results[variant] = _rescore(variant, args, variants)
-        hurt += _report_stage(results, variant, "current", damaged, f"{variant} on vs off", key="family")
+    for on_name, off_name, damaged in STAGE_CHECKS:
+        for name in (on_name, off_name):
+            if name not in results:
+                results[name] = _rescore(name, args, variants)
+        hurt += _report_stage(results, on_name, off_name, damaged, f"{on_name} vs {off_name}", key="family")
     return hurt
 
 
@@ -493,7 +499,8 @@ def main():
     configs = sorted({c for _, a, b, _, _, _ in COMPARISONS for c in (a, b)}, key=lambda c: c != "current")
     # Every configuration this run patches is restored with `git checkout --`, which would
     # take an uncommitted edit with it; refuse to start over one.
-    patched = [c for c in configs if c != "current"] + ([] if args.skip_defects else ["no_repair", *(v for v, _ in STAGE_CHECKS)])
+    checks = [name for on_name, off_name, _damaged in STAGE_CHECKS for name in (on_name, off_name) if name != "current"]
+    patched = [c for c in configs if c != "current"] + ([] if args.skip_defects else ["no_repair", *checks])
     sweep._require_clean(sweep._files_touched(patched))
     results = _measure_all(configs, args.fixtures_dir, args.variants, args.limit, args.work_dir)
     agree = _report_trade(results)
