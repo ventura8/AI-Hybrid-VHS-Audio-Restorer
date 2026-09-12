@@ -117,6 +117,17 @@ VARIANTS = {
         (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
         (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
     ],
+    # The removal ceiling: this mode's own probe past the 2.5 s that ships. The np_* variants
+    # above move the shared cathar value, which this mode no longer reads.
+    "apl_probe_4s": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 4.0, 0.0)')
+    ],
+    "apl_probe_6s": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 6.0, 0.0)')
+    ],
+    "apl_probe_8s": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 8.0, 0.0)')
+    ],
     # The neural stage's candidates, faithful models only: the Mel-Roformer denoiser the
     # separator can load, and Resemble-Enhance's denoiser with its enhancer left off.
     "roformer": [(CONFIG_PY, r'"apl_neural_model": "",', '"apl_neural_model": "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",')],
