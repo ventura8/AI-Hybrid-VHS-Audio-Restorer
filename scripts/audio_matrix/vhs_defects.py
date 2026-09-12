@@ -37,10 +37,19 @@ def _apply_clicks_and_dropouts(mono, sample_rate, defects):
     if "clicks" in defects:
         mono[:: max(sample_rate // 2, 1)] += 0.22
     if "dropout" in defects:
-        interval = max(sample_rate * 17, 1)
+        # Every fixture shorter than the old 17 s interval received exactly one dropout, at
+        # sample 0, which made the defect untestable: reconstruction is autoregressive, so a
+        # gap at the very start has no preceding audio to extrapolate from and no repair
+        # stage can do anything with it. A 2 s interval offset from the start puts several
+        # gaps inside an 8 s fixture, all of them with context on both sides.
+        interval = max(sample_rate * 2, 1)
         width = max(sample_rate // 20, 1)
-        for start in range(0, len(mono), interval):
-            mono[start : start + width] *= 0.1
+        # A dropout is loss of head contact, so the recovered audio is signal absence rather
+        # than a duck. The old 0.1 left the span only 20 dB down, which is a level dip and
+        # not a dropout by any definition -- and nothing that repairs dropouts recognised it
+        # as one. The depth is set from what the defect is, not from what any stage detects.
+        for start in range(interval // 2, len(mono), interval):
+            mono[start : start + width] = 0.0
     if "clip" in defects:
         mono = np.clip(mono * 1.5, -0.99, 0.99)
     return mono

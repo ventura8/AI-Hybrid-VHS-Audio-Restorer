@@ -76,7 +76,13 @@ The pipeline supports multiple execution modes controlled by `process_mode`:
 1. **`auto_pure_linear` (linear full-mix pure denoising)**
 
 - Reuses `auto_pure` profiling, analog pre-conditioning, sync, mastering, and
-  remuxing, but skips stem separation and applies UVR-DeNoise to the full mix.
+  remuxing, but skips stem separation and treats the full mix.
+- Repairs physical tape damage where it is detected (crackle, dropouts,
+  saturation, azimuth skew), subtracts a learned noise profile, blends the
+  result back toward the original per frequency bin, then applies UVR-DeNoise.
+- Removes more tape noise than `cathar` while disturbing the programme less,
+  measured across 136 clips. See
+  [the head-to-head benchmark](docs/cathar_vs_auto_pure_linear_1000_benchmark.md).
 - Output suffix: `*_PureLinear_Cleaned.<ext>`.
 
 1. **`auto_pure` (4-pass pure speech & ambient denoising engine)**
@@ -229,7 +235,9 @@ A(["📼 Input Video/Audio"]):::input --> B(["Extract Audio<br/>(32-bit Float)"]
 B --> MODE{"process_mode"}:::model
 
 MODE -->|"auto_pure_linear"| LP1["Acoustic Scan +<br/>Analog Pre-Conditioning"]:::processing
-LP1 --> LP2["UVR-DeNoise on the<br/>Full Pre-Conditioned Mix"]:::model
+LP1 --> LPR["Gated Damage Repair<br/>(crackle, dropout, clip, azimuth)"]:::processing
+LPR --> LPS["Noise-Profile Subtraction +<br/>Learned Per-Bin Blend"]:::processing
+LPS --> LP2["UVR-DeNoise on the<br/>Repaired, Subtracted, Blended Mix"]:::model
 LP2 --> LP3["Sync Full Mix +<br/>EBU R128 + Limiter"]:::processing
 LP3 --> LPOUT(["💾 Output: PureLinear_Cleaned"]):::output
 

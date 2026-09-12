@@ -7,6 +7,7 @@ bandreject notching, adaptive UVR-DeNoise neural inference, and linear air polis
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ..config import APL_USE_DEEPFILTERNET
 from .base import BaseRestorationMode
 
 
@@ -33,7 +34,17 @@ class AutoPureLinearMode(BaseRestorationMode):
 
         def denoise_step(in_wav, out_dir, total_duration=None):
             return processing._denoise_and_polish_full_audio_step(
-                in_wav, out_dir, total_duration=total_duration, denoise_model=denoise_model, strategy=strategy, apply_air=True
+                in_wav,
+                out_dir,
+                total_duration=total_duration,
+                denoise_model=denoise_model,
+                strategy=strategy,
+                apply_air=True,
+                # Opted in here rather than inside the shared step, so denoise_only keeps
+                # the behaviour it shipped with.
+                spectral_denoise=True,
+                physical_repair=True,
+                deepfilternet=APL_USE_DEEPFILTERNET,
             )
 
         processing._process_single_track_pipeline(
