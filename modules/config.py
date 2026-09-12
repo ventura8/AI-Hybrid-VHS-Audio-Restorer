@@ -279,14 +279,33 @@ _BOOL_CONFIG_FIELDS = (
     # band. Stage alone on the same tapes: 3.01 dB at 0.155. Four tapes whose lines wander
     # more than five hertz are not helped; they are documented, not forced.
     ("apl_enable_hum_cancel", True),
-    # The remaining stages of the mode's own for the rows where cathar's cascade still led
-    # on paper: a noise suppressor in the subtraction slot (per-bin MMSE log-spectral gain
-    # with a tracked noise level, in place of cathar's global factor), event-gated plosive
-    # control, and a canceller for persistent non-mains tones. Each is off until its
-    # real-tape measurement is in this comment: the trade metric on the corpus for the
-    # suppressor, the defect-region score against the calibrated fixtures for the rest.
+    # The mode's own noise suppressor in the subtraction slot: per-bin MMSE log-spectral
+    # gain with a tracked noise level, in place of cathar's global factor. Off, on real-tape
+    # evidence, the same way DeepFilterNet is: on the calibrated fixtures it lands at 5.9-6.2
+    # dB of log-spectral distance where cathar's subtraction lands at 10-12.9, and on 50
+    # real captures in the chain it removes 5.83 dB at 0.19 of deviation against the
+    # subtraction's 10.02 at 0.22 (bias 1.5: 6.88/0.20; floor -30 dB: 5.80/0.20; without the
+    # blend: 5.66/0.19), and on the tonal 45, where the mode's losses live, 3.06/0.22 against
+    # 7.96/0.28. A per-bin estimator keeps the low-level programme the quiet frames hold,
+    # which the trade metric reads as noise left behind; the metric is the judge this branch
+    # chose, and by it the subtraction stays. Kept as an engine, selectable, for the day a
+    # metric that can see fidelity in quiet frames is on the branch.
     ("apl_use_native_suppress", False),
-    ("apl_enable_plosive_tamer", False),
+    # Event-gated plosive control: a burst under 150 Hz that stands over the low band's
+    # running level and leads the mid band's own rise is taken down to the level the band
+    # held just before it, and nothing else is touched. On the calibrated plosive class, at
+    # the low-band spans where the reference differs from the target, it recovers 0.89 dB at
+    # 0.03 dB of collateral against cathar deplosive's 1.55 at 0.34, and on the undamaged
+    # classes it costs 0.00-0.01 dB where deplosive costs 0.5-0.9 and reads -6.7 dB on
+    # music-led programme. On 50 real captures in the chain it is free: 10.02/0.23 to
+    # 10.02/0.23, 37 captures untouched to the hundredth; a 9 dB threshold costs 0.02 dB of
+    # deviation for nothing and is not the default.
+    ("apl_enable_plosive_tamer", True),
+    # A canceller for persistent non-mains lines. Off: on 50 real captures at its first
+    # setting it read persistent lines on 41 and cost 0.06 dB of deviation, with one capture
+    # moved 4.2 dB, because sustained notes of the programme and mains lines the detector had
+    # missed read as persistent lines in the speech range. It now looks only above 4 kHz,
+    # where recorded whines live and programme lines do not, and waits for its measurement.
     ("apl_enable_tone_cancel", False),
     # Resemble-Enhance's denoiser (a masking model; its enhancer is generative and not a
     # candidate) in place of UVR-DeNoise, where the package is installed. Off until its
@@ -655,7 +674,7 @@ APL_USE_NATIVE_SUPPRESS = bool(CONFIG.get("apl_use_native_suppress", False))
 APL_SUPPRESS_NOISE_BIAS = float(CONFIG.get("apl_suppress_noise_bias", 1.0))
 APL_SUPPRESS_GAIN_FLOOR_DB = float(CONFIG.get("apl_suppress_gain_floor_db", -20.0))
 APL_SUPPRESS_DD_ALPHA = float(CONFIG.get("apl_suppress_dd_alpha", 0.96))
-APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", False))
+APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", True))
 APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
 APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
 APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))

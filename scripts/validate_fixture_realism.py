@@ -427,7 +427,7 @@ def _report_repair(results):
 # band. Filled in as each stage lands.
 STAGE_CHECKS = (
     ("current", "no_hum_cancel", ("speech_hum", "music_hum", "worn", "buzz", "hifibuzz")),
-    ("plosive_tamer", "current", ("plosive", "handling")),
+    ("current", "no_plosive_tamer", ("plosive", "handling")),
     ("tone_cancel", "current", ("ep", "flutter", "whistle", "buzz", "recordedwhine")),
 )
 

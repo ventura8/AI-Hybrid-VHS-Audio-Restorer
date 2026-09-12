@@ -42,15 +42,15 @@ def _level_at(signal, hz, width=8.0):
 
 
 def test_a_steady_whine_is_detected_and_cancelled(tmp_path):
-    """A 3.1 kHz whine 22 dB under the voice is found within a hertz and taken 15 dB down."""
+    """A 5.1 kHz whine 22 dB under the voice is found within a hertz and taken 15 dB down."""
     voice = _voice()
-    whine = _tone(3100.0, level=0.008)
+    whine = _tone(5100.0, level=0.008)
     source = _write(tmp_path / "whine.wav", [voice + whine, _voice(seed=3) + whine])
     mono = (voice + whine).astype(np.float64)
     lines = tone_cancel.detect_lines(mono, RATE)
-    assert len(lines) == 1 and abs(lines[0][0] - 3100.0) < 1.0
+    assert len(lines) == 1 and abs(lines[0][0] - 5100.0) < 1.0
     restored = sf.read(str(tone_cancel.cancel_tones(source, tmp_path / "out.wav", lines)), dtype="float32")[0]
-    assert _level_at(voice + whine, 3100.0) - _level_at(restored[:, 0], 3100.0) > 15.0
+    assert _level_at(voice + whine, 5100.0) - _level_at(restored[:, 0], 5100.0) > 15.0
 
 
 def test_a_flutter_wandering_whine_above_8_khz_is_cancelled(tmp_path):
@@ -65,23 +65,23 @@ def test_a_flutter_wandering_whine_above_8_khz_is_cancelled(tmp_path):
     assert _level_at(voice + whine, 15334.0, width=30.0) - _level_at(restored[:, 0], 15334.0, width=30.0) > 12.0
 
 
-def test_mains_harmonics_and_the_crt_line_are_left_to_their_own_stages():
-    """A 300 Hz line with mains detected at 50 Hz, and a 15625 Hz whistle, are not this stage's."""
+def test_the_speech_range_the_mains_series_and_the_crt_line_are_left_alone():
+    """A 300 Hz line is under the stage's floor, a 15625 Hz whistle is the notch's; a 6 kHz line is this stage's."""
     voice = _voice()
-    mono = (voice + _tone(300.0, level=0.02) + _tone(15625.0, level=0.01)).astype(np.float64)
-    assert tone_cancel.detect_lines(mono, RATE, mains_hz=50.0) == []
-    lines = tone_cancel.detect_lines(mono, RATE, mains_hz=0.0)
-    assert [round(hz) for hz, _floor in lines] == [300]
+    mono = (voice + _tone(300.0, level=0.02) + _tone(15625.0, level=0.01) + _tone(6000.0, level=0.01)).astype(np.float64)
+    assert [round(hz) for hz, _floor in tone_cancel.detect_lines(mono, RATE, mains_hz=50.0)] == [6000]
+    assert [round(hz) for hz, _floor in tone_cancel.detect_lines(mono, RATE, mains_hz=0.0)] == [6000]
+    assert tone_cancel._guarded(np.array([15600.0, 15625.0, 15700.0, 6000.0]), 0.0).tolist() == [True, True, True, False]
 
 
 def test_a_squeal_and_a_resonance_are_not_detected():
     """The sticky-shed squeal wanders too far to be a line; the enclosure ring is no line at all."""
     voice = _voice()
-    squeal = _tone(2500.0, level=0.01, wander_hz=75.0, wander_rate=3.0)
+    squeal = _tone(4500.0, level=0.01, wander_hz=135.0, wander_rate=3.0)
     assert tone_cancel.detect_lines((voice + squeal).astype(np.float64), RATE) == []
     import scipy.signal
 
-    sos = scipy.signal.iirpeak(2000.0, 5.0, fs=RATE)
+    sos = scipy.signal.iirpeak(5000.0, 5.0, fs=RATE)
     rung = scipy.signal.sosfilt(scipy.signal.tf2sos(*sos), voice) * 6.0 + voice
     assert tone_cancel.detect_lines(rung.astype(np.float64), RATE) == []
 
@@ -91,7 +91,7 @@ def test_a_note_absent_from_the_quiet_frames_is_not_a_defect():
     t = _time()
     voice = _voice()
     loud = np.abs(voice) > 0.02
-    note = _tone(1500.0, level=0.03) * loud
+    note = _tone(5500.0, level=0.03) * loud
     assert tone_cancel.detect_lines((voice + note).astype(np.float64), RATE) == []
     assert t.size == voice.size
 
@@ -99,7 +99,7 @@ def test_a_note_absent_from_the_quiet_frames_is_not_a_defect():
 def test_lines_are_merged_and_capped():
     """Bins closer than the merge span are one line; more lines than the cap keep the strongest."""
     voice = _voice()
-    many = sum(_tone(700.0 + 137.0 * k, level=0.006) for k in range(20))
+    many = sum(_tone(4700.0 + 137.0 * k, level=0.006) for k in range(20))
     lines = tone_cancel.detect_lines((voice + many).astype(np.float64), RATE)
     assert len(lines) == tone_cancel.MAX_LINES
     excess = np.array([1.0, 5.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 9.0])
@@ -110,12 +110,12 @@ def test_lines_are_merged_and_capped():
 
 def test_the_stage_cancels_through_the_chain_entry_point(tmp_path):
     voice = _voice()
-    whine = _tone(3100.0, level=0.008)
+    whine = _tone(5100.0, level=0.008)
     source = _write(tmp_path / "whine.wav", [voice + whine, _voice(seed=3) + whine])
     with patch.object(tone_cancel, "APL_ENABLE_TONE_CANCEL", True), patch("modules.tone_cancel.log_msg") as log:
         produced = tone_cancel.apply_when_needed(source, tmp_path / "work")
     assert produced == tmp_path / "work" / "tone_cancel" / "tonecancel_whine.wav"
-    assert "Cancelled 1 lines: 3100 Hz" in log.call_args[0][0]
+    assert "Cancelled 1 lines: 5100 Hz" in log.call_args[0][0]
 
 
 @pytest.mark.parametrize("case", ["disabled", "unreadable", "no_lines"])
@@ -155,7 +155,7 @@ def test_a_failure_inside_the_stage_leaves_the_audio_usable(tmp_path):
 
 def test_the_output_is_deterministic(tmp_path):
     voice = _voice()
-    whine = _tone(3100.0, level=0.008)
+    whine = _tone(5100.0, level=0.008)
     source = _write(tmp_path / "whine.wav", [voice + whine, voice + whine])
     lines = tone_cancel.detect_lines((voice + whine).astype(np.float64), RATE)
     first = sf.read(str(tone_cancel.cancel_tones(source, tmp_path / "a.wav", lines)), dtype="float32")[0]

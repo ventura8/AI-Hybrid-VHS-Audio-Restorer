@@ -134,12 +134,9 @@ VARIANTS = {
     "resemble_denoise": [(CONFIG_PY, r'\("apl_use_resemble_denoise", False\)', '("apl_use_resemble_denoise", True )')],
     # Persistent non-mains lines: a recorded whine, a buzz, a whistle off the notch.
     "tone_cancel": [(CONFIG_PY, r'\("apl_enable_tone_cancel", False\)', '("apl_enable_tone_cancel", True )')],
-    # Event-gated plosive control, at the shipped excess threshold and a lower one.
-    "plosive_tamer": [(CONFIG_PY, r'\("apl_enable_plosive_tamer", False\)', '("apl_enable_plosive_tamer", True )')],
-    "plosive_tamer_9db": [
-        (CONFIG_PY, r'\("apl_enable_plosive_tamer", False\)', '("apl_enable_plosive_tamer", True )'),
-        (CONFIG_PY, r'\("apl_plosive_excess_db", float, [0-9.]+, 0\.0\)', '("apl_plosive_excess_db", float, 9.0, 0.0)'),
-    ],
+    # Event-gated plosive control: switched off, and at a lower excess threshold.
+    "no_plosive_tamer": [(CONFIG_PY, r'\("apl_enable_plosive_tamer", True\)', '("apl_enable_plosive_tamer", False)')],
+    "plosive_tamer_9db": [(CONFIG_PY, r'\("apl_plosive_excess_db", float, [0-9.]+, 0\.0\)', '("apl_plosive_excess_db", float, 9.0, 0.0)')],
     "native_suppress_no_blend": [
         (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
         (CONFIG_PY, r'\("apl_enable_learned_blend", True\)', '("apl_enable_learned_blend", False)'),

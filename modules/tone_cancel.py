@@ -7,8 +7,10 @@ canceller's tracker at the frequency it sits at, with a bandwidth that widens ab
 speech range, where a whine under the transport's flutter wanders and there is no
 programme on a linear track to protect.
 
-What this leaves alone, by design: the mains series (the hum canceller's, found by its own
-detector), the CRT line whistle inside the pre-conditioning notch's reach, the sticky-shed
+What this leaves alone, by design: everything under 4 kHz, where the mains series is the
+hum canceller's and a persistent line is as likely a note as a defect (on real tape the
+stage's first setting took both), the CRT line whistle inside the pre-conditioning notch's
+reach, the sticky-shed
 squeal (three per cent of wander at three hertz is a hundred hertz of excursion at two
 kilohertz, past any narrow tracker, and a wide one would take the formants under it), and
 the enclosure resonance (a peaking filter on the programme, not a line added to it) -- the
@@ -29,10 +31,14 @@ from .utils import log_msg
 WINDOW = 16384
 HOP = 8192
 # A line stands this far over its smoothed neighbourhood, in this fraction of the frames
-# and of the quietest frames alike.
+# and of the quietest frames alike, and above the speech range: on 50 real captures the
+# stage's first setting read sustained notes of the programme and mains lines the mains
+# detector had missed as persistent lines in the speech range and cost programme on the
+# captures it touched; recorded whines live above 4 kHz and programme lines do not.
 LINE_EXCESS_DB = 8.0
-PERSISTENCE = 0.5
+PERSISTENCE = 0.7
 QUIET_FRACTION = 0.2
+MIN_LINE_HZ = 4000.0
 FLOOR_BINS = 61
 # Lines closer than this merge into one; at most this many are cancelled.
 MERGE_BINS = 5
@@ -123,7 +129,7 @@ def detect_lines(mono_signal, sample_rate, mains_hz=0.0):
     freqs, power = _spectrogram(mono_signal, sample_rate)
     excess, floor = _line_excess_db(power)
     overall, quiet = _persistence(power, floor)
-    candidates = (excess >= LINE_EXCESS_DB) & (overall >= PERSISTENCE) & (quiet >= PERSISTENCE)
+    candidates = (excess >= LINE_EXCESS_DB) & (overall >= PERSISTENCE) & (quiet >= PERSISTENCE) & (freqs >= MIN_LINE_HZ)
     # Another stage's line is dropped by its peak, after merging: a guard punched into the
     # candidates would leave the line's own skirts standing as lines of their own.
     guarded = _guarded(freqs, mains_hz)
