@@ -63,8 +63,8 @@ VARIANTS = {
     "no_neural": [
         (
             PROCESSING_PY,
-            r"    denoised_wav = _denoise_full_audio_step\(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use\)",
-            "    denoised_wav = surgical_wav",
+            r"        lambda: _denoise_full_audio_step\(surgical_wav, denoise_sub_dir, .*\),$",
+            "        lambda: surgical_wav,",
         )
     ],
     # The blend was last judged at a 0.75 s probe. Settings on this branch have interacted
@@ -172,8 +172,12 @@ def _resolved_config(name):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def _run(name, limit, catalog=None):
-    """Measures one variant and returns its report path."""
+def _run(name, limit, catalog=None, keep_work=False):
+    """Measures one variant and returns its report path.
+
+    The work directory holds the restored outputs; it is removed afterwards unless kept,
+    which the hum and rumble readings need, since they measure those outputs afterwards.
+    """
     work = Path(f"experiments/sweep_{name}")
     report = Path(f"experiments/sweep_{name}.json")
     shutil.rmtree(work, ignore_errors=True)
@@ -195,7 +199,8 @@ def _run(name, limit, catalog=None):
     if catalog is not None:
         command += ["--catalog", str(catalog)]
     subprocess.run(command, check=False, timeout=7200, env=env)
-    shutil.rmtree(work, ignore_errors=True)
+    if not keep_work:
+        shutil.rmtree(work, ignore_errors=True)
     return report if report.exists() else None
 
 
@@ -221,7 +226,7 @@ def _report_line(name, report, base_noise, base_dev):
     return f"{name:<20}{noise:>15.2f}{dev:>12.2f}   {noise - base_noise:+.2f} / {dev - base_dev:+.2f}  {verdict}"
 
 
-def _measure_variant(name, baseline_config, limit, catalog=None):
+def _measure_variant(name, baseline_config, limit, catalog=None, keep_work=False):
     """Patches, verifies the patch reaches the pipeline, and measures one variant."""
     _apply(name)
     resolved = _resolved_config(name)
@@ -233,7 +238,7 @@ def _measure_variant(name, baseline_config, limit, catalog=None):
         return None
     else:
         print(f"  resolved change: {changed}")
-    return _run(name, limit, catalog)
+    return _run(name, limit, catalog, keep_work)
 
 
 def main():
@@ -246,6 +251,7 @@ def main():
     # variants look identically and dramatically better.
     parser.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
     parser.add_argument("--catalog", type=Path, default=None, help="Sweep a clip subset instead of the whole corpus")
+    parser.add_argument("--keep-work", action="store_true", help="Keep each variant's restored outputs for measure_hum.py to read")
     args = parser.parse_args()
 
     targets = _files_touched(args.variants)
@@ -254,10 +260,10 @@ def main():
     try:
         baseline_config = _resolved_config("current")
         print("\n=== current (baseline) ===")
-        results["current"] = _run("current", args.limit, args.catalog)
+        results["current"] = _run("current", args.limit, args.catalog, args.keep_work)
         for name in args.variants:
             print(f"\n=== {name} ===")
-            results[name] = _measure_variant(name, baseline_config, args.limit, args.catalog)
+            results[name] = _measure_variant(name, baseline_config, args.limit, args.catalog, args.keep_work)
             _git_restore(targets)
     finally:
         _git_restore(targets)

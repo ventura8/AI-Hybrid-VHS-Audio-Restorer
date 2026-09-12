@@ -27,11 +27,11 @@ try:
 except ImportError:
     torch = None
 
+from . import apl_chain as _apl_chain
 from . import deepfilter_denoise as _deepfilter
 from . import denoise_cache as _denoise_cache
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
-from . import physical_repair as _physical_repair
 from . import spectral_denoise as _spectral_denoise
 from . import utils as _utils
 from .config import (
@@ -1123,18 +1123,10 @@ def _denoise_and_polish_full_audio_step(
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(original_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    if physical_repair:
-        # Ahead of subtraction, not after it. The noise profile is learned from the quietest
-        # stretch of the capture, and on a tape with dropouts that stretch is a dropout --
-        # so an unrepaired hole would be learned as the noise floor and the subtraction
-        # would have nothing to remove.
-        surgical_wav = _physical_repair.apply_when_needed(surgical_wav, audio_dir, strategy=strategy, total_duration=total_duration)
-    if spectral_denoise:
-        surgical_wav = _spectral_denoise.apply_tonal_cleanup(surgical_wav, audio_dir, strategy=strategy, total_duration=total_duration)
-        subtracted_wav = _spectral_denoise.apply_when_needed(surgical_wav, audio_dir, total_duration=total_duration)
-        if subtracted_wav != surgical_wav:
-            model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
-        surgical_wav = subtracted_wav
+    plan = _apl_chain.stage_plan(audio_dir, total_duration, strategy, physical_repair, spectral_denoise)
+    surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
+    if "spectral_denoise" in applied:
+        model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
     denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
     denoised_wav = _deepfilter.denoise_or(
         surgical_wav,

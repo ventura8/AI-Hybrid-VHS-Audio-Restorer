@@ -21,6 +21,7 @@ import scipy.signal
 from .blend_weights import apply_blend
 from .config import (
     APL_ENABLE_DEHUM,
+    APL_ENABLE_HUM_CANCEL,
     APL_ENABLE_LEARNED_BLEND,
     APL_ENABLE_SPECTRAL_DENOISE,
     APL_ENABLE_TONAL_CLEANUP,
@@ -281,6 +282,16 @@ def _resolve_notch_hz(strategy, source_wav):
     return _profile_value(strategy, "notch_hz") if detected is None else detected
 
 
+def _dehum_wanted():
+    """Whether cathar's dehum is asked for: switched on, and not behind the mode's own canceller.
+
+    The two must not stack. The native canceller leaves the harmonics at the floor, and an
+    adaptive tracker run on that audio has nothing to lock onto but the speech that shares
+    the band.
+    """
+    return APL_ENABLE_DEHUM and not APL_ENABLE_HUM_CANCEL
+
+
 def _tonal_targets(strategy, source_wav=None):
     """Returns the frequencies to clean, or None when nothing detected is switched on.
 
@@ -288,7 +299,7 @@ def _tonal_targets(strategy, source_wav=None):
     when applied to material that does not have it. Dehum and dewind are switched
     separately: dehum measured as a gain on real tape and dewind did not.
     """
-    notch_hz = _resolve_notch_hz(strategy, source_wav) if APL_ENABLE_DEHUM else 0.0
+    notch_hz = _resolve_notch_hz(strategy, source_wav) if _dehum_wanted() else 0.0
     highpass_hz = _profile_value(strategy, "highpass_hz") if APL_ENABLE_TONAL_CLEANUP else 0
     if notch_hz <= 0 and highpass_hz < 60:
         return None

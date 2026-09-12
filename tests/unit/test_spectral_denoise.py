@@ -330,3 +330,13 @@ def test_unreadable_audio_keeps_the_default_factor(quiet_wav):
 def test_the_tonal_factor_is_gentler_than_the_default():
     """The whole point of the gate is to subtract less on material that cannot take more."""
     assert spectral_denoise.APL_SPECTRAL_ALPHA_TONAL < spectral_denoise.APL_SPECTRAL_ALPHA
+
+
+def test_cathar_dehum_is_not_requested_behind_the_native_canceller():
+    """The two hum stages must not stack: an adaptive tracker on cancelled audio locks onto speech."""
+    with patch.object(spectral_denoise, "APL_ENABLE_DEHUM", True), patch.object(spectral_denoise, "APL_ENABLE_HUM_CANCEL", False):
+        assert spectral_denoise._dehum_wanted() is True
+    with patch.object(spectral_denoise, "APL_ENABLE_DEHUM", True), patch.object(spectral_denoise, "APL_ENABLE_HUM_CANCEL", True):
+        assert spectral_denoise._dehum_wanted() is False
+        assert spectral_denoise._tonal_targets({"profile": {"notch_hz": 50.0, "highpass_hz": 0}}) is None
+    assert spectral_denoise._dehum_wanted() is False

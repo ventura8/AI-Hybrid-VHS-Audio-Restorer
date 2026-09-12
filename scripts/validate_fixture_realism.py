@@ -371,29 +371,59 @@ def _blind_classes(hits, counts):
     return blind
 
 
-def _report_repair(results):
-    """Repair on against off, class by class: free where nothing is damaged, and fired where something is."""
-    print(f"\n{'repair on vs off':<14}{'n':>4}{'removed on':>12}{'off':>8}{'deviation on':>14}{'off':>8}   verdict")
+def _class_verdict(name, on, off, damaged_classes):
+    """One class's verdict for a stage on against off, and whether that is a failure."""
+    ro, rf = _median(on, "noise_removed_db"), _median(off, "noise_removed_db")
+    do, df = _median(on, "programme_deviation_db"), _median(off, "programme_deviation_db")
+    # Free means nothing got worse past the band; a stage that helps is not a failure.
+    worse = (rf - ro) > REPAIR_FREE_REMOVAL_DB or (do - df) > REPAIR_FREE_DEVIATION_DB
+    moved = abs(ro - rf) > REPAIR_FREE_REMOVAL_DB or abs(do - df) > REPAIR_FREE_DEVIATION_DB
+    if name in damaged_classes:
+        return "damaged: stage fired" if moved else "damaged: within the free band", False
+    if worse:
+        return "NOT free: a stage hurt undamaged material", True
+    return "free, as on real tape" + (" (a stage helped)" if moved else ""), False
+
+
+def _report_stage(results, on_name, off_name, damaged_classes, label):
+    """A stage on against off, class by class: free where nothing is damaged, and fired where something is.
+
+    Returns the number of undamaged classes the stage hurt. The repair stages and each of
+    the mode's own later stages are held to the same band, the one real tape set.
+    """
+    print(f"\n{label:<14}{'n':>4}{'removed on':>12}{'off':>8}{'deviation on':>14}{'off':>8}   verdict")
     failures = 0
-    for name in sorted({row["class"] for row in results["no_repair"]["trade"]}):
-        on = [row for row in results["current"]["trade"] if row["class"] == name]
-        off = [row for row in results["no_repair"]["trade"] if row["class"] == name]
+    for name in sorted({row["class"] for row in results[off_name]["trade"]}):
+        on = [row for row in results[on_name]["trade"] if row["class"] == name]
+        off = [row for row in results[off_name]["trade"] if row["class"] == name]
         if not on or not off:
             continue
-        ro, rf = _median(on, "noise_removed_db"), _median(off, "noise_removed_db")
-        do, df = _median(on, "programme_deviation_db"), _median(off, "programme_deviation_db")
-        # Free means nothing got worse past the band; a stage that helps is not a failure.
-        worse = (rf - ro) > REPAIR_FREE_REMOVAL_DB or (do - df) > REPAIR_FREE_DEVIATION_DB
-        moved = abs(ro - rf) > REPAIR_FREE_REMOVAL_DB or abs(do - df) > REPAIR_FREE_DEVIATION_DB
-        if name in PHYSICAL_CLASSES:
-            verdict = "damaged: stage fired" if moved else "damaged: within the free band"
-        elif worse:
-            verdict = "NOT free: a stage hurt undamaged material"
-            failures += 1
-        else:
-            verdict = "free, as on real tape" + (" (a stage helped)" if moved else "")
-        print(f"{name:<14}{len(on):>4}{ro:>12.2f}{rf:>8.2f}{do:>14.2f}{df:>8.2f}   {verdict}")
+        verdict, failed = _class_verdict(name, on, off, damaged_classes)
+        failures += int(failed)
+        removed = f"{_median(on, 'noise_removed_db'):>12.2f}{_median(off, 'noise_removed_db'):>8.2f}"
+        deviation = f"{_median(on, 'programme_deviation_db'):>14.2f}{_median(off, 'programme_deviation_db'):>8.2f}"
+        print(f"{name:<14}{len(on):>4}{removed}{deviation}   {verdict}")
     return failures
+
+
+def _report_repair(results):
+    """Repair on against off, class by class."""
+    return _report_stage(results, "current", "no_repair", PHYSICAL_CLASSES, "repair on vs off")
+
+
+# The mode's own later stages, each checked the way repair is: the sweep variant that
+# switches the stage on, and the classes that carry the defect it targets. Every other
+# class must stay inside the free band. Filled in as each stage lands.
+STAGE_CHECKS = ()
+
+
+def _report_stage_checks(args, results, variants):
+    """Runs every registered stage check and returns how many undamaged classes any stage hurt."""
+    hurt = 0
+    for variant, damaged in STAGE_CHECKS:
+        results[variant] = _rescore(variant, args, variants)
+        hurt += _report_stage(results, variant, "current", damaged, f"{variant} on vs off")
+    return hurt
 
 
 def _parse_args():
@@ -418,7 +448,8 @@ def _defect_checks(args, results):
     every = list(args.variants) + list(args.defect_variants)
     results["current"] = _rescore("current", args, every)
     results["no_repair"] = _rescore("no_repair", args, every)
-    return misses, _blind_classes(hits, counts), _report_repair(results)
+    hurt = _report_repair(results) + _report_stage_checks(args, results, every)
+    return misses, _blind_classes(hits, counts), hurt
 
 
 def _failures(summary):
@@ -452,7 +483,7 @@ def main():
     configs = sorted({c for _, a, b, _, _, _ in COMPARISONS for c in (a, b)}, key=lambda c: c != "current")
     # Every configuration this run patches is restored with `git checkout --`, which would
     # take an uncommitted edit with it; refuse to start over one.
-    patched = [c for c in configs if c != "current"] + ([] if args.skip_defects else ["no_repair"])
+    patched = [c for c in configs if c != "current"] + ([] if args.skip_defects else ["no_repair", *(v for v, _ in STAGE_CHECKS)])
     sweep._require_clean(sweep._files_touched(patched))
     results = _measure_all(configs, args.fixtures_dir, args.variants, args.limit, args.work_dir)
     agree = _report_trade(results)

@@ -45,11 +45,25 @@ HUM_BAND_HZ = (50.0, 400.0)
 # A tape "carries hum" when its harmonic excess clears this. Set from the distribution over
 # the corpus so the subset is the tapes where the defect is plainly present, not marginal.
 HUM_PRESENT_DB = 6.0
+MAINS_CANDIDATES_HZ = (50.0, 60.0)
+# The rumble reading uses the same two-figure shape: energy taken out of the quiet frames
+# below the cutoff, against movement of the loud frames in the band speech shares with it.
+RUMBLE_CUTOFF_HZ = 100.0
 
 
 def _mains_hz(record):
     """50 Hz for PAL regions, 60 Hz for NTSC, from the catalogue's file path."""
     return 60.0 if "america" in str(record.get("file", "")) else 50.0
+
+
+def _mains_by_evidence(signal_data, rate):
+    """Whichever of 50 or 60 Hz the recording's harmonics support.
+
+    The region's nominal frequency is the wrong one on 10 of the 48 corpus tapes that carry
+    hum; a stage that removes hum at the right frequency there would go unread at the
+    region's. This is the rule the mode's own detector uses.
+    """
+    return max(MAINS_CANDIDATES_HZ, key=lambda hz: hum_excess_db(signal_data, rate, hz))
 
 
 def hum_excess_db(signal_data, rate, mains_hz):
@@ -113,11 +127,25 @@ def _low_band_deviation_db(source, restored, rate, mains_hz):
     return abs(10.0 * np.log10(rst_energy / src_energy))
 
 
-def measure(source_path, restored_path, mains_hz):
-    """Returns hum removed and non-hum low-band deviation, both in dB."""
-    source, rate = _mono(source_path)
-    restored, _rate = _mono(restored_path)
-    source, restored, _lag = _align(source, restored)
+def _rumble_db(signal_data, rate):
+    """Level of the quietest fifth of frames below the rumble cutoff, in dB.
+
+    Quiet frames are where rumble stands alone -- a motor does not stop for a pause -- so a
+    drop there is the rumble going, where a drop in loud frames could be the bass of the
+    programme.
+    """
+    frames = _frames(signal_data)
+    if frames is None or len(frames) < 8:
+        return None
+    level = np.sqrt(np.mean(frames**2, axis=1))
+    quiet = frames[level <= np.percentile(level, 100.0 - LOUD_PERCENTILE)]
+    spectrum = np.abs(np.fft.rfft(quiet * np.hanning(frames.shape[1]), axis=1)) ** 2
+    freqs = np.fft.rfftfreq(frames.shape[1], 1.0 / rate)
+    return float(10.0 * np.log10(np.mean(spectrum[:, freqs <= RUMBLE_CUTOFF_HZ]) + 1e-20))
+
+
+def _gain_matched(source, restored):
+    """The restored signal scaled to the source's level on the loud frames, or None when too short."""
     source_frames, restored_frames = _frames(source), _frames(restored)
     if source_frames is None or restored_frames is None or len(source_frames) < 8:
         return None
@@ -129,16 +157,30 @@ def measure(source_path, restored_path, mains_hz):
     gain = (float(np.sqrt(np.mean(source_frames[:count][loud] ** 2))) + 1e-12) / (
         float(np.sqrt(np.mean(restored_frames[:count][loud] ** 2))) + 1e-12
     )
-    restored = restored * gain
+    return restored * gain
 
-    excess_before = hum_excess_db(source, rate, mains_hz)
-    excess_after = hum_excess_db(restored, rate, mains_hz)
+
+def measure(source_path, restored_path, mains_hz, band="hum"):
+    """Returns the defect removed and the non-defect low-band deviation, both in dB.
+
+    `band` selects the reading: "hum" is the harmonic excess at the mains series, "rumble"
+    the level below the cutoff in the quiet frames. The deviation figure is the same for
+    both: movement of the loud frames' speech energy in 50-400 Hz, harmonics excluded.
+    """
+    source, rate = _mono(source_path)
+    restored, _rate = _mono(restored_path)
+    source, restored, _lag = _align(source, restored)
+    restored = _gain_matched(source, restored)
+    if restored is None:
+        return None
+    reader = hum_excess_db if band == "hum" else lambda data, r, _hz: _rumble_db(data, r)
+    before, after = reader(source, rate, mains_hz), reader(restored, rate, mains_hz)
     deviation = _low_band_deviation_db(source, restored, rate, mains_hz)
-    if deviation is None:
+    if deviation is None or before is None or after is None:
         return None
     return {
-        "hum_excess_source_db": round(float(excess_before), 3),
-        "hum_removed_db": round(float(excess_before - excess_after), 3),
+        "hum_excess_source_db": round(float(before), 3),
+        "hum_removed_db": round(float(before - after), 3),
         "low_band_deviation_db": round(float(deviation), 3),
     }
 
@@ -169,8 +211,10 @@ def _measure_clip(clip, source_wav, temp_dir, record, mains, args, results):
     if _extracted(clip, source_wav) is None:
         return None
     source, rate = _mono(source_wav)
+    if mains is None:
+        mains = _mains_by_evidence(source, rate)
     excess = float(hum_excess_db(source, rate, mains))
-    if excess < HUM_PRESENT_DB:
+    if excess < HUM_PRESENT_DB and args.band == "hum":
         return excess
     for mode in args.modes:
         restored = next((p for root in args.work_dirs if (p := _restored_path(root, clip, mode))), None)
@@ -178,11 +222,12 @@ def _measure_clip(clip, source_wav, temp_dir, record, mains, args, results):
             continue
         restored_wav = temp_dir / f"{clip.stem}_{mode}.wav"
         try:
-            row = measure(source_wav, restored_wav, mains) if _extracted(restored, restored_wav) else None
+            row = measure(source_wav, restored_wav, mains, args.band) if _extracted(restored, restored_wav) else None
         finally:
             restored_wav.unlink(missing_ok=True)
         if row:
             row["identifier"] = record["identifier"]
+            row["mains_hz"] = mains
             results[mode].append(row)
     return excess
 
@@ -196,6 +241,18 @@ def _parse_args():
     )
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
     parser.add_argument("--report", type=Path, default=Path("experiments/hum.json"))
+    parser.add_argument(
+        "--mains",
+        choices=["region", "auto"],
+        default="region",
+        help="Read hum at the catalogue region's frequency, or at whichever of 50/60 Hz the recording's harmonics support",
+    )
+    parser.add_argument(
+        "--band",
+        choices=["hum", "rumble"],
+        default="hum",
+        help="Read mains hum (harmonic excess, hum-carrying clips only) or rumble (quiet-frame level below 100 Hz, every clip)",
+    )
     return parser.parse_args()
 
 
@@ -213,7 +270,7 @@ def main():
             clip = args.corpus_dir / record["file"]
             if not clip.exists():
                 continue
-            mains = _mains_hz(record)
+            mains = _mains_hz(record) if args.mains == "region" else None
             source_wav = temp_dir / f"{clip.stem}_src.wav"
             try:
                 excess = _measure_clip(clip, source_wav, temp_dir, record, mains, args, results)
@@ -223,20 +280,21 @@ def main():
                 source_wav.unlink(missing_ok=True)
             if excess is None:
                 continue
-            sources.append({"identifier": record["identifier"], "hum_excess_source_db": round(excess, 3), "mains_hz": mains})
+            sources.append({"identifier": record["identifier"], "hum_excess_source_db": round(excess, 3)})
             if excess >= HUM_PRESENT_DB:
                 sys.stdout.write(f"  hum {excess:6.2f} dB  {record['identifier'][:48]}\n")
                 sys.stdout.flush()
 
     carrying = [s for s in sources if s["hum_excess_source_db"] >= HUM_PRESENT_DB]
     print(f"\n{len(carrying)} of {len(sources)} clips carry hum above {HUM_PRESENT_DB:.0f} dB of harmonic excess\n")
-    print(f"{'mode':<20}{'hum removed dB':>16}{'low-band dev dB':>17}{'n':>5}")
+    removed_label = "hum removed dB" if args.band == "hum" else "rumble removed dB"
+    print(f"{'mode':<20}{removed_label:>18}{'low-band dev dB':>17}{'n':>5}")
     print(f"{'':<20}{'(higher better)':>16}{'(lower better)':>17}")
     for mode, rows in results.items():
         if rows:
             removed = np.median([r["hum_removed_db"] for r in rows])
             deviation = np.median([r["low_band_deviation_db"] for r in rows])
-            print(f"{mode:<20}{removed:>16.2f}{deviation:>17.2f}{len(rows):>5}")
+            print(f"{mode:<20}{removed:>18.2f}{deviation:>17.2f}{len(rows):>5}")
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps({"sources": sources, "results": results}, indent=2) + "\n", encoding="utf-8")

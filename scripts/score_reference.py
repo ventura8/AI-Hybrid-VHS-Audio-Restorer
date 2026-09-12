@@ -111,6 +111,19 @@ DEFECT_BANDS = {
     "real_hum_m22": ((45.0, 405.0),),
     "real_hum_loud": ((45.0, 405.0),),
     "real_combo_m12": ((45.0, 405.0), (55.0, 80.0), (2000.0, 10000.0)),
+    # Calibrated fixture classes (artifacts/realistic-v2). The hum classes carry an eight-
+    # harmonic series; the EMI buzz runs to eighty at a mains rate, so its band is the whole
+    # low-mid range; the recorded whine of the EP class sits at the line rate; rumble at
+    # 60/75 Hz; the enclosure resonance is a ring somewhere in 150-600 Hz.
+    "speech_m15_hum": ((45.0, 405.0),),
+    "music_m15_hum": ((45.0, 405.0),),
+    "speech_m09_hum": ((45.0, 405.0),),
+    "worn_m09": ((45.0, 405.0),),
+    "buzz_m15": ((45.0, 5000.0),),
+    "hifibuzz_m15": ((45.0, 1000.0),),
+    "ep_m12": ((15500.0, 15750.0),),
+    "rumble_m15": ((40.0, 100.0),),
+    "resonance_m15": ((150.0, 600.0),),
 }
 # Hum needs a metric of its own. A wide defect band around the harmonic series is
 # dominated by speech, which sits in exactly the same range -- the band reads near 0 dB on

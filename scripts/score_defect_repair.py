@@ -196,6 +196,11 @@ def _parse_args():
     parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/reference-fixtures"))
     parser.add_argument("--restored-dir", type=Path, required=True, help="Directory of restored WAVs named <fixture>_vhs.wav")
     parser.add_argument("--report", type=Path, default=None)
+    # The calibrated set injects plosives, enclosure resonance and handling noise into the
+    # *reference* -- they were recorded, not added by the tape -- and writes that reference
+    # as the clean file. Scored against it, a stage that removes them reads as collateral
+    # damage; those classes are scored against the target, which is the reference without.
+    parser.add_argument("--reference", choices=["clean", "target"], default="clean", help="Which fixture file is the truth")
     return parser.parse_args()
 
 
@@ -210,7 +215,8 @@ def main():
             if not restored.is_file():
                 continue
             language_dir = args.fixtures_dir / language
-            scored = score_repair(language_dir / record["clean"], language_dir / record["degraded"], restored)
+            truth = record.get(args.reference) or record["clean"]
+            scored = score_repair(language_dir / truth, language_dir / record["degraded"], restored)
             if scored:
                 scored.update({"name": record["name"], "language": language, "defects": record["defects"]})
                 rows.append(scored)

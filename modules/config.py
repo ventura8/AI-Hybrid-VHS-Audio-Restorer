@@ -204,6 +204,27 @@ _NUMERIC_CONFIG_FIELDS = (
     # pops at any sensitivity and this recovers +5.5 at 7, touching 61 spans of undamaged
     # speech per 15 s at 40 dB under the programme; 5 touches 312, 8 starts missing pops.
     ("apl_depop_threshold", float, 7.0, 0.0),
+    # The mode's own harmonic hum canceller: how many mains harmonics it evaluates (each is
+    # cancelled only where it stands above its own neighbourhood, so a high count costs
+    # compute and nothing else -- an EMI buzz runs to eighty harmonics, mains hum to eight)
+    # and the envelope bandwidth at the fundamental in Hz (it widens with harmonic number,
+    # because recorded hum carries the transport's wow and the excursion scales with it).
+    # Set by the measurement in `apl_enable_hum_cancel`.
+    ("apl_hum_max_harmonics", int, 40, 1, 128),
+    ("apl_hum_bandwidth_hz", float, 1.5, 0.1),
+    # The mode's own noise suppressor, in the slot cathar's subtraction holds: the noise
+    # estimate's bias (the over-subtraction analogue; 1.0 is the estimate as measured), the
+    # gain floor in dB (cathar's beta of 0.01 is a -20 dB floor), and the decision-directed
+    # smoothing of the a priori SNR at this mode's 1024-sample hop (0.98 is the textbook
+    # value at ~100 frames per second; at 43 it would remember 1.2 s and smear onsets).
+    # Set by the measurement in `apl_use_native_suppress`.
+    ("apl_suppress_noise_bias", float, 1.0, 0.0),
+    ("apl_suppress_gain_floor_db", float, -20.0, None),
+    ("apl_suppress_dd_alpha", float, 0.96, 0.0, 1.0),
+    # Plosive control: how far the low band must rise over its own running level, in dB,
+    # to be read as a plosive burst. 0 switches detection off, like `apl_depop_threshold`.
+    # Set by the measurement in `apl_enable_plosive_tamer`.
+    ("apl_plosive_excess_db", float, 12.0, 0.0),
     # Deterministic tonal cleanup (dehum, dewind) for the same mode. Off by default: it
     # measures as harmful. Against a clean reference on fixtures whose hum genuinely
     # dominates, dehum drives the harmonic bins 6.7-10.7 dB *below* the truth -- speech
@@ -247,6 +268,19 @@ _BOOL_CONFIG_FIELDS = (
     # whenever it misses; the detector here is kept correct so that anyone switching this on
     # gets the frequency the recording actually carries.
     ("apl_enable_dehum", False),
+    # The mode's own stages for the rows where cathar's cascade still led on paper: a
+    # harmonic hum canceller (tracked sinusoidal subtraction per harmonic, ahead of the
+    # noise probe), a noise suppressor of its own in the subtraction slot (per-bin MMSE
+    # log-spectral gain with a tracked noise level, in place of cathar's global factor),
+    # event-gated plosive control, and a canceller for persistent non-mains tones. Each is
+    # off until its real-tape measurement is in this comment; the gates are the 48 hum
+    # tapes for the canceller (cathar's dehum at the right frequency: 2.07 dB of harmonic
+    # excess at 0.25 dB of low-band movement), the trade metric on the corpus for the
+    # suppressor, and the defect-region score against the calibrated fixtures for the rest.
+    ("apl_enable_hum_cancel", False),
+    ("apl_use_native_suppress", False),
+    ("apl_enable_plosive_tamer", False),
+    ("apl_enable_tone_cancel", False),
     # Physical tape damage repair for this mode: crackle, dropouts, saturation and azimuth
     # skew, each gated on its own defect being detected. Four stages earned a place against
     # paired fixtures and three were rejected -- `repair` and `deplosive` make undamaged
@@ -599,5 +633,15 @@ APL_ENABLE_DEHUM = bool(CONFIG.get("apl_enable_dehum", False))
 APL_HUM_MIN_EXCESS_DB = float(CONFIG.get("apl_hum_min_excess_db", 6.0))
 APL_ENABLE_TONAL_CLEANUP = bool(CONFIG.get("apl_enable_tonal_cleanup", False))
 APL_ENABLE_LEARNED_BLEND = bool(CONFIG.get("apl_enable_learned_blend", True))
+APL_ENABLE_HUM_CANCEL = bool(CONFIG.get("apl_enable_hum_cancel", False))
+APL_HUM_MAX_HARMONICS = int(CONFIG.get("apl_hum_max_harmonics", 40))
+APL_HUM_BANDWIDTH_HZ = float(CONFIG.get("apl_hum_bandwidth_hz", 1.5))
+APL_USE_NATIVE_SUPPRESS = bool(CONFIG.get("apl_use_native_suppress", False))
+APL_SUPPRESS_NOISE_BIAS = float(CONFIG.get("apl_suppress_noise_bias", 1.0))
+APL_SUPPRESS_GAIN_FLOOR_DB = float(CONFIG.get("apl_suppress_gain_floor_db", -20.0))
+APL_SUPPRESS_DD_ALPHA = float(CONFIG.get("apl_suppress_dd_alpha", 0.96))
+APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", False))
+APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
+APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 2.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))
