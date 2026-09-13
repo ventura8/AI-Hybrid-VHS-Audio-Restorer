@@ -66,15 +66,10 @@ def _mains_by_evidence(signal_data, rate):
     return max(MAINS_CANDIDATES_HZ, key=lambda hz: hum_excess_db(signal_data, rate, hz))
 
 
-def hum_excess_db(signal_data, rate, mains_hz):
-    """How far the mains harmonics stand above their own spectral neighbourhood, in dB.
-
-    A ratio rather than an absolute level, so it reads the same on a quiet tape and a loud
-    one: each harmonic's peak against the median of its neighbourhood, summed as energy
-    across harmonics. Clean audio sits near 0 dB; a humming tape reads well above it.
-    """
+def _harmonic_peaks_and_floors(signal_data, rate, mains_hz):
+    """Summed peak power at the mains harmonics and summed median power of their neighbourhoods, or None when too short."""
     if len(signal_data) < 16384:
-        return 0.0
+        return None
     freqs, psd = scipy.signal.welch(signal_data, rate, nperseg=16384)
     peaks, floors = 0.0, 0.0
     for k in range(1, HARMONICS + 1):
@@ -87,7 +82,32 @@ def hum_excess_db(signal_data, rate, mains_hz):
         right = psd[index + 3 : index + 3 + width]
         floors += float(np.median(np.concatenate((left, right)))) + 1e-20
         peaks += float(np.max(psd[max(index - 1, 0) : index + 2])) + 1e-20
+    return peaks, floors
+
+
+def hum_excess_db(signal_data, rate, mains_hz):
+    """How far the mains harmonics stand above their own spectral neighbourhood, in dB.
+
+    A ratio rather than an absolute level, so it reads the same on a quiet tape and a loud
+    one: each harmonic's peak against the median of its neighbourhood, summed as energy
+    across harmonics. Clean audio sits near 0 dB; a humming tape reads well above it.
+    """
+    pair = _harmonic_peaks_and_floors(signal_data, rate, mains_hz)
+    if pair is None:
+        return 0.0
+    peaks, floors = pair
     return 10.0 * np.log10(peaks / floors)
+
+
+def hum_line_level_db(signal_data, rate, mains_hz):
+    """The summed peak power at the mains harmonics on its own, in dB.
+
+    The excess reading is blind to a chain that lowers the floor around a line it left
+    behind: the line then stands out more although it is no louder. Read on gain-matched
+    audio, this is whether the lines themselves got quieter.
+    """
+    pair = _harmonic_peaks_and_floors(signal_data, rate, mains_hz)
+    return None if pair is None else 10.0 * np.log10(pair[0])
 
 
 LOW_FRAME = 8192
@@ -178,11 +198,15 @@ def measure(source_path, restored_path, mains_hz, band="hum"):
     deviation = _low_band_deviation_db(source, restored, rate, mains_hz)
     if deviation is None or before is None or after is None:
         return None
-    return {
+    row = {
         "hum_excess_source_db": round(float(before), 3),
         "hum_removed_db": round(float(before - after), 3),
         "low_band_deviation_db": round(float(deviation), 3),
     }
+    if band == "hum":
+        levels = hum_line_level_db(source, rate, mains_hz), hum_line_level_db(restored, rate, mains_hz)
+        row["hum_line_drop_db"] = None if None in levels else round(float(levels[0] - levels[1]), 3)
+    return row
 
 
 def _restored_path(work_root, clip, mode):
