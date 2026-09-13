@@ -26,7 +26,7 @@ VALID_PROCESS_MODES = {
     "cathar",
     "cathar_vhs",
 }
-DEFAULT_PROCESS_MODE = "cathar"
+DEFAULT_PROCESS_MODE = "auto_pure_linear"
 DEFAULT_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".mpg", ".mpeg", ".ts", ".m2ts"]
 
 # Single source of truth for mode-specific output naming. Both the processing
@@ -300,7 +300,7 @@ _BOOL_CONFIG_FIELDS = (
     # music-led programme. On 50 real captures in the chain it is free: 10.02/0.23 to
     # 10.02/0.23, 37 captures untouched to the hundredth; a 9 dB threshold costs 0.02 dB of
     # deviation for nothing and is not the default.
-    ("apl_enable_plosive_tamer", True),
+    ("apl_enable_plosive_tamer", False),
     # A canceller for persistent non-mains lines. Off: on 50 real captures at its first
     # setting it read persistent lines on 41 and cost 0.06 dB of deviation, with one capture
     # moved 4.2 dB, because sustained notes of the programme and mains lines the detector had
@@ -680,7 +680,7 @@ APL_USE_NATIVE_SUPPRESS = bool(CONFIG.get("apl_use_native_suppress", False))
 APL_SUPPRESS_NOISE_BIAS = float(CONFIG.get("apl_suppress_noise_bias", 1.0))
 APL_SUPPRESS_GAIN_FLOOR_DB = float(CONFIG.get("apl_suppress_gain_floor_db", -20.0))
 APL_SUPPRESS_DD_ALPHA = float(CONFIG.get("apl_suppress_dd_alpha", 0.96))
-APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", True))
+APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", False))
 APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
 APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
 APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))

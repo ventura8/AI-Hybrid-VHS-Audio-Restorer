@@ -50,7 +50,7 @@ ______________________________________________________________________
 
 The engine supports 10 execution modes configured in `config.yaml`:
 
-- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`):
+- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`, the default):
   - Stages: Dual-resolution scan $\\rightarrow$ analog pre-conditioning
     $\\rightarrow$ pre-denoise surgical bandreject $\\rightarrow$ gated physical
     damage repair $\\rightarrow$ tracked hum cancellation $\\rightarrow$
@@ -86,7 +86,7 @@ The engine supports 10 execution modes configured in `config.yaml`:
     $\\rightarrow$ inpaint $\\rightarrow$ deplosive $\\rightarrow$ declip
     $\\rightarrow$ dehum $\\rightarrow$ repair $\\rightarrow$ noiseprint denoise
     $\\rightarrow$ de-esser $\\rightarrow$ SBR enhance $\\rightarrow$ sync.
-  - Use case: Impulsive defects, high-order harmonic hum, CRT whistle, zero AI
+  - Use case: Spectral spikes, sustained tonal programme, zero AI
     hallucination for music and ambient archives. (`cathar_vhs` is an alias).
 - **`hybrid`** (`*_Hybrid_Cleaned.<ext>`):
   - Stages: BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$

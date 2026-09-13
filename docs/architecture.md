@@ -35,11 +35,11 @@ Core goals:
 
 | Mode | Alias | Output suffix |
 |---|---|---|
-| `auto_pure_linear` | — | `*_PureLinear_Cleaned` |
+| `auto_pure_linear` (default) | — | `*_PureLinear_Cleaned` |
 | `auto_pure` | `pure` | `*_Pure_Cleaned` |
 | `auto` | — | `*_Auto_Cleaned` |
 | `multipass_auto` | `multipass` | `*_MultiPass_Cleaned` |
-| `cathar` (default) | `cathar_vhs` | `*_Cathar_Cleaned` |
+| `cathar` | `cathar_vhs` | `*_Cathar_Cleaned` |
 | `hybrid` | — | `*_Hybrid_Cleaned` |
 | `denoise_only` | — | `*_Denoised_Cleaned` |
 | `auto_ffmpeg_native` | `auto_vhs_native` | `*_AutoFFmpeg_Cleaned` |

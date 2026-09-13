@@ -73,7 +73,7 @@ A specialized audio restoration pipeline designed to remaster VHS recordings.
 
 The pipeline supports multiple execution modes controlled by `process_mode`:
 
-1. **`auto_pure_linear` (linear full-mix pure denoising)**
+1. **`auto_pure_linear` (linear full-mix pure denoising - default)**
 
 - Reuses `auto_pure` profiling, analog pre-conditioning, sync, mastering, and
   remuxing, but skips stem separation and treats the full mix.
@@ -176,8 +176,7 @@ The pipeline supports multiple execution modes controlled by `process_mode`:
   for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
   configured PCM-capable containers).
 
-1. **`cathar` (pure-Rust DSP restoration suite; `cathar_vhs` alias -
-   default)**
+1. **`cathar` (pure-Rust DSP restoration suite; `cathar_vhs` alias)**
 
 - Extract audio.
 - Pass 1: Analog pre-conditioning (DC offset blocker, dewind rumble filter,
@@ -238,7 +237,7 @@ classDef output fill:#E1E2E6,stroke:#44474E,stroke-width:1.5px,color:#1A1C1E,rx:
 A(["📼 Input Video/Audio"]):::input --> B(["Extract Audio<br/>(32-bit Float)"]):::processing
 B --> MODE{"process_mode"}:::model
 
-MODE -->|"auto_pure_linear"| LP1["Acoustic Scan +<br/>Analog Pre-Conditioning"]:::processing
+MODE -->|"auto_pure_linear (default)"| LP1["Acoustic Scan +<br/>Analog Pre-Conditioning"]:::processing
 LP1 --> LPR["Gated Damage Repair<br/>(crackle, dropout, clip, azimuth)"]:::processing
 LPR --> LPH["Hum Cancellation +<br/>Plosive Control"]:::processing
 LPH --> LPS["Noise-Profile Subtraction +<br/>Learned Per-Bin Blend"]:::processing
@@ -279,7 +278,7 @@ FD --> FS["Sync Full Audio"]:::processing
 FS --> FMUX["FFmpeg Final Remux"]:::processing
 FMUX --> FOUT(["💾 Output: Denoised_Cleaned"]):::output
 
-MODE -->|"cathar / cathar_vhs (default)"| CP1["Analog Pre-Conditioning +<br/>Tape Defect Repair"]:::processing
+MODE -->|"cathar / cathar_vhs"| CP1["Analog Pre-Conditioning +<br/>Tape Defect Repair"]:::processing
 CP1 --> CP2["Surgical Dehumming +<br/>Transport Dewow"]:::processing
 CP2 --> CP3["Coherent Denoise +<br/>De-Esser +<br/>SBR Enhance"]:::processing
 CP3 --> CP4["Sync Audio + Remux"]:::processing
@@ -390,7 +389,7 @@ sync_method: "shift"     # 'shift' (default) or 'dtw' (correction for wow/flutte
 dtw_resolution: 40       # Analysis resolution in Hz (lower = faster)
 
 # Processing Mode
-process_mode: "cathar"      # pure-Rust multi-stage VHS DSP restoration (default)
+process_mode: "auto_pure_linear"   # linear full-mix restoration (default); "cathar" for the pure-Rust cascade
 ```
 
 ## Requirements & Compatibility

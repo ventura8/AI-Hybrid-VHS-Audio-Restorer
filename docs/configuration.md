@@ -4,12 +4,12 @@
   (`vocal_mix_volume`, `background_mix_volume`), sync behavior, process mode,
   native filter parameters, and file extensions.
 - **Defaults**: If `config.yaml` is missing, the script defaults to neutral mix
-  levels (1.0), `process_mode: cathar`, and standard video extensions
+  levels (1.0), `process_mode: auto_pure_linear`, and standard video extensions
   (`.mp4`, `.mkv`, `.avi`, `.mov`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`).
 
 ## Process Modes
 
-- `auto_pure_linear`:
+- `auto_pure_linear` (default):
   - Full-mix pure-denoising mode for natural archival fidelity.
   - Uses dual-resolution analysis and analog pre-conditioning, then subtracts a
     learned noise profile, blends the result back toward the original per
@@ -138,7 +138,7 @@
       now separate from dehum. Off because it did not measure as a gain on real
       tape.
   - Output suffix: `*_PureLinear_Cleaned`.
-- `cathar` / `cathar_vhs` (default):
+- `cathar` / `cathar_vhs`:
   - Deterministic high-fidelity DSP restoration engine.
   - Applies 8-harmonic adaptive de-hum, surgical CRT whistle notch filter,
     spectral noise print subtraction, de-click/de-crackle, and azimuth phase alignment.

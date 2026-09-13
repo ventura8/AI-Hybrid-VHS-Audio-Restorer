@@ -677,15 +677,26 @@ ratios and are not repeated here.
    subtracted per channel, ahead of the noise probe. On the 48 hum tapes, in
    the chain, hum removed goes from 0.19 dB to a median 2.49 (upper quartile
    5.87), past what `cathar`'s stage manages run alone at the right frequency.
+
 1. **Event-gated plosive control**: blasts under 150 Hz are found as events
    (fast attack, low band leading the mid band) and taken down to the level
    the band held just before each; nothing else is touched, and on real tape
    the stage is free.
+
 1. **Candidates measured and held back**: a per-bin MMSE log-spectral
    suppressor in the subtraction slot (better on every fixture class, 4 dB of
    removal short on real tape -- the DeepFilterNet lesson a second time), the
    Mel-Roformer denoiser (less removal than UVR-DeNoise), and a canceller for
-   persistent lines, which at its first setting read sustained notes as lines.
+   persistent lines, which at its first setting read sustained notes as lines
+   and, restricted to lines above 4 kHz, moved the trade medians not at all
+   while costing one capture 10 dB of noise removal: a line that holds still
+   is already in the 2.5 s noise profile.
+
+1. **The default mode**: on the full corpus the mode leads `cathar` on every
+   row measured on real tape -- broadband noise (8.73/0.32 against 5.87/0.44,
+   winning both on 72 clips against 11), mains hum (2.49 dB against -0.58 on
+   the 48 hum tapes), rumble, and the DNSMOS cross-check (ahead on 142 of 174)
+   -- and is the default from v1.3.0. `cathar` is unchanged and selectable.
 
 ### 6.3 Open
 

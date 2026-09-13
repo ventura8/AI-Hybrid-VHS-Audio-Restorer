@@ -73,27 +73,27 @@ def test_load_config_fallback_process_mode(mock_exists):
     mock_yaml.safe_load.return_value = {"process_mode": "INVALID_MODE"}
     with patch.object(modules.config, "yaml", mock_yaml), patch("builtins.open", MagicMock()):
         conf, _ = modules.config.load_config()
-        assert conf["process_mode"] == "cathar"
+        assert conf["process_mode"] == "auto_pure_linear"
 
 
 @patch("builtins.print")
 def test_normalize_process_mode_warns_for_non_string(mock_print):
     result = modules.config._normalize_process_mode(None)
-    assert result == "cathar"
+    assert result == "auto_pure_linear"
     mock_print.assert_called_once()
 
 
 @patch("builtins.print")
 def test_normalize_process_mode_warns_for_unknown_string(mock_print):
     result = modules.config._normalize_process_mode(" invalid_mode ")
-    assert result == "cathar"
+    assert result == "auto_pure_linear"
     mock_print.assert_called_once()
 
 
 @patch("modules.config.Path.exists", return_value=True)
 def test_load_config_defaults_when_pyyaml_missing_and_config_exists(mock_exists):
     expected_defaults = {
-        "process_mode": "cathar",
+        "process_mode": "auto_pure_linear",
         "afftdn_nr": 10.0,
         "afftdn_nf": -55.0,
         "afftdn_tn": True,
@@ -117,7 +117,7 @@ def test_load_config_non_mapping_yaml(mock_exists):
     with patch.object(modules.config, "yaml", mock_yaml), patch("builtins.open", MagicMock()):
         conf, src = modules.config.load_config()
         assert src == "Defaults (invalid config.yaml)"
-        assert conf["process_mode"] == "cathar"
+        assert conf["process_mode"] == "auto_pure_linear"
         assert conf["arnndn_model"] == "cb.rnnn"
 
 
