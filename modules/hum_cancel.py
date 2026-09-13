@@ -85,13 +85,6 @@ REFINE_SAMPLES = 1 << 20
 MEDIAN_MAX_BANDWIDTH_HZ = 10.0
 # Below this many frames the envelope filter has nothing to settle on.
 MIN_FRAMES = 64
-# How far off an exact multiple of the fundamental a gated line may sit and still be a
-# harmonic, in Hz, at the fundamental and per harmonic above it, to a cap. Real series
-# read within 0.9 Hz of their multiples up to the sixth harmonic through the transport's
-# wow; the calibrated chord partials that pass the other gates sit 1.1 to 2.0 Hz off.
-SERIES_TOLERANCE_HZ = 0.5
-SERIES_TOLERANCE_SLOPE_HZ = 0.1
-SERIES_TOLERANCE_MAX_HZ = 2.0
 # The harmonics the shared pre-conditioning notches when the scanner reports mains hum.
 PRECONDITIONED_HARMONICS = (1, 2)
 TOP_MARGIN_HZ = 100.0
@@ -200,19 +193,25 @@ def _long_spectrum(mono_signal, sample_rate):
 
 
 def series_tolerance_hz(harmonic):
-    """How far off its multiple a harmonic may sit and still be one, widening with its number to a cap."""
-    return min(SERIES_TOLERANCE_HZ + SERIES_TOLERANCE_SLOPE_HZ * (harmonic - 1), SERIES_TOLERANCE_MAX_HZ)
+    """How far off its multiple a harmonic may sit and still be one: half the band the canceller tracks it in.
+
+    The band widens with the harmonic number because the transport's wow scales with it,
+    and so does the tolerance. A tighter one (half a hertz at the fundamental, a tenth
+    more per harmonic) was measured and lost the strongest real hum tapes: their lines
+    wobble past it, and a 40-harmonic series was refused whole.
+    """
+    return 0.5 * bandwidths_for([harmonic])[0]
 
 
 def on_series(mono_signal, sample_rate, f0, gated):
     """The gated lines that sit at an exact multiple of the fundamental, within the series tolerance.
 
-    A mains harmonic is at k times the fundamental, wobbling with the transport by a
-    fraction of a hertz. A chord partial found near a multiple -- 147 Hz beside 150, 196
-    beside 200 -- is a hertz or more off the series, which is more than any harmonic
-    wobbles at that number, and is left to the programme. The lines kept are placed where
-    the long transform finds them, so a harmonic sitting beside a stronger partial is
-    cancelled at its own frequency and not at the partial's.
+    A mains harmonic is at k times the fundamental, wobbling with the transport by no more
+    than the band the canceller tracks it in. A chord partial found near a multiple -- 147
+    Hz beside 150, 196 beside 200 -- is further off the series than that, and is left to
+    the programme. The lines kept are placed where the long transform finds them, so a
+    harmonic sitting beside a stronger partial is cancelled at its own frequency and not
+    at the partial's.
     """
     spectrum, freqs = _long_spectrum(mono_signal, sample_rate)
     if spectrum is None:
