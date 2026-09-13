@@ -75,6 +75,16 @@
       the eight harmonics of the mains series; on everything else the series
       is read to `apl_hum_max_harmonics`, which is how an EMI buzz is the same
       stage. Four tapes whose lines wander more than five hertz are not helped.
+    - `apl_surgical_mains_notch` (default **true**) and `apl_hum_skip_notched`
+      (default **false**). Two switches for the notches that precede the
+      canceller: the mode's own bandrejects at the third to fifth mains
+      harmonics, and the shared pre-conditioning's at the fundamental and its
+      second. Leaving the higher harmonics to the canceller (the first off)
+      loses hum removal on the 33 readable hum tapes, 2.43 to 1.71 dB of
+      excess at the median and worse by more than a decibel on 8 tapes against
+      better on 1; leaving the two pre-conditioned harmonics out of the
+      canceller's plan and refinement (the second on) changes nothing
+      measurable. The notch and the canceller do better together.
     - `apl_enable_dehum` (default **false**). cathar's adaptive `dehum` inside
       this mode, never requested while the native canceller is on. Off because
       the stage's isolated gain (2.07 dB of hum) collapsed in the chain to
@@ -122,7 +132,11 @@
       not the default. `apl_use_resemble_denoise` (default **false**) puts
       Resemble-Enhance's denoiser -- a masking model; its enhancer is generative
       and is not a candidate -- in UVR-DeNoise's place, falling back to UVR on
-      absence or failure.
+      absence or failure. On 50 real captures it removes 10.78 dB against
+      UVR-DeNoise's 10.02 and moves the programme 0.58 dB against 0.23 (upper
+      quartile 0.49 to 1.77), winning both halves of the trade against `cathar`
+      on 12 captures where the shipped stage wins on 28: a studio-speech masking
+      model takes tape programme for noise, the DeepFilterNet finding again.
     - `apl_spectral_alpha_tonal` (default 2.0) and `apl_tonal_flatness_max`
       (default 0.035). On tonal material -- median spectral flatness in 100-5000
       Hz below the threshold, the most tonal third of the corpus -- subtraction

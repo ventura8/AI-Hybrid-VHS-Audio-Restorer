@@ -297,14 +297,20 @@ _BOOL_CONFIG_FIELDS = (
     # tracks each of those lines at the frequency it actually sits at; a Q-30 notch at the
     # exact multiple takes the centre of a line that sits on it and misses one that sits a
     # few hertz off, and either way hands the canceller a line it can no longer read whole.
-    # Measured on the 48 hum tapes with the canceller on: see the release note.
+    # Measured on the 33 readable hum tapes with the canceller on, leaving the harmonics to
+    # the canceller loses hum removal, 2.43 to 1.71 dB of excess at the median and worse by
+    # more than a decibel on 8 tapes against better on 1, while the broadband trade reads
+    # 0.04 dB less deviation for the same removal (a gain-match effect of the energy left at
+    # 150-250 Hz). The notch and the canceller do better together than the canceller alone.
     ("apl_surgical_mains_notch", True),
     # When the scanner reported mains hum, the shared pre-conditioning has already notched
     # the fundamental and its second harmonic (Q 15) before the canceller sees the audio, so
     # on those tapes the two lowest lines it finds are the notch's skirts, not lines, and
     # their peaks pull the refined fundamental to the edge of its range. With this on those
     # two harmonics are left to the notch and the refinement reads the harmonics above them.
-    # Measured on the 48 hum tapes: see the release note.
+    # Measured on the 33 readable hum tapes it changes nothing: the same 2.43 dB median, no
+    # tape moved by a decibel, the broadband trade to the hundredth. The notch has already
+    # taken those two lines, and cancelling what it leaves neither helps nor harms.
     ("apl_hum_skip_notched", False),
     # The mode's own noise suppressor in the subtraction slot: per-bin MMSE log-spectral
     # gain with a tracked noise level, in place of cathar's global factor. Off, on real-tape
