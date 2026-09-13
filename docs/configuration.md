@@ -50,12 +50,66 @@
       sensitivity; on undamaged speech it changes 40 dB under the programme,
       and across 50 real captures it moves neither noise removal nor deviation
       (9.91 to 9.97 dB, 0.22 to 0.22).
-    - `apl_enable_dehum` (default **false**) and `apl_hum_min_excess_db` (default
-      6.0). Mains hum cancellation at the frequency the recording's harmonics
-      actually support, 50 or 60 Hz, rather than the region's nominal one -- on
-      10 of 48 hum-carrying corpus tapes those differ. Off because the stage's
-      isolated gain (2.07 dB of hum) collapses in the chain to +0.66 dB on a
-      coin flip: the 2.5 s noise profile already captures stationary hum.
+    - `apl_enable_hum_cancel` (default **true**), `apl_hum_max_harmonics`
+      (default 40) and `apl_hum_bandwidth_hz` (default 1.5), with
+      `apl_hum_min_excess_db` (default 6.0) as the detection threshold. The
+      mode's own hum canceller: each mains harmonic that stands out as a line
+      of its own in the quietest frames is tracked by complex demodulation at
+      the frequency it actually sits at -- real hum harmonics sit one to eight
+      hertz off the exact series -- and subtracted per channel, ahead of the
+      noise probe, so the profile the subtraction learns is hiss and not hum.
+      The frequency is the one the recording's harmonics support, 50 or 60 Hz,
+      not the region's nominal one (on 10 of 48 hum-carrying tapes those
+      differ). In the chain on the 48 corpus tapes that carry hum it takes hum
+      removed from a median 0.19 dB to 2.49 (upper quartile 2.64 to 5.87), 26
+      tapes past the 2.07 dB cathar's dehum manages run alone at the right
+      frequency, better on 34 of 48 and worse by more than a decibel on none;
+      the low band moves 1.41 to 1.48 dB across the chain and the broadband
+      trade on those tapes 12.91/0.33 to 12.90/0.35. Tonal material is held to
+      the eight harmonics of the mains series; on everything else the series
+      is read to `apl_hum_max_harmonics`, which is how an EMI buzz is the same
+      stage. Four tapes whose lines wander more than five hertz are not helped.
+    - `apl_enable_dehum` (default **false**). cathar's adaptive `dehum` inside
+      this mode, never requested while the native canceller is on. Off because
+      the stage's isolated gain (2.07 dB of hum) collapsed in the chain to
+      +0.66 dB on a coin flip: a notch cuts a band whether or not hum is in it.
+    - `apl_enable_plosive_tamer` (default **true**) and `apl_plosive_excess_db`
+      (default 12.0; 0 switches detection off). Event-gated plosive control: a
+      burst under 150 Hz that stands this far over the low band's running level
+      and leads the mid band's own rise -- a voice onset lifts both bands, a
+      blast lifts the low band alone -- is taken down to the level the band
+      held just before it, as a downward expander on the low band, and nothing
+      else is touched. Tonal material skips the stage. On the calibrated
+      plosive class it recovers 0.89 dB inside the blasts at 0.03 dB of
+      collateral where cathar's `deplosive` recovers 1.55 at 0.34 and reads
+      -6.7 dB on music-led programme; on 50 real captures it is free, 10.02/0.23
+      to 10.02/0.23. A 9 dB threshold costs 0.02 dB of deviation for nothing.
+    - `apl_enable_tone_cancel` (default **false**). A canceller for persistent
+      lines above 4 kHz that are not the mains series or the CRT line whistle:
+      a recorded whine, a buzz. Its first setting looked at the whole spectrum
+      and on 50 real captures read sustained notes and missed mains lines as
+      persistent lines, costing 0.06 dB of deviation and one capture 4.2 dB; it
+      now looks only above 4 kHz and awaits its measurement.
+    - `apl_use_native_suppress` (default **false**), `apl_suppress_noise_bias`
+      (1.0), `apl_suppress_gain_floor_db` (-20.0) and `apl_suppress_dd_alpha`
+      (0.96). The mode's own noise suppressor in cathar's subtraction slot: a
+      per-bin MMSE log-spectral gain with a tracked noise level. Off on
+      real-tape evidence, the DeepFilterNet lesson again: on the calibrated
+      fixtures it lands at 5.9-6.2 dB of log-spectral distance where the
+      subtraction lands at 10-12.9, and on 50 real captures in the chain it
+      removes 5.83 dB at 0.19 of deviation against the subtraction's 10.02 at
+      0.22 (on the tonal 45, 3.06/0.22 against 7.96/0.28). A per-bin estimator
+      keeps the low-level programme the quiet frames hold, which the trade
+      metric reads as noise left behind. Selectable, with the cathar path as
+      its fallback.
+    - `apl_neural_model` (default empty) names the UVR model to run after
+      subtraction outright; empty follows the chain's own choice. The
+      Mel-Roformer denoiser (`denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt`)
+      measured 9.39/0.22 against UVR-DeNoise's 10.02/0.23 on 50 captures and is
+      not the default. `apl_use_resemble_denoise` (default **false**) puts
+      Resemble-Enhance's denoiser -- a masking model; its enhancer is generative
+      and is not a candidate -- in UVR-DeNoise's place, falling back to UVR on
+      absence or failure.
     - `apl_spectral_alpha_tonal` (default 2.0) and `apl_tonal_flatness_max`
       (default 0.035). On tonal material -- median spectral flatness in 100-5000
       Hz below the threshold, the most tonal third of the corpus -- subtraction

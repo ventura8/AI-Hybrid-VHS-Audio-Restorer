@@ -36,19 +36,36 @@ compatibility aliases.
    phase skew. Runs ahead of the subtraction because the noise profile is learned
    from the quietest stretch of the capture, and on a damaged tape that stretch
    is a dropout.
-1. **Pass 4 (Noise-Profile Subtraction)**: A noise profile learned from 2.5 s of
+1. **Pass 4 (Hum Cancellation)**: Each mains harmonic that stands out as a line
+   of its own in the quietest frames is tracked by complex demodulation at the
+   frequency it actually sits at and subtracted, per channel, so the noise
+   profile learned next is hiss and not hum. Runs only when the recording's own
+   detector reads hum, at the 50 or 60 Hz its harmonics support.
+1. **Pass 5 (Plosive Control)**: Air blasts on the microphone -- bursts under
+   150 Hz with a fast attack that lift the low band alone -- are found as
+   events and taken down to the level the band held just before each, as a
+   downward expander on the low band; nothing else is touched, and tonal
+   material skips the pass.
+1. **Pass 6 (Noise-Profile Subtraction)**: A noise profile learned from 2.5 s of
    the quietest audio is subtracted, then blended back toward the original per
    frequency bin by a fitted model, which repairs over-subtraction rather than
    trading fidelity against it.
-1. **Pass 5 (Full-Mix UVR Denoise)**: Single-pass UVR-DeNoise applied directly to
+1. **Pass 7 (Full-Mix UVR Denoise)**: Single-pass UVR-DeNoise applied directly to
    the full mix without stem separation or generative speech synthesis,
    preserving original musical acoustics, vocal transients, and room ambience.
    This is the default; with `apl_use_deepfilternet` on, DeepFilterNet3 runs
    in its place where it is installed, streamed in overlapping chunks, and
-   falls back to UVR-DeNoise when it is absent or fails.
-1. **Pass 6 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
+   falls back to UVR-DeNoise when it is absent or fails; `apl_neural_model`
+   names another UVR model outright, and `apl_use_resemble_denoise` puts
+   Resemble-Enhance's denoiser (a masking model) in its place the same way.
+1. **Pass 8 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
    EBU R128 loudness normalization (-16 LUFS / -1.0 dBTP true-peak limiter), and
    transparent container remuxing into `*_PureLinear_Cleaned.<ext>`.
+
+The stages between pre-conditioning and the neural denoiser run through one
+runner (`modules/apl_chain.py`): each is opted into by the mode, reads its own
+`apl_enable_*` switch, returns its input unchanged when it has nothing to do,
+and the runner logs which stages applied and which skipped.
 
 ## `cathar` flow
 
@@ -180,7 +197,9 @@ flowchart TD
     C4 --> CO[Output Cathar_Cleaned]
 
     M -->|auto_pure_linear| L1[Scan and analog pre-condition]
-    L1 --> L2[UVR-DeNoise full pre-conditioned mix]
+    L1 --> L1a[Gated repair, hum cancel, plosive control]
+    L1a --> L1b[Noise-profile subtraction and learned blend]
+    L1b --> L2[UVR-DeNoise full pre-conditioned mix]
     L2 --> L3[Shift or DTW alignment]
     L3 --> L4[EBU R128 mastering]
     L4 --> L5[Final remux]
