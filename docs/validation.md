@@ -285,6 +285,59 @@ features the model learns from are the features it is asked about. Three
 retrains on it captured 63-77% of the fixture headroom and moved nothing on
 real tape; the shipped weights stay.
 
+### The mode's own stages
+
+v1.3.0 gives `auto_pure_linear` stages of its own for the rows where `cathar`'s
+cascade still led on paper, and each was adopted or held back on the same
+terms as the repair stages: measured on the calibrated classes, then on real
+tape, and free on undamaged material.
+
+**Hum.** The mode's hum canceller (`modules/hum_cancel.py`) tracks each mains
+harmonic that stands out as a line of its own in the quietest frames -- at the
+frequency it actually sits at, since on the tapes measured the harmonics sit
+one to eight hertz off the exact series -- and subtracts it per channel ahead
+of the noise probe. Two gates decide it. `scripts/measure_hum.py --mains auto`
+reads the harmonic excess at whichever of 50 and 60 Hz the recording's
+harmonics support, on the 48 corpus tapes that carry hum; run alone on their
+source audio the stage removes a median 3.01 dB of excess (upper quartile
+5.98) at 0.155 dB of low-band movement, where `cathar`'s `dehum` at the right
+frequency removes 2.07 at 0.25. In the chain, through the subtraction and
+the neural stage, hum removed goes from a median 0.19 dB to 2.49, better on
+34 of 48 tapes and worse by more than a decibel on none, with the low band
+moving 1.41 to 1.48 dB and the broadband trade 12.91/0.33 to 12.90/0.35 --
+inside the free band. Four tapes whose lines wander more than five hertz
+between frames are not helped; they are recorded, not forced. On the
+calibrated set the realism check now runs the shipped configuration against
+`no_hum_cancel` over every class, held to the repair stages' free band.
+
+**Plosives.** The plosive tamer (`modules/plosive_tamer.py`) finds a blast as
+a run of hops where the low band stands 12 dB over its own running level and
+leads the mid band's rise by 6 dB, peaks within three hops, lasts 10-120 ms
+and stands alone, and takes each down to the level the band held just before
+it -- a downward expander on the low band, bit-identical elsewhere. The
+calibrated `plosive` class injects its bursts into the reference (they were
+recorded, not added by the tape) and its target differs from that reference
+everywhere, so `scripts/score_defect_repair.py --reference target` reads the
+damage from the low-band difference between the two files and measures the
+error against the target inside those spans. There the stage recovers 0.89
+dB at 0.03 dB of collateral, against `cathar deplosive`'s 1.55 at 0.34; on the
+undamaged classes it costs 0.00-0.01 dB where `deplosive` costs 0.5-0.9 and
+reads -6.7 dB on music-led programme. On 50 real captures it is free:
+10.02/0.23 to 10.02/0.23, 37 captures untouched to the hundredth.
+
+**Held back.** A per-bin MMSE log-spectral suppressor in the subtraction slot
+(`modules/spectral_suppress.py`) is the branch's second DeepFilterNet: on the
+calibrated classes it lands at 5.9-6.2 dB of log-spectral distance where the
+subtraction lands at 10-12.9, and on 50 real captures it removes 5.83 dB at
+0.19 against 10.02 at 0.22 (3.06 against 7.96 on the tonal 45). It keeps the
+low-level programme the quiet frames hold, and the trade metric reads that
+as noise left behind. The Mel-Roformer denoiser measured 9.39/0.22 against
+UVR-DeNoise's 10.02/0.23. A canceller for persistent lines
+(`modules/tone_cancel.py`) at its first setting read sustained notes and
+missed mains lines as persistent lines in the speech range and cost 0.06 dB
+of deviation on 50 captures; it now looks only above 4 kHz and is off until
+measured.
+
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment
