@@ -166,7 +166,10 @@ modified (including during every CodeRabbit review wave):
    and the other way on real tape is a fixture defect to fix before the
    setting is judged. See `docs/validation.md`, "Fixtures That Predict Real
    Tape". `scripts/expand_ia_corpus.py` widens the corpus the set is
-   calibrated against.
+   calibrated against. The validator and `scripts/sweep_denoise_settings.py`
+   patch `modules/config.py` in the checkout they run in and restore it
+   afterwards: never edit or commit that file while either runs, and run
+   them from a git worktree when the main checkout is being worked on.
 1. **Acoustic Metrics Verification (Opt-In Execution)**: When physical
    validation is provisioned, run `analyze_audio_quality()` via
    `scripts/compare_restoration_quality.py` to confirm actual noise floor

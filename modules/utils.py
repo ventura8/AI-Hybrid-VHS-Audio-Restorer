@@ -37,13 +37,25 @@ MODELS_DIR = project_dir / "models"
 
 
 def _get_scripts_dirs(base_dir):
+    """The directories a project binary may live in: the running interpreter's own first.
+
+    A checkout without a venv beside it (a git worktree) still runs under the project's
+    interpreter, and a binary installed next to that interpreter -- ffmpeg, cathar,
+    resemble-enhance -- is the one the project was validated with. Looking there first
+    keeps such a checkout from falling through to whatever the system path offers.
+    """
     candidates = [
+        Path(sys.executable).resolve().parent,
         base_dir / ".venv" / "bin",
         base_dir / "venv" / "bin",
         base_dir / ".venv" / "Scripts",
         base_dir / "venv" / "Scripts",
     ]
-    return [p for p in candidates if p.exists()]
+    found = []
+    for candidate in candidates:
+        if candidate.exists() and candidate not in found:
+            found.append(candidate)
+    return found
 
 
 def _binary_extensions():

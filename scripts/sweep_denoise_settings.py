@@ -70,18 +70,18 @@ VARIANTS = {
     # The blend was last judged at a 0.75 s probe. Settings on this branch have interacted
     # before -- the blend looked like a coin flip at alpha 1.8 and won clearly at 3.0 -- so
     # it is re-checked rather than assumed at the probe that now ships.
-    "no_blend": [(CONFIG_PY, r'\("apl_enable_learned_blend", True\)', '("apl_enable_learned_blend", False)')],
+    "no_blend": [(CONFIG_PY, r'^(\s*)\("apl_enable_learned_blend", True\),$', r'\1("apl_enable_learned_blend", False),')],
     # Tonal material: on the most tonal third of the corpus auto_pure_linear deviates 0.49
     # against cathar's 0.32, where on the noisiest third it is 0.32 against 0.56. These test
     # the candidate mechanisms -- subtraction too strong for sustained tones, a probe that
     # learns a held note as noise, the blend reading stationarity as noise.
     "alpha_2": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 2.0, 0.0)')],
-    "no_subtraction": [(CONFIG_PY, r'\("apl_enable_spectral_denoise", True\)', '("apl_enable_spectral_denoise", False)')],
+    "no_subtraction": [(CONFIG_PY, r'^(\s*)\("apl_enable_spectral_denoise", True\),$', r'\1("apl_enable_spectral_denoise", False),')],
     "apl_probe_0s75": [
         (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 0.75, 0.0)')
     ],
-    "no_repair": [(CONFIG_PY, r'\("apl_enable_physical_repair", True\)', '("apl_enable_physical_repair", False)')],
-    "deepfilternet": [(CONFIG_PY, r'\("apl_use_deepfilternet", False\)', '("apl_use_deepfilternet", True)')],
+    "no_repair": [(CONFIG_PY, r'^(\s*)\("apl_enable_physical_repair", True\),$', r'\1("apl_enable_physical_repair", False),')],
+    "deepfilternet": [(CONFIG_PY, r'^(\s*)\("apl_use_deepfilternet", False\),$', r'\1("apl_use_deepfilternet", True),')],
     # Fixture-realism checks: the factor real tape rejected, and the tonal gate switched off
     # (a flatness ceiling of 0 fires on nothing) so alpha can be compared without it.
     "alpha_1_8": [
@@ -97,24 +97,24 @@ VARIANTS = {
     # two settings moved -- the envelope bandwidth at the fundamental and how far up the
     # series it looks. Read with measure_hum.py --mains auto over the kept work directories
     # as well as here.
-    "no_hum_cancel": [(CONFIG_PY, r'\("apl_enable_hum_cancel", True\)', '("apl_enable_hum_cancel", False)')],
+    "no_hum_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_hum_cancel", True\),$', r'\1("apl_enable_hum_cancel", False),')],
     "hum_cancel_bw_1": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 1.0, 0.1)')],
     "hum_cancel_bw_3": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 3.0, 0.1)')],
     "hum_cancel_h8": [(CONFIG_PY, r'\("apl_hum_max_harmonics", int, [0-9]+, 1, 128\)', '("apl_hum_max_harmonics", int, 8, 1, 128)')],
     # The mode's own suppressor in cathar's subtraction slot, at the noise estimate as
     # measured and raised by half, at a deeper gain floor, at the textbook decision-directed
     # smoothing, and without the blend that was fitted on cathar's subtraction.
-    "native_suppress": [(CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )')],
+    "native_suppress": [(CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),')],
     "native_suppress_b1_5": [
-        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
         (CONFIG_PY, r'\("apl_suppress_noise_bias", float, [0-9.]+, 0\.0\)', '("apl_suppress_noise_bias", float, 1.5, 0.0)'),
     ],
     "native_suppress_floor30": [
-        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
         (CONFIG_PY, r'\("apl_suppress_gain_floor_db", float, -[0-9.]+, None\)', '("apl_suppress_gain_floor_db", float, -30.0, None)'),
     ],
     "native_suppress_dd_0_98": [
-        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
         (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
     ],
     # The removal ceiling: this mode's own probe around the 4 s that ships (2.5 s shipped in
@@ -136,15 +136,15 @@ VARIANTS = {
     # The neural stage's candidates, faithful models only: the Mel-Roformer denoiser the
     # separator can load, and Resemble-Enhance's denoiser with its enhancer left off.
     "roformer": [(CONFIG_PY, r'"apl_neural_model": "",', '"apl_neural_model": "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",')],
-    "resemble_denoise": [(CONFIG_PY, r'\("apl_use_resemble_denoise", False\)', '("apl_use_resemble_denoise", True )')],
+    "resemble_denoise": [(CONFIG_PY, r'^(\s*)\("apl_use_resemble_denoise", False\),$', r'\1("apl_use_resemble_denoise", True),')],
     # Persistent non-mains lines: a recorded whine, a buzz, a whistle off the notch.
-    "tone_cancel": [(CONFIG_PY, r'\("apl_enable_tone_cancel", False\)', '("apl_enable_tone_cancel", True )')],
+    "tone_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_tone_cancel", False\),$', r'\1("apl_enable_tone_cancel", True),')],
     # Event-gated plosive control: switched off, and at a lower excess threshold.
-    "no_plosive_tamer": [(CONFIG_PY, r'\("apl_enable_plosive_tamer", True\)', '("apl_enable_plosive_tamer", False)')],
+    "no_plosive_tamer": [(CONFIG_PY, r'^(\s*)\("apl_enable_plosive_tamer", True\),$', r'\1("apl_enable_plosive_tamer", False),')],
     "plosive_tamer_9db": [(CONFIG_PY, r'\("apl_plosive_excess_db", float, [0-9.]+, 0\.0\)', '("apl_plosive_excess_db", float, 9.0, 0.0)')],
     "native_suppress_no_blend": [
-        (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
-        (CONFIG_PY, r'\("apl_enable_learned_blend", True\)', '("apl_enable_learned_blend", False)'),
+        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, r'^(\s*)\("apl_enable_learned_blend", True\),$', r'\1("apl_enable_learned_blend", False),'),
     ],
 }
 
