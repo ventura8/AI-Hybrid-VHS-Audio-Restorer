@@ -401,7 +401,7 @@ def apply_tonal_cleanup(source_wav, audio_dir, strategy=None, total_duration=Non
     instructive one: alone, at the frequency the harmonics support, it removes a median
     2.07 dB of hum on the 48 corpus tapes that carry it at 0.25 dB of speech-band movement.
     In the chain that becomes +0.66 dB on 20 of 48 tapes with the speech band moving 1.52
-    to 2.15 dB, because the 2.5 s noise profile already captures stationary hum and the
+    to 2.15 dB, because the noise profile already captures stationary hum and the
     stage mostly relocates that removal. The frequency detection is kept correct regardless:
     on 10 of those 48 tapes the region's nominal mains frequency is the wrong one.
 

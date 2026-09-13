@@ -117,8 +117,13 @@ VARIANTS = {
         (CONFIG_PY, r'\("apl_use_native_suppress", False\)', '("apl_use_native_suppress", True )'),
         (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
     ],
-    # The removal ceiling: this mode's own probe past the 2.5 s that ships. The np_* variants
-    # above move the shared cathar value, which this mode no longer reads.
+    # The removal ceiling: this mode's own probe around the 4 s that ships (2.5 s shipped in
+    # v1.2.1; on the full corpus 4 s removes 9.99 dB against 8.73 at the same 0.32 dB of
+    # deviation). The np_* variants above move the shared cathar value, which this mode no
+    # longer reads.
+    "apl_probe_2s5": [
+        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 2.5, 0.0)')
+    ],
     "apl_probe_4s": [
         (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 4.0, 0.0)')
     ],

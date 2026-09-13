@@ -250,7 +250,7 @@ flowchart TD
     P --> R["Pass 3: gated physical repair\ndepop, decrackle, declip, azimuth, inpaint"]
     R --> H["Pass 4: hum cancellation\ntracked per harmonic, ahead of the probe"]
     H --> B["Pass 5: plosive control\nevent-gated low-band expander"]
-    B --> N["Pass 6: noise-profile subtraction\n2.5 s probe, learned per-bin blend"]
+    B --> N["Pass 6: noise-profile subtraction\n4 s probe, learned per-bin blend"]
     N --> D["Pass 7: UVR-DeNoise on the full mix"]
     D --> Y["Pass 8: shift or DTW alignment"]
     Y --> M["Single-track EBU R128 mastering\ntrue-peak limiter and 44.1 kHz resample"]

@@ -94,7 +94,8 @@ def test_the_noise_probe_is_this_modes_own_and_leaves_cathar_alone(quiet_wav, tm
 
     A 0.75 s probe was the largest single thing holding this mode back: 2.5 s removes
     3.39 dB more noise for 0.12 dB more programme deviation on 25 real captures, which is
-    what puts the mode ahead of cathar on both halves of the trade. cathar shipped in
+    what puts the mode ahead of cathar on both halves of the trade, and 4 s removes 1.26 dB
+    more again on the full corpus at the same median deviation. cathar shipped in
     v1.2.0 on 0.75 s and the setting is shared, so passing it explicitly is the only way to
     take the gain without moving a released mode.
     """
@@ -107,7 +108,7 @@ def test_the_noise_probe_is_this_modes_own_and_leaves_cathar_alone(quiet_wav, tm
     ):
         spectral_denoise.apply_when_needed(quiet_wav, tmp_path)
     assert mock_noiseprint.call_args.kwargs["duration_s"] == spectral_denoise.APL_NOISEPRINT_DURATION_S
-    assert spectral_denoise.APL_NOISEPRINT_DURATION_S == 2.5
+    assert spectral_denoise.APL_NOISEPRINT_DURATION_S == 4.0
     assert config.CATHAR_NOISEPRINT_DURATION_S == 0.75
 
 

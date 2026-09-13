@@ -690,7 +690,11 @@ ratios and are not repeated here.
    persistent lines, which at its first setting read sustained notes as lines
    and, restricted to lines above 4 kHz, moved the trade medians not at all
    while costing one capture 10 dB of noise removal: a line that holds still
-   is already in the 2.5 s noise profile.
+   is already in the noise profile.
+
+1. **A 4 s noise probe**: the 2.5 s of v1.2.1 was chosen on 25 clips where the
+   curve looked flat above it; on the full corpus, with hum cancelled ahead of
+   the probe, 4 s removes 9.99 dB against 8.73 at the same median deviation.
 
 1. **The default mode**: on the full corpus the mode leads `cathar` on every
    row measured on real tape -- broadband noise (8.73/0.32 against 5.87/0.44,

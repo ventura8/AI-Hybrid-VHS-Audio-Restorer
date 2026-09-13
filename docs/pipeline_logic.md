@@ -46,7 +46,7 @@ compatibility aliases.
    events and taken down to the level the band held just before each, as a
    downward expander on the low band; nothing else is touched, and tonal
    material skips the pass.
-1. **Pass 6 (Noise-Profile Subtraction)**: A noise profile learned from 2.5 s of
+1. **Pass 6 (Noise-Profile Subtraction)**: A noise profile learned from 4 s of
    the quietest audio is subtracted, then blended back toward the original per
    frequency bin by a fitted model, which repairs over-subtraction rather than
    trading fidelity against it.

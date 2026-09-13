@@ -22,9 +22,15 @@
   - Parameters, all specific to this mode so that `cathar` cannot be affected by
     tuning them:
     - `apl_noiseprint_duration_s` (seconds of the quietest stretch used to learn
-      the noise profile, default 2.5). The shared `cathar_noiseprint_duration_s`
+      the noise profile, default 4.0). The shared `cathar_noiseprint_duration_s`
       stays at 0.75 and is not used here. This is the single most consequential
-      setting in the mode: at 0.75 s it removes 3.39 dB less noise.
+      setting in the mode: at 0.75 s it removes 3.39 dB less noise than at 2.5,
+      and on the full corpus 4 s removes 9.99 dB against 2.5 s's 8.73 at the
+      same 0.32 dB of median deviation, with the cost in the deviation tail
+      (upper quartile 0.76 to 0.91 dB) and on NTSC (0.33 to 0.45, against
+      `cathar`'s 0.57). 6 s removes 10.64 at 0.35 but loses both halves of the
+      trade to `cathar` on 13 clips rather than 10. On a long tape the quietest
+      4 s is likelier to be pure noise than inside a 15 s corpus clip.
     - `apl_spectral_alpha` (over-subtraction factor, default 3.0). Higher removes
       more noise and takes more programme with it; 4.0 measures worse overall.
     - `apl_spectral_margin_db` (skip subtraction above this
@@ -93,7 +99,7 @@
       the field-rate sidebands the surgical notch leaves either side of the
       CRT line -- and moves the medians not at all (10.02/0.23 to 10.02/0.23)
       while one capture loses 10.45 dB of noise removal to it: a line that
-      holds still is already in the 2.5 s noise profile and the subtraction
+      holds still is already in the noise profile and the subtraction
       removes it outright, where the tracker's smoothed envelope leaves a
       residual, and a line that wanders defeats both. Off; selectable for a
       whine the ear finds and the probe missed.

@@ -173,19 +173,26 @@ _NUMERIC_CONFIG_FIELDS = (
     # effect. Measured properly on 25 real captures, 2.5 s removes 3.39 dB more noise for
     # 0.12 dB more programme deviation, and a repeat run reproduced +3.39 / +0.12 exactly.
     #
-    # 2.5 s rather than longer because the curve is flat above it: 1.5 s gives +1.68, while
-    # 2.5, 4 and 6 s give +3.39, +3.32 and +3.97, mutually within noise. A 6 s probe is also
-    # 40% of the 15 s corpus clips, so its small edge is as likely to be clip length as
-    # better noise estimation.
+    # v1.2.1 shipped 2.5 s because on those 25 captures the curve looked flat above it
+    # (2.5, 4 and 6 s gave +3.39, +3.32 and +3.97). Measured on the full corpus of 136 in
+    # v1.3.0, with the hum canceller now running ahead of the probe, it is not flat: 4 s
+    # removes a median 9.99 dB against 8.73 at the same 0.32 dB of median deviation, wins
+    # both halves of the trade against cathar on the same 72 clips and loses both on 10
+    # rather than 11, and leaves the floor worse on the same 4. The cost is in the deviation
+    # tail (upper quartile 0.76 to 0.91 dB; 17 clips move up by more than 0.2 dB, 8 move
+    # down) and on NTSC, whose median deviation goes 0.33 to 0.45 against cathar's 0.57. 6 s
+    # removes 10.64 at 0.35 but loses both to cathar on 13; 8 s was measured on 50 captures
+    # at 12.64/0.27 and not taken further. On a two-hour tape the quietest 4 s is far
+    # likelier to be pure noise than it is inside a 15 s corpus clip, so the corpus reads
+    # this setting's risk high, not low.
     #
-    # This is what puts the mode ahead of cathar on both halves of the trade at once. On the
-    # same 25 captures cathar removes 7.26 dB at 0.36 dB of deviation; this removes 10.45 at
-    # 0.32. Raising alpha to 4.0 on top removes 11.85 but costs 0.41 dB of deviation, past
-    # cathar, which is the one property worth keeping -- so alpha stays at 3.0.
+    # Raising alpha to 4.0 instead removes 11.85 on 25 captures but costs 0.41 dB of
+    # deviation, past cathar, which is the one property worth keeping -- so alpha stays at
+    # 3.0 and the probe carries the removal.
     #
     # cathar's own cathar_noiseprint_duration_s stays at 0.75: it shipped in v1.2.0 and the
     # setting is shared, so this mode passes its own value explicitly instead.
-    ("apl_noiseprint_duration_s", float, 2.5, 0.0),
+    ("apl_noiseprint_duration_s", float, 4.0, 0.0),
     # Depth and length that mark a span as a dropout rather than a pause, for the physical
     # repair stage. A dropout is loss of head contact, so the audio falls away entirely for
     # a few tens of milliseconds; a speech pause is longer and never that deep.
@@ -308,7 +315,7 @@ _BOOL_CONFIG_FIELDS = (
     # where recorded whines live and programme lines do not, it finds lines on 19 of the 50
     # -- mostly the field-rate sidebands the surgical notch leaves either side of the CRT
     # line -- and moves the medians not at all, 10.02/0.23 to 10.02/0.23, while one capture
-    # loses 10.45 dB of noise removal to it: a line that holds still is already in the 2.5 s
+    # loses 10.45 dB of noise removal to it: a line that holds still is already in the
     # noise profile and the subtraction removes it outright, where the tracker's smoothed
     # envelope leaves a residual. What the profile cannot capture, a line that wanders, the
     # tracker cannot follow either. Selectable for a whine the ear finds and the probe missed.
@@ -662,7 +669,7 @@ APL_SPECTRAL_ALPHA = float(CONFIG["apl_spectral_alpha"])
 APL_SPECTRAL_ALPHA_TONAL = float(CONFIG.get("apl_spectral_alpha_tonal", 2.0))
 APL_TONAL_FLATNESS_MAX = float(CONFIG.get("apl_tonal_flatness_max", 0.035))
 APL_SPECTRAL_MARGIN_DB = float(CONFIG["apl_spectral_margin_db"])
-APL_NOISEPRINT_DURATION_S = float(CONFIG.get("apl_noiseprint_duration_s", 2.5))
+APL_NOISEPRINT_DURATION_S = float(CONFIG.get("apl_noiseprint_duration_s", 4.0))
 APL_MUTE_SILENCE_DB = float(CONFIG.get("apl_mute_silence_db", -45.0))
 APL_MUTE_MIN_MS = float(CONFIG.get("apl_mute_min_ms", 15.0))
 APL_MUTE_MAX_MS = float(CONFIG.get("apl_mute_max_ms", 200.0))
