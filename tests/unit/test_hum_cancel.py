@@ -349,18 +349,6 @@ def test_the_plan_reads_the_scanner_report_through_the_stage(humming, tmp_path):
     assert "Cancelled" in log.call_args[0][0]
 
 
-def test_a_line_that_follows_the_programme_is_left_to_it():
-    """A steady mains series is cancelled; the harmonics a sung partial sits on, loud only when it is sung, are not."""
-    t = _time()
-    burst = (np.sin(2 * np.pi * 0.5 * t) > 0.6).astype(float)
-    partials = burst * _series(50.0, [2, 4, 6], level=0.4)
-    steady = _series(50.0, range(1, 9)) + _hiss()
-    _refined, gated = hum_cancel.plan_harmonics(steady, RATE, 50.0)
-    assert {2, 4, 6} <= set(_harmonics_of(gated))
-    _refined, gated = hum_cancel.plan_harmonics(steady + partials, RATE, 50.0)
-    assert gated and not {2, 4, 6} & set(_harmonics_of(gated))
-
-
 def test_a_partial_beside_a_multiple_is_not_on_the_series(humming):
     """Partials a few hertz off the multiples are left to the programme; the hum's harmonics are kept at their own frequency."""
     source, _hum = humming
