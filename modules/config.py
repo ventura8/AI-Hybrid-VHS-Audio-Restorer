@@ -307,7 +307,7 @@ _BOOL_CONFIG_FIELDS = (
     # music-led programme. On 50 real captures in the chain it is free: 10.02/0.23 to
     # 10.02/0.23, 37 captures untouched to the hundredth; a 9 dB threshold costs 0.02 dB of
     # deviation for nothing and is not the default.
-    ("apl_enable_plosive_tamer", False),
+    ("apl_enable_plosive_tamer", True),
     # A canceller for persistent non-mains lines. Off: on 50 real captures at its first
     # setting it read persistent lines on 41 and cost 0.06 dB of deviation, with one capture
     # moved 4.2 dB, because sustained notes of the programme and mains lines the detector had
@@ -321,8 +321,12 @@ _BOOL_CONFIG_FIELDS = (
     # tracker cannot follow either. Selectable for a whine the ear finds and the probe missed.
     ("apl_enable_tone_cancel", False),
     # Resemble-Enhance's denoiser (a masking model; its enhancer is generative and not a
-    # candidate) in place of UVR-DeNoise, where the package is installed. Off until its
-    # real-tape measurement is in this comment; absence or failure falls back to UVR.
+    # candidate) in place of UVR-DeNoise, where the package is installed. Off: on 50 real
+    # captures it removes 10.78 dB against UVR-DeNoise's 10.02 and moves the programme 0.58
+    # dB against 0.23, the upper quartile of deviation going 0.49 to 1.77; it wins both
+    # halves of the trade against cathar on 12 captures where the shipped stage wins on 28.
+    # A 44.1 kHz masking UNet trained on studio speech takes tape programme for noise the
+    # way DeepFilterNet did. Absence or failure falls back to UVR.
     ("apl_use_resemble_denoise", False),
     # Physical tape damage repair for this mode: crackle, dropouts, saturation and azimuth
     # skew, each gated on its own defect being detected. Four stages earned a place against
@@ -687,7 +691,7 @@ APL_USE_NATIVE_SUPPRESS = bool(CONFIG.get("apl_use_native_suppress", False))
 APL_SUPPRESS_NOISE_BIAS = float(CONFIG.get("apl_suppress_noise_bias", 1.0))
 APL_SUPPRESS_GAIN_FLOOR_DB = float(CONFIG.get("apl_suppress_gain_floor_db", -20.0))
 APL_SUPPRESS_DD_ALPHA = float(CONFIG.get("apl_suppress_dd_alpha", 0.96))
-APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", False))
+APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", True))
 APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
 APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
 APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))
