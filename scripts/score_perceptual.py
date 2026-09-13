@@ -80,8 +80,14 @@ def _log_mel(segment):
 
 
 def _windows(audio):
-    """The clip's 9.01 s windows at a one-second hop; a clip shorter than one window is repeated to fill it."""
+    """The clip's 9.01 s windows at a one-second hop; a clip shorter than one window is repeated to fill it.
+
+    An empty clip has no windows: doubling nothing never fills a window, and a source the
+    metric refuses as degenerate can extract to nothing.
+    """
     length = int(WINDOW_S * SAMPLE_RATE)
+    if len(audio) == 0:
+        return []
     while len(audio) < length:
         audio = np.append(audio, audio)
     hops = int(np.floor(len(audio) / SAMPLE_RATE) - WINDOW_S) + 1
@@ -92,7 +98,10 @@ def score_audio(audio, sessions):
     """The clip's mean SIG, BAK, OVRL and P808 over its windows."""
     primary, p808 = sessions
     scores = []
-    for segment in _windows(audio.astype(np.float32)):
+    windows = _windows(audio.astype(np.float32))
+    if not windows:
+        return None
+    for segment in windows:
         raw_sig, raw_bak, raw_ovr = primary.run(None, {"input_1": segment[np.newaxis]})[0][0]
         mos_808 = float(p808.run(None, {"input_1": _log_mel(segment[:-MEL_HOP])})[0][0][0])
         scores.append((np.polyval(POLY_SIG, raw_sig), np.polyval(POLY_BAK, raw_bak), np.polyval(POLY_OVR, raw_ovr), mos_808))
@@ -116,15 +125,20 @@ def _score_clip(clip, record, args, sessions, temp_dir, results):
     source_wav = temp_dir / f"{clip.stem}_src.wav"
     if _extracted(clip, source_wav) is None:
         return
-    results["source"].append({"identifier": record["identifier"], **score_file(source_wav, sessions)})
+    scored = score_file(source_wav, sessions)
     source_wav.unlink(missing_ok=True)
+    if scored is None:
+        return
+    results["source"].append({"identifier": record["identifier"], **scored})
     for mode in args.modes:
         restored = next((p for root in args.work_dirs if (p := _restored_path(root, clip, mode))), None)
         restored_wav = temp_dir / f"{clip.stem}_{mode}.wav"
         if restored is None or _extracted(restored, restored_wav) is None:
             continue
-        results[mode].append({"identifier": record["identifier"], **score_file(restored_wav, sessions)})
+        scored = score_file(restored_wav, sessions)
         restored_wav.unlink(missing_ok=True)
+        if scored is not None:
+            results[mode].append({"identifier": record["identifier"], **scored})
 
 
 def _report(results):
