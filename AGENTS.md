@@ -53,13 +53,16 @@ The engine supports 10 execution modes configured in `config.yaml`:
 - **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`):
   - Stages: Dual-resolution scan $\\rightarrow$ analog pre-conditioning
     $\\rightarrow$ pre-denoise surgical bandreject $\\rightarrow$ gated physical
-    damage repair $\\rightarrow$ noise-profile subtraction $\\rightarrow$ learned
-    per-bin blend $\\rightarrow$ UVR-DeNoise full-mix $\\rightarrow$ post-cleanup
-    $\\rightarrow$ linear air polish $\\rightarrow$ shift/DTW sync $\\rightarrow$
-    remux.
+    damage repair $\\rightarrow$ tracked hum cancellation $\\rightarrow$
+    event-gated plosive control $\\rightarrow$ noise-profile subtraction
+    $\\rightarrow$ learned per-bin blend $\\rightarrow$ UVR-DeNoise full-mix
+    $\\rightarrow$ post-cleanup $\\rightarrow$ linear air polish
+    $\\rightarrow$ shift/DTW sync $\\rightarrow$ remux. The stages between
+    pre-conditioning and the neural denoiser run through
+    `modules/apl_chain.py`, each behind its own `apl_enable_*` switch.
   - Use case: Clean dialogue and high-throughput restoration without stem
     separation. Removes more tape noise than `cathar` while disturbing the
-    programme less; see
+    programme less, and removes mains hum where neither mode used to; see
     `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`.
 - **`auto`** (`*_Auto_Cleaned.<ext>`):
   - Stages: AI acoustic profiling $\\rightarrow$ dynamic engine & model
