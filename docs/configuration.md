@@ -88,8 +88,15 @@
       lines above 4 kHz that are not the mains series or the CRT line whistle:
       a recorded whine, a buzz. Its first setting looked at the whole spectrum
       and on 50 real captures read sustained notes and missed mains lines as
-      persistent lines, costing 0.06 dB of deviation and one capture 4.2 dB; it
-      now looks only above 4 kHz and awaits its measurement.
+      persistent lines, costing 0.06 dB of deviation and one capture 4.2 dB.
+      Restricted to lines above 4 kHz it finds lines on 19 of the 50 -- mostly
+      the field-rate sidebands the surgical notch leaves either side of the
+      CRT line -- and moves the medians not at all (10.02/0.23 to 10.02/0.23)
+      while one capture loses 10.45 dB of noise removal to it: a line that
+      holds still is already in the 2.5 s noise profile and the subtraction
+      removes it outright, where the tracker's smoothed envelope leaves a
+      residual, and a line that wanders defeats both. Off; selectable for a
+      whine the ear finds and the probe missed.
     - `apl_use_native_suppress` (default **false**), `apl_suppress_noise_bias`
       (1.0), `apl_suppress_gain_floor_db` (-20.0) and `apl_suppress_dd_alpha`
       (0.96). The mode's own noise suppressor in cathar's subtraction slot: a

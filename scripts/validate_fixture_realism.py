@@ -48,6 +48,7 @@ the setting that actually resolves, and restores the tree afterwards.
 
 import argparse
 import json
+import re
 import statistics
 import subprocess
 import sys

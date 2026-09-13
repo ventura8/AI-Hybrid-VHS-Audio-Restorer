@@ -335,8 +335,12 @@ as noise left behind. The Mel-Roformer denoiser measured 9.39/0.22 against
 UVR-DeNoise's 10.02/0.23. A canceller for persistent lines
 (`modules/tone_cancel.py`) at its first setting read sustained notes and
 missed mains lines as persistent lines in the speech range and cost 0.06 dB
-of deviation on 50 captures; it now looks only above 4 kHz and is off until
-measured.
+of deviation on 50 captures; restricted to lines above 4 kHz it finds lines
+on 19 of the 50 and moves the medians not at all, 10.02/0.23 to 10.02/0.23,
+while one capture loses 10.45 dB of noise removal to it. A line that holds
+still is already in the 2.5 s noise profile, and the subtraction removes it
+outright where the tracker's smoothed envelope leaves a residual; a line
+that wanders defeats both. It stays off.
 
 ### A perceptual cross-check
 

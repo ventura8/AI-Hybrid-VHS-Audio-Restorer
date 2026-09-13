@@ -304,8 +304,14 @@ _BOOL_CONFIG_FIELDS = (
     # A canceller for persistent non-mains lines. Off: on 50 real captures at its first
     # setting it read persistent lines on 41 and cost 0.06 dB of deviation, with one capture
     # moved 4.2 dB, because sustained notes of the programme and mains lines the detector had
-    # missed read as persistent lines in the speech range. It now looks only above 4 kHz,
-    # where recorded whines live and programme lines do not, and waits for its measurement.
+    # missed read as persistent lines in the speech range. Restricted to lines above 4 kHz,
+    # where recorded whines live and programme lines do not, it finds lines on 19 of the 50
+    # -- mostly the field-rate sidebands the surgical notch leaves either side of the CRT
+    # line -- and moves the medians not at all, 10.02/0.23 to 10.02/0.23, while one capture
+    # loses 10.45 dB of noise removal to it: a line that holds still is already in the 2.5 s
+    # noise profile and the subtraction removes it outright, where the tracker's smoothed
+    # envelope leaves a residual. What the profile cannot capture, a line that wanders, the
+    # tracker cannot follow either. Selectable for a whine the ear finds and the probe missed.
     ("apl_enable_tone_cancel", False),
     # Resemble-Enhance's denoiser (a masking model; its enhancer is generative and not a
     # candidate) in place of UVR-DeNoise, where the package is installed. Off until its
