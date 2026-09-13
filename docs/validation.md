@@ -338,6 +338,33 @@ missed mains lines as persistent lines in the speech range and cost 0.06 dB
 of deviation on 50 captures; it now looks only above 4 kHz and is off until
 measured.
 
+### A perceptual cross-check
+
+The trade metric is blind to what it does not measure, and every ranking on
+this branch rests on it. `scripts/score_perceptual.py` reads DNSMOS P.835
+(Microsoft's non-intrusive estimator of P.835 listening scores: speech
+quality SIG, background BAK, overall OVRL, plus a P.808 overall MOS; fetched
+by `scripts/download_dnsmos.py`, CC BY 4.0) on the source and on each mode's
+restoration of every clip. It is speech-trained and reads at 16 kHz, so on a
+corpus that carries music and archive material it is a cross-check and not a
+gate: a change the trade metric and the defect gates approve and that DNSMOS
+reads clearly worse is a change to listen to before it ships. On the 174
+restored clips of the v1.2.1 corpus run it reads:
+
+| Configuration | SIG | BAK | OVRL | P808 | OVRL vs source (paired median) |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| source | 1.67 | 1.37 | 1.32 | 2.45 | |
+| `cathar` | 2.16 | 2.22 | 1.62 | 2.45 | +0.07 |
+| `auto_pure_linear` | 2.38 | 2.95 | 1.82 | 2.50 | +0.30 |
+
+`auto_pure_linear` reads better than `cathar` on 111 of 174 clips for speech
+quality, 149 for background and 132 for overall, and leaves fewer clips
+reading worse than their own source (31 against 65 on OVRL). The scale is
+compressed -- the source reads 1.3 on a 1-5 scale, where a clean studio
+recording reads above 4 -- which is what a tape corpus looks like to a model
+trained on suppressor outputs, and the reason the figure is read paired,
+clip by clip, rather than as an absolute.
+
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment
