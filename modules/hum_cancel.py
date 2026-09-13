@@ -37,7 +37,7 @@ import scipy.ndimage
 import scipy.signal
 import soundfile as sf
 
-from .config import APL_ENABLE_HUM_CANCEL, APL_HUM_BANDWIDTH_HZ, APL_HUM_MAX_HARMONICS, APL_TONAL_FLATNESS_MAX
+from .config import APL_ENABLE_HUM_CANCEL, APL_HUM_BANDWIDTH_HZ, APL_HUM_MAX_HARMONICS, APL_HUM_SKIP_NOTCHED, APL_TONAL_FLATNESS_MAX
 from .spectral_denoise import (
     MAINS_HARMONICS,
     _scannable_mono,
@@ -85,6 +85,8 @@ REFINE_SAMPLES = 1 << 20
 MEDIAN_MAX_BANDWIDTH_HZ = 10.0
 # Below this many frames the envelope filter has nothing to settle on.
 MIN_FRAMES = 64
+# The harmonics the shared pre-conditioning notches when the scanner reports mains hum.
+PRECONDITIONED_HARMONICS = (1, 2)
 TOP_MARGIN_HZ = 100.0
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
 
@@ -126,17 +128,24 @@ def _line_near(freqs, psd, hz):
     return float(freqs[local] + shift * (freqs[1] - freqs[0]))
 
 
-def gate_harmonics(freqs, psd, f0, count, ceiling_hz):
+def _gated_line(freqs, psd, triple, f0, ceiling_hz, skip):
+    """(harmonic, line frequency, neighbourhood floor) when the harmonic stands out as a line of its own, else None."""
+    harmonic, peak, floor = triple
+    if harmonic in skip:
+        return None
+    line = _line_near(freqs, psd, harmonic * f0) if harmonic * f0 < ceiling_hz else None
+    if line is not None and _stands_out(harmonic, peak, floor):
+        return harmonic, line, floor
+    return None
+
+
+def gate_harmonics(freqs, psd, f0, count, ceiling_hz, skip=()):
     """The harmonics to cancel as (harmonic, line frequency, neighbourhood floor): those standing out as lines of their own."""
-    gated = []
-    for harmonic, peak, floor in harmonic_triples(freqs, psd, f0, count):
-        line = _line_near(freqs, psd, harmonic * f0) if harmonic * f0 < ceiling_hz else None
-        if line is not None and _stands_out(harmonic, peak, floor):
-            gated.append((harmonic, line, floor))
-    return gated
+    lines = [_gated_line(freqs, psd, triple, f0, ceiling_hz, skip) for triple in harmonic_triples(freqs, psd, f0, count)]
+    return [line for line in lines if line is not None]
 
 
-def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS):
+def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS, skip=()):
     """The fundamental the recording carries and the harmonics to cancel at it, from the quiet stretches.
 
     Read over the quietest frames, not the whole recording: a sustained partial of the
@@ -149,9 +158,9 @@ def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS):
     if psd is None:
         return f0, []
     ceiling = sample_rate / 2.0 - TOP_MARGIN_HZ
-    core = [harmonic for harmonic, _line, _floor in gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling)]
+    core = [harmonic for harmonic, _line, _floor in gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling, skip)]
     refined = refine_f0(mono_signal, sample_rate, f0, core)
-    return refined, gate_harmonics(freqs, psd, refined, count, ceiling)
+    return refined, gate_harmonics(freqs, psd, refined, count, ceiling, skip)
 
 
 def _peak_offset_hz(spectrum, freqs, target_hz, search_hz):
@@ -349,13 +358,30 @@ def _series_length(source_wav):
     return APL_HUM_MAX_HARMONICS
 
 
-def _plan(source_wav):
+def _scanner_notch_hz(strategy):
+    """The mains frequency the shared scanner reported, 0 when it did not."""
+    if not isinstance(strategy, dict):
+        return 0.0
+    value = strategy.get("profile", {}).get("notch_hz")
+    if value is None:
+        value = strategy.get("precondition_filters", {}).get("notch_hz", 0.0)
+    return float(value or 0.0)
+
+
+def notched_harmonics(strategy):
+    """The harmonics the pre-conditioning has already notched on this recording, when they are left to it."""
+    if APL_HUM_SKIP_NOTCHED and _scanner_notch_hz(strategy) > 0:
+        return PRECONDITIONED_HARMONICS
+    return ()
+
+
+def _plan(source_wav, skip=()):
     """The refined fundamental and the gated harmonics, or a reason to skip."""
     f0 = detect_mains_hz(source_wav)
     if not f0:
         return None, "unreadable" if f0 is None else "no mains hum"
     mono_signal, sample_rate = _scannable_mono(source_wav)
-    refined, gated = plan_harmonics(mono_signal, sample_rate, f0, _series_length(source_wav))
+    refined, gated = plan_harmonics(mono_signal, sample_rate, f0, _series_length(source_wav), skip)
     if not gated:
         return None, "no harmonic stands above its neighbourhood"
     return (refined, gated), None
@@ -364,13 +390,13 @@ def _plan(source_wav):
 def apply_when_needed(source_wav, audio_dir, strategy=None):
     """Cancels mains hum when the recording carries it; returns the new path, or the input untouched.
 
-    `strategy` is accepted for the chain's uniform stage signature: the frequency is read
-    from the recording, not the scanner, which misses nearly half the tapes that carry hum.
+    The frequency is read from the recording, not the scanner, which misses nearly half
+    the tapes that carry hum; the scanner's report says only which harmonics the
+    pre-conditioning has already notched.
     """
-    del strategy
     if not APL_ENABLE_HUM_CANCEL:
         return source_wav
-    plan, reason = _plan(source_wav)
+    plan, reason = _plan(source_wav, notched_harmonics(strategy))
     if plan is None:
         log_msg(f"    [Hum Cancel] Skipped: {reason}.")
         return source_wav

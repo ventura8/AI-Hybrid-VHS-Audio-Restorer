@@ -1051,11 +1051,11 @@ def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strat
     return _run_dsp_filter_file(denoised_wav, output_wav, polish_filter, "Polishing Full Audio", total_duration)
 
 
-def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None):
-    """Pass 2.5: Pre-denoise surgical DSP notching (mains harmonics, CRT whistle, rumble)."""
+def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None, hum_cancel=False):
+    """Pass 2.5: Pre-denoise surgical DSP notching of the higher mains harmonics."""
     if not is_valid_audio(precond_wav):
         return precond_wav
-    surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy)
+    surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy, hum_cancel=hum_cancel)
     if not surgical_filter:
         return precond_wav
     fingerprint = hashlib.sha256(surgical_filter.encode("utf-8")).hexdigest()[:12]
@@ -1128,7 +1128,9 @@ def _denoise_and_polish_full_audio_step(
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
-    surgical_wav = _pre_denoise_surgical_step(original_wav, audio_dir, total_duration=total_duration, strategy=strategy)
+    surgical_wav = _pre_denoise_surgical_step(
+        original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=hum_cancel
+    )
     plan = _apl_chain.stage_plan(
         audio_dir,
         total_duration,

@@ -307,3 +307,33 @@ def test_the_stage_is_wired_between_repair_and_the_noise_probe(tmp_path):
     wanted = [name for name, wanted, _stage in plan if wanted]
     assert wanted == ["physical_repair", "hum_cancel", "tonal_cleanup", "spectral_denoise"]
     assert isinstance(Path(tmp_path), Path)
+
+
+def test_the_scanner_report_names_the_preconditioned_harmonics_only_when_the_switch_is_on():
+    """A scanner report of mains hum marks the first two harmonics as notched; no report, or the switch off, marks none."""
+    with patch("modules.hum_cancel.APL_HUM_SKIP_NOTCHED", True):
+        assert hum_cancel.notched_harmonics({"profile": {"notch_hz": 50.0}}) == (1, 2)
+        assert hum_cancel.notched_harmonics({"precondition_filters": {"notch_hz": 0.0}}) == ()
+        assert hum_cancel.notched_harmonics(None) == ()
+    with patch("modules.hum_cancel.APL_HUM_SKIP_NOTCHED", False):
+        assert hum_cancel.notched_harmonics({"profile": {"notch_hz": 50.0}}) == ()
+
+
+def test_the_preconditioned_harmonics_are_left_out_of_the_plan(humming):
+    """Skipped harmonics leave both the gated series and the refinement; without a skip they are gated as before."""
+    source, _hum = humming
+    mono, rate = hum_cancel._scannable_mono(source)
+    _refined, gated = hum_cancel.plan_harmonics(mono, rate, 50.0, skip=(1, 2))
+    _refined, whole = hum_cancel.plan_harmonics(mono, rate, 50.0)
+    assert gated
+    assert not {1, 2} & set(_harmonics_of(gated))
+    assert {1, 2} <= set(_harmonics_of(whole))
+
+
+def test_the_plan_reads_the_scanner_report_through_the_stage(humming, tmp_path):
+    """The stage hands the scanner's report to the plan, and the plan cancels the harmonics that are left."""
+    source, _hum = humming
+    with patch("modules.hum_cancel.APL_HUM_SKIP_NOTCHED", True), patch("modules.hum_cancel.log_msg") as log:
+        produced = hum_cancel.apply_when_needed(source, tmp_path, strategy={"profile": {"notch_hz": 50.0}})
+    assert produced != source and produced.is_file()
+    assert "Cancelled" in log.call_args[0][0]

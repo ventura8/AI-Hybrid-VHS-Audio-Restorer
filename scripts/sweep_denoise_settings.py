@@ -97,6 +97,15 @@ VARIANTS = {
     # two settings moved -- the envelope bandwidth at the fundamental and how far up the
     # series it looks. Read with measure_hum.py --mains auto over the kept work directories
     # as well as here.
+    # The notches that predate the canceller: the mode's own at the third to fifth harmonics
+    # (skipped where the canceller runs) and the pre-conditioning's at the first two (left to
+    # it, out of the canceller's plan and its refinement).
+    "no_surgical_notch": [(CONFIG_PY, r'^(\s*)\("apl_surgical_mains_notch", True\),$', r'\1("apl_surgical_mains_notch", False),')],
+    "hum_skip_notched": [(CONFIG_PY, r'^(\s*)\("apl_hum_skip_notched", False\),$', r'\1("apl_hum_skip_notched", True),')],
+    "no_surgical_notch_skip": [
+        (CONFIG_PY, r'^(\s*)\("apl_surgical_mains_notch", True\),$', r'\1("apl_surgical_mains_notch", False),'),
+        (CONFIG_PY, r'^(\s*)\("apl_hum_skip_notched", False\),$', r'\1("apl_hum_skip_notched", True),'),
+    ],
     "no_hum_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_hum_cancel", True\),$', r'\1("apl_enable_hum_cancel", False),')],
     "hum_cancel_bw_1": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 1.0, 0.1)')],
     "hum_cancel_bw_3": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 3.0, 0.1)')],

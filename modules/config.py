@@ -186,6 +186,12 @@ _NUMERIC_CONFIG_FIELDS = (
     # likelier to be pure noise than it is inside a 15 s corpus clip, so the corpus reads
     # this setting's risk high, not low.
     #
+    # An adaptive probe -- extend the quietest window while its spectrum, level or spread
+    # stays close to the 2.5 s window's -- was calibrated against the 4 s probe's per-clip
+    # cost on the corpus and predicts none of it (correlations of 0.01 to 0.06 with the
+    # deviation change; the 17 clips that pay are not the ones any such statistic marks),
+    # so the length is fixed rather than adaptive.
+    #
     # Raising alpha to 4.0 instead removes 11.85 on 25 captures but costs 0.41 dB of
     # deviation, past cathar, which is the one property worth keeping -- so alpha stays at
     # 3.0 and the probe carries the removal.
@@ -286,6 +292,20 @@ _BOOL_CONFIG_FIELDS = (
     # band. Stage alone on the same tapes: 3.01 dB at 0.155. Four tapes whose lines wander
     # more than five hertz are not helped; they are documented, not forced.
     ("apl_enable_hum_cancel", True),
+    # The mode's own bandrejects at the third to fifth mains harmonics, applied ahead of the
+    # chain whenever the shared scanner reports mains hum. They predate the canceller, which
+    # tracks each of those lines at the frequency it actually sits at; a Q-30 notch at the
+    # exact multiple takes the centre of a line that sits on it and misses one that sits a
+    # few hertz off, and either way hands the canceller a line it can no longer read whole.
+    # Measured on the 48 hum tapes with the canceller on: see the release note.
+    ("apl_surgical_mains_notch", True),
+    # When the scanner reported mains hum, the shared pre-conditioning has already notched
+    # the fundamental and its second harmonic (Q 15) before the canceller sees the audio, so
+    # on those tapes the two lowest lines it finds are the notch's skirts, not lines, and
+    # their peaks pull the refined fundamental to the edge of its range. With this on those
+    # two harmonics are left to the notch and the refinement reads the harmonics above them.
+    # Measured on the 48 hum tapes: see the release note.
+    ("apl_hum_skip_notched", False),
     # The mode's own noise suppressor in the subtraction slot: per-bin MMSE log-spectral
     # gain with a tracked noise level, in place of cathar's global factor. Off, on real-tape
     # evidence, the same way DeepFilterNet is: on the calibrated fixtures it lands at 5.9-6.2
@@ -685,6 +705,8 @@ APL_HUM_MIN_EXCESS_DB = float(CONFIG.get("apl_hum_min_excess_db", 6.0))
 APL_ENABLE_TONAL_CLEANUP = bool(CONFIG.get("apl_enable_tonal_cleanup", False))
 APL_ENABLE_LEARNED_BLEND = bool(CONFIG.get("apl_enable_learned_blend", True))
 APL_ENABLE_HUM_CANCEL = bool(CONFIG.get("apl_enable_hum_cancel", True))
+APL_SURGICAL_MAINS_NOTCH = bool(CONFIG.get("apl_surgical_mains_notch", True))
+APL_HUM_SKIP_NOTCHED = bool(CONFIG.get("apl_hum_skip_notched", False))
 APL_HUM_MAX_HARMONICS = int(CONFIG.get("apl_hum_max_harmonics", 40))
 APL_HUM_BANDWIDTH_HZ = float(CONFIG.get("apl_hum_bandwidth_hz", 1.5))
 APL_USE_NATIVE_SUPPRESS = bool(CONFIG.get("apl_use_native_suppress", False))

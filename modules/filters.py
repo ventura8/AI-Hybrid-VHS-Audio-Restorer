@@ -32,6 +32,7 @@ from .config import (
     AFFTDN_NF,
     AFFTDN_NR,
     AFFTDN_TN,
+    APL_SURGICAL_MAINS_NOTCH,
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
@@ -1178,15 +1179,18 @@ def _extract_notch_and_crt(strategy):
     return notch_hz, crt_hz
 
 
-def build_pre_denoise_surgical_filter(strategy=None):
+def build_pre_denoise_surgical_filter(strategy=None, hum_cancel=False):
     """Builds surgical DSP filter graph executed before neural denoising in auto_pure_linear.
 
     Eliminates higher mains hum harmonics via narrow bandreject filters before handing
-    the audio to UVR-DeNoise, preventing neural model over-processing.
+    the audio to UVR-DeNoise, preventing neural model over-processing. Where the mode's
+    own hum canceller runs and the configuration leaves the harmonics to it, the notches
+    are skipped: the canceller tracks each line at the frequency it actually sits at.
     """
     stages = []
     notch_hz, _ = _extract_notch_and_crt(strategy)
-    _append_pre_denoise_harmonics(stages, notch_hz)
+    if APL_SURGICAL_MAINS_NOTCH or not hum_cancel:
+        _append_pre_denoise_harmonics(stages, notch_hz)
     return ",".join(stages) if stages else None
 
 

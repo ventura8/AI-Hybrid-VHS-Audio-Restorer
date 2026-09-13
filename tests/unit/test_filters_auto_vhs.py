@@ -499,6 +499,16 @@ def test_build_pre_denoise_surgical_filter():
     assert modules.filters.build_pre_denoise_surgical_filter({}) is None
 
 
+def test_build_pre_denoise_surgical_filter_leaves_the_harmonics_to_the_canceller_when_told_to():
+    """With the switch off and the canceller running the stage has nothing to do; otherwise it notches as before."""
+    strategy = {"profile": {"notch_hz": 50.0}}
+    kept = modules.filters.build_pre_denoise_surgical_filter(strategy)
+    with patch("modules.filters.APL_SURGICAL_MAINS_NOTCH", False):
+        assert modules.filters.build_pre_denoise_surgical_filter(strategy, hum_cancel=True) is None
+        assert modules.filters.build_pre_denoise_surgical_filter(strategy, hum_cancel=False) == kept
+    assert modules.filters.build_pre_denoise_surgical_filter(strategy, hum_cancel=True) == kept
+
+
 def _pre_denoise_fallback_filter():
     """Builds the pre-denoise filter from a profile-only strategy (no precondition record)."""
     strategy = {

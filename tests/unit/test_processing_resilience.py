@@ -433,7 +433,7 @@ def test_denoise_and_polish_full_audio_step_cascades(tmp_path):
             orig, out_dir, total_duration=10.0, denoise_model="UVR-DeNoise.pth", strategy=strategy, apply_air=True
         )
         assert res == tmp_path / "pol.wav"
-        mock_surg.assert_called_once_with(orig, out_dir, total_duration=10.0, strategy=strategy)
+        mock_surg.assert_called_once_with(orig, out_dir, total_duration=10.0, strategy=strategy, hum_cancel=False)
         neural_dir = modules.processing._neural_denoise_dir(out_dir, tmp_path / "surg.wav", "UVR-DeNoise-Lite.pth")
         assert neural_dir.name.startswith("neural_denoised_") and neural_dir != out_dir / "neural_denoised"
         mock_den.assert_called_once_with(tmp_path / "surg.wav", neural_dir, total_duration=10.0, denoise_model="UVR-DeNoise-Lite.pth")
@@ -501,3 +501,37 @@ def test_a_stale_neural_file_that_cannot_be_removed_sends_the_fallback_to_a_clea
     assert stale.exists()
     assert denoise_cache.without_stale_neural_output(neural_dir) == neural_dir
     assert not stale.exists()
+
+
+def test_pre_denoise_surgical_step_tells_the_builder_whether_the_canceller_runs(tmp_path):
+    """The step hands the canceller's request through, so the builder can leave the harmonics to it."""
+    precond = tmp_path / "precond.wav"
+    precond.write_text("audio")
+    with (
+        patch("modules.processing.is_valid_audio", return_value=True),
+        patch("modules.processing.build_pre_denoise_surgical_filter", return_value=None) as builder,
+    ):
+        assert modules.processing._pre_denoise_surgical_step(precond, tmp_path, hum_cancel=True) == precond
+    assert builder.call_args.kwargs["hum_cancel"] is True
+
+
+def test_the_cascade_tells_the_surgical_step_whether_the_canceller_runs(tmp_path):
+    """The surgical step learns from the cascade whether the canceller was requested."""
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    seen = []
+
+    def surgical(wav, _dir, **kwargs):
+        seen.append(kwargs["hum_cancel"])
+        return wav
+
+    with (
+        patch("modules.processing._pre_denoise_surgical_step", side_effect=surgical),
+        patch("modules.apl_chain.run", side_effect=lambda wav, _plan: (wav, [])),
+        patch("modules.processing._denoise_full_audio_step", side_effect=lambda wav, _d, **_k: wav),
+        patch("modules.processing._post_denoise_cleanup_step", side_effect=lambda wav, *_a, **_k: wav),
+        patch("modules.processing._polish_full_audio_step", side_effect=lambda wav, *_a, **_k: wav),
+    ):
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, hum_cancel=True)
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, hum_cancel=False)
+    assert seen == [True, False]
