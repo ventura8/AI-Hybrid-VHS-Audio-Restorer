@@ -37,7 +37,7 @@ import scipy.signal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.measure_tradeoff import LOUD_PERCENTILE, _extract, _frames, _mono
+from scripts.measure_tradeoff import LOUD_PERCENTILE, MIN_DYNAMIC_SPREAD_DB, QUIET_PERCENTILE, _extract, _frames, _mono
 from scripts.score_reference import _align
 
 HARMONICS = 8
@@ -224,13 +224,30 @@ def _extracted(video_path, target):
         return None
 
 
+def _readable(source):
+    """Whether the source has the quiet-to-loud spread the readings rest on, on the trade metric's own rule.
+
+    The low-band deviation and the line level are read on gain-matched loud frames; on a
+    saturated or constant-level track those frames are the noise, both modes read tens of
+    dB of movement identically, and the figure is the metric failing rather than a
+    restoration. Such a source is refused here as it is there.
+    """
+    frames = _frames(source)
+    if frames is None or len(frames) < 8:
+        return False
+    level = np.sqrt(np.mean(frames**2, axis=1))
+    quiet_cut, loud_cut = np.percentile(level, QUIET_PERCENTILE), np.percentile(level, LOUD_PERCENTILE)
+    return 20.0 * np.log10((loud_cut + 1e-12) / (quiet_cut + 1e-12)) >= MIN_DYNAMIC_SPREAD_DB
+
+
 def _measure_clip(clip, source_wav, temp_dir, record, mains, args, results):
     """Extracts one clip, reads its hum, and measures every mode's restoration of it when it carries hum.
 
     Returns the source's harmonic excess, or None when the clip could not be extracted. A
-    clip whose extraction times out is skipped, and a mode whose restored output times out
-    is skipped for that clip alone. Each restored WAV is removed as soon as it has been
-    measured.
+    clip whose extraction times out is skipped, a source without the quiet-to-loud spread
+    the readings need is refused (listed under "refused"), and a mode whose restored output
+    times out is skipped for that clip alone. Each restored WAV is removed as soon as it
+    has been measured.
     """
     if _extracted(clip, source_wav) is None:
         return None
@@ -239,6 +256,9 @@ def _measure_clip(clip, source_wav, temp_dir, record, mains, args, results):
         mains = _mains_by_evidence(source, rate)
     excess = float(hum_excess_db(source, rate, mains))
     if excess < HUM_PRESENT_DB and args.band == "hum":
+        return excess
+    if not _readable(source):
+        results["refused"].append(record["identifier"])
         return excess
     for mode in args.modes:
         restored = next((p for root in args.work_dirs if (p := _restored_path(root, clip, mode))), None)
@@ -286,6 +306,7 @@ def main():
     catalog_path = args.catalog or (args.corpus_dir / "catalog_1000.json")
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     results = {mode: [] for mode in args.modes}
+    results["refused"] = []
     sources = []
 
     with tempfile.TemporaryDirectory(prefix="hum_") as temp:
@@ -314,14 +335,17 @@ def main():
     removed_label = "hum removed dB" if args.band == "hum" else "rumble removed dB"
     print(f"{'mode':<20}{removed_label:>18}{'low-band dev dB':>17}{'n':>5}")
     print(f"{'':<20}{'(higher better)':>16}{'(lower better)':>17}")
+    refused = results.pop("refused")
     for mode, rows in results.items():
         if rows:
             removed = np.median([r["hum_removed_db"] for r in rows])
             deviation = np.median([r["low_band_deviation_db"] for r in rows])
             print(f"{mode:<20}{removed:>18.2f}{deviation:>17.2f}{len(rows):>5}")
+    if refused:
+        print(f"\n{len(refused)} carrying sources refused: under {MIN_DYNAMIC_SPREAD_DB:.0f} dB of quiet-to-loud spread")
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({"sources": sources, "results": results}, indent=2) + "\n", encoding="utf-8")
+    args.report.write_text(json.dumps({"sources": sources, "results": results, "refused": refused}, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.report}")
 
 
