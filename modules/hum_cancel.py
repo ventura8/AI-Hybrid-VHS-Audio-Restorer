@@ -427,18 +427,38 @@ def notched_harmonics(strategy):
     return ()
 
 
-def _plan(source_wav, skip=()):
-    """The refined fundamental and the gated harmonics, or a reason to skip."""
+def _plan(source_wav, skip=(), fundamental_upstream=False):
+    """The refined fundamental and the gated harmonics, or a reason to skip.
+
+    A series without a line at the fundamental is not mains hum: a voice or a note whose
+    pitch sits at twice the mains frequency puts every harmonic on the series and steady,
+    and nothing at the fundamental. Hum has the fundamental unless the shared scanner
+    reported it and the pre-conditioning notched it before this stage, which the caller
+    says with `fundamental_upstream`.
+    """
     f0 = detect_mains_hz(source_wav)
     if not f0:
         return None, "unreadable" if f0 is None else "no mains hum"
     mono_signal, sample_rate = _scannable_mono(source_wav)
     refined, gated = plan_harmonics(mono_signal, sample_rate, f0, _series_length(source_wav), skip)
+    reason = _refusal(refined, gated, fundamental_upstream)
+    return (None, reason) if reason else ((refined, gated), None)
+
+
+def _has_fundamental(gated):
+    """Whether the gated series includes a line at the fundamental."""
+    return any(harmonic == 1 for harmonic, _line, _floor in gated)
+
+
+def _refusal(refined, gated, fundamental_upstream):
+    """Why a planned series is not cancelled, or None when it is hum."""
     if refined is None:
-        return None, "the lines do not agree on a mains fundamental"
+        return "the lines do not agree on a mains fundamental"
     if not gated:
-        return None, "no harmonic stands above its neighbourhood"
-    return (refined, gated), None
+        return "no harmonic stands above its neighbourhood"
+    if fundamental_upstream or _has_fundamental(gated):
+        return None
+    return "no line at the fundamental"
 
 
 def apply_when_needed(source_wav, audio_dir, strategy=None):
@@ -450,7 +470,7 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
     """
     if not APL_ENABLE_HUM_CANCEL:
         return source_wav
-    plan, reason = _plan(source_wav, notched_harmonics(strategy))
+    plan, reason = _plan(source_wav, notched_harmonics(strategy), fundamental_upstream=_scanner_notch_hz(strategy) > 0)
     if plan is None:
         log_msg(f"    [Hum Cancel] Skipped: {reason}.")
         return source_wav

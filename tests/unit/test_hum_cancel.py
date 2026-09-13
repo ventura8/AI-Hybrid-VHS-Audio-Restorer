@@ -360,3 +360,15 @@ def test_a_partial_beside_a_multiple_is_not_on_the_series(humming):
     assert refined == pytest.approx(50.0, abs=0.05)
     assert {1, 5, 6, 7, 8} <= set(_harmonics_of(gated))
     assert all(abs(line - harmonic * 50.0) < 0.5 for harmonic, line, _floor in gated)
+
+
+def test_a_series_without_its_fundamental_is_not_hum(tmp_path):
+    """A voice at twice the mains frequency puts every harmonic on the series; without a fundamental it is refused."""
+    voice = _series(50.0, [2, 4, 6, 8], level=0.08) + _hiss()
+    source = _write(tmp_path / "voice.wav", [voice, voice])
+    with patch("modules.hum_cancel.log_msg") as log:
+        assert hum_cancel.apply_when_needed(source, tmp_path) == source
+    assert "no line at the fundamental" in log.call_args[0][0]
+    with patch("modules.hum_cancel.log_msg") as log:
+        produced = hum_cancel.apply_when_needed(source, tmp_path, strategy={"profile": {"notch_hz": 50.0}})
+    assert produced != source and "Cancelled" in log.call_args[0][0]
