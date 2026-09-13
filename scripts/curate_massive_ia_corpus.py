@@ -102,8 +102,8 @@ def _sanitize_slug(name: str) -> str:
     return f"{cleaned}_{digest}"
 
 
-def _has_expected_duration(path: Path, duration_sec: int) -> bool:
-    """Confirm a downloaded clip is long enough for a meaningful benchmark."""
+def _source_duration(source: str, timeout: int = 10):
+    """Seconds of media in a file or stream, or None when ffprobe cannot say."""
     cmd = [
         FFPROBE_BIN,
         "-v",
@@ -112,17 +112,28 @@ def _has_expected_duration(path: Path, duration_sec: int) -> bool:
         "format=duration",
         "-of",
         "default=noprint_wrappers=1:nokey=1",
-        str(path),
+        str(source),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=10)
-        return result.returncode == 0 and float(result.stdout.strip()) >= duration_sec * 0.8
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+        return float(result.stdout.strip()) if result.returncode == 0 else None
     except (OSError, ValueError, subprocess.SubprocessError):
-        return False
+        return None
 
 
-def _extract_clip(stream_url: str, target_path: Path, offset_sec: int = 60, duration_sec: int = 15) -> bool:
-    """Extracts a 15-second slice from stream."""
+def _has_expected_duration(path: Path, duration_sec: int) -> bool:
+    """Confirm a downloaded clip is long enough for a meaningful benchmark."""
+    duration = _source_duration(path)
+    return duration is not None and duration >= duration_sec * 0.8
+
+
+def _extract_clip(stream_url: str, target_path: Path, offset_sec: int = 60, duration_sec: int = 15, fallback_to_start=True) -> bool:
+    """Extracts a 15-second slice from stream.
+
+    When the slice at `offset_sec` cannot be taken and `fallback_to_start` is set, the
+    opening of the tape is taken instead; a caller that records the offset passes False,
+    so that what it records is where the clip came from.
+    """
     if is_valid_video(target_path) and _has_expected_duration(target_path, duration_sec):
         return True
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,7 +208,7 @@ def _extract_clip(stream_url: str, target_path: Path, offset_sec: int = 60, dura
                 temp_target.unlink()
             except OSError:
                 pass
-    if offset_sec != 0:
+    if offset_sec != 0 and fallback_to_start:
         return _extract_clip(stream_url, target_path, offset_sec=0, duration_sec=duration_sec)
     return False
 

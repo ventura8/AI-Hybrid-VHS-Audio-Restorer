@@ -138,8 +138,9 @@ dtw_resolution: 25
 #   - Eliminates AI hallucination and phase smearing caused by tape clicks and hum.
 #
 # process_mode:
-#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned).
-#                            Runs dual-resolution scan, analog pre-conditioning, and full-mix UVR-DeNoise.
+#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned). (Default)
+#                            Dual-resolution scan, analog pre-conditioning, gated physical repair, hum
+#                            cancellation, plosive control, noise-profile subtraction and UVR-DeNoise.
 #   - 'auto_pure'          : Multi-Step Pure Speech & Ambient Denoising Engine (*_Pure_Cleaned).
 #                            Denoises voice without generative AI vocoder synthesis while cleanly
 #                            conserving and denoising original music and ambient acoustics.
@@ -156,12 +157,12 @@ dtw_resolution: 25
 #                            Best for tape hiss, mechanical rumble, and electrical clicks without GPU.
 #   - 'arnndn_speech'      : FFmpeg Recurrent Neural Network (RNNoise) speech denoiser.
 #                            Best for VHS recordings containing dialogue and spoken voice.
-#   - 'cathar'             : Pure-Rust Audio Restoration Engine (*_Cathar_Cleaned). (Default)
+#   - 'cathar'             : Pure-Rust Audio Restoration Engine (*_Cathar_Cleaned).
 #                            Specialized multi-stage DSP for VHS: dewind, azimuth, declick,
 #                            decrackle, declip, adaptive dehum, dewow, and phase-coherent denoise.
 #   - 'cathar_vhs'         : Compatibility alias for 'cathar'.
 # ------------------------------------------------------------------------------
-process_mode: "cathar"
+process_mode: "auto_pure_linear"
 enable_multipass: true
 
 # ------------------------------------------------------------------------------

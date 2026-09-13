@@ -35,6 +35,19 @@ def test_output_is_stereo_float32():
     assert out.ndim == 2 and out.shape[1] == 2
 
 
+def test_dropouts_are_zero_spans_every_two_seconds_from_one_second_in():
+    """The dropout is signal absence on a 2 s grid offset by 1 s, and nothing else is touched."""
+    source = _speech_like(seconds=5.5)
+    out = apply_vhs_defects(source, SAMPLE_RATE, ["dropout"])[:, 0]
+    width = SAMPLE_RATE // 20
+    untouched = np.ones(len(source), dtype=bool)
+    for start in range(SAMPLE_RATE, len(source), 2 * SAMPLE_RATE):
+        stop = start + width
+        assert np.all(out[start:stop] == 0.0)
+        untouched[start:stop] = False
+    assert np.array_equal(out[untouched], source[untouched])
+
+
 def test_injection_is_deterministic():
     """The same input and defects must produce byte-identical audio on every run."""
     source = _speech_like()

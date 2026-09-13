@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 try:
     import soundfile as sf
@@ -26,12 +27,16 @@ try:
 except ImportError:
     torch = None
 
+from . import apl_chain as _apl_chain
+from . import deepfilter_denoise as _deepfilter
+from . import denoise_cache as _denoise_cache
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import resemble_denoise as _resemble
+from . import spectral_denoise as _spectral_denoise
 from . import utils as _utils
 from .config import (
-    ADAPTIVE_DENOISE_THRESHOLD_DB,
-    DEFAULT_DENOISE_MODEL,
+    APL_NEURAL_MODEL,
     DENOISE_MODEL,
     ENABLE_DEESSER,
     ENABLE_DYNAMIC_EXPANDER,
@@ -1044,11 +1049,11 @@ def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strat
     return _run_dsp_filter_file(denoised_wav, output_wav, polish_filter, "Polishing Full Audio", total_duration)
 
 
-def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None):
-    """Pass 2.5: Pre-denoise surgical DSP notching (mains harmonics, CRT whistle, rumble)."""
+def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None, hum_cancel=False):
+    """Pass 2.5: Pre-denoise surgical DSP notching of the higher mains harmonics."""
     if not is_valid_audio(precond_wav):
         return precond_wav
-    surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy)
+    surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy, hum_cancel=hum_cancel)
     if not surgical_filter:
         return precond_wav
     fingerprint = hashlib.sha256(surgical_filter.encode("utf-8")).hexdigest()[:12]
@@ -1074,37 +1079,75 @@ def _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=None, str
     return _run_dsp_filter_file(denoised_wav, output_wav, cleanup_filter, "Post-Denoise Residual Cleanup", total_duration)
 
 
-def _profile_noise_floor_db(strategy):
-    """Returns the profiled noise floor in dB, or None when it is absent or unusable."""
-    raw_nf = (strategy or {}).get("profile", {}).get("noise_floor_db")
-    if raw_nf is None:
-        return None
-    try:
-        return float(raw_nf)
-    except (ValueError, TypeError):
-        return None
+# The adaptive model choice lives with the chain, and the UVR step's directory choice
+# with the cache rules it enforces; the private aliases keep the call sites and their
+# tests where they were.
+_profile_noise_floor_db = _apl_chain.profile_noise_floor_db
+_resolve_adaptive_denoise_model = _apl_chain.resolve_adaptive_denoise_model
+_neural_denoise_dir = _denoise_cache.neural_denoise_dir
+_without_stale_neural_output = _denoise_cache.without_stale_neural_output
 
 
-def _resolve_adaptive_denoise_model(strategy, default_model):
-    """Picks lighter UVR-DeNoise model on clean recordings to prevent over-processing."""
-    nf_val = _profile_noise_floor_db(strategy)
-    if nf_val is None or nf_val >= ADAPTIVE_DENOISE_THRESHOLD_DB:
-        return default_model
-    effective_model = DENOISE_MODEL if default_model is None else default_model
-    log_msg(
-        f"    [Adaptive Denoise] Quiet source ({nf_val:.1f} dB); "
-        f"overriding {effective_model} with {DEFAULT_DENOISE_MODEL} to preserve transients."
-    )
-    return DEFAULT_DENOISE_MODEL
+def _neural_stage(apl_chain, model_to_use, surgical_wav):
+    """The neural model to run and whether to run it at all.
+
+    The named model and the tonal skip are the mode's own settings: a caller that did not
+    opt into the chain (denoise_only) keeps the model it chose and always runs it.
+    """
+    if not apl_chain:
+        return model_to_use, True
+    return APL_NEURAL_MODEL or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
 
 
-def _denoise_and_polish_full_audio_step(original_wav, audio_dir, total_duration=None, denoise_model=None, strategy=None, apply_air=False):
+def _denoise_and_polish_full_audio_step(
+    original_wav,
+    audio_dir,
+    total_duration=None,
+    denoise_model=None,
+    strategy=None,
+    apply_air=False,
+    spectral_denoise=False,
+    physical_repair=False,
+    deepfilternet=False,
+    hum_cancel=False,
+    plosive_tamer=False,
+    tone_cancel=False,
+    resemble_denoise=False,
+):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
-    surgical_wav = _pre_denoise_surgical_step(original_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    denoise_sub_dir = audio_dir / "neural_denoised"
-    denoise_sub_dir.mkdir(exist_ok=True)
-    denoised_wav = _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use)
+    surgical_wav = _pre_denoise_surgical_step(
+        original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=hum_cancel
+    )
+    plan = _apl_chain.stage_plan(
+        audio_dir,
+        total_duration,
+        strategy,
+        physical_repair,
+        spectral_denoise,
+        hum_cancel=hum_cancel,
+        plosive_tamer=plosive_tamer,
+        tone_cancel=tone_cancel,
+    )
+    surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
+    if "spectral_denoise" in applied:
+        model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
+    model_to_use, neural_wanted = _neural_stage(spectral_denoise, model_to_use, surgical_wav)
+    denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
+    denoised_wav = surgical_wav
+    if neural_wanted:
+        denoised_wav = _deepfilter.denoise_or(
+            surgical_wav,
+            audio_dir / "deepfilter_denoised",
+            deepfilternet,
+            lambda: _resemble.denoise_or(
+                surgical_wav,
+                audio_dir / "resemble_denoised",
+                resemble_denoise,
+                lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
+                total_duration=total_duration,
+            ),
+        )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)
 
