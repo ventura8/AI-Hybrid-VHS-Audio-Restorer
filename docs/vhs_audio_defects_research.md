@@ -566,8 +566,8 @@ ______________________________________________________________________
 | :--- | :---: | :--- | :---: |
 | DC offset | 0-2 Hz | Highpass 2 Hz | 1 |
 | Motor rumble | 20-80 Hz | Highpass 45-75 Hz + mono-below | 2 |
-| Mains hum | 50/60 Hz + harmonics | Adaptive comb / notch x 5-8 | 3 |
-| Handling pops | \<250 Hz | Deplosive filter | 4 |
+| Mains hum | 50/60 Hz + harmonics | Tracked harmonic subtraction; notch | 3 |
+| Handling pops | \<250 Hz | Gated low-band expander; deplosive | 4 |
 | Clicks/pops | Broadband impulsive | AR interpolation / adeclick | 5 |
 | Tape dropout | Broadband gaps | AR inpainting (\<=50 ms) | 6 |
 | Clipping | Broadband harmonic | SPADE declip | 7 |
@@ -599,7 +599,7 @@ assigned in the chain:
 | Lossy codec | >16 kHz cut, pre-echo | none |
 | Incomplete erasure | Faint second programme | none |
 | Scrape flutter | >100 Hz speed modulation | none |
-| EMI buzz | Mains series to several kHz | Tracking comb |
+| EMI buzz | Mains series to several kHz | Tracked series subtraction |
 | Constant speed error | Fixed pitch offset | Resample |
 
 ### Fixture coverage
@@ -647,51 +647,58 @@ ______________________________________________________________________
 
 ## 6. Key Insights for Our Pipeline
 
-### 6.1 Auto Pure Linear Weaknesses (from 39-tape benchmark)
+The reproducible record is `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`
+(the trade metric on 136 Internet Archive clips) and `docs/validation.md` (the
+calibrated fixtures, the hum gate, the defect-region scores). The figures the
+earlier editions of this section carried came from the withdrawn attenuation
+ratios and are not repeated here.
 
-The reproducible report is `experiments/benchmark_ia_corpus_report.md`, with
-per-clip source metadata in `experiments/ia_corpus_catalog.json`. Metrics use
-the shared definitions in `scripts/ia_benchmark_common.py`; record the Git
-commit and benchmark run identifier beside each generated report.
+### 6.1 Where `auto_pure_linear` stood on v1.2.1
 
-1. **NTSC negative noise reduction (-5.11 dB avg)**:
-   UVR-DeNoise model occasionally over-processes NTSC content,
-   potentially because the model was trained predominantly on
-   music and speech at higher sample rates. The lower dynamic
-   range of some NTSC captures may trigger the neural network
-   into treating programme content as noise.
+1. **Broadband noise**: ahead of `cathar` in both regions -- a median 8.75 dB
+   removed at 0.33 dB of programme deviation against 6.02 at 0.44 -- with the
+   2.5 s noise probe the single largest gain.
+1. **Mains hum**: neither mode removed it on real tape. `cathar`'s `dehum` runs
+   at the frequency the shared scanner reports, and the scanner misses nearly
+   half the tapes that carry hum; inside `auto_pure_linear` the same stage
+   collapsed to +0.74 dB with the speech band moving 1.9 dB.
+1. **Spectral spikes and plosives**: `cathar`'s `repair` and `deplosive` were
+   measured harmful on undamaged material and not adopted, so the mode had
+   nothing for either.
+1. **The eleven outright losses**: nine of the eleven clips `cathar` wins on
+   both halves of the trade are in the most tonal third of the corpus -- a
+   global subtraction factor shaves sustained programme.
 
-1. **Music content degradation (-2.17 dB noise reduction)**:
-   The neural denoiser sometimes strips musical transients and
-   harmonics, particularly on already-clean music content.
-   This results in a "thinner" or "darker" sound.
+### 6.2 What v1.3.0 adds to the chain
 
-1. **Rumble insensitivity on home videos (-8.74% vs Cathar's
-   -15.45%)**: The UVR-DeNoise model does not specifically
-   target sub-100 Hz mechanical rumble. A dedicated
-   pre-denoising rumble suppression step would help.
+1. **A hum canceller of the mode's own**: every mains harmonic that stands out
+   as a line in the quietest frames is tracked at the frequency it actually
+   sits at (one to eight hertz off the exact series on the tapes measured) and
+   subtracted per channel, ahead of the noise probe. On the 48 hum tapes, in
+   the chain, hum removed goes from 0.19 dB to a median 2.49 (upper quartile
+   5.87), past what `cathar`'s stage manages run alone at the right frequency.
+1. **Event-gated plosive control**: blasts under 150 Hz are found as events
+   (fast attack, low band leading the mid band) and taken down to the level
+   the band held just before each; nothing else is touched, and on real tape
+   the stage is free.
+1. **Candidates measured and held back**: a per-bin MMSE log-spectral
+   suppressor in the subtraction slot (better on every fixture class, 4 dB of
+   removal short on real tape -- the DeepFilterNet lesson a second time), the
+   Mel-Roformer denoiser (less removal than UVR-DeNoise), and a canceller for
+   persistent lines, which at its first setting read sustained notes as lines.
 
-### 6.2 Cathar Strengths (from 39-tape benchmark)
+### 6.3 Open
 
-1. **Consistent across all content types**: Wins 77% of clips.
-1. **Superior CRT whistle kill**: 11,665x attenuation (7.3x
-   better than APL).
-1. **Superior mains hum suppression**: 13.25x (2.2x better).
-1. **Superior rumble removal**: 3.99% residual (vs 8.36%).
-1. **Pure DSP, no AI hallucination risk**.
-
-### 6.3 Improvement Opportunities
-
-- **APL**: Tune the existing pre-denoise mono, CRT-notch, and surgical filtering
-  stages against representative captures.
-- **APL**: Implement adaptive denoising aggressiveness based
-  on measured SNR, lighter processing for already-clean
-  content.
-- **APL**: Tune the existing post-denoise residual hum/CRT cleanup pass.
-- **Cathar**: Verify the existing eight-harmonic dehum configuration on each
-  capture's detected 50/60 Hz family.
-- **Both**: Ensure order-of-operations follows the
-  professional "mud flows downstream" principle.
+- **Wandering hum**: four of the 48 hum tapes carry lines that move more than
+  five hertz, past any narrow tracker; a phase-locked tracker of the whole
+  series is the next candidate.
+- **Rumble**: the mode relies on the shared pre-conditioning highpass;
+  `dewind` measured no gain and a steeper stage of the mode's own has not
+  been measured.
+- **Tonal programme**: the remaining fidelity gap to `cathar` on the most tonal
+  third; the per-bin suppressor was built for it and lost on the trade metric,
+  which reads the low-level programme it keeps in quiet frames as noise left
+  behind.
 
 ______________________________________________________________________
 
