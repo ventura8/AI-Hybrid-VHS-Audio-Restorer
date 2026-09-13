@@ -109,13 +109,20 @@ def quiet_psd(mono_signal, sample_rate, fraction=QUIET_FRACTION):
     read over the quietest frames alone is hum, where the same harmonic read over the whole
     recording may be a sustained note sitting on the line.
     """
-    if len(mono_signal) < 2 * MAINS_DETECT_MIN_SAMPLES:
+    freqs, power, level = frame_powers(mono_signal, sample_rate)
+    if power is None:
         return None, None
-    freqs, _times, spectrum = scipy.signal.stft(mono_signal, sample_rate, nperseg=MAINS_DETECT_MIN_SAMPLES, scaling="psd")
-    power = np.abs(spectrum) ** 2
-    level = power.sum(axis=0)
     quiet = level <= np.quantile(level, fraction)
     return freqs, power[:, quiet].mean(axis=1)
+
+
+def frame_powers(mono_signal, sample_rate):
+    """The recording's power spectral density per frame (bins x frames) and each frame's level, or Nones when too short."""
+    if len(mono_signal) < 2 * MAINS_DETECT_MIN_SAMPLES:
+        return None, None, None
+    freqs, _times, spectrum = scipy.signal.stft(mono_signal, sample_rate, nperseg=MAINS_DETECT_MIN_SAMPLES, scaling="psd")
+    power = np.abs(spectrum) ** 2
+    return freqs, power, power.sum(axis=0)
 
 
 def _harmonic_excess_db(mono_signal, sample_rate, mains_hz):

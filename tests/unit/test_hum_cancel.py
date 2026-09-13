@@ -347,3 +347,28 @@ def test_the_plan_reads_the_scanner_report_through_the_stage(humming, tmp_path):
         produced = hum_cancel.apply_when_needed(source, tmp_path, strategy={"profile": {"notch_hz": 50.0}})
     assert produced != source and produced.is_file()
     assert "Cancelled" in log.call_args[0][0]
+
+
+def test_a_line_that_follows_the_programme_is_left_to_it():
+    """A steady mains series is cancelled; the harmonics a sung partial sits on, loud only when it is sung, are not."""
+    t = _time()
+    burst = (np.sin(2 * np.pi * 0.5 * t) > 0.6).astype(float)
+    partials = burst * _series(50.0, [2, 4, 6], level=0.4)
+    steady = _series(50.0, range(1, 9)) + _hiss()
+    _refined, gated = hum_cancel.plan_harmonics(steady, RATE, 50.0)
+    assert {2, 4, 6} <= set(_harmonics_of(gated))
+    _refined, gated = hum_cancel.plan_harmonics(steady + partials, RATE, 50.0)
+    assert gated and not {2, 4, 6} & set(_harmonics_of(gated))
+
+
+def test_a_partial_beside_a_multiple_is_not_on_the_series(humming):
+    """Partials a few hertz off the multiples are left to the programme; the hum's harmonics are kept at their own frequency."""
+    source, _hum = humming
+    mono, rate = hum_cancel._scannable_mono(source)
+    _refined, gated = hum_cancel.plan_harmonics(mono, rate, 50.0)
+    assert len(gated) >= 6
+    mix = _series(50.0, range(1, 9)) + _series(49.0, [2, 3, 4], level=0.3) + _hiss()
+    refined, gated = hum_cancel.plan_harmonics(mix, rate, 50.0)
+    assert refined == pytest.approx(50.0, abs=0.05)
+    assert {1, 5, 6, 7, 8} <= set(_harmonics_of(gated))
+    assert all(abs(line - harmonic * 50.0) < 0.5 for harmonic, line, _floor in gated)

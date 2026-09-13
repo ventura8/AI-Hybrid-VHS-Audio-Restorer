@@ -40,11 +40,12 @@ import soundfile as sf
 from .config import APL_ENABLE_HUM_CANCEL, APL_HUM_BANDWIDTH_HZ, APL_HUM_MAX_HARMONICS, APL_HUM_SKIP_NOTCHED, APL_TONAL_FLATNESS_MAX
 from .spectral_denoise import (
     MAINS_HARMONICS,
+    QUIET_FRACTION,
     _scannable_mono,
     detect_mains_hz,
     estimate_tonality,
+    frame_powers,
     harmonic_triples,
-    quiet_psd,
 )
 from .utils import log_msg
 
@@ -85,6 +86,11 @@ REFINE_SAMPLES = 1 << 20
 MEDIAN_MAX_BANDWIDTH_HZ = 10.0
 # Below this many frames the envelope filter has nothing to settle on.
 MIN_FRAMES = 64
+# How much louder a line may read in the loud frames than in the quiet ones and still be
+# hum. Mains hum keeps its level whether or not the programme is there -- on a compander
+# tape it even drops when the programme is loud -- where a voice's harmonic or a note is
+# there only when it is being sung, and reads tens of dB louder in the loud frames.
+LINE_STATIONARITY_DB = 6.0
 # The harmonics the shared pre-conditioning notches when the scanner reports mains hum.
 PRECONDITIONED_HARMONICS = (1, 2)
 TOP_MARGIN_HZ = 100.0
@@ -145,24 +151,42 @@ def gate_harmonics(freqs, psd, f0, count, ceiling_hz, skip=()):
     return [line for line in lines if line is not None]
 
 
+def _line_rise_db(freqs, power, level, hz):
+    """How much louder the line at `hz` reads in the loud frames than in the quiet ones, in dB."""
+    index = int(np.argmin(np.abs(freqs - hz)))
+    low, high = max(index - 1, 0), index + 2
+    band = power[low:high].max(axis=0)
+    quiet, loud = level <= np.quantile(level, QUIET_FRACTION), level >= np.quantile(level, 1.0 - QUIET_FRACTION)
+    return float(10.0 * np.log10((np.median(band[loud]) + 1e-20) / (np.median(band[quiet]) + 1e-20)))
+
+
+def stationary_lines(freqs, power, level, gated):
+    """The gated lines whose level does not follow the programme's: hum, rather than a partial of it."""
+    return [line for line in gated if _line_rise_db(freqs, power, level, line[1]) <= LINE_STATIONARITY_DB]
+
+
 def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS, skip=()):
     """The fundamental the recording carries and the harmonics to cancel at it, from the quiet stretches.
 
     Read over the quietest frames, not the whole recording: a sustained partial of the
     programme sitting a few hertz from a line would otherwise gate that line open and then
-    be tracked as hum. Hum is there when the programme is not. The mains series proper
+    be tracked as hum. Hum is there when the programme is not, and it is there at the same
+    level when the programme is loud: a line that reads louder in the loud frames than in
+    the quiet ones is following the programme and is left to it. The mains series proper
     (eight harmonics at the nominal frequency) refines the fundamental first, and the full
     series is then gated at the refined value, where a high harmonic actually sits.
     """
-    freqs, psd = quiet_psd(mono_signal, sample_rate)
-    if psd is None:
+    freqs, power, level = frame_powers(mono_signal, sample_rate)
+    if power is None:
         return f0, []
+    psd = power[:, level <= np.quantile(level, QUIET_FRACTION)].mean(axis=1)
     ceiling = sample_rate / 2.0 - TOP_MARGIN_HZ
-    core = [harmonic for harmonic, _line, _floor in gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling, skip)]
-    refined = refine_f0(mono_signal, sample_rate, f0, core)
+    core = stationary_lines(freqs, power, level, gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling, skip))
+    refined = refine_f0(mono_signal, sample_rate, f0, [harmonic for harmonic, _line, _floor in core])
     if refined is None:
         return None, []
-    return refined, gate_harmonics(freqs, psd, refined, count, ceiling, skip)
+    gated = stationary_lines(freqs, power, level, gate_harmonics(freqs, psd, refined, count, ceiling, skip))
+    return refined, on_series(mono_signal, sample_rate, refined, gated)
 
 
 def _peak_offset_hz(spectrum, freqs, target_hz, search_hz):
@@ -179,6 +203,37 @@ def _peak_offset_hz(spectrum, freqs, target_hz, search_hz):
     return freqs[local] + shift * (freqs[1] - freqs[0]) - target_hz
 
 
+def _long_spectrum(mono_signal, sample_rate):
+    """One long transform of the opening stretch, bins of 0.04 Hz, or (None, None) when the stretch is too short."""
+    segment = mono_signal[:REFINE_SAMPLES]
+    if len(segment) < MIN_FRAMES * ANALYSIS_HOP:
+        return None, None
+    spectrum = np.abs(np.fft.rfft(segment * np.hanning(len(segment)), n=REFINE_SAMPLES))
+    return spectrum, np.fft.rfftfreq(REFINE_SAMPLES, 1.0 / sample_rate)
+
+
+def on_series(mono_signal, sample_rate, f0, gated):
+    """The gated lines that sit at an exact multiple of the fundamental, within half their envelope band.
+
+    A mains harmonic is at k times the fundamental, wobbling with the transport by no more
+    than the band the canceller tracks it in. A chord partial found near a multiple -- 147
+    Hz beside 150, 196 beside 200 -- is a few hertz off the series, which is more than any
+    harmonic wobbles at that number, and is left to the programme. The lines kept are
+    placed where the long transform finds them, so a harmonic sitting beside a stronger
+    partial is cancelled at its own frequency and not at the partial's.
+    """
+    spectrum, freqs = _long_spectrum(mono_signal, sample_rate)
+    if spectrum is None:
+        return gated
+    kept = []
+    for harmonic, _line, floor in gated:
+        tolerance = 0.5 * bandwidths_for([harmonic])[0]
+        offset = _peak_offset_hz(spectrum, freqs, harmonic * f0, tolerance + MAX_REFINE_HZ)
+        if abs(offset) <= tolerance:
+            kept.append((harmonic, harmonic * f0 + offset, floor))
+    return kept
+
+
 def refine_f0(mono_signal, sample_rate, f0, harmonics):
     """The fundamental the harmonics agree on, or None when they place it outside the refinement range.
 
@@ -191,11 +246,9 @@ def refine_f0(mono_signal, sample_rate, f0, harmonics):
     it is refused rather than held to the edge of the range, which is where every such
     series used to land.
     """
-    segment = mono_signal[:REFINE_SAMPLES]
-    if len(segment) < MIN_FRAMES * ANALYSIS_HOP or not harmonics:
+    spectrum, freqs = _long_spectrum(mono_signal, sample_rate)
+    if spectrum is None or not harmonics:
         return f0
-    spectrum = np.abs(np.fft.rfft(segment * np.hanning(len(segment)), n=REFINE_SAMPLES))
-    freqs = np.fft.rfftfreq(REFINE_SAMPLES, 1.0 / sample_rate)
     search = MAX_REFINE_HZ * REFINE_SEARCH_FACTOR
     offsets = [_peak_offset_hz(spectrum, freqs, harmonic * f0, search * harmonic) / harmonic for harmonic in harmonics]
     offset = float(np.median(offsets))
