@@ -106,6 +106,14 @@ VARIANTS = {
         (CONFIG_PY, r'^(\s*)\("apl_surgical_mains_notch", True\),$', r'\1("apl_surgical_mains_notch", False),'),
         (CONFIG_PY, r'^(\s*)\("apl_hum_skip_notched", False\),$', r'\1("apl_hum_skip_notched", True),'),
     ],
+    # Tonal material: a probe length of its own and the neural stage left out.
+    "tonal_probe_1s": [(CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 1.0, 0.0)')],
+    "tonal_probe_2s5": [(CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 2.5, 0.0)')],
+    "tonal_no_neural": [(CONFIG_PY, r'^(\s*)\("apl_tonal_skip_neural", False\),$', r'\1("apl_tonal_skip_neural", True),')],
+    "tonal_probe_2s5_no_neural": [
+        (CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 2.5, 0.0)'),
+        (CONFIG_PY, r'^(\s*)\("apl_tonal_skip_neural", False\),$', r'\1("apl_tonal_skip_neural", True),'),
+    ],
     "no_hum_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_hum_cancel", True\),$', r'\1("apl_enable_hum_cancel", False),')],
     "hum_cancel_bw_1": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 1.0, 0.1)')],
     "hum_cancel_bw_3": [(CONFIG_PY, r'\("apl_hum_bandwidth_hz", float, [0-9.]+, 0\.1\)', '("apl_hum_bandwidth_hz", float, 3.0, 0.1)')],

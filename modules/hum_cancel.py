@@ -160,6 +160,8 @@ def plan_harmonics(mono_signal, sample_rate, f0, count=APL_HUM_MAX_HARMONICS, sk
     ceiling = sample_rate / 2.0 - TOP_MARGIN_HZ
     core = [harmonic for harmonic, _line, _floor in gate_harmonics(freqs, psd, f0, MAINS_HARMONICS, ceiling, skip)]
     refined = refine_f0(mono_signal, sample_rate, f0, core)
+    if refined is None:
+        return None, []
     return refined, gate_harmonics(freqs, psd, refined, count, ceiling, skip)
 
 
@@ -178,12 +180,16 @@ def _peak_offset_hz(spectrum, freqs, target_hz, search_hz):
 
 
 def refine_f0(mono_signal, sample_rate, f0, harmonics):
-    """The fundamental the harmonics agree on, within the refinement range of the nominal value.
+    """The fundamental the harmonics agree on, or None when they place it outside the refinement range.
 
     A single long transform of the opening stretch: bins of 0.04 Hz, refined between bins
     by the peak's curvature, and the per-harmonic estimates -- each offset divided by its
     harmonic number -- combined as a median so one harmonic sitting under a bass note does
-    not carry the vote.
+    not carry the vote. Mains is stable to well under half a hertz; a series whose lines
+    agree on a fundamental further off than that is a chord, not hum -- a G major sits at
+    98, 147 and 196 Hz and reads as the second, third and fourth harmonics of 49 Hz -- and
+    it is refused rather than held to the edge of the range, which is where every such
+    series used to land.
     """
     segment = mono_signal[:REFINE_SAMPLES]
     if len(segment) < MIN_FRAMES * ANALYSIS_HOP or not harmonics:
@@ -192,7 +198,8 @@ def refine_f0(mono_signal, sample_rate, f0, harmonics):
     freqs = np.fft.rfftfreq(REFINE_SAMPLES, 1.0 / sample_rate)
     search = MAX_REFINE_HZ * REFINE_SEARCH_FACTOR
     offsets = [_peak_offset_hz(spectrum, freqs, harmonic * f0, search * harmonic) / harmonic for harmonic in harmonics]
-    return f0 + float(np.clip(np.median(offsets), -MAX_REFINE_HZ, MAX_REFINE_HZ))
+    offset = float(np.median(offsets))
+    return None if abs(offset) > MAX_REFINE_HZ else f0 + offset
 
 
 def _demod_kernel(freqs_hz, sample_rate, length=ANALYSIS_WINDOW):
@@ -382,6 +389,8 @@ def _plan(source_wav, skip=()):
         return None, "unreadable" if f0 is None else "no mains hum"
     mono_signal, sample_rate = _scannable_mono(source_wav)
     refined, gated = plan_harmonics(mono_signal, sample_rate, f0, _series_length(source_wav), skip)
+    if refined is None:
+        return None, "the lines do not agree on a mains fundamental"
     if not gated:
         return None, "no harmonic stands above its neighbourhood"
     return (refined, gated), None

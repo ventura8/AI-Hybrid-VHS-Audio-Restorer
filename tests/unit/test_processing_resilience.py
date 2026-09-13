@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import modules.apl_chain
 import modules.hardware
 import modules.processing
 
@@ -361,8 +362,8 @@ def test_get_gpu_name_pytorch_exception():
 
 def test_resolve_adaptive_denoise_model():
     """Verify adaptive denoise model selection picks Lite on quiet tapes."""
-    threshold = modules.processing.ADAPTIVE_DENOISE_THRESHOLD_DB
-    default_denoise = modules.processing.DEFAULT_DENOISE_MODEL
+    threshold = modules.apl_chain.ADAPTIVE_DENOISE_THRESHOLD_DB
+    default_denoise = modules.apl_chain.DEFAULT_DENOISE_MODEL
 
     strategy_quiet = {"profile": {"noise_floor_db": threshold - 5.0}}
     assert modules.processing._resolve_adaptive_denoise_model(strategy_quiet, "UVR-DeNoise.pth") == default_denoise
@@ -535,3 +536,20 @@ def test_the_cascade_tells_the_surgical_step_whether_the_canceller_runs(tmp_path
         modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, hum_cancel=True)
         modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, hum_cancel=False)
     assert seen == [True, False]
+
+
+def test_the_cascade_leaves_the_neural_stage_out_when_the_material_says_so(tmp_path):
+    """With the neural stage not wanted, the chain's output goes straight to the cleanup."""
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    seen = []
+    with (
+        patch("modules.processing._pre_denoise_surgical_step", side_effect=lambda wav, _d, **_k: wav),
+        patch("modules.apl_chain.run", side_effect=lambda wav, _plan: (wav, [])),
+        patch("modules.spectral_denoise.neural_wanted", return_value=False),
+        patch("modules.processing._denoise_full_audio_step", side_effect=lambda wav, _d, **_k: seen.append("uvr") or wav),
+        patch("modules.processing._post_denoise_cleanup_step", side_effect=lambda wav, *_a, **_k: seen.append(wav.name) or wav),
+        patch("modules.processing._polish_full_audio_step", side_effect=lambda wav, *_a, **_k: wav),
+    ):
+        modules.processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir)
+    assert seen == ["orig.wav"]

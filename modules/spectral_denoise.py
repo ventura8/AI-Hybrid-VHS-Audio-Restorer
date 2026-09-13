@@ -27,6 +27,7 @@ from .config import (
     APL_ENABLE_TONAL_CLEANUP,
     APL_HUM_MIN_EXCESS_DB,
     APL_NOISEPRINT_DURATION_S,
+    APL_NOISEPRINT_TONAL_S,
     APL_SPECTRAL_ALPHA,
     APL_SPECTRAL_ALPHA_TONAL,
     APL_SPECTRAL_MARGIN_DB,
@@ -34,6 +35,7 @@ from .config import (
     APL_SUPPRESS_GAIN_FLOOR_DB,
     APL_SUPPRESS_NOISE_BIAS,
     APL_TONAL_FLATNESS_MAX,
+    APL_TONAL_SKIP_NEURAL,
     APL_USE_NATIVE_SUPPRESS,
 )
 from .filters import _read_audio_for_analysis, estimate_snr_margin_db
@@ -209,8 +211,14 @@ def estimate_tonality(wav_path):
     return float(np.median(flatness))
 
 
-def _alpha_for(source_wav):
-    """The subtraction factor this material can take.
+def is_tonal(source_wav):
+    """Whether the material is tonal: median spectral flatness under the threshold, unreadable counting as not."""
+    tonality = estimate_tonality(source_wav)
+    return tonality is not None and tonality < APL_TONAL_FLATNESS_MAX
+
+
+def _material(source_wav):
+    """(subtraction factor, probe length) for this material, read once.
 
     3.0 was set on real tape and is right for it in aggregate. Split by tonality it is not:
     on the most tonal third of the corpus the mode deviated 0.49 dB against cathar's 0.32,
@@ -218,15 +226,36 @@ def _alpha_for(source_wav):
     noise profile and a speech-tuned factor subtracts them. At 2.0 on that third the
     deviation is 0.33 -- level with cathar -- and removal stays ahead at 7.97 against 7.00.
     The blend was suspected first and is not it: without it the tonal deviation is worse.
+    The probe length follows the same reading: music has no true silence, so its quietest
+    stretch is programme, and the length it is learned over is a setting of its own.
     """
-    tonality = estimate_tonality(source_wav)
-    if tonality is not None and tonality < APL_TONAL_FLATNESS_MAX:
-        log_msg(f"    [Spectral Denoise] Tonal material (flatness {tonality:.3f}); subtracting at {APL_SPECTRAL_ALPHA_TONAL}.")
-        return APL_SPECTRAL_ALPHA_TONAL
-    return APL_SPECTRAL_ALPHA
+    if is_tonal(source_wav):
+        log_msg(
+            f"    [Spectral Denoise] Tonal material; subtracting at {APL_SPECTRAL_ALPHA_TONAL} from a {APL_NOISEPRINT_TONAL_S:g} s probe."
+        )
+        return APL_SPECTRAL_ALPHA_TONAL, APL_NOISEPRINT_TONAL_S
+    return APL_SPECTRAL_ALPHA, APL_NOISEPRINT_DURATION_S
 
 
-def _native_suppress(source_wav, output_dir, alpha):
+def _alpha_for(source_wav):
+    """The subtraction factor this material can take."""
+    return _material(source_wav)[0]
+
+
+def neural_wanted(source_wav):
+    """Whether the neural denoiser should run on this material.
+
+    It earns its place in aggregate -- without it the mode removes 1.05 dB less noise on
+    real tape -- and can be left out on tonal material where it is measured to cost more
+    than it removes.
+    """
+    if APL_TONAL_SKIP_NEURAL and is_tonal(source_wav):
+        log_msg("    [Neural] Skipped: tonal material.")
+        return False
+    return True
+
+
+def _native_suppress(source_wav, output_dir, alpha, probe_s):
     """The mode's own suppressor in the subtraction slot, or None when it could not run.
 
     The tonal gate carries over as a scaling of the noise bias: material subtracted at the
@@ -240,7 +269,7 @@ def _native_suppress(source_wav, output_dir, alpha):
         noise_bias=APL_SUPPRESS_NOISE_BIAS * alpha / APL_SPECTRAL_ALPHA,
         gain_floor_db=APL_SUPPRESS_GAIN_FLOOR_DB,
         dd_alpha=APL_SUPPRESS_DD_ALPHA,
-        probe_s=APL_NOISEPRINT_DURATION_S,
+        probe_s=probe_s,
     )
 
 
@@ -252,16 +281,16 @@ def _subtract(source_wav, output_dir, total_duration):
     """
     from .cathar import _cathar_denoise_step, _cathar_noiseprint_step
 
-    alpha = _alpha_for(source_wav)
+    alpha, probe_s = _material(source_wav)
     if APL_USE_NATIVE_SUPPRESS:
-        suppressed = _native_suppress(source_wav, output_dir, alpha)
+        suppressed = _native_suppress(source_wav, output_dir, alpha, probe_s)
         if suppressed is not None:
             return suppressed
     if not _cathar_available():
         return None
     # Both values are passed explicitly: cathar shipped in v1.2.0 with a 0.75 s probe and
     # an alpha of its own, and those are shared settings this mode must not move.
-    noiseprint = _cathar_noiseprint_step(source_wav, output_dir, duration_s=APL_NOISEPRINT_DURATION_S)
+    noiseprint = _cathar_noiseprint_step(source_wav, output_dir, duration_s=probe_s)
     return _cathar_denoise_step(source_wav, output_dir, alpha=alpha, noiseprint_path=noiseprint, total_duration=total_duration)
 
 

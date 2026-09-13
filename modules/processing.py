@@ -36,9 +36,7 @@ from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
 from . import utils as _utils
 from .config import (
-    ADAPTIVE_DENOISE_THRESHOLD_DB,
     APL_NEURAL_MODEL,
-    DEFAULT_DENOISE_MODEL,
     DENOISE_MODEL,
     ENABLE_DEESSER,
     ENABLE_DYNAMIC_EXPANDER,
@@ -1081,32 +1079,11 @@ def _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=None, str
     return _run_dsp_filter_file(denoised_wav, output_wav, cleanup_filter, "Post-Denoise Residual Cleanup", total_duration)
 
 
-def _profile_noise_floor_db(strategy):
-    """Returns the profiled noise floor in dB, or None when it is absent or unusable."""
-    raw_nf = (strategy or {}).get("profile", {}).get("noise_floor_db")
-    if raw_nf is None:
-        return None
-    try:
-        return float(raw_nf)
-    except (ValueError, TypeError):
-        return None
-
-
-def _resolve_adaptive_denoise_model(strategy, default_model):
-    """Picks lighter UVR-DeNoise model on clean recordings to prevent over-processing."""
-    nf_val = _profile_noise_floor_db(strategy)
-    if nf_val is None or nf_val >= ADAPTIVE_DENOISE_THRESHOLD_DB:
-        return default_model
-    effective_model = DENOISE_MODEL if default_model is None else default_model
-    log_msg(
-        f"    [Adaptive Denoise] Quiet source ({nf_val:.1f} dB); "
-        f"overriding {effective_model} with {DEFAULT_DENOISE_MODEL} to preserve transients."
-    )
-    return DEFAULT_DENOISE_MODEL
-
-
-# The UVR step's directory choice lives with the cache rules it enforces; the private
-# aliases keep the call sites and their tests where they were.
+# The adaptive model choice lives with the chain, and the UVR step's directory choice
+# with the cache rules it enforces; the private aliases keep the call sites and their
+# tests where they were.
+_profile_noise_floor_db = _apl_chain.profile_noise_floor_db
+_resolve_adaptive_denoise_model = _apl_chain.resolve_adaptive_denoise_model
 _neural_denoise_dir = _denoise_cache.neural_denoise_dir
 _without_stale_neural_output = _denoise_cache.without_stale_neural_output
 
@@ -1146,18 +1123,20 @@ def _denoise_and_polish_full_audio_step(
         model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
     model_to_use = APL_NEURAL_MODEL or model_to_use
     denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
-    denoised_wav = _deepfilter.denoise_or(
-        surgical_wav,
-        audio_dir / "deepfilter_denoised",
-        deepfilternet,
-        lambda: _resemble.denoise_or(
+    denoised_wav = surgical_wav
+    if _spectral_denoise.neural_wanted(surgical_wav):
+        denoised_wav = _deepfilter.denoise_or(
             surgical_wav,
-            audio_dir / "resemble_denoised",
-            resemble_denoise,
-            lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
-            total_duration=total_duration,
-        ),
-    )
+            audio_dir / "deepfilter_denoised",
+            deepfilternet,
+            lambda: _resemble.denoise_or(
+                surgical_wav,
+                audio_dir / "resemble_denoised",
+                resemble_denoise,
+                lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
+                total_duration=total_duration,
+            ),
+        )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)
 

@@ -218,7 +218,7 @@ def test_the_native_engine_is_used_only_when_switched_on(tmp_path):
     source, produced = tmp_path / "in.wav", tmp_path / "suppressed_in.wav"
     with (
         patch.object(spectral_denoise, "APL_USE_NATIVE_SUPPRESS", False),
-        patch.object(spectral_denoise, "_alpha_for", return_value=3.0),
+        patch.object(spectral_denoise, "_material", return_value=(3.0, 4.0)),
         patch.object(spectral_denoise, "_cathar_available", return_value=True),
         patch("modules.cathar._cathar_noiseprint_step", return_value=tmp_path / "np.json") as noiseprint,
         patch("modules.cathar._cathar_denoise_step", return_value=tmp_path / "den.wav") as denoise,
@@ -228,7 +228,7 @@ def test_the_native_engine_is_used_only_when_switched_on(tmp_path):
     denoise.assert_called_once()
     with (
         patch.object(spectral_denoise, "APL_USE_NATIVE_SUPPRESS", True),
-        patch.object(spectral_denoise, "_alpha_for", return_value=2.0),
+        patch.object(spectral_denoise, "_material", return_value=(2.0, 4.0)),
         patch("modules.spectral_suppress.suppress_or_none", return_value=produced) as native,
         patch("modules.cathar._cathar_denoise_step") as denoise,
     ):
@@ -242,7 +242,7 @@ def test_a_failed_native_engine_falls_back_to_cathar(tmp_path):
     source = tmp_path / "in.wav"
     with (
         patch.object(spectral_denoise, "APL_USE_NATIVE_SUPPRESS", True),
-        patch.object(spectral_denoise, "_alpha_for", return_value=3.0),
+        patch.object(spectral_denoise, "_material", return_value=(3.0, 4.0)),
         patch("modules.spectral_suppress.suppress_or_none", return_value=None),
         patch.object(spectral_denoise, "_cathar_available", return_value=True),
         patch("modules.cathar._cathar_noiseprint_step", return_value=tmp_path / "np.json"),
@@ -251,7 +251,7 @@ def test_a_failed_native_engine_falls_back_to_cathar(tmp_path):
         assert spectral_denoise._subtract(source, tmp_path, None) == tmp_path / "den.wav"
     with (
         patch.object(spectral_denoise, "APL_USE_NATIVE_SUPPRESS", True),
-        patch.object(spectral_denoise, "_alpha_for", return_value=3.0),
+        patch.object(spectral_denoise, "_material", return_value=(3.0, 4.0)),
         patch("modules.spectral_suppress.suppress_or_none", return_value=None),
         patch.object(spectral_denoise, "_cathar_available", return_value=False),
     ):

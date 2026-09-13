@@ -152,6 +152,11 @@ _NUMERIC_CONFIG_FIELDS = (
     # suspect and is cleared: without it the tonal deviation is worse, 0.56.
     ("apl_spectral_alpha_tonal", float, 2.0, 0.0),
     ("apl_tonal_flatness_max", float, 0.035, 0.0),
+    # Seconds of the quietest stretch used to learn the noise profile on tonal material.
+    # Music has no true silence: its quietest stretch carries sustained partials, and a
+    # profile learned over more of it is more programme. The setting is measured against the
+    # general probe on the most tonal 45 corpus clips; equal to it, it is no setting at all.
+    ("apl_noiseprint_tonal_s", float, 4.0, 0.0),
     # Programme-above-noise-floor margin above which subtraction is skipped.
     #
     # Effectively off for real tape, and deliberately so. 20 dB came from paired synthetic
@@ -292,6 +297,11 @@ _BOOL_CONFIG_FIELDS = (
     # band. Stage alone on the same tapes: 3.01 dB at 0.155. Four tapes whose lines wander
     # more than five hertz are not helped; they are documented, not forced.
     ("apl_enable_hum_cancel", True),
+    # Skip the neural denoiser on tonal material. UVR-DeNoise earns its place in aggregate
+    # (without it the mode removes 1.05 dB less noise on real tape); on the most tonal
+    # third, where the mode loses to cathar on fidelity, its share of that loss was never
+    # read on its own. Measured on the most tonal 45 corpus clips.
+    ("apl_tonal_skip_neural", False),
     # The mode's own bandrejects at the third to fifth mains harmonics, applied ahead of the
     # chain whenever the shared scanner reports mains hum. They predate the canceller, which
     # tracks each of those lines at the frequency it actually sits at; a Q-30 notch at the
@@ -698,6 +708,8 @@ APL_ENABLE_SPECTRAL_DENOISE = bool(CONFIG.get("apl_enable_spectral_denoise", Tru
 APL_SPECTRAL_ALPHA = float(CONFIG["apl_spectral_alpha"])
 APL_SPECTRAL_ALPHA_TONAL = float(CONFIG.get("apl_spectral_alpha_tonal", 2.0))
 APL_TONAL_FLATNESS_MAX = float(CONFIG.get("apl_tonal_flatness_max", 0.035))
+APL_NOISEPRINT_TONAL_S = float(CONFIG.get("apl_noiseprint_tonal_s", 4.0))
+APL_TONAL_SKIP_NEURAL = bool(CONFIG.get("apl_tonal_skip_neural", False))
 APL_SPECTRAL_MARGIN_DB = float(CONFIG["apl_spectral_margin_db"])
 APL_NOISEPRINT_DURATION_S = float(CONFIG.get("apl_noiseprint_duration_s", 4.0))
 APL_MUTE_SILENCE_DB = float(CONFIG.get("apl_mute_silence_db", -45.0))

@@ -343,3 +343,35 @@ def test_cathar_dehum_is_not_requested_behind_the_native_canceller():
         assert spectral_denoise._dehum_wanted() is False
         assert spectral_denoise._tonal_targets({"profile": {"notch_hz": 50.0, "highpass_hz": 0}}) is None
     assert spectral_denoise._dehum_wanted() is False
+
+
+def test_tonal_material_gets_its_own_probe_length(tmp_path):
+    """The probe length follows the tonality reading."""
+    tonal, noisy = _material_wav(tmp_path, "t.wav", tonal=True), _material_wav(tmp_path, "n.wav", tonal=False)
+    with patch("modules.spectral_denoise.APL_NOISEPRINT_TONAL_S", 1.5), patch("modules.spectral_denoise.log_msg"):
+        assert spectral_denoise._material(tonal) == (spectral_denoise.APL_SPECTRAL_ALPHA_TONAL, 1.5)
+        assert spectral_denoise._material(noisy) == (spectral_denoise.APL_SPECTRAL_ALPHA, spectral_denoise.APL_NOISEPRINT_DURATION_S)
+
+
+def test_the_neural_stage_is_left_out_only_on_tonal_material_with_the_switch_on(tmp_path):
+    """The neural skip fires on tonal material with the switch on, and never otherwise."""
+    tonal, noisy = _material_wav(tmp_path, "t.wav", tonal=True), _material_wav(tmp_path, "n.wav", tonal=False)
+    with patch("modules.spectral_denoise.APL_TONAL_SKIP_NEURAL", True), patch("modules.spectral_denoise.log_msg"):
+        assert spectral_denoise.neural_wanted(tonal) is False
+        assert spectral_denoise.neural_wanted(noisy) is True
+    with patch("modules.spectral_denoise.APL_TONAL_SKIP_NEURAL", False):
+        assert spectral_denoise.neural_wanted(tonal) is True
+
+
+def test_the_subtraction_learns_its_profile_over_the_tonal_probe_on_tonal_material(tmp_path):
+    """The noise-print step receives the tonal length when the material is tonal."""
+    tonal = _material_wav(tmp_path, "t.wav", tonal=True)
+    with (
+        patch("modules.spectral_denoise.APL_NOISEPRINT_TONAL_S", 1.5),
+        patch("modules.spectral_denoise.log_msg"),
+        patch("modules.spectral_denoise._cathar_available", return_value=True),
+        patch("modules.cathar._cathar_noiseprint_step", return_value=tmp_path / "np.txt") as noiseprint,
+        patch("modules.cathar._cathar_denoise_step", return_value=tmp_path / "out.wav"),
+    ):
+        assert spectral_denoise._subtract(tonal, tmp_path, None) == tmp_path / "out.wav"
+    assert noiseprint.call_args.kwargs["duration_s"] == 1.5

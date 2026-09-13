@@ -127,10 +127,20 @@ def test_the_fundamental_is_refined():
     assert abs(hum_cancel.refine_f0(near, RATE, 50.0, [1, 2, 3, 4]) - 50.45) < 0.03
 
 
-def test_the_refinement_is_clamped_and_skipped_when_it_cannot_read():
-    """An offset past the range is held to the edge; a snippet or an empty series keeps the nominal value."""
+def test_a_series_off_the_mains_window_is_refused(tmp_path):
+    """A chord whose lines agree on 49 Hz is not hum: the refinement refuses it and the stage skips."""
     far = _series(50.6, range(1, 5)) + _hiss()
-    assert hum_cancel.refine_f0(far, RATE, 50.0, [1, 2, 3, 4]) == pytest.approx(50.5)
+    assert hum_cancel.refine_f0(far, RATE, 50.0, [1, 2, 3, 4]) is None
+    chord = _series(49.0, [2, 3, 4], level=0.08) + _hiss()
+    assert hum_cancel.plan_harmonics(chord, RATE, 50.0) == (None, [])
+    source = _write(tmp_path / "chord.wav", [chord, chord])
+    with patch("modules.hum_cancel.log_msg") as log:
+        assert hum_cancel.apply_when_needed(source, tmp_path) == source
+    assert "do not agree" in log.call_args[0][0]
+
+
+def test_a_snippet_or_an_empty_series_keeps_the_nominal_value():
+    """Too little audio, or no harmonics to read, leaves the nominal fundamental as it is."""
     mono = _hum(drift_pct=0.0) + _hiss()
     assert hum_cancel.refine_f0(mono[:1000], RATE, 50.0, [1]) == 50.0
     assert hum_cancel.refine_f0(mono, RATE, 50.0, []) == 50.0

@@ -12,7 +12,32 @@ from . import physical_repair as _physical_repair
 from . import plosive_tamer as _plosive_tamer
 from . import spectral_denoise as _spectral_denoise
 from . import tone_cancel as _tone_cancel
+from .config import ADAPTIVE_DENOISE_THRESHOLD_DB, DEFAULT_DENOISE_MODEL, DENOISE_MODEL
 from .utils import log_msg
+
+
+def profile_noise_floor_db(strategy):
+    """Returns the profiled noise floor in dB, or None when it is absent or unusable."""
+    raw_nf = (strategy or {}).get("profile", {}).get("noise_floor_db")
+    if raw_nf is None:
+        return None
+    try:
+        return float(raw_nf)
+    except (ValueError, TypeError):
+        return None
+
+
+def resolve_adaptive_denoise_model(strategy, default_model):
+    """Picks the lighter UVR-DeNoise model on clean recordings to prevent over-processing."""
+    nf_val = profile_noise_floor_db(strategy)
+    if nf_val is None or nf_val >= ADAPTIVE_DENOISE_THRESHOLD_DB:
+        return default_model
+    effective_model = DENOISE_MODEL if default_model is None else default_model
+    log_msg(
+        f"    [Adaptive Denoise] Quiet source ({nf_val:.1f} dB); "
+        f"overriding {effective_model} with {DEFAULT_DENOISE_MODEL} to preserve transients."
+    )
+    return DEFAULT_DENOISE_MODEL
 
 
 def stage_plan(
