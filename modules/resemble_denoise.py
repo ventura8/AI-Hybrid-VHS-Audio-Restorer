@@ -15,14 +15,17 @@ from pathlib import Path
 
 from . import enhance_chunking as _chunking
 from .hardware import CUDA_ENV, CUDA_VISIBLE_DEVICE
-from .utils import is_valid_audio, log_msg, run_command_with_progress
+from .utils import _resolve_binary, is_valid_audio, log_msg, run_command_with_progress, scripts_dirs
 
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, subprocess.SubprocessError)
+# The CLI lives beside the interpreter, and a child process launched from outside the
+# environment does not carry the environment's PATH: resolved, not looked up.
+RESEMBLE_BIN = _resolve_binary("resemble-enhance", scripts_dirs)
 
 
 def _command(input_dir, output_dir):
     """The denoise-only invocation of the package's CLI over a directory."""
-    return ["resemble-enhance", str(input_dir), str(output_dir), "--denoise_only", "--device", CUDA_VISIBLE_DEVICE]
+    return [RESEMBLE_BIN, str(input_dir), str(output_dir), "--denoise_only", "--device", CUDA_VISIBLE_DEVICE]
 
 
 def _fresh(directory):

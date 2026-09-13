@@ -33,7 +33,11 @@ def test_the_denoiser_is_invoked_denoise_only_and_its_output_returned(tmp_path):
     with patch("modules.resemble_denoise.run_command_with_progress", side_effect=_fake_cli("ok")) as cli:
         produced = resemble_denoise.denoise(source, tmp_path / "work")
     assert produced == tmp_path / "work" / "resemble_in.wav" and produced.is_file()
-    assert cli.call_args.args[0][:3] == ["resemble-enhance", str(tmp_path / "work" / "input"), str(tmp_path / "work" / "output")]
+    command = cli.call_args.args[0]
+    assert Path(command[0]).stem == "resemble-enhance" and command[1:3] == [
+        str(tmp_path / "work" / "input"),
+        str(tmp_path / "work" / "output"),
+    ]
     assert not (tmp_path / "work" / "input").exists()
 
 
