@@ -310,6 +310,22 @@ between frames are not helped; they are recorded, not forced. On the
 calibrated set the realism check now runs the shipped configuration against
 `no_hum_cancel` over every class, held to the repair stages' free band.
 
+Two readings were added to the hum instrument after the stage was adopted.
+The excess reading is blind to a chain that lowers the floor around a line it
+left behind -- the line then stands out more although it is no louder -- so
+`hum_line_drop_db` reads the summed power at the harmonics themselves on
+gain-matched audio, and the instrument now refuses the saturated or
+constant-level sources the trade metric refuses (15 of the 48), on which the
+gain-matched low band moved by tens of dB identically for both modes. On the
+33 readable tapes the final chain removes a median 2.44 dB of excess against
+`cathar`'s -0.74 and takes the lines themselves down 3.13 dB against 0.75,
+ahead of `cathar` on 27 and 25 of the 33. Two switches for the notches that
+precede the canceller were measured there and left at their defaults: the
+mode's own third-to-fifth harmonic notches earn their place (without them
+hum removal falls 2.43 to 1.71 dB, worse by more than a decibel on 8 tapes),
+and leaving the two pre-conditioned harmonics out of the canceller's plan
+changes nothing.
+
 **Plosives.** The plosive tamer (`modules/plosive_tamer.py`) finds a blast as
 a run of hops where the low band stands 12 dB over its own running level and
 leads the mid band's rise by 6 dB, peaks within three hops, lasts 10-120 ms
@@ -332,7 +348,10 @@ subtraction lands at 10-12.9, and on 50 real captures it removes 5.83 dB at
 0.19 against 10.02 at 0.22 (3.06 against 7.96 on the tonal 45). It keeps the
 low-level programme the quiet frames hold, and the trade metric reads that
 as noise left behind. The Mel-Roformer denoiser measured 9.39/0.22 against
-UVR-DeNoise's 10.02/0.23. A canceller for persistent lines
+UVR-DeNoise's 10.02/0.23, and Resemble-Enhance's denoiser 10.78/0.58 -- more
+removal, the programme moved two and a half times as far, and 12 captures won
+outright against `cathar` where UVR-DeNoise wins 28. A canceller for
+persistent lines
 (`modules/tone_cancel.py`) at its first setting read sustained notes and
 missed mains lines as persistent lines in the speech range and cost 0.06 dB
 of deviation on 50 captures; restricted to lines above 4 kHz it finds lines

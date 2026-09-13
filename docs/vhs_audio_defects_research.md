@@ -676,7 +676,8 @@ ratios and are not repeated here.
    sits at (one to eight hertz off the exact series on the tapes measured) and
    subtracted per channel, ahead of the noise probe. On the 48 hum tapes, in
    the chain, hum removed goes from 0.19 dB to a median 2.49 (upper quartile
-   5.87), past what `cathar`'s stage manages run alone at the right frequency.
+   5.87) at adoption and 2.43 on the final build's 33 readable tapes, past
+   what `cathar`'s stage manages run alone at the right frequency.
 
 1. **Event-gated plosive control**: blasts under 150 Hz are found as events
    (fast attack, low band leading the mid band) and taken down to the level
@@ -686,7 +687,9 @@ ratios and are not repeated here.
 1. **Candidates measured and held back**: a per-bin MMSE log-spectral
    suppressor in the subtraction slot (better on every fixture class, 4 dB of
    removal short on real tape -- the DeepFilterNet lesson a second time), the
-   Mel-Roformer denoiser (less removal than UVR-DeNoise), and a canceller for
+   Mel-Roformer denoiser (less removal than UVR-DeNoise), Resemble-Enhance's
+   denoiser (more removal, the programme moved two and a half times as far),
+   and a canceller for
    persistent lines, which at its first setting read sustained notes as lines
    and, restricted to lines above 4 kHz, moved the trade medians not at all
    while costing one capture 10 dB of noise removal: a line that holds still
@@ -697,9 +700,10 @@ ratios and are not repeated here.
    the probe, 4 s removes 9.99 dB against 8.73 at the same median deviation.
 
 1. **The default mode**: on the full corpus the mode leads `cathar` on every
-   row measured on real tape -- broadband noise (8.73/0.32 against 5.87/0.44,
-   winning both on 72 clips against 11), mains hum (2.49 dB against -0.58 on
-   the 48 hum tapes), rumble, and the DNSMOS cross-check (ahead on 142 of 174)
+   row measured on real tape -- broadband noise (9.99/0.32 against 6.02/0.44,
+   winning both on 72 clips against 10), mains hum (2.43 dB against -0.74 on
+   the 33 readable hum tapes), rumble, and the DNSMOS cross-check (ahead on
+   137 of 174)
    -- and is the default from v1.3.0. `cathar` is unchanged and selectable.
 
 ### 6.3 Open

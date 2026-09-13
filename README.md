@@ -84,8 +84,8 @@ The pipeline supports multiple execution modes controlled by `process_mode`:
   frequency bin, then applies UVR-DeNoise.
 - Removes more tape noise than `cathar` while disturbing the programme less,
   measured across 136 clips, and removes the mains hum neither mode used to
-  touch: a median 2.49 dB of harmonic excess on the 48 humming tapes against
-  `cathar`'s -0.58. See
+  touch: a median 2.43 dB of harmonic excess on the readable humming tapes
+  against `cathar`'s -0.74. See
   [the head-to-head benchmark](docs/cathar_vs_auto_pure_linear_1000_benchmark.md).
 - Output suffix: `*_PureLinear_Cleaned.<ext>`.
 
