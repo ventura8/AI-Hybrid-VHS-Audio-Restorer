@@ -154,8 +154,11 @@ _NUMERIC_CONFIG_FIELDS = (
     ("apl_tonal_flatness_max", float, 0.035, 0.0),
     # Seconds of the quietest stretch used to learn the noise profile on tonal material.
     # Music has no true silence: its quietest stretch carries sustained partials, and a
-    # profile learned over more of it is more programme. The setting is measured against the
-    # general probe on the most tonal 45 corpus clips; equal to it, it is no setting at all.
+    # profile learned over more of it is more programme. Measured against the general probe
+    # on the most tonal 45 corpus clips, a shorter probe there buys nothing: 2.5 s reads
+    # 8.09/0.28 against 9.05/0.30 and loses both halves of the trade to cathar on 6 clips
+    # against 4, 1 s reads 5.77/0.28 and loses on 10. The tonal losses are not the probe's,
+    # so it stays equal to the general one.
     ("apl_noiseprint_tonal_s", float, 4.0, 0.0),
     # Programme-above-noise-floor margin above which subtraction is skipped.
     #
@@ -296,11 +299,23 @@ _BOOL_CONFIG_FIELDS = (
     # the broadband trade on those tapes moves 12.91/0.33 to 12.90/0.35, inside the free
     # band. Stage alone on the same tapes: 3.01 dB at 0.155. Four tapes whose lines wander
     # more than five hertz are not helped; they are documented, not forced.
+    #
+    # A series whose lines place the fundamental outside the half-hertz window is refused
+    # as a chord rather than cancelled: the calibrated music-only class had the canceller
+    # taking partials near multiples of 50 Hz for hum (2.42 dB of deviation against 1.69
+    # without it), and on real tape the same reading was hiding as hum removal -- on two
+    # tonal tapes the low band moved 0.91 and 1.50 dB before the refusal and 0.11 and 0.01
+    # after. On the 33 readable hum tapes the chain then removes a median 1.71 dB of excess
+    # (2.43 before) and takes the lines down 2.76 dB, ahead of cathar's -0.74 and 0.75 on
+    # 27 and 25 of the 33; on the most tonal 45 clips deviation reads 0.30 against 0.32.
     ("apl_enable_hum_cancel", True),
     # Skip the neural denoiser on tonal material. UVR-DeNoise earns its place in aggregate
     # (without it the mode removes 1.05 dB less noise on real tape); on the most tonal
     # third, where the mode loses to cathar on fidelity, its share of that loss was never
-    # read on its own. Measured on the most tonal 45 corpus clips.
+    # read on its own. Measured on the most tonal 45 corpus clips: without it 8.84/0.31
+    # against 9.05/0.30, the deviation's upper quartile 0.96 to 0.84, both halves won
+    # against cathar on 27 clips against 24 and lost on 5 against 4; with a 2.5 s probe as
+    # well 7.78/0.28, upper quartile 0.71, lost on 7. A trade, not a gain: off.
     ("apl_tonal_skip_neural", False),
     # The mode's own bandrejects at the third to fifth mains harmonics, applied ahead of the
     # chain whenever the shared scanner reports mains hum. They predate the canceller, which
