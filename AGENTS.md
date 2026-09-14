@@ -225,7 +225,9 @@ ______________________________________________________________________
 
 ## 6. Workspace Skills Index
 
-The repository defines the following modular skills in `.agents/skills/`:
+The repository defines the following modular skills in `.agents/skills/`.
+`.claude/skills/` holds a pointer catalog so Claude Code can invoke each one as
+`/<name>`; the content lives only in `.agents/skills/`.
 
 - [code-linter](.agents/skills/code-linter/SKILL.md): Comprehensive multi-linter
   rules and commands without suppressions.

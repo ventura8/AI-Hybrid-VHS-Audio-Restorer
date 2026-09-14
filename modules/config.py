@@ -78,6 +78,8 @@ def _normalize_process_mode(raw_value):
 
 
 DEFAULT_DENOISE_MODEL = "UVR-DeNoise-Lite.pth"
+DEFAULT_VOCALS_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+DEFAULT_BACKGROUND_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
 MAX_ENHANCE_NFE = 128
 
 
@@ -613,8 +615,8 @@ def load_config():
         "vocal_mix_volume": 1.0,
         "background_mix_volume": 1.0,
         "extensions": list(DEFAULT_EXTENSIONS),
-        "vocals_model": "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
-        "background_model": "UVR-MDX-NET-Inst_HQ_3.onnx",
+        "vocals_model": DEFAULT_VOCALS_MODEL,
+        "background_model": DEFAULT_BACKGROUND_MODEL,
         "denoise_model": DEFAULT_DENOISE_MODEL,
         "sync_method": "shift",  # 'shift' or 'dtw'
         "process_mode": DEFAULT_PROCESS_MODE,  # includes aliases: 'multipass', 'pure', 'ffmpeg_native', 'auto_vhs_native'
@@ -658,10 +660,40 @@ KEEP_INPUT_FILES = os.environ.get("AI_RESTORE_TEST_MODE") == "1"
 VOCAL_MIX_VOL = float(CONFIG["vocal_mix_volume"])
 BACKGROUND_MIX_VOL = float(CONFIG["background_mix_volume"])
 
+
+_MODEL_NAME_FORBIDDEN = ("/", "\\", ":", "\0")
+
+
+def _is_bare_filename(name):
+    """True when a model name cannot leave the model store: no separator, drive or dot-prefix."""
+    return bool(name) and not name.startswith(".") and not any(ch in name for ch in _MODEL_NAME_FORBIDDEN)
+
+
+def _model_filename(setting, value, default=""):
+    """A UVR model setting reduced to a bare filename inside the model store.
+
+    Model names are joined onto MODELS_DIR (and unlinked from it on a failed load), so a
+    path from a planted config.yaml must not be able to escape the store. Only a string
+    is a candidate: anything else, or a string with a separator, a parent reference, or a
+    leading dot, or a Windows drive prefix (`D:model.ckpt`), falls back to the default.
+    Unset and empty fall back silently.
+    """
+    if value is None or value == "":
+        return default
+    name = value.strip() if isinstance(value, str) else ""
+    if _is_bare_filename(name):
+        return name
+    print(
+        f"[Config] Ignoring '{setting}' value {value!r}: model names must be a bare filename.",
+        file=sys.stderr,
+    )
+    return default
+
+
 # AI Configs
-VOCALS_MODEL = CONFIG["vocals_model"]
-BACKGROUND_MODEL = CONFIG["background_model"]
-DENOISE_MODEL = CONFIG["denoise_model"]
+VOCALS_MODEL = _model_filename("vocals_model", CONFIG["vocals_model"], DEFAULT_VOCALS_MODEL)
+BACKGROUND_MODEL = _model_filename("background_model", CONFIG["background_model"], DEFAULT_BACKGROUND_MODEL)
+DENOISE_MODEL = _model_filename("denoise_model", CONFIG["denoise_model"], DEFAULT_DENOISE_MODEL)
 ADAPTIVE_DENOISE_THRESHOLD_DB = float(CONFIG.get("adaptive_denoise_threshold_db", -50.0))
 ENHANCE_NFE = str(CONFIG["enhance_nfe"])
 ENHANCE_TAU = str(CONFIG["enhance_tau"])
@@ -761,6 +793,6 @@ APL_ENABLE_PLOSIVE_TAMER = bool(CONFIG.get("apl_enable_plosive_tamer", True))
 APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
 APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
 APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))
-APL_NEURAL_MODEL = str(CONFIG.get("apl_neural_model") or "").strip()
+APL_NEURAL_MODEL = _model_filename("apl_neural_model", CONFIG.get("apl_neural_model"))
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 2.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

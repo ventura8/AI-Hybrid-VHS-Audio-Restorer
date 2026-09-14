@@ -217,3 +217,15 @@
   Parameters: `arnndn_model` (default `"cb.rnnn"` in `models/arnndn/`),
   `arnndn_highpass_freq`, `arnndn_enable_adeclick`. - Output suffix:
   `*_Speech_Cleaned`.
+
+## Model Files
+
+`vocals_model`, `denoise_model` and `apl_neural_model` name UVR model files
+that `audio-separator` downloads into `models/` (`background_model` is
+accepted and validated the same way but no mode reads it yet). Each must be a
+bare filename such as `UVR-DeNoise.pth`: a value that is not a
+string, or contains a path separator, a drive prefix (`D:`), a `..` segment,
+or a leading dot, is ignored with a warning on stderr and the setting falls
+back to its default. A model file that fails to
+load is deleted from `models/` so it can be re-downloaded, and only a file
+inside that directory is ever deleted.
