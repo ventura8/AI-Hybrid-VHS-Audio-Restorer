@@ -34,8 +34,19 @@ poetry run python scripts/generate_audio_matrix.py core --language all
 
 Piper must run only from `tools/piper-tts/.venv`, which is provisioned by the
 project installer. This prevents Piper's CPU-only ONNX Runtime dependency from
-overwriting the main CUDA/TensorRT runtime. Rerun `install_dependencies.ps1` in
-an existing Windows checkout to provision the isolated runtime.
+overwriting the main CUDA/TensorRT runtime. When that venv is absent, provision
+it yourself before validating -- it is the installer's own command, and a
+missing runtime is not a reason to skip the matrix:
+
+```bash
+POETRY_REQUESTS_TIMEOUT=600 POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true \
+  .venv/bin/python -m poetry --directory tools/piper-tts install --only main --no-root --no-interaction
+```
+
+`tools/piper-tts/pyproject.toml` pins `piper-tts` with its `ja` and `zh`
+extras; the catalog's Japanese and Chinese voices need `pyopenjtalk-plus` and
+`g2pW`, which the bare package does not carry. On Windows, rerun
+`install_dependencies.ps1` in an existing checkout instead.
 
 Use `short` for a fast accelerator smoke check, `mid` for quality validation,
 and `longform` only when sustained VRAM and thermal validation is intended.

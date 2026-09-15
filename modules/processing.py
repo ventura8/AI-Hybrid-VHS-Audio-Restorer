@@ -310,8 +310,16 @@ def _resolve_separation_result(separation_out_dir, original_wav, output_files):
 
 
 def _purge_corrupted_model_file(model_name):
-    """Deletes a downloaded model file from the model store if it became corrupt."""
-    candidate = MODELS_DIR / model_name
+    """Deletes a downloaded model file from the model store if it became corrupt.
+
+    Only a file that actually lives inside the model store is ever unlinked: the name
+    comes from config, and neither an absolute path nor a ``..`` segment may escape.
+    """
+    store = MODELS_DIR.resolve()
+    candidate = (store / model_name).resolve()
+    if candidate.parent != store:
+        log_msg(f"    [Warning] Refusing to purge '{model_name}': not a file in the model store.", is_error=True)
+        return
     if candidate.is_file():
         try:
             log_msg(f"    [Warning] Corrupt model '{model_name}' detected. Deleting to re-download...", is_error=True)

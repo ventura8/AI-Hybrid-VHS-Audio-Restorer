@@ -220,12 +220,26 @@ ______________________________________________________________________
   - CI and local dev environments install runtime plus development dependencies
     (`poetry install --with dev`).
 - **CUDA Runtime Stack**: Preserve NVIDIA CUDA 13.2 runtime stack compatibility.
+- **Agents Provision What a Task Needs**: A missing dependency, runtime, model,
+  or fixture set is never a reason to skip or scale down a step. The agent
+  installs it, the way the installer does, before reporting: the `ml` group
+  with `poetry install --with dev,ml` when a mode needs it, the isolated Piper
+  runtime with
+  `poetry --directory tools/piper-tts install --only main --no-root` (its own
+  `.venv`; never into the main one, whose CUDA ONNX Runtime it would replace),
+  Piper voices and the fixture matrix with
+  `scripts/generate_audio_matrix.py core --language all`, DNSMOS with
+  `scripts/download_dnsmos.py`. Everything installs into the repository's
+  virtual environments and is declared in Poetry; nothing goes to the system
+  interpreter. Report what was provisioned and what it cost (time, disk).
 
 ______________________________________________________________________
 
 ## 6. Workspace Skills Index
 
-The repository defines the following modular skills in `.agents/skills/`:
+The repository defines the following modular skills in `.agents/skills/`.
+`.claude/skills/` holds a pointer catalog so Claude Code can invoke each one as
+`/<name>`; the content lives only in `.agents/skills/`.
 
 - [code-linter](.agents/skills/code-linter/SKILL.md): Comprehensive multi-linter
   rules and commands without suppressions.

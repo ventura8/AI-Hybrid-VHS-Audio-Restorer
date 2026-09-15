@@ -134,8 +134,12 @@ jobs:
         if: matrix.platform == 'linux'
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes dpkg-dev alien rpm ffmpeg
+          # Package mirrors return transient 5xx; one blip must not fail a release.
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get update && sudo apt-get install --yes dpkg-dev alien rpm ffmpeg && break
+            [ "$attempt" = 5 ] && { echo "apt-get failed after 5 attempts" >&2; exit 1; }
+            echo "apt-get attempt $attempt failed; retrying in $((attempt * 20)) s..."; sleep $((attempt * 20))
+          done
 
       - name: Install FFmpeg for macOS artifact smoke test
         if: startsWith(matrix.platform, 'macos-')
@@ -144,13 +148,28 @@ jobs:
           # Hosted macOS images can carry this unused tap. Remove it rather
           # than granting broad trust to a third-party tap.
           brew untap aws/tap || true
-          brew install ffmpeg
+          for attempt in 1 2 3 4 5; do
+            brew install ffmpeg && break
+            [ "$attempt" = 5 ] && { echo "brew install failed after 5 attempts" >&2; exit 1; }
+            echo "brew attempt $attempt failed; retrying in $((attempt * 20)) s..."; sleep $((attempt * 20))
+          done
 
       - name: Install FFmpeg for Windows runner smoke test
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          choco install ffmpeg --no-progress
+          # The Chocolatey community feed answered 503 on the v1.3.1 release run and
+          # failed the Windows package outright; retry with backoff before giving up.
+          $installed = $false
+          foreach ($attempt in 1..5) {
+            choco install ffmpeg --no-progress -y
+            if ($LASTEXITCODE -eq 0 -and (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { $installed = $true; break }
+            if ($attempt -eq 5) { break }
+            $delay = $attempt * 20
+            Write-Host "choco attempt $attempt failed (exit $LASTEXITCODE); retrying in $delay s..."
+            Start-Sleep -Seconds $delay
+          }
+          if (-not $installed) { Write-Error "choco install ffmpeg failed after 5 attempts"; exit 1 }
           ffmpeg -version
 
       - name: Extract and verify release tag

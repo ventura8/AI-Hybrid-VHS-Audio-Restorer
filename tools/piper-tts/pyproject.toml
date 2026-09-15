@@ -6,7 +6,14 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
-piper-tts = "1.8.0"
+# ja and zh: the catalog's Japanese and Chinese voices need pyopenjtalk-plus and g2pW,
+# which the bare package does not pull in.
+piper-tts = { version = "1.8.0", extras = ["ja", "zh"] }
+# pyopenjtalk-plus imports typing_extensions without declaring it; without this line the
+# Japanese voice dies on import with ModuleNotFoundError.
+typing-extensions = ">=4.12"
+# g2pW imports requests without declaring it; same failure for the Chinese voice.
+requests = ">=2.32"
 
 [build-system]
 requires = ["poetry-core>=2.0.0"]
