@@ -1024,6 +1024,22 @@ def test_purge_corrupted_model_file(tmp_path, monkeypatch):
     assert not corrupt_model.exists()
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    ["../escaped.bin", "../../escaped.bin", "{abs}", "sub/../../escaped.bin"],
+)
+def test_purge_corrupted_model_file_never_leaves_model_store(tmp_path, monkeypatch, model_name):
+    """A traversal or absolute model name from config must not unlink outside MODELS_DIR."""
+    store = tmp_path / "models"
+    store.mkdir()
+    outside = tmp_path / "escaped.bin"
+    outside.write_bytes(b"keep me")
+    monkeypatch.setattr(modules.processing, "MODELS_DIR", store)
+
+    modules.processing._purge_corrupted_model_file(model_name.format(abs=outside))
+    assert outside.exists()
+
+
 def test_load_separator_model_retries_after_purging_corrupt_file(tmp_path, monkeypatch):
     """If load_model fails initially, the corrupt file is purged and load_model is retried."""
     monkeypatch.setattr(modules.processing, "MODELS_DIR", tmp_path)

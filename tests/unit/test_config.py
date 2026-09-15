@@ -238,3 +238,29 @@ def test_load_config_rejects_scalar_extensions(mock_exists, extensions):
     with patch.object(modules.config, "yaml", mock_yaml), patch("builtins.open", MagicMock()):
         conf, _ = modules.config.load_config()
     assert conf["extensions"] == [".mp4", ".mkv", ".avi", ".mov", ".mpg", ".mpeg", ".ts", ".m2ts"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "../../.ssh/id_rsa",
+        "/home/victim/.ssh/id_rsa",
+        "..\\..\\secret",
+        "..",
+        ".hidden",
+        "sub/model.ckpt",
+        "D:model.ckpt",
+        True,
+        42,
+        ["a.pth"],
+    ],
+)
+def test_model_filename_rejects_paths(capsys, value):
+    """A model setting that could escape the model store, or is not a string, falls back to the default and is reported."""
+    assert modules.config._model_filename("apl_neural_model", value, "safe.pth") == "safe.pth"
+    assert "apl_neural_model" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value, expected", [("UVR-DeNoise.pth", "UVR-DeNoise.pth"), ("  x.ckpt ", "x.ckpt"), ("", "d"), (None, "d")])
+def test_model_filename_accepts_bare_names(value, expected):
+    assert modules.config._model_filename("denoise_model", value, "d") == expected
