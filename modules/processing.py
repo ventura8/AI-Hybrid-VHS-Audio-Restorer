@@ -11,6 +11,7 @@ Orchestrates multi-stage audio restoration pipelines across four modes:
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -58,6 +59,7 @@ from .filters import (
     build_pre_denoise_surgical_filter,
 )
 from .hardware import CPU_THREADS, CUDA_ENV, CUDA_VISIBLE_DEVICE, GPU_BATCH_SIZE
+from .hygiene import atomic_target, partial_path, remove_tree, scoped_temp_dir, sweep_partials
 from .sync import _align_stems
 from .utils import (
     FFMPEG_BIN,
@@ -429,9 +431,10 @@ def _prepare_clean_directory(path):
 
 
 def _copy_result_to_final_dir(result, output_dir):
-    """Copies temporary processing result to final output destination."""
+    """Copies temporary processing result to final output destination, published atomically."""
     final_output = output_dir / result.name
-    shutil.copy(result, final_output)
+    with atomic_target(final_output) as partial:
+        shutil.copy(result, partial)
     return final_output
 
 
@@ -711,6 +714,25 @@ def _ensure_audio_inputs_exist(*named_audio_paths):
             raise FileNotFoundError(f"Missing {label} input for mux: {path}")
 
 
+def _staged_output_path(final_output_video, staging_dir):
+    """Where the muxer renders before the result is published next to the source.
+
+    The render is staged inside the work directory rather than beside the final file, so
+    an interrupted mux leaves nothing outside the folder the restoration owns.
+    """
+    return partial_path(Path(staging_dir) / final_output_video.name)
+
+
+def _publish_staged_output(tmp_path, final_path):
+    """Moves a finished render to its destination: a rename on the same volume, a copy across."""
+    if final_path.exists():
+        final_path.unlink()
+    try:
+        tmp_path.rename(final_path)
+    except OSError:
+        shutil.move(str(tmp_path), str(final_path))
+
+
 def _promote_valid_output(tmp_path, final_path, error_message):
     """Atomically promotes valid temporary video file to final destination.
 
@@ -720,9 +742,7 @@ def _promote_valid_output(tmp_path, final_path, error_message):
         error_message (str): Exception message if output is invalid.
     """
     if is_valid_video(tmp_path):
-        if final_path.exists():
-            final_path.unlink()
-        tmp_path.rename(final_path)
+        _publish_staged_output(tmp_path, final_path)
         return
 
     if tmp_path.exists():
@@ -743,7 +763,7 @@ def _final_mix_step(
     duration = total_duration or get_audio_duration_sec(aligned_vocals)
     _ensure_audio_inputs_exist(("Vocals", aligned_vocals), ("Background", aligned_background))
 
-    tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
+    tmp_output = _staged_output_path(final_output_video, aligned_vocals.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
     loudnorm_args = _resolve_loudnorm_args(
         video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration
@@ -830,7 +850,7 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
     duration = total_duration or get_audio_duration_sec(processed_audio_wav)
     _ensure_audio_inputs_exist(("Processed Audio", processed_audio_wav))
 
-    tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
+    tmp_output = _staged_output_path(final_output_video, processed_audio_wav.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
     loudnorm_args = _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=duration)
     filter_expr = _build_single_audio_filter_expression(loudnorm_args)
@@ -978,7 +998,14 @@ def _process_arnndn_speech_mode(work_dir, original_wav, video_path, final_output
 
 
 def _run_dsp_filter_file(input_wav, output_wav, filter_expr, desc, total_duration):
-    """Executes FFmpeg audio filter on a WAV file with robust fallback."""
+    """Executes FFmpeg audio filter on a WAV file with robust fallback.
+
+    The filter renders to a partial and only a complete, valid render is published; a
+    failed or interrupted render leaves nothing a resumed run could mistake for the stage
+    output.
+    """
+    output_wav = Path(output_wav)
+    tmp_wav = partial_path(output_wav)
     cmd = [
         FFMPEG_BIN,
         "-threads",
@@ -992,13 +1019,18 @@ def _run_dsp_filter_file(input_wav, output_wav, filter_expr, desc, total_duratio
         "-ar",
         str(PIPELINE_SAMPLE_RATE),
         "-y",
-        str(output_wav),
+        str(tmp_wav),
     ]
     try:
         run_command_with_progress(cmd, description=desc, total_duration=total_duration)
     except Exception as e:
         log_msg(f"    [Warning] {desc} failed: {e}", is_error=True)
-    return output_wav if is_valid_audio(output_wav) else input_wav
+    if is_valid_audio(tmp_wav):
+        os.replace(str(tmp_wav), str(output_wav))
+        return output_wav
+    if tmp_wav.exists():
+        tmp_wav.unlink()
+    return input_wav
 
 
 def _deess_vocals_step(vocals_wav, enhanced_vocals_dir, total_duration=None):
@@ -1358,13 +1390,12 @@ def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, v
 
 
 def _cleanup_work_dir(work_dir, final_output_video):
+    """Removes the work directory once the output is valid; keeps it for a resume otherwise."""
     if not work_dir.exists() or KEEP_INPUT_FILES:
         return
     if is_valid_video(final_output_video):
-        try:
-            shutil.rmtree(work_dir, ignore_errors=True)
-        except Exception:
-            pass
+        if not remove_tree(work_dir):
+            log_msg(f"  [Warning] Could not remove {work_dir.name}; it is safe to delete by hand.", is_error=True)
         return
     log_msg(f"  [System] Preservation: Keeping {work_dir.name} for inspection on failure.", level="DEBUG")
 
@@ -1398,14 +1429,19 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
 
     if is_valid_video(final_output_video):
         log_msg("  [System] Output already exists. Skipping.")
+        # A run cut off between publishing the output and tidying up leaves its work
+        # directory behind; a skipped task still owes that cleanup.
+        _cleanup_work_dir(work_dir, final_output_video)
         return True
 
     try:
         work_dir.mkdir(exist_ok=True)
+        sweep_partials(work_dir)
         original_wav = work_dir / "original.wav"
         video_dur = _log_video_duration(video_path)
-        _extract_audio_step(video_path, original_wav, total_duration=video_dur)
-        _run_processing_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
+        with scoped_temp_dir(work_dir):
+            _extract_audio_step(video_path, original_wav, total_duration=video_dur)
+            _run_processing_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
 
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True

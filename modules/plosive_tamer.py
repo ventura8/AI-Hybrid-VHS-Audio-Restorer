@@ -24,6 +24,7 @@ import scipy.signal
 import soundfile as sf
 
 from .config import APL_ENABLE_PLOSIVE_TAMER, APL_PLOSIVE_EXCESS_DB, APL_TONAL_FLATNESS_MAX
+from .hygiene import atomic_target
 from .impulse_repair import _spans
 from .spectral_denoise import estimate_tonality
 from .utils import log_msg
@@ -197,10 +198,14 @@ def _low_band(samples, rate):
 
 
 def tame_file(source_wav, target_wav, events, low_db, baseline):
-    """Writes the recording with each event's low-band excess taken out; returns the target."""
+    """Writes the recording with each event's low-band excess taken out; returns the target.
+
+    The file is published only once complete, so an interrupted run leaves no fragment.
+    """
     with (
+        atomic_target(target_wav) as partial,
         sf.SoundFile(str(source_wav)) as source,
-        sf.SoundFile(str(target_wav), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
+        sf.SoundFile(str(partial), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
     ):
         rate, length = source.samplerate, source.frames
         gain = gain_curve(events, low_db, baseline, length, rate)

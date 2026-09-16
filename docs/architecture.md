@@ -448,6 +448,15 @@ speed instability; otherwise `shift` is used.
 - Stem detection accepts every naming convention `audio-separator` emits,
   case-insensitively.
 - Temporary work directories are isolated per input and preserved on failure.
+- Every stage, streaming Python writers included, renders to a same-directory
+  `.tmp` partial and publishes it with one rename; a partial that survives a
+  power loss is swept when the work directory is reopened, so a resume never
+  reads a fragment as a finished stage.
+- The final mux renders inside the work directory and is moved next to the
+  source only once verified, so nothing is ever left beside the video.
+- While a video is processed, `tempfile` and the `TMP`/`TEMP`/`TMPDIR`
+  variables child processes inherit point at `.temp_work_<video>/tmp`, so
+  library scratch leaves with the work directory.
 
 ## Quality Gates
 

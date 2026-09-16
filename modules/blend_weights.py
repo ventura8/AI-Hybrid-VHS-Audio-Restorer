@@ -43,6 +43,7 @@ try:
 except ImportError:
     sf = None
 
+from .hygiene import atomic_target
 from .utils import log_msg
 
 # The analysis window the weights were fitted with. Changing it invalidates the model,
@@ -405,7 +406,8 @@ def _write_blend(sources, rate, length, channels, model, target):
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     statistics = _recording_statistics(sources[0], rate, length, channels, target.with_suffix(".magnitudes"))
-    with sf.SoundFile(str(target), "w", samplerate=rate, channels=channels, subtype="FLOAT") as out:
+    complete = False
+    with atomic_target(target) as partial, sf.SoundFile(str(partial), "w", samplerate=rate, channels=channels, subtype="FLOAT") as out:
         for first in range(0, _frame_count(length), BLOCK_FRAMES):
             last = min(first + BLOCK_FRAMES, _frame_count(length))
             block = _blend_block(sources, rate, length, channels, model, statistics, first, last)
@@ -413,7 +415,9 @@ def _write_blend(sources, rate, length, channels, model, target):
                 break
             out.write(block)
         else:
-            return target
+            complete = True
+    if complete:
+        return target
     target.unlink(missing_ok=True)
     return None
 

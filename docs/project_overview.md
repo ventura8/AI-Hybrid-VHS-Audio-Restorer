@@ -8,9 +8,11 @@ lower-spec configurations.
 ## Directory Structure
 
 - `input/`: Source video files (MP4, MKV, etc.).
-- `output/`: Final restored videos.
-- `temp_work/`: Temporary directory for intermediate tracks (automatically
-  purged on valid output when `KEEP_INPUT_FILES` is false; `process_hybrid_audio()`
-  may bypass cleanup when a valid output already exists).
+- Restored videos are written next to their source with a mode-specific
+  `*_Cleaned` suffix; the launch directory only receives `session_log.txt`.
+- `.temp_work_<video>/`: Hidden work directory created next to each source
+  video, holding every intermediate track, sidecar and library scratch file for
+  that restoration. It is removed once the output is valid, also when a rerun
+  finds the output already there, and kept for a resume otherwise.
 - `venv/`: Local Python virtual environment.
 - `assets/`: UI assets like logos.

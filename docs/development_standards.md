@@ -29,9 +29,17 @@
   steps to ensure checkpoints are not corrupted.
 - **Naming**: Temporary files should include the source stem (e.g.,
   `video_name.wav`).
-- **Cleanup**: `_cleanup_work_dir()` purges `temp_work` only after a valid output
-  is produced and `KEEP_INPUT_FILES` is false. `process_hybrid_audio()` may
-  bypass cleanup when a valid output already exists.
+- **Atomic Writes**: Every stage writes through `atomic_target()` (or the
+  `.tmp` partial convention it wraps) and publishes with one rename. A file
+  cut off by a power loss keeps a valid WAV header, so a stage that streamed
+  straight into its target would be resumed from a fragment.
+- **Nothing Outside the Work Directory**: Stage outputs, sidecars, the staged
+  final render and library scratch (`tempfile`, `TMP`/`TEMP`/`TMPDIR` for
+  child processes) all live under `.temp_work_<video>/` beside the source.
+- **Cleanup**: `_cleanup_work_dir()` removes the work directory only after a
+  valid output exists and `KEEP_INPUT_FILES` is false, including when a rerun
+  skips a task whose output is already there. `sweep_partials()` clears
+  unpublished partials when a work directory is reopened for a resume.
 - **Testing & Coverage**: Maintain **>= 90% total coverage** and **>= 90%
   per-file coverage** for every measured file. The per-file gate is enforced via
   `tests/tooling/quality_gate.py` over `coverage.json` in both local and CI
