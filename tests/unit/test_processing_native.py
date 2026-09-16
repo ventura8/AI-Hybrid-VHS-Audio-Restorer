@@ -479,6 +479,7 @@ def test_deess_vocals_step_disabled(tmp_path):
 @patch("modules.processing.run_command_with_progress")
 @patch("modules.processing.is_valid_audio")
 def test_deess_vocals_step_active(mock_valid, mock_run, tmp_path):
+    mock_run.side_effect = lambda cmd, **kwargs: Path(cmd[-1]).write_text("rendered")
     """Verify de-esser execution when enabled."""
     v = tmp_path / "vocals.wav"
     v.write_text("audio")
@@ -500,6 +501,7 @@ def test_expand_background_step_disabled(tmp_path):
 @patch("modules.processing.run_command_with_progress")
 @patch("modules.processing.is_valid_audio")
 def test_expand_background_step_active(mock_valid, mock_run, tmp_path):
+    mock_run.side_effect = lambda cmd, **kwargs: Path(cmd[-1]).write_text("rendered")
     """Verify expander execution when enabled."""
     b = tmp_path / "bg.wav"
     b.write_text("audio")

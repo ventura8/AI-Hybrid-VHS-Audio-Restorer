@@ -229,3 +229,60 @@ or a leading dot, is ignored with a warning on stderr and the setting falls
 back to its default. A model file that fails to
 load is deleted from `models/` so it can be re-downloaded, and only a file
 inside that directory is ever deleted.
+
+## Long Captures
+
+`neural_chunk_seconds` is the longest track the UVR denoiser is given in one
+pass. The separator keeps several full-length copies of the track in memory
+after inference, about 30 GB per hour of audio (48 GB measured on a 94-minute
+chunk), so a long capture fails outright: a 3h00m tape runs out of memory on
+a 62 GB machine. The default, `0`, sizes the chunk from the machine: half its
+memory at that rate, between five minutes and two hours: 57 minutes on a
+62 GB desktop, 28 on a 30 GB laptop, 11 on a 12 GB machine. A track longer than
+that is cut into equal chunks no longer than it, each denoised on its own and
+rejoined; tracks up to it are processed whole, exactly as before. A positive
+value fixes the length, and one longer than any capture keeps every track
+whole at the cost of memory. Inside a container the sizing reads the cgroup
+memory limit rather than the host's total, so a `--memory 8g` container gets
+seven-minute chunks and not a chunk sized to the machine it runs on.
+
+The floor is a real one. Measured on an 88-minute capture in memory-limited
+containers on the same GPU: a 16 GB container restored it in six
+fifteen-minute chunks with nothing to spare on the way in; an 8 GB container
+was killed after the spectral subtraction, before the chunked denoiser was
+reached, because the stages ahead of it hold the whole track. Plan on 16 GB
+for captures of an hour or more.
+
+Chunking is built so its result is the whole-file result to within float
+rounding, not merely a good approximation of it, and each part of that is
+measured on an 88-minute capture cut into three:
+
+- Chunks overlap by two seconds and are rejoined with a linear crossfade.
+  Both sides of a seam are the same audio denoised twice, so a linear fade
+  sums to unity where an equal-power fade would leave a +3 dB bump.
+- Each chunk starts on a multiple of the models' patch stride (192 frames of
+  a 1024-sample hop for `UVR-DeNoise-Lite`, of a 480-sample hop for
+  `UVR-DeNoise`; 66.9 s at 44.1 kHz), so its frames and windows fall on the
+  grid the whole file's would.
+- The model normalises its spectrogram by the file's maximum before
+  inference, and a chunk on its own would be scaled by its own loudest moment
+  instead. That alone left a chunk's body 33 dB below the signal from the
+  whole-file result. Every chunk that does not already contain the file's
+  loudest stride-aligned block is given it as a lead-in, dropped at the join.
+- Each chunk also carries one stride of the true audio before and after it,
+  dropped at the join, so its edges are denoised in real context rather than
+  against the model's reflection padding.
+- Loudness is normalised once over the joined result, under the same rule a
+  whole track gets. The separator also peak-limits each file it writes; a
+  chunk it limited on its own would step the level at a seam, so such a chunk
+  is denoised again at half scale, which the model is indifferent to since it
+  normalises its input, and the join doubles it back. Only a chunk that limits
+  pays for that, in the fidelity of half-precision inference on a rescaled
+  input, about -57 dB; on the second three-hour capture in the test folder it
+  was one chunk of two.
+
+With all of that in place the join matches the whole-file output on 99.97% of
+samples, with the body at -103 dB and the seams at -156 dB relative to the
+signal; the worst single sample is -68 dB. Chunks shorter than the automatic
+length buy nothing: the lead-in already gives every chunk the file's maximum,
+and each chunk costs a stride of context either side.

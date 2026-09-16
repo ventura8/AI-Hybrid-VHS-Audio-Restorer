@@ -3,6 +3,7 @@
 ![AI Hybrid VHS Audio Restorer Logo](assets/logo.svg)
 
 ![Python](assets/python.svg) ![Coverage](assets/coverage.svg)
+[![Downloads][downloads-badge]][releases]
 
 ## Documentation
 
@@ -218,11 +219,13 @@ Output naming is mode-specific:
 ### ✨ Key Features
 
 - **Robust Resume**: Automatically detects existing output files for every step.
-  If you crash or stop the script, simply run it again. It skips finished work
-  and resumes where it left off.
-- **Local Temp Files**: Creates hidden temporary folders (e.g.,
-  `.temp_work_video_name`) next to your input file, keeping your project root
-  clean. Auto-deletes on success.
+  If you crash, lose power or stop the script, simply run it again. Every stage
+  publishes its file only once complete, unfinished partials are swept on the
+  next start, and finished work is skipped.
+- **Local Temp Files**: Creates one hidden temporary folder (e.g.,
+  `.temp_work_video_name`) next to your input file that holds every
+  intermediate, the staged final render and library scratch, keeping your
+  project root and system temp clean. Auto-deletes on success.
 - **Windows-Ready**: Optimized for standard Windows terminals (cmd/PowerShell)
   with strict 80-column log formatting to prevent wrapping.
 
@@ -534,3 +537,6 @@ Both local validation and CI fail when either gate is violated.
 - **Resemble-Enhance**:
   [resemble-ai/resemble-enhance](https://github.com/resemble-ai/resemble-enhance)
 - **FFmpeg**: [ffmpeg.org](https://ffmpeg.org/)
+
+[downloads-badge]: https://img.shields.io/github/downloads/ventura8/AI-Hybrid-VHS-Audio-Restorer/total?label=downloads
+[releases]: https://github.com/ventura8/AI-Hybrid-VHS-Audio-Restorer/releases

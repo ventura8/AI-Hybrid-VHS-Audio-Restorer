@@ -133,8 +133,27 @@ def _print_log_message(message):
         print(text.encode(encoding, errors="backslashreplace").decode(encoding))
 
 
+# The session log lives in the launch directory and every run appends to it; without a
+# cap it grows for as long as the tool is used. One previous generation is kept.
+LOG_ROTATE_BYTES = 10 * 1024 * 1024
+
+
+def _rotate_log_file(log_file=None, limit=None):
+    """Moves the session log aside once it passes the size cap; the previous generation is replaced."""
+    log_file = Path(LOG_FILE if log_file is None else log_file)
+    limit = LOG_ROTATE_BYTES if limit is None else limit
+    try:
+        if log_file.stat().st_size < limit:
+            return False
+        os.replace(str(log_file), str(log_file.with_name(f"{log_file.name}.1")))
+        return True
+    except OSError:
+        return False
+
+
 def _append_log_file(effective_level, clean_msg):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _rotate_log_file()
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [{effective_level:5}] {clean_msg}\n")
 

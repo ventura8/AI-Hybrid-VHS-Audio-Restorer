@@ -37,6 +37,7 @@ try:
 except ImportError:
     sf = None
 
+from .hygiene import atomic_target
 from .utils import log_msg
 
 CHUNK_SECONDS = 60.0
@@ -181,9 +182,9 @@ def denoise(input_wav, output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     target = target_path(input_wav, output_dir)
-    with sf.SoundFile(str(input_wav)) as source:
+    with atomic_target(target) as partial, sf.SoundFile(str(input_wav)) as source:
         rate = source.samplerate
-        with sf.SoundFile(str(target), "w", samplerate=rate, channels=source.channels, subtype="FLOAT") as out:
+        with sf.SoundFile(str(partial), "w", samplerate=rate, channels=source.channels, subtype="FLOAT") as out:
             _stream_denoise(source, out, loaded, int(CHUNK_SECONDS * rate), int(OVERLAP_SECONDS * rate))
     log_msg("    [DeepFilterNet] Denoised the full mix.")
     return target

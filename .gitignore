@@ -48,6 +48,7 @@ temp_ffmpeg/
 # --- Logs & Temporary Files ---
 *.log
 session_log.txt
+session_log.txt.1
 temp_common.txt
 .DS_Store
 *.tmp

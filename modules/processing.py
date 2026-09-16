@@ -9,6 +9,7 @@ Orchestrates multi-stage audio restoration pipelines across four modes:
 - arnndn_speech: FFmpeg RNNoise recurrent neural network speech denoiser + Sync + Remux.
 """
 
+import errno
 import hashlib
 import json
 import re
@@ -30,6 +31,7 @@ except ImportError:
 from . import apl_chain as _apl_chain
 from . import deepfilter_denoise as _deepfilter
 from . import denoise_cache as _denoise_cache
+from . import denoise_chunking as _denoise_chunking
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
 from . import resemble_denoise as _resemble
@@ -58,6 +60,7 @@ from .filters import (
     build_pre_denoise_surgical_filter,
 )
 from .hardware import CPU_THREADS, CUDA_ENV, CUDA_VISIBLE_DEVICE, GPU_BATCH_SIZE
+from .hygiene import atomic_target, partial_path, publish, remove_tree, scoped_temp_dir, sweep_partials
 from .sync import _align_stems
 from .utils import (
     FFMPEG_BIN,
@@ -281,7 +284,7 @@ def _verify_separation_output(separation_out_dir, original_wav):
     return None, None
 
 
-def _build_separator(output_dir):
+def _build_separator(output_dir, normalization_threshold=_denoise_chunking.WHOLE_FILE_PEAK):
     """Configures audio-separator instance with dynamic batching parameters."""
     Separator = _get_audio_separator_class()
     model_dir = MODELS_DIR
@@ -291,7 +294,7 @@ def _build_separator(output_dir):
         model_file_dir=str(model_dir),
         output_format="wav",
         use_soundfile=True,
-        normalization_threshold=0.9,
+        normalization_threshold=normalization_threshold,
         vr_params={"batch_size": GPU_BATCH_SIZE, "window_size": 320},
         mdxc_params={"batch_size": GPU_BATCH_SIZE},
         mdx_params={"batch_size": GPU_BATCH_SIZE},
@@ -429,9 +432,10 @@ def _prepare_clean_directory(path):
 
 
 def _copy_result_to_final_dir(result, output_dir):
-    """Copies temporary processing result to final output destination."""
+    """Copies temporary processing result to final output destination, published atomically."""
     final_output = output_dir / result.name
-    shutil.copy(result, final_output)
+    with atomic_target(final_output) as partial:
+        shutil.copy(result, partial)
     return final_output
 
 
@@ -511,21 +515,51 @@ def _select_denoised_candidate(candidates_denoised, warning_message, input_wav, 
     return _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure)
 
 
+def _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, fallback_on_failure):
+    """Denoises the track in one pass and selects the clean stem from what the separator wrote."""
+    separator = _build_separator(denoised_output_dir)
+    _load_separator_model(separator, model_name)
+    log_msg("    [AI] Starting Inference (GPU Accelerated)...")
+    separator.separate(str(input_wav))
+    candidates_denoised = sorted(denoised_output_dir.glob("*.wav"), key=lambda path: path.name.lower())
+    return _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure)
+
+
+def _denoise_one_chunk(model_name):
+    """The per-chunk denoiser handed to the chunking module.
+
+    Chunks are written with the separator's peak limit at full scale so the level is not
+    stepped at a seam; the whole-file rule is applied once by the join.
+    """
+
+    def denoise_chunk(chunk_wav, out_dir):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        separator = _build_separator(out_dir, normalization_threshold=_denoise_chunking.CHUNK_PEAK)
+        _load_separator_model(separator, model_name)
+        separator.separate(str(chunk_wav))
+        produced = _denoise_chunking.clean_output_in(out_dir)
+        if produced is None:
+            raise RuntimeError(f"UVR-DeNoise produced no clean stem for {chunk_wav.name}")
+        return produced
+
+    return denoise_chunk
+
+
 def _run_denoise_separator(
     input_wav, denoised_output_dir, selected_label, warning_message, error_message, fallback_on_failure=True, denoise_model=None
 ):
-    """Runs UVR-DeNoise-Lite through audio-separator and selects best output."""
+    """Runs UVR-DeNoise-Lite through audio-separator and selects best output.
+
+    A track longer than the configured chunk length is denoised in overlapping chunks and
+    rejoined, because the separator's memory scales with duration; every shorter track takes
+    the single-pass path it always has.
+    """
     try:
-        separator = _build_separator(denoised_output_dir)
-
         model_name = _resolve_override(denoise_model, DENOISE_MODEL)
-        _load_separator_model(separator, model_name)
-
-        log_msg("    [AI] Starting Inference (GPU Accelerated)...")
-        separator.separate(str(input_wav))
-
-        candidates_denoised = sorted(denoised_output_dir.glob("*.wav"), key=lambda path: path.name.lower())
-        result = _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure)
+        if _denoise_chunking.duration_needs_chunking(input_wav):
+            result = _denoise_chunking.run(input_wav, denoised_output_dir, _denoise_one_chunk(model_name))
+        else:
+            result = _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, fallback_on_failure)
         log_msg(f"    {selected_label}: {result.name}")
         return _ensure_float_pcm(result)
 
@@ -711,6 +745,41 @@ def _ensure_audio_inputs_exist(*named_audio_paths):
             raise FileNotFoundError(f"Missing {label} input for mux: {path}")
 
 
+def _staged_output_path(final_output_video, staging_dir):
+    """Where the muxer renders before the result is published next to the source.
+
+    The render is staged inside the work directory rather than beside the final file, so
+    an interrupted mux leaves nothing outside the folder the restoration owns.
+    """
+    return partial_path(Path(staging_dir) / final_output_video.name)
+
+
+def _publish_staged_output(tmp_path, final_path):
+    """Moves a finished render to its destination, replacing any previous output in one step.
+
+    On the same volume that is a single rename. Across volumes the bytes are copied to a
+    partial beside the destination first and that partial is renamed over it, because a
+    copy straight to the destination would leave a truncated video there if it were
+    interrupted, and a validity check on a later run could take it for a finished output.
+    The previous output is never removed up front, so a failed copy leaves it intact.
+    """
+    try:
+        publish(tmp_path, final_path)
+        return
+    except OSError as error:
+        # Only a rename that cannot cross volumes is a reason to copy. Any other failure,
+        # including a sync after the rename has already moved the file, is the caller's.
+        if error.errno != errno.EXDEV:
+            raise
+    partial = partial_path(final_path)
+    try:
+        shutil.copy2(str(tmp_path), str(partial))
+        publish(partial, final_path)
+    finally:
+        partial.unlink(missing_ok=True)
+    tmp_path.unlink(missing_ok=True)
+
+
 def _promote_valid_output(tmp_path, final_path, error_message):
     """Atomically promotes valid temporary video file to final destination.
 
@@ -720,9 +789,7 @@ def _promote_valid_output(tmp_path, final_path, error_message):
         error_message (str): Exception message if output is invalid.
     """
     if is_valid_video(tmp_path):
-        if final_path.exists():
-            final_path.unlink()
-        tmp_path.rename(final_path)
+        _publish_staged_output(tmp_path, final_path)
         return
 
     if tmp_path.exists():
@@ -743,7 +810,7 @@ def _final_mix_step(
     duration = total_duration or get_audio_duration_sec(aligned_vocals)
     _ensure_audio_inputs_exist(("Vocals", aligned_vocals), ("Background", aligned_background))
 
-    tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
+    tmp_output = _staged_output_path(final_output_video, aligned_vocals.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
     loudnorm_args = _resolve_loudnorm_args(
         video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration
@@ -830,7 +897,7 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
     duration = total_duration or get_audio_duration_sec(processed_audio_wav)
     _ensure_audio_inputs_exist(("Processed Audio", processed_audio_wav))
 
-    tmp_output = final_output_video.with_suffix(f".tmp{final_output_video.suffix}")
+    tmp_output = _staged_output_path(final_output_video, processed_audio_wav.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
     loudnorm_args = _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=duration)
     filter_expr = _build_single_audio_filter_expression(loudnorm_args)
@@ -978,7 +1045,14 @@ def _process_arnndn_speech_mode(work_dir, original_wav, video_path, final_output
 
 
 def _run_dsp_filter_file(input_wav, output_wav, filter_expr, desc, total_duration):
-    """Executes FFmpeg audio filter on a WAV file with robust fallback."""
+    """Executes FFmpeg audio filter on a WAV file with robust fallback.
+
+    The filter renders to a partial and only a complete, valid render is published; a
+    failed or interrupted render leaves nothing a resumed run could mistake for the stage
+    output.
+    """
+    output_wav = Path(output_wav)
+    tmp_wav = partial_path(output_wav)
     cmd = [
         FFMPEG_BIN,
         "-threads",
@@ -992,13 +1066,22 @@ def _run_dsp_filter_file(input_wav, output_wav, filter_expr, desc, total_duratio
         "-ar",
         str(PIPELINE_SAMPLE_RATE),
         "-y",
-        str(output_wav),
+        str(tmp_wav),
     ]
     try:
         run_command_with_progress(cmd, description=desc, total_duration=total_duration)
     except Exception as e:
+        # A killed encoder leaves a WAV whose header still reads as valid audio, so the
+        # validity check below would publish a truncated render as the stage's output.
+        # Publication is gated on the command having finished, not on the file looking right.
         log_msg(f"    [Warning] {desc} failed: {e}", is_error=True)
-    return output_wav if is_valid_audio(output_wav) else input_wav
+        tmp_wav.unlink(missing_ok=True)
+        return input_wav
+    if is_valid_audio(tmp_wav):
+        publish(tmp_wav, output_wav)
+        return output_wav
+    tmp_wav.unlink(missing_ok=True)
+    return input_wav
 
 
 def _deess_vocals_step(vocals_wav, enhanced_vocals_dir, total_duration=None):
@@ -1358,13 +1441,12 @@ def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, v
 
 
 def _cleanup_work_dir(work_dir, final_output_video):
+    """Removes the work directory once the output is valid; keeps it for a resume otherwise."""
     if not work_dir.exists() or KEEP_INPUT_FILES:
         return
     if is_valid_video(final_output_video):
-        try:
-            shutil.rmtree(work_dir, ignore_errors=True)
-        except Exception:
-            pass
+        if not remove_tree(work_dir):
+            log_msg(f"  [Warning] Could not remove {work_dir.name}; it is safe to delete by hand.", is_error=True)
         return
     log_msg(f"  [System] Preservation: Keeping {work_dir.name} for inspection on failure.", level="DEBUG")
 
@@ -1398,14 +1480,19 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
 
     if is_valid_video(final_output_video):
         log_msg("  [System] Output already exists. Skipping.")
+        # A run cut off between publishing the output and tidying up leaves its work
+        # directory behind; a skipped task still owes that cleanup.
+        _cleanup_work_dir(work_dir, final_output_video)
         return True
 
     try:
         work_dir.mkdir(exist_ok=True)
+        sweep_partials(work_dir)
         original_wav = work_dir / "original.wav"
         video_dur = _log_video_duration(video_path)
-        _extract_audio_step(video_path, original_wav, total_duration=video_dur)
-        _run_processing_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
+        with scoped_temp_dir(work_dir):
+            _extract_audio_step(video_path, original_wav, total_duration=video_dur)
+            _run_processing_mode(work_dir, original_wav, video_path, final_output_video, video_dur)
 
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True
