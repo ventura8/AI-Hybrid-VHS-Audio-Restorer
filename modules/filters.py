@@ -52,6 +52,7 @@ from .utils import (
     is_valid_audio,
     log_msg,
 )
+from .version import __version__
 
 __all__ = [
     "build_post_denoise_cleanup_filter",
@@ -347,7 +348,7 @@ def _fetch_remote_model_bytes(model_name):
     expected_hash = _get_pinned_arnndn_digest(model_name)
     conn = http.client.HTTPSConnection(ARNNDN_REMOTE_HOST, timeout=30)
     try:
-        conn.request("GET", _get_remote_model_url_path(model_name), headers={"User-Agent": "AI-Hybrid-VHS-Audio-Restorer/1.2.0"})
+        conn.request("GET", _get_remote_model_url_path(model_name), headers={"User-Agent": f"AI-Hybrid-VHS-Audio-Restorer/{__version__}"})
         resp = conn.getresponse()
         if resp.status != 200:
             raise RuntimeError(f"HTTP response error {resp.status}: {resp.reason}")

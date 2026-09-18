@@ -130,6 +130,11 @@ _NUMERIC_CONFIG_FIELDS = (
     ("cathar_dereverb_strength", float, 2.0, 0.0),
     ("linear_air_gain_db", float, 2.0, None),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
+    # The longest track the UVR denoiser is given in one pass; longer ones are cut into
+    # equal overlapping chunks no longer than this. The separator needs about 30 GB of
+    # host memory per hour of audio, so 0 (the default) sizes the chunk from the machine:
+    # half its memory at that rate, between five minutes and two hours.
+    ("neural_chunk_seconds", float, 0.0, 0.0),
     # Spectral subtraction factor, set from real tapes rather than synthetic fixtures.
     #
     # 1.8 was chosen on paired fixtures and is too gentle for real material. Measured across
@@ -695,6 +700,7 @@ VOCALS_MODEL = _model_filename("vocals_model", CONFIG["vocals_model"], DEFAULT_V
 BACKGROUND_MODEL = _model_filename("background_model", CONFIG["background_model"], DEFAULT_BACKGROUND_MODEL)
 DENOISE_MODEL = _model_filename("denoise_model", CONFIG["denoise_model"], DEFAULT_DENOISE_MODEL)
 ADAPTIVE_DENOISE_THRESHOLD_DB = float(CONFIG.get("adaptive_denoise_threshold_db", -50.0))
+NEURAL_CHUNK_SECONDS = float(CONFIG.get("neural_chunk_seconds", 0.0))
 ENHANCE_NFE = str(CONFIG["enhance_nfe"])
 ENHANCE_TAU = str(CONFIG["enhance_tau"])
 SYNC_METHOD = CONFIG["sync_method"]

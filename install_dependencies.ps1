@@ -373,8 +373,6 @@ Invoke-CheckedCommand $VenvPy @("scripts/apply_patches.py")
 # 5. Create directories
 Write-Information "`nStep 4: Creating project structure..."
 New-Item -ItemType Directory -Force -Path "input" | Out-Null
-New-Item -ItemType Directory -Force -Path "output" | Out-Null
-New-Item -ItemType Directory -Force -Path "temp_work" | Out-Null
 
 # 6. Create launcher
 Write-Information "Step 5: Creating launcher..."

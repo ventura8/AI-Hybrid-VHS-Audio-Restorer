@@ -261,6 +261,24 @@ Like `auto_pure` and `multipass_auto`, this mode reuses the shared Pass 2 analog
 pre-conditioning stage. It intentionally has no BS-RoFormer separation, speech de-esser,
 background expander, or `amix` stage.
 
+### Long captures
+
+Every UVR denoise call (Pass 7 here, and the stem denoisers of the two-stem
+modes) goes through one runner. A track longer than the chunk length, which
+`neural_chunk_seconds` fixes or, at its default of 0, is sized from the
+machine's memory at the separator's measured 30 GB per hour, is denoised in
+`modules/denoise_chunking.py`: equal chunks no longer than that, each
+starting on the models' patch stride, led in by the
+file's loudest block so the model normalises it as it would the whole file,
+carrying a stride of true context either side, denoised one at a time and
+rejoined with a two-second linear crossfade. The join is streamed, keeps one
+overlap in hand, is normalised once under the whole-file rule, and is
+published atomically; each chunk's output is kept until then, so an
+interrupted run resumes from the chunks it finished. Measured on an 88-minute
+capture cut in three, the join matches the whole-file output on 99.97% of
+samples with the remainder at float rounding. Shorter tracks take the
+single-pass path unchanged.
+
 ## Mode: `auto`
 
 Profiles the audio, then runs whichever pipeline the strategy selects. When
@@ -448,6 +466,17 @@ speed instability; otherwise `shift` is used.
 - Stem detection accepts every naming convention `audio-separator` emits,
   case-insensitively.
 - Temporary work directories are isolated per input and preserved on failure.
+- Every stage, streaming Python writers included, renders to a same-directory
+  `.tmp` partial and publishes it with one rename, after flushing it to
+  stable storage and, on POSIX, its directory too; a partial that survives a
+  power loss is swept when the work directory is reopened, so a resume never
+  reads a fragment as a finished stage.
+- The final mux renders inside the work directory and is moved next to the
+  source only once verified. The finished output is what stays beside the
+  video; an unfinished render is never left there.
+- While a video is processed, `tempfile` and the `TMP`/`TEMP`/`TMPDIR`
+  variables child processes inherit point at `.temp_work_<video>/tmp`, so
+  library scratch leaves with the work directory.
 
 ## Quality Gates
 

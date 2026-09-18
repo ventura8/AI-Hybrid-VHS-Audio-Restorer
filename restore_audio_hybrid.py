@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-from modules.config import OUTPUT_DIR, PROCESS_MODE
+from modules.config import PROCESS_MODE
 from modules.processing import process_hybrid_audio
 from modules.ui import _get_input_files, _show_banner, run_init_sequence
 from modules.utils import check_dependencies
@@ -75,8 +75,6 @@ def _run_restoration():
     print(" [HOW TO USE]")
     print(" 1. Drag and Drop a video file (or folder) here.")
     print(" 2. Or paste the file path below.")
-
-    OUTPUT_DIR.mkdir(exist_ok=True)
 
     # 3. Get Inputs
     files, use_source_as_output = _get_input_files()

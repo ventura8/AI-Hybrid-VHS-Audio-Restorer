@@ -337,7 +337,7 @@ fi
 
 # Step 5: Create Folders & Launcher
 echo -e "\nStep 5: Creating Project Directories & Launcher..."
-mkdir -p input output temp_work
+mkdir -p input
 
 cat << 'EOF' > "$SCRIPT_DIR/start.sh"
 #!/usr/bin/env bash

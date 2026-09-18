@@ -38,6 +38,7 @@ import scipy.signal
 import soundfile as sf
 
 from .config import APL_ENABLE_HUM_CANCEL, APL_HUM_BANDWIDTH_HZ, APL_HUM_MAX_HARMONICS, APL_HUM_SKIP_NOTCHED, APL_TONAL_FLATNESS_MAX
+from .hygiene import atomic_target
 from .spectral_denoise import (
     MAINS_HARMONICS,
     _scannable_mono,
@@ -360,10 +361,11 @@ def _synthesise(envelope, freqs_hz, start, count, sample_rate, hop, window):
 
 
 def subtract(source_wav, target_wav, envelope, freqs_hz, hop=ANALYSIS_HOP, window=ANALYSIS_WINDOW):
-    """Writes the source less the resynthesised lines, a block at a time."""
+    """Writes the source less the resynthesised lines, a block at a time, publishing only a complete file."""
     with (
+        atomic_target(target_wav) as partial,
         sf.SoundFile(str(source_wav)) as handle,
-        sf.SoundFile(str(target_wav), "w", samplerate=handle.samplerate, channels=handle.channels, subtype="FLOAT") as out,
+        sf.SoundFile(str(partial), "w", samplerate=handle.samplerate, channels=handle.channels, subtype="FLOAT") as out,
     ):
         start = 0
         for block in handle.blocks(blocksize=BLOCK_SAMPLES, dtype="float32", always_2d=True):

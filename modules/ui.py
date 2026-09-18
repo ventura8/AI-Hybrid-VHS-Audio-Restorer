@@ -22,6 +22,7 @@ from .config import (
 )
 from .hardware import CPU_THREADS, GPU_BATCH_SIZE, GPU_VRAM_GB, PROFILE_NAME, get_cpu_name, get_gpu_name
 from .utils import draw_progress_bar
+from .version import __version__
 
 # Constants imported from config via restore_audio_hybrid normally,
 # but we can access them here or pass them.
@@ -85,7 +86,7 @@ def _get_active_models_label():
 
 def _print_banner(cpu_name, gpu_name, torch_backend):
     print("=" * 60)
-    print("   AI HYBRID VHS AUDIO RESTORER - v1.2.0")
+    print(f"   AI HYBRID VHS AUDIO RESTORER - v{__version__}")
     print(f"   Running on: {platform.system()} {platform.release()}")  # pragma: no cover
     print("=" * 60 + "\n")  # pragma: no cover
 
