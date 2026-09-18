@@ -35,9 +35,9 @@ Core goals:
 
 | Mode | Alias | Output suffix |
 |---|---|---|
-| `auto_pure_linear` (default) | — | `*_PureLinear_Cleaned` |
+| `auto_pure_linear` | — | `*_PureLinear_Cleaned` |
 | `auto_pure` | `pure` | `*_Pure_Cleaned` |
-| `auto` | — | `*_Auto_Cleaned` |
+| `auto` (default) | — | `*_Auto_Cleaned` |
 | `multipass_auto` | `multipass` | `*_MultiPass_Cleaned` |
 | `cathar` | `cathar_vhs` | `*_Cathar_Cleaned` |
 | `hybrid` | — | `*_Hybrid_Cleaned` |
@@ -49,9 +49,9 @@ Core goals:
 ## Mode Dispatch
 
 Every run extracts audio first, then branches on `process_mode`. `auto`,
-`auto_pure_linear`, `auto_pure`, and `multipass_auto` scan the audio and select
-a restoration strategy; only `auto` may dispatch that strategy to a different
-process mode.
+`auto_pure_linear`, `cathar`, `auto_pure`, and `multipass_auto` scan the audio
+and select a restoration strategy; only `auto` may dispatch that strategy to a
+different process mode.
 
 ```mermaid
 flowchart TD
@@ -281,9 +281,11 @@ single-pass path unchanged.
 
 ## Mode: `auto`
 
-Profiles the audio, then runs whichever pipeline the strategy selects. When
-`enable_multipass` is set and the strategy chooses `hybrid`, the multipass
-pipeline runs instead.
+Profiles the audio, names the material (sustained rhythmic music, dialogue,
+non-vocal music or ambience, tape noise), then runs the engine that the
+real-tape corpus says is best for it, with the pre-conditioning filters, the
+models and the sync method the scan tuned. The engine choice is between the
+two full restoration chains, `auto_pure_linear` and `cathar`.
 
 ```mermaid
 flowchart TD
@@ -292,29 +294,68 @@ flowchart TD
     classDef gate fill:#F9DEDC,stroke:#8C1D18,color:#410E0B,rx:6,ry:6;
     classDef io fill:#DAE2F9,stroke:#3F5F91,color:#001B3E,rx:30,ry:30;
 
-    A(["Extracted WAV"]):::io --> SC["Acoustic scan"]:::ai
-    SC --> ST{"Strategy mode"}:::gate
-    ST -->|"dialogue present"| H{"enable_multipass?"}:::gate
-    H -->|yes| MP["multipass_auto pipeline"]:::ai
-    H -->|no| HY["hybrid pipeline"]:::ai
-    ST -->|"sustained beat"| DO["denoise_only pipeline"]:::ai
-    ST -->|"music or ambience only"| DO
-    ST -->|"tape noise, no dialogue"| FN["auto_ffmpeg_native pipeline"]:::step
-    MP --> OUT(["*_Auto_Cleaned"]):::io
-    HY --> OUT
-    DO --> OUT
+    A(["Extracted WAV"]):::io --> SC["Acoustic scan:<br/>speech, music, rhythm, tonality,<br/>noise floor, hum, clicks, drift"]:::ai
+    SC --> MAT["Material class"]:::step
+    MAT --> NE{"Neural denoiser<br/>installed?"}:::gate
+    NE -->|yes| TB{"Tonal, no silence<br/>for the noise probe?"}:::gate
+    TB -->|no| APL["auto_pure_linear chain"]:::ai
+    TB -->|"yes, cathar installed"| CT["cathar chain"]:::step
+    NE -->|no| CA{"cathar<br/>installed?"}:::gate
+    CA -->|yes| CT
+    CA -->|no| FN["auto_ffmpeg_native chain"]:::step
+    APL --> OUT(["*_Auto_Cleaned"]):::io
+    CT --> OUT
     FN --> OUT
 ```
 
-Rhythm is tested before the dialogue gate. Sung vocals occupy the same
-300–3400 Hz band as speech, so a music video trips every speech test and would
-otherwise always reach stem separation. Measured on a labelled corpus of 21
-speech tapes and 27 music-video slices, the shipped tonal-peak ratio scored at
-chance; onset periodicity keeps all 21 speech tapes on the separation path while
-routing 19 of 27 music slices to `denoise_only`.
+Every acoustic class runs `auto_pure_linear` because the corpus says so for
+each of them. On the 136 readable clips, measured with the trade metric of
+`scripts/measure_tradeoff.py` (noise removed / programme deviation, dB):
 
-Note that `auto` is the only mode that acts on this decision. `auto_pure`,
-`hybrid`, and the rest name one specific pipeline and run it regardless.
+| Class | `auto_pure_linear` | `cathar` | `denoise_only` | `auto_ffmpeg_native` |
+| :--- | ---: | ---: | ---: | ---: |
+| Dialogue (90) | **10.10/0.29** | 6.16/0.31 | 0.33/0.13 | 0.76/0.06 |
+| Rhythmic music (45) | **11.63/0.36** | 5.89/0.66 | 0.73/0.23 | 0.62/0.09 |
+| All (136) | **10.10/0.31** | 6.02/0.44 | 0.35/0.16 | 0.72/0.06 |
+
+`denoise_only` and `auto_ffmpeg_native`, which earlier releases ran for music
+and for tape noise, leave the noise on the tape. `cathar` removes it and is
+beaten on both halves of the trade by `auto_pure_linear` on every class, on
+81 sixty-second excerpts of 21 local tapes (10.12/0.07 against 6.27/0.11) as
+on the corpus, so every class runs `auto_pure_linear` with two exceptions.
+
+What separates the two engines is the noise probe: `auto_pure_linear` learns
+its profile from the quietest 4 s and subtracts at a factor tuned for
+speech, `cathar` from the quietest 0.75 s at a gentler one. Where the tape
+has true silence the 4 s window is noise and `auto_pure_linear` leads on
+both halves; where sustained tonal programme never pauses, the window is
+programme and the subtraction shaves it. That is the one condition, of some
+thirty readings tried on both corpora, under which `cathar` deviates less on
+most clips (10 of 14 and 9 of 15; 0.21 dB against 0.54 and 0.15 against
+0.19), always for 2-3 dB less noise removed. The scanner reads it as
+spectral flatness under `auto_cathar_flatness_max`, the quietest 4 s shaped
+like the loud frames above `auto_cathar_probe_similarity`, and no sustained
+beat, and hands it to `cathar` as a fidelity preference
+(`auto_cathar_tonal`). The second exception is a machine without the neural
+denoiser, where `cathar`, the one full chain that needs no model, is the
+best that can run; `auto_ffmpeg_native` remains as the last resort when
+neither is installed. See the benchmark document, "What `auto` runs".
+
+Rhythm is still tested before the dialogue gate, and the class is still
+reported: sung vocals occupy the same 300–3400 Hz band as speech, so a music
+video trips every speech test. Measured on a labelled corpus of 21 speech tapes
+and 27 music-video slices, the shipped tonal-peak ratio scored at chance;
+onset periodicity keeps all 21 speech tapes read as dialogue while reading 19
+of 27 music slices as rhythmic music.
+
+The `[AI Auto-Scanner] Acoustic Profile Analysis` block prints every measure
+the choice rests on -- speech, music and ambient ratios, onset periodicity
+against the beat threshold, spectral flatness against the chain's tonal gate,
+what the noise probe would learn from, the noise floor and the mains notch
+-- then the class, the verdict with its corpus numbers, and both engines
+with whether each is installed. `auto` is the
+only mode that acts on this decision; `auto_pure_linear` and `cathar` print
+it as advisory and run their own chain regardless.
 
 ## Mode: `multipass_auto`
 

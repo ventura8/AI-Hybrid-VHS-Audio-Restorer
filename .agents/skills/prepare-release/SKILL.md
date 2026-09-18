@@ -277,7 +277,9 @@ When the user asked for the release to be prepared, the amend itself is
 part of the job; confirm first only if the branch has more than one commit
 (squash or keep?).
 
-- Title: `vX.Y.Z: <primary theme in one line>`
+- Title: `vX.Y.Z: <primary theme in one line>` -- detailed, never the bare
+  version; the PR takes the same title (AGENTS.md, "Pull Request
+  Conventions").
 - Body: prose or bullets grouped by theme, in the same register as the release
   notes. For a fix: what was wrong, how it is fixed, how it is tested. Then a
   dependency section listing every bump, a docs section, and the gate result

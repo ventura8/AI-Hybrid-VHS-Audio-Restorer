@@ -26,7 +26,7 @@ VALID_PROCESS_MODES = {
     "cathar",
     "cathar_vhs",
 }
-DEFAULT_PROCESS_MODE = "auto_pure_linear"
+DEFAULT_PROCESS_MODE = "auto"
 DEFAULT_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".mpg", ".mpeg", ".ts", ".m2ts"]
 
 # Single source of truth for mode-specific output naming. Both the processing
@@ -159,6 +159,17 @@ _NUMERIC_CONFIG_FIELDS = (
     # suspect and is cleared: without it the tonal deviation is worse, 0.56.
     ("apl_spectral_alpha_tonal", float, 2.0, 0.0),
     ("apl_tonal_flatness_max", float, 0.035, 0.0),
+    # Where `auto` prefers cathar's fidelity: sustained tonal programme with no silence for
+    # auto_pure_linear's 4 s noise probe to learn from. The tape reads as tonal under this
+    # flatness, and the quietest 4 s carries the programme -- its speech-band spectrum
+    # correlates with the loud frames' above auto_cathar_probe_similarity -- with no
+    # sustained beat. Measured on 136 corpus clips and 81 excerpts of 21 local tapes, that
+    # is the one condition under which cathar deviates less on most clips (10 of 14 and 9
+    # of 15; 0.21 dB against 0.54 and 0.15 against 0.19), always for 2-3 dB less noise
+    # removed; every other reading leaves cathar behind on both halves. A fidelity
+    # preference, not a win: auto_cathar_tonal false keeps auto_pure_linear everywhere.
+    ("auto_cathar_flatness_max", float, 0.04, 0.0),
+    ("auto_cathar_probe_similarity", float, 0.9, 0.0),
     # Seconds of the quietest stretch used to learn the noise profile on tonal material.
     # Music has no true silence: its quietest stretch carries sustained partials, and a
     # profile learned over more of it is more programme. Measured against the general probe
@@ -327,6 +338,7 @@ _BOOL_CONFIG_FIELDS = (
     # 2.07 to cathar's 6, the low band moved 0.48 dB to cathar's 0.55; on the most tonal 45
     # clips deviation reads 0.30 against 0.32 ungated.
     ("apl_enable_hum_cancel", True),
+    ("auto_cathar_tonal", True),
     # Skip the neural denoiser on tonal material. UVR-DeNoise earns its place in aggregate
     # (without it the mode removes 1.05 dB less noise on real tape); on the most tonal
     # third, where the mode loses to cathar on fidelity, its share of that loss was never
@@ -772,6 +784,9 @@ APL_ENABLE_SPECTRAL_DENOISE = bool(CONFIG.get("apl_enable_spectral_denoise", Tru
 APL_SPECTRAL_ALPHA = float(CONFIG["apl_spectral_alpha"])
 APL_SPECTRAL_ALPHA_TONAL = float(CONFIG.get("apl_spectral_alpha_tonal", 2.0))
 APL_TONAL_FLATNESS_MAX = float(CONFIG.get("apl_tonal_flatness_max", 0.035))
+AUTO_CATHAR_FLATNESS_MAX = float(CONFIG.get("auto_cathar_flatness_max", 0.04))
+AUTO_CATHAR_PROBE_SIMILARITY = float(CONFIG.get("auto_cathar_probe_similarity", 0.9))
+AUTO_CATHAR_TONAL = bool(CONFIG.get("auto_cathar_tonal", True))
 APL_NOISEPRINT_TONAL_S = float(CONFIG.get("apl_noiseprint_tonal_s", 4.0))
 APL_TONAL_SKIP_NEURAL = bool(CONFIG.get("apl_tonal_skip_neural", False))
 APL_SPECTRAL_MARGIN_DB = float(CONFIG["apl_spectral_margin_db"])

@@ -9,7 +9,7 @@
 
 ## Process Modes
 
-- `auto_pure_linear` (default): - Full-mix pure-denoising mode for natural
+- `auto_pure_linear`: - Full-mix pure-denoising mode for natural
   archival fidelity. - Uses dual-resolution analysis and analog
   pre-conditioning, then subtracts a learned noise profile, blends the
   result back toward the original per frequency bin, and denoises once with
@@ -163,8 +163,22 @@
   Hz below the threshold, the most tonal third of the corpus -- subtraction
   runs at the gentler factor. At 3.0 that material deviated 0.49 dB against
   cathar's 0.32; at 2.0 it is 0.33 with noise removal still ahead. The gate
-  fires on none of the noisier material. - `apl_use_deepfilternet` (default
-  **false**). DeepFilterNet3 in place of UVR-DeNoise as the neural stage,
+  fires on none of the noisier material. - `auto_cathar_tonal` (default
+  **true**), `auto_cathar_flatness_max` (default 0.04) and
+  `auto_cathar_probe_similarity` (default 0.9). Where `auto` prefers
+  `cathar`'s fidelity: sustained tonal programme with no silence for
+  `auto_pure_linear`'s 4 s noise probe to learn from. The tape reads as
+  tonal under the flatness ceiling, the quietest 4 s carries the programme
+  (its speech-band spectrum correlates with the loud frames' above the
+  similarity), and there is no sustained beat. Measured on 136 corpus clips
+  and 81 excerpts of 21 local tapes, that is the one condition under which
+  `cathar` deviates less on most clips (10 of 14 and 9 of 15; 0.21 dB
+  against 0.54 and 0.15 against 0.19), always for 2-3 dB less noise
+  removed; wins on both halves are a wash, and every other reading leaves
+  `cathar` behind on both. A fidelity preference rather than a win: set
+  `auto_cathar_tonal` to false to keep `auto_pure_linear` there. -
+  `apl_use_deepfilternet` (default **false**). DeepFilterNet3 in place of
+  UVR-DeNoise as the neural stage,
   where it is installed. It wins on synthetic fixtures and loses on real
   tape -- programme deviation 0.22 to 0.66 dB across 50 captures -- so it is
   opt-in. It is a from-source dependency (Rust core built under MSVC,
@@ -181,9 +195,13 @@
   de-hum, surgical CRT whistle notch filter, spectral noise print
   subtraction, de-click/de-crackle, and azimuth phase alignment. -
   `cathar_vhs` is an alias for `cathar`. - Output suffix:
-  `*_Cathar_Cleaned`. - `auto`: - Intelligent acoustic profile scan
-  dynamically selects the optimal restoration engine and model parameters
-  based on measured noise, clicks, and hum. - Suffix: `*_Auto_Cleaned`. -
+  `*_Cathar_Cleaned`. - `auto` (default): - Intelligent acoustic profile scan
+  (speech, music, rhythm, tonality, noise floor, hum, clicks) that names the
+  material, tunes the pre-conditioning and the models, and runs
+  `auto_pure_linear`, the engine that leads `cathar` on every class
+  measured on real tape; runs `cathar` on sustained tonal programme with no
+  silence for the noise probe (`auto_cathar_tonal`) and when the neural
+  denoiser is not installed. - Suffix: `*_Auto_Cleaned`. -
   `multipass_auto` / `multipass`: - Maximum-quality 4-pass cascaded
   restoration. - Dual-resolution acoustic scan -> analog pre-conditioning ->
   stem separation & Resemble-Enhance -> residual polish -> DTW Sync -> final
