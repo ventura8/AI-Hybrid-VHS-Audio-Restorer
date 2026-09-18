@@ -149,19 +149,25 @@ dtw_resolution: 25
 # Controls the complexity and engine of the restoration pipeline.
 #
 # enable_multipass (Multi-Pass Cascaded Pipeline Toggle):
-#   - When true (default), enables 4-pass restoration:
-#     Pass 1 (Dual-Resolution Scan) -> Pass 2 (Analog Pre-Conditioning DSP) ->
-#     Pass 3 (AI Neural Separation & Speech Reconstruction) -> Pass 4 (Residual Polish & DTW Sync).
-#   - Eliminates AI hallucination and phase smearing caused by tape clicks and hum.
+#   - Kept for compatibility and no longer read. It used to send 'auto' to the 4-pass
+#     'multipass_auto' engine on dialogue; that engine measured 0.11 dB of noise removed on
+#     real tape against 10.10 for 'auto_pure_linear', so 'auto' no longer runs it. Set
+#     process_mode to 'multipass_auto' to run the 4-pass engine explicitly.
 #
 # process_mode:
-#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned). (Default)
+#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned).
 #                            Dual-resolution scan, analog pre-conditioning, gated physical repair, hum
 #                            cancellation, plosive control, noise-profile subtraction and UVR-DeNoise.
 #   - 'auto_pure'          : Multi-Step Pure Speech & Ambient Denoising Engine (*_Pure_Cleaned).
 #                            Denoises voice without generative AI vocoder synthesis while cleanly
 #                            conserving and denoising original music and ambient acoustics.
-#   - 'auto'               : AI Auto-Detection & Restoration Engine with Multi-Pass Scan.
+#   - 'auto'               : AI Auto-Detection & Restoration Engine (*_Auto_Cleaned). (Default) Profiles the
+#                            tape (speech, music, rhythm, tonality, noise floor, hum) and runs
+#                            'auto_pure_linear', which leads 'cathar' on every class measured on
+#                            real tape; runs 'cathar' on sustained tonal programme with no silence
+#                            for the noise probe to learn from, where cathar deviates less for
+#                            2-3 dB less removal ('auto_cathar_tonal', false keeps 'auto_pure_linear'
+#                            there), and when the neural denoiser is not installed.
 #   - 'multipass_auto'     : Explicit 4-Pass Cascaded AI & DSP Restoration Engine (*_MultiPass_Cleaned).
 #   - 'multipass'          : Compatibility alias for 'multipass_auto'.
 #   - 'hybrid'             : Full AI separation + vocal enhance + background denoise.
@@ -179,7 +185,7 @@ dtw_resolution: 25
 #                            decrackle, declip, adaptive dehum, dewow, and phase-coherent denoise.
 #   - 'cathar_vhs'         : Compatibility alias for 'cathar'.
 # ------------------------------------------------------------------------------
-process_mode: "auto_pure_linear"
+process_mode: "auto"
 enable_multipass: true
 
 # ------------------------------------------------------------------------------

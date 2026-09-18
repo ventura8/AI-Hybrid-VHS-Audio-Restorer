@@ -1420,7 +1420,11 @@ def _dispatch_mode_pipeline(target_mode, work_dir, original_wav, video_path, fin
 
 
 def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, video_dur):
-    """AI auto-detects scene acoustic characteristics and dispatches best restoration pipeline.
+    """Profiles the tape and runs the engine the scanner picks for it.
+
+    The scanner chooses between the two full restoration chains, auto_pure_linear and
+    cathar, on the evidence recorded beside its rule; the strategy it returns carries the
+    pre-conditioning filters, the models and the sync method the chosen chain reads.
 
     Args:
         work_dir (pathlib.Path): Working directory path.
@@ -1430,14 +1434,9 @@ def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, v
         video_dur (float): Video duration in seconds.
     """
     from .auto_scanner import scan_and_decide_restoration_strategy
-    from .config import ENABLE_MULTIPASS
 
     strategy = scan_and_decide_restoration_strategy(original_wav)
-    target_mode = strategy["mode"]
-    if ENABLE_MULTIPASS and target_mode == "hybrid":
-        _dispatch_mode_pipeline("multipass_auto", work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
-        return
-    _dispatch_mode_pipeline(target_mode, work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+    _dispatch_mode_pipeline(strategy["mode"], work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
 
 def _cleanup_work_dir(work_dir, final_output_video):

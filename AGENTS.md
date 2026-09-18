@@ -50,7 +50,7 @@ ______________________________________________________________________
 
 The engine supports 10 execution modes configured in `config.yaml`:
 
-- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`, the default):
+- **`auto_pure_linear`** (`*_PureLinear_Cleaned.<ext>`):
   - Stages: Dual-resolution scan $\\rightarrow$ analog pre-conditioning
     $\\rightarrow$ pre-denoise surgical bandreject $\\rightarrow$ gated physical
     damage repair $\\rightarrow$ tracked hum cancellation $\\rightarrow$
@@ -64,10 +64,25 @@ The engine supports 10 execution modes configured in `config.yaml`:
     separation. Removes more tape noise than `cathar` while disturbing the
     programme less, and removes mains hum where neither mode used to; see
     `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`.
-- **`auto`** (`*_Auto_Cleaned.<ext>`):
-  - Stages: AI acoustic profiling $\\rightarrow$ dynamic engine & model
-    selection $\\rightarrow$ shift/DTW sync (DTW on drift, shift otherwise,
-    falling back to `SYNC_METHOD` on analysis failure) $\\rightarrow$ remux.
+- **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
+  - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
+    floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the
+    selected engine's chain $\\rightarrow$ shift/DTW sync (DTW on drift, shift
+    otherwise, falling back to `SYNC_METHOD` on analysis failure)
+    $\\rightarrow$ remux.
+  - Engine choice: `auto_pure_linear` on every acoustic class, because it
+    leads `cathar` on each one measured on real tape and the engines the
+    scanner used to pick for music and tape noise (`denoise_only`,
+    `auto_ffmpeg_native`) leave the noise on the tape; `cathar` on sustained
+    tonal programme with no silence for `auto_pure_linear`'s 4 s noise
+    probe (flatness under `auto_cathar_flatness_max`, the quietest 4 s
+    shaped like the loud frames above `auto_cathar_probe_similarity`, no
+    beat), the one condition under which it deviates less on most clips of
+    both the corpus and the local tapes, always for 2-3 dB less removal
+    (`auto_cathar_tonal`); and when the neural denoiser is not installed;
+    `auto_ffmpeg_native` when neither engine is.
+    The numbers sit beside the rule in `modules/auto_scanner.py` and in
+    `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`.
   - Use case: Intelligent single-click end-to-end restoration.
 - **`multipass_auto`** (`*_MultiPass_Cleaned.<ext>`):
   - Stages: Dual-resolution acoustic scan $\\rightarrow$ analog pre-conditioning
@@ -266,7 +281,20 @@ The repository defines the following modular skills in `.agents/skills/`.
 
 ______________________________________________________________________
 
-## 7. Workflows Index
+## 7. Pull Request Conventions
+
+- The PR title is detailed, never the bare version. A release branch takes
+  the release commit's subject, `vX.Y.Z: theme in one line`; any other
+  branch takes `component: what changed and why`. The PR list then reads as
+  a changelog. Only the GitHub Release is titled with the bare tag, which
+  the release workflow does from the description file.
+- The PR body is the GitHub release description without its heading line,
+  followed by the agent's attribution footer. Release PRs open as drafts
+  and are pushed only: no tag, no merge, no un-draft unless asked.
+- Retitle with `gh pr edit NUMBER --title "..."` when the scope grows after
+  the PR is opened, so the title still says what the branch does.
+
+## 8. Workflows Index
 
 Targeted workflow playbooks are maintained under `.agent/workflows/`:
 
