@@ -104,9 +104,11 @@ pair first and match its voice: concrete, measured, no marketing.
   `## Upgrade Notes` (behaviour or config a user could notice), and a closing
   `**Full Changelog**` compare link
   `https://github.com/ventura8/AI-Hybrid-VHS-Audio-Restorer/compare/vPREV...vX.Y.Z`.
-- `vX.Y.Z_github_description.md` is the GitHub Release body: the same
-  `# AI Hybrid VHS Audio Restorer vX.Y.Z - <Theme Title>` heading,
-  `## Highlights`, `## Upgrade Notes`, the compare link, and (when a release
+- `vX.Y.Z_github_description.md` is the GitHub Release body. Its heading is
+  the bare version, `# vX.Y.Z`, and so is the heading of `vX.Y.Z.md`: the
+  release workflow titles the GitHub Release with the bare tag, and the body
+  must not restate a longer name under it. Then `## Highlights`,
+  `## Upgrade Notes`, the compare link, and (when a release
   builds on `cathar`) the standing `## Thanks` to
   [vbasky/cathar](https://github.com/vbasky/cathar). Under a screen.
 

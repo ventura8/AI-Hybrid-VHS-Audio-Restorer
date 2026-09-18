@@ -43,6 +43,7 @@ try:
 except ImportError:
     sf = None
 
+from .hygiene import atomic_target
 from .utils import log_msg
 
 # The analysis window the weights were fitted with. Changing it invalidates the model,
@@ -400,22 +401,32 @@ def _blend_block(sources, rate, length, channels, model, statistics, first, last
     return block
 
 
+class _Refused(Exception):
+    """The model refused a block, so the blend is abandoned part-written."""
+
+
 def _write_blend(sources, rate, length, channels, model, target):
-    """Blends the capture block by block into `target`; None when the model refuses the features."""
+    """Blends the capture block by block into `target`; None when the model refuses the features.
+
+    A refusal raises out of the atomic context rather than falling out of it, so the
+    part-written file is discarded with the partial and never published: leaving the
+    context normally would publish a prefix of the blend over `target`, and deleting it
+    afterwards would also destroy a complete result an earlier run had left there.
+    """
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     statistics = _recording_statistics(sources[0], rate, length, channels, target.with_suffix(".magnitudes"))
-    with sf.SoundFile(str(target), "w", samplerate=rate, channels=channels, subtype="FLOAT") as out:
-        for first in range(0, _frame_count(length), BLOCK_FRAMES):
-            last = min(first + BLOCK_FRAMES, _frame_count(length))
-            block = _blend_block(sources, rate, length, channels, model, statistics, first, last)
-            if block is None:
-                break
-            out.write(block)
-        else:
-            return target
-    target.unlink(missing_ok=True)
-    return None
+    try:
+        with atomic_target(target) as partial, sf.SoundFile(str(partial), "w", samplerate=rate, channels=channels, subtype="FLOAT") as out:
+            for first in range(0, _frame_count(length), BLOCK_FRAMES):
+                last = min(first + BLOCK_FRAMES, _frame_count(length))
+                block = _blend_block(sources, rate, length, channels, model, statistics, first, last)
+                if block is None:
+                    raise _Refused
+                out.write(block)
+    except _Refused:
+        return None
+    return target
 
 
 def _unavailable(model):

@@ -30,6 +30,7 @@ import scipy.signal
 import soundfile as sf
 
 from .blend_weights import FRAME, HOP, _frame_count, _read_frames
+from .hygiene import atomic_target
 from .utils import log_msg
 
 BLOCK_FRAMES = 256
@@ -244,8 +245,9 @@ def suppress_file(source_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, p
     if noise is None:
         return None
     with (
+        atomic_target(target_wav) as partial,
         sf.SoundFile(str(source_wav)) as source,
-        sf.SoundFile(str(target_wav), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
+        sf.SoundFile(str(partial), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
     ):
         length, channels = source.frames, source.channels
         suppressor, emitter = Suppressor(noise, noise_bias, gain_floor_db, dd_alpha), _Emitter(out, length)

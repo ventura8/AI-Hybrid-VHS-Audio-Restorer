@@ -24,14 +24,12 @@ def test_main_success():
         patch("restore_audio_hybrid.run_init_sequence", return_value=("CPU", "GPU")),
         patch("restore_audio_hybrid.check_dependencies", return_value=True),
         patch("restore_audio_hybrid._show_banner"),
-        patch("restore_audio_hybrid.OUTPUT_DIR") as mock_output_dir,
         patch("restore_audio_hybrid._get_input_files", return_value=mock_input_files),
         patch("restore_audio_hybrid.process_hybrid_audio") as mock_process,
         patch("builtins.input"),
     ):
         restore_audio_hybrid.main()
 
-        mock_output_dir.mkdir.assert_called_once()
         mock_process.assert_called_once()
         args, kwargs = mock_process.call_args
         assert args[0] == Path("test.mp4")
@@ -77,7 +75,6 @@ def test_main_no_files():
         patch("restore_audio_hybrid.run_init_sequence", return_value=("CPU", "GPU")),
         patch("restore_audio_hybrid.check_dependencies", return_value=True),
         patch("restore_audio_hybrid._show_banner"),
-        patch("restore_audio_hybrid.OUTPUT_DIR"),
         patch("restore_audio_hybrid._get_input_files", return_value=([], False)),
         patch("builtins.print") as mock_print,
     ):
@@ -93,7 +90,6 @@ def test_main_keyboard_interrupt():
         patch("restore_audio_hybrid.run_init_sequence", return_value=("CPU", "GPU")),
         patch("restore_audio_hybrid.check_dependencies", return_value=True),
         patch("restore_audio_hybrid._show_banner"),
-        patch("restore_audio_hybrid.OUTPUT_DIR"),
         patch("restore_audio_hybrid._get_input_files", return_value=mock_input_files),
         patch("restore_audio_hybrid.process_hybrid_audio"),
         patch("builtins.input", side_effect=KeyboardInterrupt),

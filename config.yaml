@@ -78,6 +78,21 @@ background_model: "UVR-MDX-NET-Inst_HQ_3.onnx"
 denoise_model: "UVR-DeNoise-Lite.pth"
 adaptive_denoise_threshold_db: -50.0
 
+# neural_chunk_seconds:
+#   - The longest track the UVR denoiser processes in one pass, in seconds.
+#   - The separator keeps several full-length copies of the track in memory after
+#     inference, about 30 GB per hour of audio, so a long capture fails outright:
+#     3h00m runs out of memory on a 62 GB machine. A track longer than this value is
+#     cut into equal chunks no longer than it, each overlapping the next by two
+#     seconds, denoised one at a time and rejoined with a crossfade; the result is
+#     the whole-track result to within float rounding (see docs/configuration.md).
+#   - Default: 0, which sizes the chunk from the machine: half its memory at that
+#     rate, between five minutes and two hours (57 minutes on a 62 GB desktop,
+#     28 on a 30 GB laptop). Tracks up to the chunk length are processed whole. Set
+#     a value to fix the length, for example 3600; a value longer than any capture
+#     you have, such as 86400, keeps every track whole at the cost of memory.
+neural_chunk_seconds: 0
+
 # ------------------------------------------------------------------------------
 # Enhancement Settings (Resemble-Enhance)
 # ------------------------------------------------------------------------------
