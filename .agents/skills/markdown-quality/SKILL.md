@@ -49,9 +49,11 @@ poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 
 - `core.autocrlf=true` gives CRLF working copies and `mdformat --check` fails
   on them whatever their content; `git checkout -- file` restores CRLF too.
-  Normalise the touched files to LF (`sed -i 's/ $//'`) before the check;
+  Normalise the touched files to LF (`sed -i 's/\r$//'`) before the check;
   git stores LF either way. `Path.write_text` on Windows writes CRLF unless
-  it is given `newline=" "`.
+  it is given `newline="\n"`. (A Bash heredoc turned both escapes into
+  spaces the first time this was written: put backslashes in files with the
+  editor, not through a heredoc.)
 - `mdformat` runs with `wrap = keep`: it joins a code span that was broken
   across lines but never reflows a paragraph, so a sentence inserted into
   a wrapped paragraph must be wrapped by hand to 80 columns, and a code span
