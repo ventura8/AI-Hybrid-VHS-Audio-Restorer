@@ -101,7 +101,6 @@ with `score_listen.py <slug>`.
 
 ```text
 scripts/autotune_restoration.py --engine cathar|apl --tapes tapes.json
-    --rounds 4
 ```
 
 This is the user's instruction made executable: "the AI human ear must
@@ -111,7 +110,9 @@ any more". Each round proposes the neighbours of every knob's current value
 tape per candidate keeping only the audio, scores all tapes of the round in
 parallel, and accepts a candidate only if its mean rank across tapes beats
 the incumbent, it wins on at least half the tapes and it fails no more hard
-gates. It stops at a plateau; `log.md` and `state.json` under
+gates. It stops only at a plateau (the user's rule: "stop only when no more
+improvements are possible"; `--rounds`, default 20, is a safety cap); `log.md`
+and `state.json` under
 `experiments/autotune/<engine>/` make it resumable. Run both engines at once
 only on different source paths: the app's work directory is
 `.temp_work_<stem>` beside the source, so APL runs on NTFS hardlinks of the

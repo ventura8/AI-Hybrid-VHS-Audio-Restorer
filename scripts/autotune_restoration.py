@@ -7,10 +7,10 @@ every tape with each candidate in a fresh interpreter, keeps only the audio, sco
 against the incumbent with the grid's `ranking` metrics. A candidate replaces the incumbent
 when its mean rank across tapes is better, it wins on at least half the tapes and it fails
 no more hard gates than the incumbent. The loop stops when no candidate qualifies (a
-plateau) or after `--rounds`; the listener is only asked at that point.
+plateau); `--rounds` (default 20) is only a safety cap. The listener is asked at the plateau.
 
 usage:
-  autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 4] [--out experiments/autotune]
+  autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
                           [--grid scripts/tune_grids/tata_v1.yaml] [--families dsp,stems,speech,mos]
                           [--start '{"cathar_alpha": 2.0}'] [--language ro] [--gates gates.json]
                           [--parallel 2]
@@ -368,7 +368,8 @@ def main(argv=None):
     parser.add_argument("--tapes", type=Path, required=True, help="JSON {slug: video path}")
     parser.add_argument("--out", type=Path, default=Path("experiments/autotune"))
     parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v1.yaml"))
-    parser.add_argument("--rounds", type=int, default=4)
+    # The loop stops at a plateau (user: "stop only when no more improvements are possible"); the cap is a safety net.
+    parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--families", default="dsp,stems,speech,mos")
     parser.add_argument("--start", default="{}", help="JSON overrides to start from")
     parser.add_argument("--language", default="ro")
