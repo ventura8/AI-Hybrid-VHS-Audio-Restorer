@@ -179,8 +179,13 @@ def _catalog_clips(tapes_dir, catalog):
     records = json.loads(Path(catalog).read_text(encoding="utf-8"))
     if isinstance(records, dict):
         records = [r for region in records.values() for r in region]
-    clips = [(Path(tapes_dir) / r["file"], slug_for(r.get("identifier") or Path(r["file"]).stem, {})) for r in records]
+    # The corpus catalog was written on Windows; its backslashes are separators on every platform.
+    clips = [(Path(tapes_dir) / _portable(r["file"]), slug_for(r.get("identifier") or _portable(r["file"]).stem, {})) for r in records]
     return [(clip, slug) for clip, slug in clips if clip.exists()]
+
+
+def _portable(catalog_path):
+    return Path(str(catalog_path).replace(chr(92), "/"))
 
 
 def build_manifest(tapes_dir, grid, out_dir, limit=0, catalog=None, whole=False):
