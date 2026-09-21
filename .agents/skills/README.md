@@ -28,3 +28,10 @@ the Antigravity agent system.
   installation scripts and CUDA runtime provisioning.
 - [hardware-validation/SKILL.md](hardware-validation/SKILL.md): Deterministic
   Piper fixture generation, accelerator audit, and opt-in hardware validation.
+- [output-quality-harness/SKILL.md](output-quality-harness/SKILL.md): The "AI
+  human ear": listener-like scoring, calibration, real-tape tuning and the
+  self-driving loop that asks the user only at its plateau.
+
+Every session that learns a rule, a measured fact or a tool quirk writes it
+into the skill that owns the topic in the same change (`AGENTS.md`, section
+9).

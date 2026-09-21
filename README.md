@@ -270,10 +270,15 @@ PMIX --> POUT(["💾 Output: Pure_Cleaned"]):::output
 
 MODE -->|"auto (default)"| AU1["Acoustic Scan:<br/>material, tonality, hum, drift"]:::processing
 AU1 --> AU2{"Neural denoiser<br/>installed?"}:::model
-AU2 -->|"yes"| AU3["auto_pure_linear chain"]:::model
-AU2 -->|"no"| AU4["cathar chain"]:::processing
+AU2 -->|"yes"| AU5{"Tonal, no silence<br/>for the noise probe,<br/>and cathar installed?"}:::model
+AU5 -->|"no"| AU3["auto_pure_linear chain"]:::model
+AU5 -->|"yes"| AU4["cathar chain"]:::processing
+AU2 -->|"no"| AU6{"cathar<br/>installed?"}:::model
+AU6 -->|"yes"| AU4
+AU6 -->|"no"| AU7["auto_ffmpeg_native chain"]:::processing
 AU3 --> AUOUT(["💾 Output: Auto_Cleaned"]):::output
 AU4 --> AUOUT
+AU7 --> AUOUT
 
 MODE -->|"multipass_auto"| AP1["Dual-Resolution Acoustic Scan"]:::processing
 AP1 --> AP2["Analog Pre-Conditioning"]:::processing
@@ -536,6 +541,20 @@ isort, Ruff, Flake8, Taplo, Pylint, Bandit, pip-audit, Radon reports/gates,
 Markdown format check and lint, tests with coverage) and overwrites
 `assets/coverage.svg` at the end. It also enforces strict per-file coverage
 using `tests/tooling/quality_gate.py` against `coverage.json`.
+
+### Validating an output by ear-like metrics
+
+`scripts/validate_restoration.py` scores a restored file against its
+source (words, timbre, highs, musical noise, hiss, hum, background) and
+renders a listening set of the worst windows; `scripts/tune_restoration.py`
+sweeps engine settings on excerpts of your own tapes with it. See
+`docs/validation.md`, "Output validation harness".
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_quality_models.py
+.\.venv\Scripts\python.exe scripts\validate_restoration.py tape.mov `
+    cathar=tape_Cathar_Cleaned.mov --markdown report.md --listen-dir listen
+```
 
 ### Coverage Goal
 

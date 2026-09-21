@@ -153,16 +153,41 @@ def test_neural_denoiser_availability_reads_the_installed_package():
 
 
 def test_cathar_availability_resolves_the_binary(tmp_path):
-    """An empty or missing binary path reads as unavailable; an existing file as available."""
+    """An empty, missing or directory path reads as unavailable; an executable file as available."""
     with patch("modules.auto_scanner.CATHAR_BIN", ""):
         assert modules.auto_scanner._cathar_available() is False
     present = tmp_path / "cathar.exe"
     present.write_bytes(b"")
+    present.chmod(0o755)
     with patch("modules.auto_scanner.shutil.which", return_value=None):
         with patch("modules.auto_scanner.CATHAR_BIN", str(tmp_path / "missing-cathar")):
             assert modules.auto_scanner._cathar_available() is False
+        with patch("modules.auto_scanner.CATHAR_BIN", str(tmp_path)):
+            assert modules.auto_scanner._cathar_available() is False
         with patch("modules.auto_scanner.CATHAR_BIN", str(present)):
             assert modules.auto_scanner._cathar_available() is True
+
+
+def test_cathar_availability_accepts_a_name_on_path(tmp_path):
+    """A bare name that `shutil.which` resolves is installed, whatever the working directory holds."""
+    with (
+        patch("modules.auto_scanner.shutil.which", return_value=str(tmp_path / "cathar")),
+        patch("modules.auto_scanner.CATHAR_BIN", "cathar"),
+    ):
+        assert modules.auto_scanner._cathar_available() is True
+
+
+def test_cathar_availability_requires_execute_permission_off_windows(tmp_path):
+    """Off Windows a direct path that is a plain file without the execute bit is not installed."""
+    plain = tmp_path / "cathar"
+    plain.write_bytes(b"")
+    with (
+        patch("modules.auto_scanner.shutil.which", return_value=None),
+        patch("modules.auto_scanner.CATHAR_BIN", str(plain)),
+        patch("modules.auto_scanner.os.name", "posix"),
+        patch("modules.auto_scanner.os.access", return_value=False),
+    ):
+        assert modules.auto_scanner._cathar_available() is False
 
 
 def _logged_decision(strategy, executed_mode=None, cathar_installed=False):

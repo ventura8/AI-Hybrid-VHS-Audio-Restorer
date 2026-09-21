@@ -84,4 +84,8 @@ poetry run python tests/tooling/radon_mi_gate.py
   `isort`, `ruff`, `flake8`, `pylint`, `radon`) as production modules.
 - **Radon Grades**: Every single block must be Cyclomatic Complexity Grade A
   (CC $\\le 5$), and every file must be Maintainability Index Grade A (MI $\\ge
-  20$).
+  20$). Radon counts every `assert` as a branch, so a test keeps at most four.
+  MI falls with file length: a unit test file past about 450 lines reads
+  under 20 whatever its style, so split it by topic (the 2026-09-21 gate
+  forced `test_cathar_noiseprint.py`, `test_tune_restoration_scoreboard.py`
+  and `test_utils_binaries.py` out of files that had grown past that).

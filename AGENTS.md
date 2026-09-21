@@ -278,6 +278,10 @@ The repository defines the following modular skills in `.agents/skills/`.
   preparation, semver bumping, and changelog curation.
 - [installer-tester](.agents/skills/installer-tester/SKILL.md): Windows
   installer validation and CUDA runtime provisioning.
+- [output-quality-harness](.agents/skills/output-quality-harness/SKILL.md):
+  The "AI human ear": scoring an output like a listener, calibration, tuning
+  on real tapes, and the self-driving loop that asks the user only at its
+  plateau.
 
 ______________________________________________________________________
 
@@ -308,3 +312,31 @@ Targeted workflow playbooks are maintained under `.agent/workflows/`:
   Adding new restoration modes, filters, or models.
 - [fix_lints_and_tests.md](.agent/workflows/fix_lints_and_tests.md): Rapid
   delinting and test fixing playbook.
+- [tune_on_real_tapes.md](.agent/workflows/tune_on_real_tapes.md): Measuring a
+  listening complaint, letting the autotune loop refine, confirming on full
+  tapes and feeding winners back.
+
+______________________________________________________________________
+
+## 9. Keeping the Agent Files Current
+
+The agent files are the project's memory across sessions and agents. Every
+change that teaches something the code does not say is written into them in
+the same change, never left in a chat, a scratchpad or a personal memory:
+
+- A rule the user states ("never two restorations on one source path",
+  "ask me to listen only at the plateau") goes into `AGENTS.md` or the skill
+  that owns the topic, with the reason.
+- A measured fact that decided a default (a metric reading, a by-ear verdict,
+  a corpus number) goes into the skill that owns the engine or the harness,
+  and into the configuration comment beside the value.
+- A tool quirk that cost time (a lockfile solve that never finishes, an
+  encoding that breaks a linter, a checksum served as an LFS pointer) goes
+  into the skill that runs the tool.
+- A new script, grid, runner or workflow gets its entry in the skill that
+  uses it, in `.agents/skills/README.md`, in section 6 or 8 above, and a
+  `.claude/skills/<name>/SKILL.md` pointer when it is a skill.
+
+Before declaring a task complete, re-read the touched skills and this file
+and ask: would the next agent, with only these files, repeat today's work or
+build on it? Then run the Markdown gates on everything touched.

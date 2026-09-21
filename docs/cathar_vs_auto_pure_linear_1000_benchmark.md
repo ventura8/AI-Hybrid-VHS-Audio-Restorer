@@ -427,7 +427,10 @@ search for one routes 16 clips and loses 9 of them, and the eight corpus
 wins and four local wins are spread over every reading. The direction the
 two sets agree on is the mechanism. `auto_pure_linear` learns its profile
 from the quietest 4 s and subtracts at a factor tuned for speech; `cathar`
-learns from the quietest 0.75 s at a gentler one. Where the quietest 4 s is
+learns from the quietest 0.75 s at a gentler one (on a tape of 80 s or more
+`cathar` stitches eight such pauses; the 15 s clips and 60 s excerpts
+measured here stay on one, so the routing below rests on that window).
+Where the quietest 4 s is
 shaped like the programme (correlation of the speech-band spectra 0.9 or
 more), the material is tonal (flatness under 0.04) and there is no
 sustained beat, `cathar` deviates less on 10 of 14 corpus clips (0.21 dB

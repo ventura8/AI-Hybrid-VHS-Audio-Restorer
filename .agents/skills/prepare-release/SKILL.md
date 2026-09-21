@@ -232,6 +232,15 @@ at the locked version, and say so in the release notes with the reason.
 .venv/bin/python -m poetry install --with dev,ml
 ```
 
+`scripts/refresh_lock.py` does the fallback mechanically for every package
+(the safe, metadata-identical pass by default; `--graph name==version` rebuilds
+a block whose dependency metadata changed and adds what it needs;
+`--add name==version:group` for a new direct dependency), recomputes the
+content-hash and writes `experiments/lock_refresh_report.json`; run it without
+`--apply` first and read what it deferred. The cu130 torch trio moves only as a set,
+and only when the cu130 index carries matching torch, torchvision and
+torchaudio wheels.
+
 CI pins: for each `uses:` in `.github/workflows/*.yml`, the line above it
 names the release; update both the SHA and the comment to the latest release
 (`gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`, then resolve

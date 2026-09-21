@@ -20,8 +20,10 @@
   modes. See `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`. -
   Parameters, all specific to this mode so that `cathar` cannot be affected
   by tuning them: - `apl_noiseprint_duration_s` (seconds of the quietest
-  stretch used to learn the noise profile, default 4.0). The shared
-  `cathar_noiseprint_duration_s` stays at 0.75 and is not used here. This is
+  stretch used to learn the noise profile, default 4.0). `cathar` has its own
+  `cathar_noiseprint_duration_s`, 6 s stitched from eight 0.75 s pauses on
+  a tape of 80 s or more and one 0.75 s window on anything shorter (so
+  corpus clips are unchanged); it is not used here. This is
   the single most consequential setting in the mode: at 0.75 s it removes
   3.39 dB less noise than at 2.5, and on the full corpus 4 s removes 9.99 dB
   against 2.5 s's 8.73 at the same 0.32 dB of median deviation, with the
@@ -195,7 +197,11 @@
   de-hum, surgical CRT whistle notch filter, spectral noise print
   subtraction, de-click/de-crackle, and azimuth phase alignment. -
   `cathar_vhs` is an alias for `cathar`. - Output suffix:
-  `*_Cathar_Cleaned`. - `auto` (default): - Intelligent acoustic profile scan
+  `*_Cathar_Cleaned`. - The binary is the one beside the interpreter (the
+  venv), then `~/.cargo/bin`; `AI_RESTORE_CATHAR_BIN` in the environment
+  names another build, so an upgrade can be measured on the tuning excerpts
+  before it replaces the validated binary. - `auto` (default): - Intelligent
+  acoustic profile scan
   (speech, music, rhythm, tonality, noise floor, hum, clicks) that names the
   material, tunes the pre-conditioning and the models, and runs
   `auto_pure_linear`, the engine that leads `cathar` on every class
@@ -247,6 +253,15 @@ or a leading dot, is ignored with a warning on stderr and the setting falls
 back to its default. A model file that fails to
 load is deleted from `models/` so it can be re-downloaded, and only a file
 inside that directory is ever deleted.
+
+The output-quality harness keeps its own weights beside them, in
+`models/sigmos/`, `models/whisper-large-v3-turbo/`,
+`models/wavlm-base-plus-sv/`, `models/audiobox-aesthetics/` and
+`models/utmos/`, fetched by `scripts/download_quality_models.py` from
+pinned upstream revisions; each directory carries a README with the
+licence and a `MANIFEST.json` with the sha256 of every file. No
+`config.yaml` key names them. See `docs/validation.md`, "Output
+validation harness".
 
 ## Long Captures
 

@@ -110,7 +110,7 @@ _NUMERIC_CONFIG_FIELDS = (
     ("highpass_freq", int, 80, 0),
     ("notch_freq", float, 50.0, 0.0),
     ("arnndn_highpass_freq", int, 80, 0),
-    ("cathar_alpha", float, 2.5, 0.0),
+    ("cathar_alpha", float, 2.0, 0.0),
     ("cathar_beta", float, 0.01, 0.0),
     ("cathar_dewind_cutoff", int, 80, 0),
     ("cathar_declick_threshold", float, 8.0, 0.0),
@@ -120,13 +120,21 @@ _NUMERIC_CONFIG_FIELDS = (
     ("cathar_repair_strength", int, 4, 0),
     ("cathar_inpaint_max_gap_ms", int, 50, 0),
     ("cathar_inpaint_iterations", int, 3, 1),
-    ("cathar_noiseprint_duration_s", float, 0.75, 0.0),
+    # Total length of quiet tape cathar learns its noise print from on a tape of 80 s or
+    # more: stitched from that many 0.75 s pauses spread over the quietest fifth of the
+    # windows (see modules/cathar.py). A single 4 s window on a dialogue tape carries speech
+    # and the print learns sibilance: 11.4 dB removed but 6 dB more off speech at 8-12 kHz
+    # than the 0.75 s print; eight stitched pauses removed 6.7 dB at the 0.75 s print's
+    # speech highs and 5-6 dB less hiss left in the pauses. Shorter material keeps the
+    # single 0.75 s window cathar shipped with, so corpus clips and 60 s excerpts are
+    # unchanged.
+    ("cathar_noiseprint_duration_s", float, 6.0, 0.0),
     ("cathar_dehum_harmonics", int, 8, 1),
     ("cathar_mono_below_hz", int, 100, 0),
     ("cathar_deplosive_strength", int, 4, 0),
     ("cathar_deesser_bands", int, 3, 1),
     ("cathar_deesser_freq", int, 4000, 1),
-    ("cathar_deesser_threshold", float, -24.0, None),
+    ("cathar_deesser_threshold", float, 6.0, None),
     ("cathar_dereverb_strength", float, 2.0, 0.0),
     ("linear_air_gain_db", float, 2.0, None),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
@@ -168,8 +176,8 @@ _NUMERIC_CONFIG_FIELDS = (
     # of 15; 0.21 dB against 0.54 and 0.15 against 0.19), always for 2-3 dB less noise
     # removed; every other reading leaves cathar behind on both halves. A fidelity
     # preference, not a win: auto_cathar_tonal false keeps auto_pure_linear everywhere.
-    ("auto_cathar_flatness_max", float, 0.04, 0.0),
-    ("auto_cathar_probe_similarity", float, 0.9, 0.0),
+    ("auto_cathar_flatness_max", float, 0.04, 0.0, 1.0),
+    ("auto_cathar_probe_similarity", float, 0.9, 0.0, 1.0),
     # Seconds of the quietest stretch used to learn the noise profile on tonal material.
     # Music has no true silence: its quietest stretch carries sustained partials, and a
     # profile learned over more of it is more programme. Measured against the general probe
@@ -222,8 +230,8 @@ _NUMERIC_CONFIG_FIELDS = (
     # deviation, past cathar, which is the one property worth keeping -- so alpha stays at
     # 3.0 and the probe carries the removal.
     #
-    # cathar's own cathar_noiseprint_duration_s stays at 0.75: it shipped in v1.2.0 and the
-    # setting is shared, so this mode passes its own value explicitly instead.
+    # cathar's own cathar_noiseprint_duration_s only applies from 80 s of material (see
+    # modules/cathar.py), so this mode passes its own value explicitly instead.
     ("apl_noiseprint_duration_s", float, 4.0, 0.0),
     # Depth and length that mark a span as a dropout rather than a pause, for the physical
     # repair stage. A dropout is loss of head contact, so the audio falls away entirely for
@@ -762,7 +770,7 @@ CATHAR_ENABLE_DEWOW = bool(CONFIG.get("cathar_enable_dewow", False))
 CATHAR_ENABLE_ENHANCE = bool(CONFIG.get("cathar_enable_enhance", True))
 CATHAR_ENHANCE_METHOD = str(CONFIG.get("cathar_enhance_method", "replicate"))
 CATHAR_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_enable_noiseprint", True))
-CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 0.75))
+CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 6.0))
 CATHAR_ENABLE_MONO_BELOW = bool(CONFIG.get("cathar_enable_mono_below", True))
 CATHAR_MONO_BELOW_HZ = int(CONFIG.get("cathar_mono_below_hz", 100))
 CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))
@@ -770,7 +778,7 @@ CATHAR_DEPLOSIVE_STRENGTH = int(CONFIG.get("cathar_deplosive_strength", 4))
 CATHAR_ENABLE_DEESSER = bool(CONFIG.get("cathar_enable_deesser", True))
 CATHAR_DEESSER_BANDS = int(CONFIG.get("cathar_deesser_bands", 3))
 CATHAR_DEESSER_FREQ = int(CONFIG.get("cathar_deesser_freq", 4000))
-CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", -24.0))
+CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", 6.0))
 CATHAR_ENABLE_DEREVERB = bool(CONFIG.get("cathar_enable_dereverb", False))
 CATHAR_DEREVERB_WPE = bool(CONFIG.get("cathar_dereverb_wpe", True))
 CATHAR_DEREVERB_STRENGTH = float(CONFIG.get("cathar_dereverb_strength", 2.0))

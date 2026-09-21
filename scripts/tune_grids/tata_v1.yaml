@@ -1,0 +1,73 @@
+# First tuning grid for the Tata tapes. Each variant is a set of config.yaml overrides
+# applied on top of the repo defaults; `baseline` is the defaults themselves.
+#
+# Excerpts are cut at 125 s: cathar's stitched noise probe engages only when the
+# material is at least 20 x cathar_noiseprint_duration_s (6 s -> 120 s), and an excerpt
+# cut with `-t 125` probes at 124.98 s or so. A noiseprint of 9 s would need 180 s
+# excerpts; that is a second pass on the four long tapes.
+
+excerpt_s: 125
+margin_s: 5
+
+engines:
+  cathar: {process_mode: cathar, suffix: _Cathar_Cleaned}
+  apl: {process_mode: auto_pure_linear, suffix: _PureLinear_Cleaned}
+  # The same cathar chain on the 0.7.5 build (event-gated deplosive, adaptive dehum that
+  # skips harmonics which do not stand out); `env` reaches the app's child processes.
+  cathar075: {process_mode: cathar, suffix: _Cathar_Cleaned, env: {AI_RESTORE_CATHAR_BIN: experiments/cathar-0.7.5/cathar.exe}}
+
+gates:
+  # A variant is vetoed when more than this many excerpts fail a hard gate; per tape the
+  # tolerance is zero, so a per-tape recommendation never rests on a vetoed excerpt.
+  max_failed_excerpts: 1
+
+ranking:
+  # metric.side.stat: up | down  (which way is better); the trade metric is shown, never ranked
+  mos.sigmos_col.delta.median: up
+  mos.sigmos_disc.delta.tail: up
+  mos.sigmos_noise.delta.median: up
+  speech.utmos.delta.median: up
+  speech.cer.output.median: down
+  speech.speaker_cos.output.tail: up
+  mos.audiobox_pq.delta.median: up
+  dsp.hf_4k8k.delta.median: up
+  dsp.lkr.delta.median: down
+  dsp.residual_noise_db.output.median: down
+  # Pauses: a floor that jumps about (a mask opening and closing) and a residue that is
+  # all rumble or all hiss are what a listener calls dead or hissy pauses.
+  dsp.pause_pumping_db.delta.median: down
+  dsp.pause_tilt_abs_db.output.median: down
+
+variants:
+  cathar:
+    baseline: {}
+    # Does a gentler / stronger subtraction factor trade hiss for sibilance the way the
+    # noise-probe length did?
+    alpha_2_0: {cathar_alpha: 2.0}
+    alpha_3_5: {cathar_alpha: 3.5}
+    # Wiener instead of spectral subtraction: fewer islands of musical noise?
+    wiener: {cathar_denoise_method: wiener}
+    # The de-esser at 6 dB still trims 1.4 / 3.4 dB at 6-8 / 8-12 kHz; does 9 give the
+    # highs back without bringing the sibilance back?
+    deesser_9: {cathar_deesser_threshold: 9}
+    # A shorter stitched print (4 pauses) against the shipped 8.
+    noiseprint_3s: {cathar_noiseprint_duration_s: 3.0}
+    # The SBR enhance stage measured as a spectral no-op; is it also a no-op by ear?
+    no_enhance: {cathar_enable_enhance: false}
+    # Phase-coherent stereo mask off: independent channels.
+    no_coherent: {cathar_enable_coherent: false}
+  apl:
+    baseline: {}
+    alpha_2_5: {apl_spectral_alpha: 2.5}
+    alpha_4_0: {apl_spectral_alpha: 4.0}
+    probe_2s5: {apl_noiseprint_duration_s: 2.5}
+    probe_6s: {apl_noiseprint_duration_s: 6.0}
+    # The learned blend: measured as a third less deviation on the corpus.
+    no_blend: {apl_enable_learned_blend: false}
+    # The aggressive mel-band RoFormer denoiser instead of UVR-DeNoise.
+    roformer: {apl_neural_model: denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt}
+    # The +2 dB air shelf at 7.5 kHz off.
+    no_air: {enable_linear_air: false}
+  cathar075:
+    baseline: {}
+    alpha_2_0: {cathar_alpha: 2.0}

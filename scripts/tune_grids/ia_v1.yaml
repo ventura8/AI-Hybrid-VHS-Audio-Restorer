@@ -1,0 +1,59 @@
+# Tuning grid for the Internet Archive corpus (experiments/ia_corpus_1000, 15 s clips taken
+# whole with `--catalog ... --whole`). At 15 s cathar keeps its single 0.75 s noise probe
+# (the stitched probe needs 120 s of material), so this grid tunes the other knobs: the
+# subtraction factor and floor, Wiener vs spectral, the de-esser, the SBR enhance stage,
+# the coherent stereo mask, the transient repair and the deplosive stage; for APL the
+# subtraction factor (plain and tonal), the probe length, the learned blend, the neural
+# model, the air shelf and the dynamic expander. Whisper runs with `--language en`.
+
+excerpt_s: 15
+margin_s: 0
+
+engines:
+  cathar: {process_mode: cathar, suffix: _Cathar_Cleaned}
+  apl: {process_mode: auto_pure_linear, suffix: _PureLinear_Cleaned}
+
+gates:
+  # 40 clips: a variant may fail the hard gates on four of them before it is vetoed.
+  max_failed_excerpts: 4
+
+ranking:
+  mos.sigmos_col.delta.median: up
+  mos.sigmos_disc.delta.tail: up
+  mos.sigmos_noise.delta.median: up
+  speech.utmos.delta.median: up
+  speech.cer.output.median: down
+  speech.speaker_cos.output.tail: up
+  mos.audiobox_pq.delta.median: up
+  dsp.hf_4k8k.delta.median: up
+  dsp.lkr.delta.median: down
+  dsp.residual_noise_db.output.median: down
+  # Pauses: a floor that jumps about (a mask opening and closing) and a residue that is
+  # all rumble or all hiss are what a listener calls dead or hissy pauses.
+  dsp.pause_pumping_db.delta.median: down
+  dsp.pause_tilt_abs_db.output.median: down
+
+variants:
+  cathar:
+    baseline: {}
+    alpha_2_0: {cathar_alpha: 2.0}
+    alpha_3_5: {cathar_alpha: 3.5}
+    # A higher spectral floor: fewer musical-noise islands for a little residual hiss.
+    beta_0_03: {cathar_beta: 0.03}
+    wiener: {cathar_denoise_method: wiener}
+    deesser_9: {cathar_deesser_threshold: 9}
+    no_enhance: {cathar_enable_enhance: false}
+    no_coherent: {cathar_enable_coherent: false}
+    repair_2: {cathar_repair_strength: 2}
+    no_deplosive: {cathar_enable_deplosive: false}
+  apl:
+    baseline: {}
+    alpha_2_5: {apl_spectral_alpha: 2.5}
+    alpha_4_0: {apl_spectral_alpha: 4.0}
+    alpha_tonal_2_5: {apl_spectral_alpha_tonal: 2.5}
+    probe_2s5: {apl_noiseprint_duration_s: 2.5}
+    probe_6s: {apl_noiseprint_duration_s: 6.0}
+    no_blend: {apl_enable_learned_blend: false}
+    roformer: {apl_neural_model: denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt}
+    no_air: {enable_linear_air: false}
+    no_expander: {enable_dynamic_expander: false}

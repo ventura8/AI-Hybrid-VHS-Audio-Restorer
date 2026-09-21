@@ -185,7 +185,7 @@ dtw_resolution: 25
 #                            decrackle, declip, adaptive dehum, dewow, and phase-coherent denoise.
 #   - 'cathar_vhs'         : Compatibility alias for 'cathar'.
 # ------------------------------------------------------------------------------
-process_mode: "auto"
+process_mode: "cathar"
 enable_multipass: true
 
 # ------------------------------------------------------------------------------
@@ -277,10 +277,16 @@ arnndn_enable_adeclick: true
 #   - Default: 'spectral'
 #
 # cathar_alpha:
-#   - Noise subtraction aggressiveness factor (suggested: 1.0 to 6.0, default: 2.5)
+#   - Noise subtraction aggressiveness factor (suggested: 1.0 to 6.0, default: 2.0)
 #   - Empirical tuning: reduced from 3.0 to 2.5 for more transparent restoration
 #     on cleaner tapes (NF < -50 dB); prevents musical noise artifacts without
 #     sacrificing effective hiss removal on noisier captures.
+#   - 2.0 (from 2.5) on the output-quality harness over 13 excerpts of five real
+#     tapes (docs/validation.md): SIGMOS colouration +0.125 against +0.062,
+#     discontinuity tail -0.34 against -0.42, Whisper CER 0.058 against 0.093,
+#     Audiobox PQ -0.11 against -0.35, 4-8 kHz on loud frames -2.5 dB against
+#     -3.0, for 1.6 dB less noise removed (11.4 against 13.1); chosen by ear on
+#     the same tapes. 3.5 and the Wiener filter lose every listener-side reading.
 #
 # cathar_beta:
 #   - Spectral floor to prevent musical noise artifacts (suggested: 0.005 to 0.05, default: 0.01)
@@ -332,13 +338,27 @@ arnndn_enable_adeclick: true
 #   - cathar_inpaint_max_gap_ms is milliseconds; iterations is a positive count.
 #   - cathar_declip_threshold is normalized peak amplitude from 0.0 to 1.0.
 #   - cathar_enhance_method accepts 'replicate' or 'interpolate'.
-#   - cathar_noiseprint_duration_s is seconds; dehum_harmonics is a positive count.
+#   - cathar_noiseprint_duration_s is the total quiet tape, in seconds, the noise print is
+#     learned from on a tape of 80 s or more: stitched from that many 0.75 s pauses spread
+#     over the quietest fifth of the tape, because a single long window on dialogue
+#     carries speech and the print then strips sibilance (measured: one 4 s window took
+#     6 dB more off speech at 8-12 kHz than a 0.75 s one). Eight stitched pauses (6 s)
+#     removed 6.7 dB of noise on a 134 s dialogue tape against 3.4 dB for the single
+#     0.75 s window, at the same speech highs and with 5-6 dB less hiss in the pauses.
+#     Material under 80 s keeps the single 0.75 s window, so a 15 s clip is unchanged.
+#     dehum_harmonics is a positive count.
 #   - cathar_deplosive_strength, cathar_deesser_bands, and cathar_repair_strength
 #     are positive stage-strength/count settings; cathar_deesser_freq is Hz and
-#     cathar_deesser_threshold is dB; cathar_dereverb_strength is a positive gain.
+#     cathar_dereverb_strength is a positive gain.
+#   - cathar_deesser_threshold is dB and its meaning depends on cathar_deesser_bands:
+#     with bands > 1 (default 3) it is dB ABOVE each band's running average (6 is
+#     cathar's suggested value); with bands = 1 it is the HF/broadband ratio, where
+#     cathar's default is -24. A negative value with bands > 1 keeps the de-esser
+#     engaged on every frame and removes everything above cathar_deesser_freq
+#     (measured -28 dB from 4-12 kHz on real tape: muffled, "underwater" speech).
 # ------------------------------------------------------------------------------
 cathar_denoise_method: "spectral"
-cathar_alpha: 2.5
+cathar_alpha: 2.0
 cathar_beta: 0.01
 cathar_enable_coherent: true
 cathar_enable_dewind: true
@@ -362,7 +382,7 @@ cathar_enable_dewow: false
 cathar_enable_enhance: true
 cathar_enhance_method: "replicate"
 cathar_enable_noiseprint: true
-cathar_noiseprint_duration_s: 0.75
+cathar_noiseprint_duration_s: 6.0
 cathar_dehum_adaptive: true
 cathar_dehum_harmonics: 8
 cathar_enable_mono_below: true
@@ -372,7 +392,7 @@ cathar_deplosive_strength: 4
 cathar_enable_deesser: true
 cathar_deesser_bands: 3
 cathar_deesser_freq: 4000
-cathar_deesser_threshold: -24
+cathar_deesser_threshold: 6
 cathar_enable_dereverb: false
 cathar_dereverb_wpe: true
 cathar_dereverb_strength: 2.0

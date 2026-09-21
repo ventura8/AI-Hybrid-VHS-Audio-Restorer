@@ -98,3 +98,15 @@ radon-hal-report.txt
 scratch
 experiments
 release-assets
+
+# Output-quality models fetched by scripts/download_quality_models.py (READMEs stay tracked)
+models/sigmos/*
+!models/sigmos/README.md
+models/whisper-large-v3-turbo/*
+!models/whisper-large-v3-turbo/README.md
+models/wavlm-base-plus-sv/*
+!models/wavlm-base-plus-sv/README.md
+models/audiobox-aesthetics/*
+!models/audiobox-aesthetics/README.md
+models/utmos/*
+!models/utmos/README.md

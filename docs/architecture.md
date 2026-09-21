@@ -299,7 +299,9 @@ flowchart TD
     MAT --> NE{"Neural denoiser<br/>installed?"}:::gate
     NE -->|yes| TB{"Tonal, no silence<br/>for the noise probe?"}:::gate
     TB -->|no| APL["auto_pure_linear chain"]:::ai
-    TB -->|"yes, cathar installed"| CT["cathar chain"]:::step
+    TB -->|yes| TC{"cathar<br/>installed?"}:::gate
+    TC -->|no| APL
+    TC -->|yes| CT["cathar chain"]:::step
     NE -->|no| CA{"cathar<br/>installed?"}:::gate
     CA -->|yes| CT
     CA -->|no| FN["auto_ffmpeg_native chain"]:::step
@@ -326,7 +328,9 @@ on the corpus, so every class runs `auto_pure_linear` with two exceptions.
 
 What separates the two engines is the noise probe: `auto_pure_linear` learns
 its profile from the quietest 4 s and subtracts at a factor tuned for
-speech, `cathar` from the quietest 0.75 s at a gentler one. Where the tape
+speech, `cathar` from eight 0.75 s pauses stitched together on a tape of
+80 s or more and from the quietest 0.75 s on anything shorter, at a
+gentler factor; every figure here was measured on clips. Where the tape
 has true silence the 4 s window is noise and `auto_pure_linear` leads on
 both halves; where sustained tonal programme never pauses, the window is
 programme and the subtraction shaves it. That is the one condition, of some

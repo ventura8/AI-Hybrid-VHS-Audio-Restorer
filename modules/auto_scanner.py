@@ -6,6 +6,7 @@ tape defects to automatically deploy the optimal restoration pipeline.
 """
 
 import importlib.util
+import os
 import shutil
 from pathlib import Path
 
@@ -513,8 +514,18 @@ def _neural_denoiser_available():
 
 
 def _cathar_available():
-    """Whether the cathar binary resolves, as the cathar pipeline itself checks."""
-    return bool(CATHAR_BIN) and (shutil.which(CATHAR_BIN) is not None or Path(CATHAR_BIN).exists())
+    """Whether the cathar binary resolves to a runnable executable.
+
+    A name on PATH resolves through `shutil.which`; a direct path must be a file and, off
+    Windows, executable. A directory or an empty setting reads as not installed, so `auto`
+    falls back rather than dispatching to a chain that cannot start.
+    """
+    if not CATHAR_BIN:
+        return False
+    if shutil.which(CATHAR_BIN) is not None:
+        return True
+    binary = Path(CATHAR_BIN)
+    return binary.is_file() and (os.name == "nt" or os.access(binary, os.X_OK))
 
 
 def _probe_carries_programme(tonality, probe_similarity, onset_periodicity):

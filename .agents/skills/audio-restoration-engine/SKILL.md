@@ -125,3 +125,32 @@ audio alignment, or FFmpeg multiplexing.
   launching compute-heavy inference steps.
 - **Video Stream Copy**: Never re-encode the video stream (`-c:v copy`) during
   audio extraction or remuxing.
+- **cathar bit-identity**: after any change under `modules/`, restore the five
+  reference clips (`experiments/cathar_ab.py <tag>`) and require 5/5 decoded
+  PCM hashes equal to `experiments/cathar_ab_head.json`. A deliberate default
+  change (the user's call, made by ear) is followed by a re-base: copy the
+  run into `experiments/cathar_ab_head`, rewrite the JSON, keep the previous
+  reference as `cathar_ab_head_before_<tag>`. `--old-deesser` reinstates the
+  pre-fix de-esser so the rest of the chain can be checked alone.
+- **cathar de-esser semantics**: `deesser --threshold` changes meaning with
+  `--bands`: single-band is an HF/broadband ratio (default -24), multiband is
+  dB above each band's running average (use 6). A negative multiband
+  threshold engages the stage on every frame and removes everything above
+  the crossover ("under water" speech). `_cathar_deesser_step` guards it.
+- **cathar noise print**: one contiguous window on dialogue lands on speech and
+  the print learns sibilance; the shipped print is stitched from eight 0.75 s
+  windows spread by level over the quietest 20 % (10 ms crossfades), only
+  from 20 x `cathar_noiseprint_duration_s` of material.
+- **cathar alpha 2.0**: chosen by ear and by the harness on five real tapes
+  (colouration +0.125 against +0.062, discontinuity tail -0.34 against
+  -0.42, CER 0.058 against 0.093) for 1.6 dB less removal; 3.5 and Wiener
+  lose every listener-side reading.
+- **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
+  (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
+  is measured before it replaces `.venv/Scripts/cathar.exe`. Stages our
+  chain calls were bit-identical between 0.7.5 and 0.7.6; the upstream
+  `cathar vhs` chain is not a candidate (single quietest-4 s probe, alpha 3:
+  colouration -0.43, discontinuity tail -1.61 on Tele7abc; vbasky/cathar#26).
+- **Two engines at once**: the work directory is `.temp_work_<stem>` beside the
+  source, so two runs on the same file collide. Run engines in parallel only
+  on different paths (NTFS hardlinks of the tapes for the second engine).
