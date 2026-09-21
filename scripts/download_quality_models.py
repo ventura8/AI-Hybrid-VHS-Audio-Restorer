@@ -159,7 +159,7 @@ def _write_readme(name, pin, target_dir):
     lines = [
         f"# {name}",
         "",
-        f"Fetched by `scripts/download_quality_models.py` from {pin['source']}",
+        f"Fetched by `scripts/download_quality_models.py` from <{pin['source']}>",
         f"(revision `{pin.get('revision', pin.get('base', pin.get('repo', '')))}`).",
         "",
         f"Licence: {pin['license']}.",

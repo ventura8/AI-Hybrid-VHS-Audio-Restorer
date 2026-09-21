@@ -438,16 +438,17 @@ against 0.54) and 9 of 15 local excerpts (0.15 against 0.19), each time for
 2-3 dB less noise removed, with wins on both halves a wash (4 against 4, 2
 against 4). Under every other reading `cathar` is behind on both.
 
-So from v1.3.3 `auto` runs `auto_pure_linear` on every class, hands that
-one condition to `cathar` as a fidelity preference (`auto_cathar_tonal`;
-`auto_cathar_flatness_max`, `auto_cathar_probe_similarity`), and runs
-`cathar` when the neural denoiser is not installed, the one case where the
-deterministic engine is the best that can run; the rule and these numbers
-sit together in `modules/auto_scanner.py`. Routed that way the corpus reads
-9.74/0.27 against 10.10/0.31 for `auto_pure_linear` throughout, and the
-local excerpts 10.00/0.07 against 10.12/0.07. The local set is not
-published with this repository; its catalogue and measurements are kept
-under `experiments/local_corpus/` and `experiments/auto_engines_v140/`.
+So from v1.3.3 `auto` runs `auto_pure_linear` on every class, hands that one
+condition to `cathar` as a fidelity preference (`auto_cathar_tonal`;
+`auto_cathar_flatness_max`, `auto_cathar_probe_similarity`), and runs `cathar`
+when the neural denoiser is not installed (when cathar is installed; with
+neither engine available the `auto_ffmpeg_native` chain is the last resort), the
+one case where the deterministic engine is the best that can run; the rule and
+these numbers sit together in `modules/auto_scanner.py`. Routed that way the
+corpus reads 9.74/0.27 against 10.10/0.31 for `auto_pure_linear` throughout, and
+the local excerpts 10.00/0.07 against 10.12/0.07. The local set is not published
+with this repository; its catalogue and measurements are kept under
+`experiments/local_corpus/` and `experiments/auto_engines_v140/`.
 
 ______________________________________________________________________
 
@@ -458,11 +459,12 @@ ______________________________________________________________________
   to v1.3.2 and what `auto`, the default from v1.3.3, runs on it.
   It leads on every row measured on real tape and repairs the same physical
   damage `cathar` does, gated on the defect being there.
-- **A machine without the neural stack, or a folder of mixed tapes** ->
-  `auto`, which runs `auto_pure_linear` wherever the neural denoiser is
-  installed, `cathar` on sustained tonal programme with no silence for the
-  probe and where the neural denoiser is not installed, and prints the
-  profile and the evidence it decided on for each tape.
+- **A machine without the neural stack, or a folder of mixed tapes** -> `auto`,
+  which runs `auto_pure_linear` wherever the neural denoiser is installed,
+  `cathar` on sustained tonal programme with no silence for the probe and where
+  the neural denoiser is not installed (when cathar is installed; with neither
+  engine available the `auto_ffmpeg_native` chain is the last resort), and
+  prints the profile and the evidence it decided on for each tape.
 - **Crackle, dropouts, clipping or azimuth skew** -> either. Both repair
   these; `auto_pure_linear` runs the stages only where the defect is
   detected, where `cathar` applies its cascade throughout.
@@ -476,7 +478,7 @@ ______________________________________________________________________
   48 hum tapes do, and no narrow tracker follows them.
 - **CRT line whistle** -> either; both remove it completely.
 
-`auto_pure_linear` is the default from this release. Changing a released
+`auto` is the default from this release. Changing a released
 default is a decision for a release, not a benchmark, and this one was taken
 on the table above: every row measured on real tape, with `cathar` unchanged
 and one line of `config.yaml` away.

@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+import pytest
 import yaml
 
 from scripts import tune_restoration as tr
@@ -155,10 +156,8 @@ def test_run_variant_skips_a_complete_variant_and_refuses_reverted_overrides(tmp
     run.assert_not_called()
     (excerpts_dir / "soti_start.mov").write_bytes(b"clip")
     with patch.object(tr, "resolved_config", return_value={"cathar_alpha": 2.5}), patch.object(tr, "is_valid_video", return_value=False):
-        try:
+        with pytest.raises(SystemExit, match="did not honour"):
             tr.run_variant(variant_dir, {"process_mode": "cathar", "suffix": "_x"}, {"cathar_alpha": 3.5}, manifest, excerpts_dir, "py")
-        except SystemExit as exc:
-            assert "did not honour" in str(exc)
 
 
 def test_link_excerpts_falls_back_to_a_copy(tmp_path):

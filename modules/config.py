@@ -120,7 +120,7 @@ _NUMERIC_CONFIG_FIELDS = (
     ("cathar_repair_strength", int, 4, 0),
     ("cathar_inpaint_max_gap_ms", int, 50, 0),
     ("cathar_inpaint_iterations", int, 3, 1),
-    # Total length of quiet tape cathar learns its noise print from on a tape of 80 s or
+    # Total length of quiet tape cathar learns its noise print from on a tape of 120 s or
     # more: stitched from that many 0.75 s pauses spread over the quietest fifth of the
     # windows (see modules/cathar.py). A single 4 s window on a dialogue tape carries speech
     # and the print learns sibilance: 11.4 dB removed but 6 dB more off speech at 8-12 kHz
@@ -230,7 +230,7 @@ _NUMERIC_CONFIG_FIELDS = (
     # deviation, past cathar, which is the one property worth keeping -- so alpha stays at
     # 3.0 and the probe carries the removal.
     #
-    # cathar's own cathar_noiseprint_duration_s only applies from 80 s of material (see
+    # cathar's own cathar_noiseprint_duration_s only applies from twenty times its length of material (see
     # modules/cathar.py), so this mode passes its own value explicitly instead.
     ("apl_noiseprint_duration_s", float, 4.0, 0.0),
     # Depth and length that mark a span as a dropout rather than a pause, for the physical

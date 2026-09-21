@@ -484,11 +484,12 @@ def flatten_pair(result, label, gates=None):
     With `gates` the verdicts are re-read from the stored aggregates, so a recalibrated
     gates.json changes the scoreboard without re-scoring every pair.
     """
-    flat = runner.aggregates_for_tuning(result, label)
     variant = result["variants"][label]
     if gates is not None:
         verdicts = gates_mod.evaluate_gates(variant["aggregate"], gates, variant.get("speaker_floor"))
         variant["hard_failures"] = gates_mod.hard_failures(verdicts)
+        variant["passed"] = not variant["hard_failures"]
+    flat = runner.aggregates_for_tuning(result, label)
     flat["hard_failures"] = variant["hard_failures"]
     return flat
 

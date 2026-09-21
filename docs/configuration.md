@@ -4,7 +4,7 @@
   (`vocal_mix_volume`, `background_mix_volume`), sync behavior, process mode,
   native filter parameters, and file extensions.
 - **Defaults**: If `config.yaml` is missing, the script defaults to neutral mix
-  levels (1.0), `process_mode: auto_pure_linear`, and standard video extensions
+  levels (1.0), `process_mode: auto`, and standard video extensions
   (`.mp4`, `.mkv`, `.avi`, `.mov`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`).
 
 ## Process Modes
@@ -22,7 +22,8 @@
   by tuning them: - `apl_noiseprint_duration_s` (seconds of the quietest
   stretch used to learn the noise profile, default 4.0). `cathar` has its own
   `cathar_noiseprint_duration_s`, 6 s stitched from eight 0.75 s pauses on
-  a tape of 80 s or more and one 0.75 s window on anything shorter (so
+  a tape of 120 s or more (twenty times the print) and one 0.75 s window on
+  anything shorter (so
   corpus clips are unchanged); it is not used here. This is
   the single most consequential setting in the mode: at 0.75 s it removes
   3.39 dB less noise than at 2.5, and on the full corpus 4 s removes 9.99 dB
@@ -207,7 +208,9 @@
   `auto_pure_linear`, the engine that leads `cathar` on every class
   measured on real tape; runs `cathar` on sustained tonal programme with no
   silence for the noise probe (`auto_cathar_tonal`) and when the neural
-  denoiser is not installed. - Suffix: `*_Auto_Cleaned`. -
+  denoiser is not installed (when cathar is installed; with neither engine
+  available the `auto_ffmpeg_native` chain is the last resort). - Suffix:
+  `*_Auto_Cleaned`. -
   `multipass_auto` / `multipass`: - Maximum-quality 4-pass cascaded
   restoration. - Dual-resolution acoustic scan -> analog pre-conditioning ->
   stem separation & Resemble-Enhance -> residual polish -> DTW Sync -> final

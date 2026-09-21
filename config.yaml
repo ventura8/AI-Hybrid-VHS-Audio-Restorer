@@ -167,7 +167,8 @@ dtw_resolution: 25
 #                            real tape; runs 'cathar' on sustained tonal programme with no silence
 #                            for the noise probe to learn from, where cathar deviates less for
 #                            2-3 dB less removal ('auto_cathar_tonal', false keeps 'auto_pure_linear'
-#                            there), and when the neural denoiser is not installed.
+#                            there), and when the neural denoiser is not installed; cathar only when
+#                            it is installed, and 'auto_ffmpeg_native' when neither engine is.
 #   - 'multipass_auto'     : Explicit 4-Pass Cascaded AI & DSP Restoration Engine (*_MultiPass_Cleaned).
 #   - 'multipass'          : Compatibility alias for 'multipass_auto'.
 #   - 'hybrid'             : Full AI separation + vocal enhance + background denoise.
@@ -185,7 +186,7 @@ dtw_resolution: 25
 #                            decrackle, declip, adaptive dehum, dewow, and phase-coherent denoise.
 #   - 'cathar_vhs'         : Compatibility alias for 'cathar'.
 # ------------------------------------------------------------------------------
-process_mode: "cathar"
+process_mode: "auto"
 enable_multipass: true
 
 # ------------------------------------------------------------------------------
@@ -339,13 +340,14 @@ arnndn_enable_adeclick: true
 #   - cathar_declip_threshold is normalized peak amplitude from 0.0 to 1.0.
 #   - cathar_enhance_method accepts 'replicate' or 'interpolate'.
 #   - cathar_noiseprint_duration_s is the total quiet tape, in seconds, the noise print is
-#     learned from on a tape of 80 s or more: stitched from that many 0.75 s pauses spread
+#     learned from on a tape of 120 s or more (twenty times the print): stitched from that many 0.75 s pauses spread
 #     over the quietest fifth of the tape, because a single long window on dialogue
 #     carries speech and the print then strips sibilance (measured: one 4 s window took
 #     6 dB more off speech at 8-12 kHz than a 0.75 s one). Eight stitched pauses (6 s)
 #     removed 6.7 dB of noise on a 134 s dialogue tape against 3.4 dB for the single
 #     0.75 s window, at the same speech highs and with 5-6 dB less hiss in the pauses.
-#     Material under 80 s keeps the single 0.75 s window, so a 15 s clip is unchanged.
+#     Material under twenty times the print (120 s at 6 s) keeps the single 0.75 s
+#     window, so a 15 s clip is unchanged.
 #     dehum_harmonics is a positive count.
 #   - cathar_deplosive_strength, cathar_deesser_bands, and cathar_repair_strength
 #     are positive stage-strength/count settings; cathar_deesser_freq is Hz and

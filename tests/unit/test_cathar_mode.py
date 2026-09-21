@@ -261,14 +261,27 @@ def test_cathar_noiseprint_step(tmp_path):
     assert result == out_dir / "noise_input.np.json"
     mock_exec.assert_called_once()
 
-    # Pre-existing noiseprint JSON is returned directly
-    existing_json = out_dir / "noise_input.np.json"
+    # A pre-existing print learned the same way is returned directly
+    existing_json = out_dir / "noise_input_single_6s.np.json"
     existing_json.write_text("{}")
-    assert cathar._cathar_noiseprint_step(in_wav, out_dir) == existing_json
+    assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=6.0) == existing_json
 
     # Bypassed when extraction fails
     with patch("modules.cathar._extract_noiseprint_slice", return_value=False):
         assert cathar._cathar_noiseprint_step(tmp_path / "other.wav", out_dir) is None
+
+
+def test_cathar_noiseprint_cache_is_keyed_by_how_the_print_was_learned(tmp_path):
+    """A preserved work directory must not hand a single-window print to a stitched request, or the reverse."""
+    in_wav = tmp_path / "input.wav"
+    out_dir = tmp_path / "work"
+    out_dir.mkdir()
+    (out_dir / "noise_input_single_0.75s.np.json").write_text("{}")
+    with patch("modules.cathar._extract_stitched_noiseprint", return_value=False):
+        assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=6.0, stitched=True) is None
+    with patch("modules.cathar._extract_noiseprint_slice", return_value=False):
+        assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=6.0, stitched=False) is None
+    assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=0.75) == out_dir / "noise_input_single_0.75s.np.json"
 
 
 def test_filter_cathar_vhs_pipeline(tmp_path):

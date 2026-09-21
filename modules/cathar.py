@@ -469,7 +469,7 @@ def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_
     _extract_stitched_noiseprint); the single-window path is untouched, so every caller
     that does not ask for it keeps its output.
     """
-    output_json = output_dir / f"noise_{input_wav.stem}.np.json"
+    output_json = output_dir / _noiseprint_name(input_wav, duration_s, stitched)
     if _validate_existing_noiseprint(output_json):
         return output_json
     slice_wav = output_dir / f"silence_probe_{input_wav.stem}.wav"
@@ -482,6 +482,13 @@ def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_
     finally:
         if slice_wav.exists():
             slice_wav.unlink()
+
+
+def _noiseprint_name(input_wav, duration_s, stitched):
+    """The print is named by how it was learned: a preserved work directory must not hand a
+    0.75 s single-window print to a later stitched 6 s request, or the reverse."""
+    mode = "stitched" if stitched else "single"
+    return f"noise_{input_wav.stem}_{mode}_{float(duration_s):g}s.np.json"
 
 
 def _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json):
@@ -588,7 +595,7 @@ def _resolve_notch_freq(strategy):
 # The noise print is learned from the quietest stretch of the capture, and the stretch has to
 # be a pause: on a 15 s clip a 4 s window is a quarter of the material and carries programme,
 # on a two-hour tape it is almost certainly pure noise. So the full window is used only once
-# the material is at least this many times longer than it (4 s from 80 s of tape); anything
+# the material is at least this many times longer than it (6 s from 120 s of tape); anything
 # shorter keeps the 0.75 s cathar shipped with, exactly, so every corpus-length clip and
 # 60 s excerpt stays bit-identical while a real tape gets the full window.
 NOISEPRINT_SHORT_S = 0.75

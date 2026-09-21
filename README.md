@@ -109,15 +109,16 @@ The pipeline supports multiple execution modes controlled by `process_mode`:
   like birds/cars, musical harmonics, rhythm, spectral flatness, noise floor,
   mains hum, and rumble) and name the material: dialogue, rhythmic music,
   non-vocal music or ambience, or tape noise.
-- Run the engine the real-tape corpus says is best for it: `auto_pure_linear`
-  on every class (10.10 dB of noise removed for 0.31 dB of programme deviation
-  over 136 clips against `cathar`'s 6.02/0.44, and against 0.35/0.16 for
+- Run the engine the real-tape corpus says is best for it: `auto_pure_linear` on
+  every class (10.10 dB of noise removed for 0.31 dB of programme deviation over
+  136 clips against `cathar`'s 6.02/0.44, and against 0.35/0.16 for
   `denoise_only` and 0.72/0.06 for `auto_ffmpeg_native`, the engines earlier
   releases ran for music and tape noise); `cathar`, the deterministic DSP
-  engine, on sustained tonal programme with no silence for the noise probe
-  to learn from (where it deviates less on two clips in three, for 2-3 dB
-  less removal) and when the neural denoiser is not installed. The
-  pre-conditioning filters and the models (`UVR-DeNoise`,
+  engine, on sustained tonal programme with no silence for the noise probe to
+  learn from (where it deviates less on two clips in three, for 2-3 dB less
+  removal) and when the neural denoiser is not installed (when cathar is
+  installed; with neither engine available the `auto_ffmpeg_native` chain is the
+  last resort). The pre-conditioning filters and the models (`UVR-DeNoise`,
   `UVR-DeNoise-Lite`) follow the scan.
 - Sync and remux into output video (codecs depend on selected container: AAC
   for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
