@@ -174,6 +174,7 @@ def run_candidate(engine, overrides, tapes, out_dir, language):
     if all(w.exists() for w in wavs.values()):
         return wavs
     config, env = split_overrides(overrides)
+    config = {"batch_jobs": 1, **config}  # one candidate at a time; the app's own batch stays sequential inside it
     spec = {**ENGINES[engine], "env": env}
     cand_dir.mkdir(parents=True, exist_ok=True)
     (cand_dir / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")

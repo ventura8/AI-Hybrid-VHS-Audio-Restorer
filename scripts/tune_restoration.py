@@ -386,6 +386,8 @@ def run_variant(variant_dir, engine_spec, overrides, manifest, excerpts_dir, pyt
             else {"skipped": True}
         )
     variant_dir.mkdir(parents=True, exist_ok=True)
+    # One candidate at a time: the app's own batch stays sequential inside a variant.
+    overrides = {"batch_jobs": 1, **overrides}
     (variant_dir / "config.yaml").write_text(
         materialise_config((REPO / "config.yaml").read_text(encoding="utf-8"), engine_spec["process_mode"], overrides), encoding="utf-8"
     )

@@ -115,7 +115,7 @@ def test_run_variant_launches_a_fresh_interpreter_in_the_variant_dir(tmp_path):
     (excerpts_dir / "soti_start.mov").write_bytes(b"clip")
     manifest = {"excerpts": [{"excerpt": "soti_start.mov", "slug": "soti"}]}
     with (
-        patch.object(tr, "resolved_config", return_value={"cathar_alpha": 3.5}),
+        patch.object(tr, "resolved_config", return_value={"cathar_alpha": 3.5, "batch_jobs": 1}),
         patch.object(tr, "is_valid_video", return_value=False),
         patch.object(tr.subprocess, "run") as run,
     ):
@@ -135,7 +135,7 @@ def test_run_variant_hands_the_engine_env_to_the_child(tmp_path):
     manifest = {"excerpts": [{"excerpt": "soti_start.mov", "slug": "soti"}]}
     spec = {"process_mode": "cathar", "suffix": "_Cathar_Cleaned", "env": {"AI_RESTORE_CATHAR_BIN": "other-cathar"}}
     with (
-        patch.object(tr, "resolved_config", return_value={}) as resolved,
+        patch.object(tr, "resolved_config", return_value={"batch_jobs": 1}) as resolved,
         patch.object(tr, "is_valid_video", return_value=False),
         patch.object(tr.subprocess, "run") as run,
     ):

@@ -193,8 +193,10 @@ enable_multipass: true
 # SBR enhance stage 12 s of CPU for 12 s of wall, the same with RAYON_NUM_THREADS set),
 # so more cores only help through more files at once; each file runs in its own
 # interpreter with its own work directory and its output is bit-identical to a solo
-# run. 1 keeps the sequential batch. Neural modes load their models once per job.
-batch_jobs: 1
+# run. 1 keeps the sequential batch. Neural modes load their models once per job
+# (about 6 GB of GPU memory each for auto_pure_linear): 8 suits cathar on a 32-core
+# machine; use 2-4 for the neural modes.
+batch_jobs: 8
 
 # ------------------------------------------------------------------------------
 # Native FFmpeg Filter Settings (for 'vhs_native' mode; 'ffmpeg_native' alias)
