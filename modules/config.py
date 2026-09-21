@@ -105,6 +105,13 @@ _NUMERIC_CONFIG_FIELDS = (
     ("enhance_nfe", int, MAX_ENHANCE_NFE, 1, MAX_ENHANCE_NFE),
     ("enhance_tau", float, 0.3, 0.0),
     ("dtw_resolution", int, 40, 1),
+    # Files restored at once in a batch. cathar.exe is single-threaded on every stage
+    # (CPU time equals wall time; RAYON_NUM_THREADS changes nothing) and a file's
+    # stages run in sequence, so the only way onto the other cores is more files at a
+    # time, each in its own interpreter with its own work directory: every file's
+    # output is the same bytes as when it runs alone. Neural modes hold their models on
+    # the GPU per job, so raise this with the GPU memory in mind.
+    ("batch_jobs", int, 1, 1, 16),
     ("afftdn_nr", float, 10.0, 0.0),
     ("afftdn_nf", float, -55.0, None),
     ("highpass_freq", int, 80, 0),
@@ -680,6 +687,7 @@ LOG_FILE = Path("session_log.txt")
 
 EXTS = set(CONFIG["extensions"])
 KEEP_INPUT_FILES = os.environ.get("AI_RESTORE_TEST_MODE") == "1"
+BATCH_JOBS = int(CONFIG.get("batch_jobs", 1))
 
 # Audio mix levels
 VOCAL_MIX_VOL = float(CONFIG["vocal_mix_volume"])

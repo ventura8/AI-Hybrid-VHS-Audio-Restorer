@@ -266,6 +266,20 @@ licence and a `MANIFEST.json` with the sha256 of every file. No
 `config.yaml` key names them. See `docs/validation.md`, "Output
 validation harness".
 
+## Batches
+
+`batch_jobs` (default 1) is how many files restore at the same time when a
+folder or several files are given. Each file runs in a child interpreter on
+its own, with its own work directory and a log under `logs/<name>.log`, so
+its output is bit-identical to a solo run and a failure in one file leaves the
+others alone; the parent prints start, finish and the failed files. cathar is
+single-threaded on every stage (measured on a 134 s tape: the SBR enhance
+stage uses 12 s of CPU for 12 s of wall, `RAYON_NUM_THREADS` changes nothing)
+and its stages run one after another, so parallel files are the only way it
+uses more cores: four jobs restore a folder of four tapes in the time of the
+longest one. Neural modes load their models once per job; count about 6 GB of
+GPU memory per `auto_pure_linear` job.
+
 ## Long Captures
 
 `neural_chunk_seconds` is the longest track the UVR denoiser is given in one

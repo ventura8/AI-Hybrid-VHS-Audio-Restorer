@@ -188,6 +188,13 @@ dtw_resolution: 25
 # ------------------------------------------------------------------------------
 process_mode: "auto"
 enable_multipass: true
+# Files restored at the same time when a folder or several files are given. cathar is
+# single-threaded and its stages run one after another (measured on a 134 s tape: the
+# SBR enhance stage 12 s of CPU for 12 s of wall, the same with RAYON_NUM_THREADS set),
+# so more cores only help through more files at once; each file runs in its own
+# interpreter with its own work directory and its output is bit-identical to a solo
+# run. 1 keeps the sequential batch. Neural modes load their models once per job.
+batch_jobs: 1
 
 # ------------------------------------------------------------------------------
 # Native FFmpeg Filter Settings (for 'vhs_native' mode; 'ffmpeg_native' alias)

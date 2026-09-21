@@ -154,3 +154,10 @@ audio alignment, or FFmpeg multiplexing.
 - **Two engines at once**: the work directory is `.temp_work_<stem>` beside the
   source, so two runs on the same file collide. Run engines in parallel only
   on different paths (NTFS hardlinks of the tapes for the second engine).
+- **cathar speed**: every cathar.exe stage is single-threaded (CPU time equals
+  wall time; `RAYON_NUM_THREADS` changes nothing; measured 2026-09-21 on a
+  134 s tape: SBR enhance 12 s, spike repair 3 s, dehum 2 s, denoise 0.3 s)
+  and a file's stages run in sequence; on four full tapes the enhance stage
+  was 39 % of the chain, spike repair 25 %, ffmpeg's two-pass loudness 17 %.
+  Nothing in a stage can be split without changing bits, so the lever is
+  `batch_jobs`: files at once, each in a child interpreter, outputs unchanged.
