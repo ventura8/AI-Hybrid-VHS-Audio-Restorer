@@ -99,9 +99,9 @@ def score_zimtohrli(pair, card):
 
 def load_mert(device, models_dir):
     """MERT-v1-95M from the pinned store with its two remote-code files, plus its 24 kHz feature extractor."""
+    path = _require(models_dir, MERT_DIR, "stems")
     from transformers import AutoModel, Wav2Vec2FeatureExtractor
 
-    path = _require(models_dir, MERT_DIR, "stems")
     model = AutoModel.from_pretrained(str(path), trust_remote_code=True).to(device).eval()
     return model, Wav2Vec2FeatureExtractor.from_pretrained(str(path))
 

@@ -602,7 +602,7 @@ in `experiments/quality_calibration/`.
 ```powershell
 .\.venv\Scripts\python.exe scripts\calibrate_quality_metrics.py `
     --fixtures artifacts\realistic-v2 --languages en `
-    --known-ordering experiments\quality_calibration\known_ordering.json
+    --known-ordering assets\quality_calibration\known_ordering_v2.json
 ```
 
 Opt-in model tests: `AI_RESTORE_QUALITY_MODELS=1 pytest tests/quality`.

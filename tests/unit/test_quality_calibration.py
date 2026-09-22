@@ -204,7 +204,7 @@ LISTEN_GATES = ("listener.dead_air", "listener.pause_collapse", "listener.hiss",
 
 @functools.lru_cache(maxsize=None)
 def _manifest(name):
-    return json.loads((REPO / "experiments" / "quality_calibration" / name).read_text(encoding="utf-8"))
+    return json.loads((REPO / "assets" / "quality_calibration" / name).read_text(encoding="utf-8"))
 
 
 def _listen():

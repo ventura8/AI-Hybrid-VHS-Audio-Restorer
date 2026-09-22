@@ -72,11 +72,11 @@ def load_audiobox(device, models_dir):
 
 def load_scoreq(_device, models_dir):
     """The no-reference SCOREQ session on the GPU when onnxruntime-gpu can, else the CPU."""
-    import onnxruntime
-
     path = _require(models_dir, SCOREQ_DIR, "mos") / SCOREQ_NR_FILE
     if not path.is_file():
         raise SystemExit(f"{path.name} missing under {path.parent}; run scripts/download_quality_models.py --set mos")
+    import onnxruntime
+
     return onnxruntime.InferenceSession(str(path), providers=SCOREQ_PROVIDERS)
 
 

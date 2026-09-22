@@ -17,7 +17,7 @@ judge; the user's ear decides only at the end.
    a separate `--out`.
 1. Record the verdict as flags: a `listener.*` gate at severity `flag`, a
    degradation in `scripts/quality_degradations.py`, and the flagged /
-   clean labels per gate in `experiments/quality_calibration/known_ordering_v2.json`.
+   clean labels per gate in `assets/quality_calibration/known_ordering_v2.json`.
    Re-score the stored listening reports with
    `score_listen.py <slug> --dsp-rescore` and run
    `experiments/tata_listen/check_verdicts.py`: every
