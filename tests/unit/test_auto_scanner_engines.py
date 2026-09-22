@@ -117,7 +117,8 @@ def test_probe_similarity_separates_silence_from_sustained_programme():
     held = modules.auto_scanner._probe_programme_similarity(
         _sustained_programme(sr, lambda t: 0.6 + 0.4 * np.sin(2.0 * np.pi * 0.2 * t)), sr
     )
-    assert paused is not None and held is not None
+    assert paused is not None
+    assert held is not None
     assert held >= modules.auto_scanner.AUTO_CATHAR_PROBE_SIMILARITY > paused
     assert modules.auto_scanner._probe_programme_similarity(np.zeros(4096, dtype=np.float32), sr) is None
 

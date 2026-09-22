@@ -1190,13 +1190,15 @@ def _neural_stage(apl_chain, model_to_use, surgical_wav):
     return APL_NEURAL_MODEL or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
 
 
+POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor"})
+
+
 def _denoise_and_polish_full_audio_step(
     original_wav,
     audio_dir,
     total_duration=None,
     denoise_model=None,
     strategy=None,
-    apply_air=False,
     spectral_denoise=False,
     physical_repair=False,
     deepfilternet=False,
@@ -1204,10 +1206,17 @@ def _denoise_and_polish_full_audio_step(
     plosive_tamer=False,
     tone_cancel=False,
     resemble_denoise=False,
-    sibilant_guard=False,
-    pause_floor=False,
+    **stages,
 ):
-    """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
+    """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish.
+
+    `stages` holds the post-neural switches (`apply_air`, `sibilant_guard`, `pause_floor`),
+    all False unless named; any other name is a TypeError like a misspelt keyword would be.
+    """
+    unknown = set(stages) - POST_NEURAL_STAGES
+    if unknown:
+        raise TypeError(f"unknown post-neural stage(s): {sorted(unknown)}")
+    stages = {name: bool(stages.get(name, False)) for name in ("sibilant_guard", "pause_floor", "apply_air")}
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(
         original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=hum_cancel
@@ -1242,7 +1251,6 @@ def _denoise_and_polish_full_audio_step(
             ),
         )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    stages = {"sibilant_guard": sibilant_guard, "pause_floor": pause_floor, "apply_air": apply_air}
     return _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages)
 
 

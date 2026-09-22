@@ -203,8 +203,8 @@ def render_block(name, version, groups, markers=None, optional="false"):
 
 
 def block_meta(block):
-    groups = re.search(r"^groups = (\[.*?\])$", block, re.M).group(1)
-    markers = re.search(r'^markers = (".*?")$', block, re.M)
+    groups = re.search(r"^groups = (\[.*\])$", block, re.M).group(1)
+    markers = re.search(r'^markers = (".*")$', block, re.M)
     optional = re.search(r"^optional = (true|false)$", block, re.M).group(1)
     return groups, markers.group(1) if markers else None, optional
 

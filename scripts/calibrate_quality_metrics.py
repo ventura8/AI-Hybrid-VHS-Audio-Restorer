@@ -199,7 +199,7 @@ def _signed(direction, value):
 
 def _monotonic_share(per_level, direction, centre):
     """Share of languages on which the three levels are strictly ordered the expected way."""
-    per_language = list(zip(*[values for values in per_level.values()]))
+    per_language = list(zip(*per_level.values()))
     if not per_language:
         return 0.0
     ordered = [all(_signed(direction, b - centre) > _signed(direction, a - centre) for a, b in zip(seq, seq[1:])) for seq in per_language]
@@ -387,7 +387,9 @@ def _by_flags(tape, label, name):
     flags, clean = tape.get("flags", {}), tape.get("clean", {})
     if name not in flags and name not in clean:
         return None
-    return "bad" if label in flags.get(name, ()) else "good" if label in clean.get(name, ()) else "neither"
+    if label in flags.get(name, ()):
+        return "bad"
+    return "good" if label in clean.get(name, ()) else "neither"
 
 
 def _by_rank(tape, label):
@@ -395,7 +397,9 @@ def _by_rank(tape, label):
     rank = tape.get("ranks", {}).get(label)
     if rank is None:
         return "neither"
-    return "good" if rank <= GOOD_RANK_MAX else "bad" if rank >= BAD_RANK_MIN else "neither"
+    if rank <= GOOD_RANK_MAX:
+        return "good"
+    return "bad" if rank >= BAD_RANK_MIN else "neither"
 
 
 def _has_lists(ordering, name):

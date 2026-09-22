@@ -83,7 +83,8 @@ def test_hpss_parts_add_back_up_to_the_input():
     bed, hits, _spans = _fixture()
     source = _mix(bed, hits)
     harmonic, percussive = transient_metrics.hpss(source, RATE)
-    assert len(harmonic) == len(source) and len(percussive) == len(source)
+    assert len(harmonic) == len(source)
+    assert len(percussive) == len(source)
     error = harmonic + percussive - source.astype(np.float64)
     assert np.sqrt(np.mean(error**2)) / np.sqrt(np.mean(source.astype(np.float64) ** 2)) < 0.2
 

@@ -68,6 +68,9 @@ CUT_ARGS = [
 PROBE_RATIO_KEY = "cathar_noiseprint_duration_s"
 RUN_TIMEOUT_PER_EXCERPT_S = 900
 DEFAULT_GATES = Path("experiments/quality_calibration/gates.json")
+CONFIG_YAML = "config.yaml"
+SOURCE_WAV_SUFFIX = ".src.wav"
+TIMING_JSON = "timing.json"
 DEFAULT_TAPE_MAP = {"campanie": "campanie", "spitalul": "spitalul", "soti": "soti", "tele7abc": "tele7abc", "vaccinat": "vaccin"}
 
 
@@ -133,9 +136,9 @@ def _excerpt_rows(tape, grid, excerpts_dir, limit):
         if not target.exists():
             cut_excerpt(tape, target, start_s, grid["excerpt_s"])
         source_wav = (
-            _extract(target, target.with_suffix(".src.wav"))
-            if not target.with_suffix(".src.wav").exists()
-            else target.with_suffix(".src.wav")
+            _extract(target, target.with_suffix(SOURCE_WAV_SUFFIX))
+            if not target.with_suffix(SOURCE_WAV_SUFFIX).exists()
+            else target.with_suffix(SOURCE_WAV_SUFFIX)
         )
         rows.append(
             {
@@ -159,7 +162,7 @@ def _whole_row(clip, slug, excerpts_dir):
     target = excerpts_dir / f"{slug}{clip.suffix.lower()}"
     if not target.exists():
         _link_or_copy(clip, target)
-    source_wav = target.with_suffix(".src.wav")
+    source_wav = target.with_suffix(SOURCE_WAV_SUFFIX)
     if not source_wav.exists():
         _extract(target, source_wav)
     return {
@@ -205,7 +208,7 @@ def build_manifest(tapes_dir, grid, out_dir, limit=0, catalog=None, whole=False)
         "tapes_dir": str(tapes_dir),
         "excerpt_s": grid["excerpt_s"],
         "whole": bool(catalog or whole),
-        "config_sha256": sha256_of(REPO / "config.yaml"),
+        "config_sha256": sha256_of(REPO / CONFIG_YAML),
         "excerpts": rows[:limit] if limit else rows,
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -381,15 +384,15 @@ def run_variant(variant_dir, engine_spec, overrides, manifest, excerpts_dir, pyt
     suffix = engine_spec["suffix"]
     if variant_complete(variant_dir, manifest, suffix):
         return (
-            json.loads((variant_dir / "timing.json").read_text(encoding="utf-8"))
-            if (variant_dir / "timing.json").exists()
+            json.loads((variant_dir / TIMING_JSON).read_text(encoding="utf-8"))
+            if (variant_dir / TIMING_JSON).exists()
             else {"skipped": True}
         )
     variant_dir.mkdir(parents=True, exist_ok=True)
     # One candidate at a time: the app's own batch stays sequential inside a variant.
     overrides = {"batch_jobs": 1, **overrides}
-    (variant_dir / "config.yaml").write_text(
-        materialise_config((REPO / "config.yaml").read_text(encoding="utf-8"), engine_spec["process_mode"], overrides), encoding="utf-8"
+    (variant_dir / CONFIG_YAML).write_text(
+        materialise_config((REPO / CONFIG_YAML).read_text(encoding="utf-8"), engine_spec["process_mode"], overrides), encoding="utf-8"
     )
     extra_env = engine_env(engine_spec)
     resolved = resolved_config(variant_dir, python, extra_env)
@@ -399,7 +402,7 @@ def run_variant(variant_dir, engine_spec, overrides, manifest, excerpts_dir, pyt
         raise SystemExit(f"{variant_dir.name}: the app did not honour the overrides: {reverted}")
     excerpts = link_excerpts(excerpts_dir, variant_dir / "excerpts", manifest)
     timing = _launch(variant_dir, excerpts, python, keep_work, extra_env)
-    (variant_dir / "timing.json").write_text(json.dumps(timing, indent=1), encoding="utf-8")
+    (variant_dir / TIMING_JSON).write_text(json.dumps(timing, indent=1), encoding="utf-8")
     return timing
 
 

@@ -211,8 +211,8 @@ def _asr(pair, card, registry):
         for side, key in (("source", pair.source_key), ("output", pair.output_key))
     }
     for row in _speech_rows(card):
-        src = caches["source"].get(row.window, lambda: whisper.transcribe(_window(pair, "source", row)))
-        out = caches["output"].get(row.window, lambda: whisper.transcribe(_window(pair, "output", row)))
+        src = caches["source"].get(row.window, lambda row=row: whisper.transcribe(_window(pair, "source", row)))
+        out = caches["output"].get(row.window, lambda row=row: whisper.transcribe(_window(pair, "output", row)))
         _asr_row(row, src, out)
 
 

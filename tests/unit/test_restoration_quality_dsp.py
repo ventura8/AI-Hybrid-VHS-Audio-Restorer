@@ -85,7 +85,8 @@ def test_pause_dynamics_read_a_gated_floor_as_pumping_and_identity_as_nothing():
     gated = speech + noise * np.where((t * 8) % 1.0 < 0.5, 1.0, 0.03)
     same = dsp.pause_dynamics(source, source, RATE)
     pumped = dsp.pause_dynamics(source, gated, RATE)
-    assert same["pause_pumping_db"][0] == same["pause_pumping_db"][1] and same["pause_tilt_db"][1] == 0.0
+    assert same["pause_pumping_db"][0] == same["pause_pumping_db"][1]
+    assert same["pause_tilt_db"][1] == 0.0
     assert pumped["pause_pumping_db"][1] > pumped["pause_pumping_db"][0] + 8.0
 
 

@@ -98,7 +98,8 @@ def test_the_fill_never_exceeds_the_source_and_skips_when_there_is_nothing_to_fi
     with _on()[0], _on()[1], _on()[2]:
         assert pause_floor.apply_when_needed(reference, restored, tmp_path) == restored
     gains = pause_floor.fill_gains(np.full(100, 0.01), np.zeros(100), np.ones(100), 0.0)
-    assert gains.max() <= 1.0 and gains.min() >= 0.0
+    assert gains.max() <= 1.0
+    assert gains.min() >= 0.0
 
 
 def _nothing_written(tmp_path):
@@ -147,7 +148,8 @@ def test_block_size_does_not_change_the_result_and_the_file_is_reused(tmp_path):
     a, _r = sf.read(str(first), dtype="float32")
     b, _r = sf.read(str(second), dtype="float32")
     assert np.abs(a - b).max() < 1e-6
-    assert again == first and first.stat().st_mtime_ns == stamp
+    assert again == first
+    assert first.stat().st_mtime_ns == stamp
 
 
 def test_envelope_lag_finds_a_shift_and_alignment_trims_to_the_overlap():
@@ -155,7 +157,9 @@ def test_envelope_lag_finds_a_shift_and_alignment_trims_to_the_overlap():
     shifted = np.concatenate([np.full(3, 0.01), env[:-3]])
     assert pause_floor.envelope_lag(env, shifted) == 3
     ref, res, lag = pause_floor._aligned(env, shifted)
-    assert lag == 3 and len(ref) == len(res) == 397
+    assert lag == 3
+    assert len(ref) == len(res) == 397
     assert np.allclose(ref, res)
     ref, res, lag = pause_floor._aligned(shifted, env)
-    assert lag == -3 and len(ref) == len(res) == 397
+    assert lag == -3
+    assert len(ref) == len(res) == 397

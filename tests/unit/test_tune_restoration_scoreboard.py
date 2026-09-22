@@ -74,7 +74,8 @@ def test_scoreboard_renders_tables_recommendation_and_warnings():
     text = tr.render_scoreboard_md(board)
     assert board["recommendation"]["cathar"]["best"] == "cathar__alpha"
     assert board["recommendation"]["apl"]["best"] is None
-    assert "## Warnings" in text and "dsp.lkr" in text
+    assert "## Warnings" in text
+    assert "dsp.lkr" in text
     assert json.loads(json.dumps(board, default=str))["per_tape_engine"]["soti"]["variant"] == "cathar__alpha"
 
 
@@ -112,7 +113,8 @@ def test_merge_families_replaces_only_the_rescored_family_and_rereads_verdicts()
     assert variant["rows"][0]["delta"] == {"dsp.clicks_per_s": 0.0, "mos.sigmos_disc": -0.9}
     assert variant["aggregate"]["mos.sigmos_disc"]["delta"]["median"] == -0.9
     assert variant["families"] == {"dsp": "ok", "mos": "ok"}
-    assert variant["passed"] is True and variant["hard_failures"] == []
+    assert variant["passed"] is True
+    assert variant["hard_failures"] == []
 
 
 def test_merge_families_takes_the_fresh_pair_when_the_windows_differ():

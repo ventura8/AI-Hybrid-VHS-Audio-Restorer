@@ -28,6 +28,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+CONFIG_JSON = "config.json"
+PREPROCESSOR_JSON = "preprocessor_config.json"
 
 # Pinned 2026-09-20. Revisions are the upstream commits then current; a file that does not
 # hash to what the first fetch recorded is not the file the calibration was written against.
@@ -49,9 +51,9 @@ PINS = {
         "repo": "openai/whisper-large-v3-turbo",
         "revision": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
         "files": [
-            "config.json",
+            CONFIG_JSON,
             "generation_config.json",
-            "preprocessor_config.json",
+            PREPROCESSOR_JSON,
             "tokenizer.json",
             "tokenizer_config.json",
             "vocab.json",
@@ -70,7 +72,7 @@ PINS = {
         "kind": "hf",
         "repo": "microsoft/wavlm-base-plus-sv",
         "revision": "feb593a6c23c1cc3d9510425c29b0a14d2b07b1e",
-        "files": ["config.json", "preprocessor_config.json", "pytorch_model.bin"],
+        "files": [CONFIG_JSON, PREPROCESSOR_JSON, "pytorch_model.bin"],
         "license": "MIT (microsoft/unilm WavLM)",
         "source": "https://huggingface.co/microsoft/wavlm-base-plus-sv",
         "size_mb": 405,
@@ -80,7 +82,7 @@ PINS = {
         "kind": "hf",
         "repo": "facebook/audiobox-aesthetics",
         "revision": "9b1dd8e5df9af7216e836a98974fe3b82c56ded6",
-        "files": ["config.json", "checkpoint.pt"],
+        "files": [CONFIG_JSON, "checkpoint.pt"],
         "license": "CC-BY-4.0 (facebook/audiobox-aesthetics)",
         "source": "https://huggingface.co/facebook/audiobox-aesthetics",
         "size_mb": 416,
@@ -128,7 +130,7 @@ PINS = {
         "kind": "hf",
         "repo": "m-a-p/MERT-v1-95M",
         "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
-        "files": ["config.json", "preprocessor_config.json", "configuration_MERT.py", "modeling_MERT.py", "pytorch_model.bin"],
+        "files": [CONFIG_JSON, PREPROCESSOR_JSON, "configuration_MERT.py", "modeling_MERT.py", "pytorch_model.bin"],
         "license": "CC-BY-NC-4.0 (m-a-p/MERT-v1-95M): research use, no commercial use",
         "source": "https://huggingface.co/m-a-p/MERT-v1-95M",
         "size_mb": 378,
@@ -281,7 +283,8 @@ def main(argv=None):
 
 
 def _check_all(selected, models_dir):
-    ok = all([check(name, pin, models_dir) for name, pin in selected.items()])
+    checks = [check(name, pin, models_dir) for name, pin in selected.items()]  # every model is checked, not just the first missing
+    ok = all(checks)
     print("all present" if ok else "run scripts/download_quality_models.py to fetch the missing models")
     return 0 if ok else 1
 

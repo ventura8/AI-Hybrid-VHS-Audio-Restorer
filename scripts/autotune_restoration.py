@@ -44,6 +44,7 @@ ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 ROFORMER_AGGR = "denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt"
 CATHAR_076 = "experiments/cathar-0.7.6/cathar.exe"
 SCORER_PARALLEL = 2
+LOG_MD = "log.md"
 
 # Knobs both engines share: the polish expander (the stage that turns a denoised pause into
 # dead air), the mux's loudness-range target (loudnorm drops to dynamic mode above it and rides
@@ -153,8 +154,9 @@ def seed_defaults(engine, start, out_dir):
         return seeded
     probe = out_dir / "defaults"
     probe.mkdir(parents=True, exist_ok=True)
-    (probe / "config.yaml").write_text(
-        tune.materialise_config((REPO / "config.yaml").read_text(encoding="utf-8"), ENGINES[engine]["process_mode"], {}), encoding="utf-8"
+    (probe / tune.CONFIG_YAML).write_text(
+        tune.materialise_config((REPO / tune.CONFIG_YAML).read_text(encoding="utf-8"), ENGINES[engine]["process_mode"], {}),
+        encoding="utf-8",
     )
     resolved = tune.resolved_config(probe, PYTHON)
     for knob in missing:
@@ -209,7 +211,7 @@ def combine(incumbent, winners):
 # ----------------------------------------------------------------------------- running
 
 
-def run_candidate(engine, overrides, tapes, out_dir, language):
+def run_candidate(engine, overrides, tapes, out_dir):
     """Restores every tape with `overrides` and keeps the audio as WAV under `out_dir/<id>/`; returns the WAV paths."""
     cid = candidate_id(overrides)
     cand_dir = out_dir / "cands" / cid
@@ -224,8 +226,8 @@ def run_candidate(engine, overrides, tapes, out_dir, language):
     problems = tune.validate_overrides(config)
     if problems:
         raise SystemExit(f"{cid}: {problems}")
-    (cand_dir / "config.yaml").write_text(
-        tune.materialise_config((REPO / "config.yaml").read_text(encoding="utf-8"), spec["process_mode"], config), encoding="utf-8"
+    (cand_dir / tune.CONFIG_YAML).write_text(
+        tune.materialise_config((REPO / tune.CONFIG_YAML).read_text(encoding="utf-8"), spec["process_mode"], config), encoding="utf-8"
     )
     extra_env = tune.engine_env(spec)
     reverted = tune.assert_overrides_resolved(config, tune.resolved_config(cand_dir, PYTHON, extra_env))
@@ -362,7 +364,9 @@ def _beats(verdict, base, n_tapes):
 
 def describe(overrides, incumbent):
     changed = {k: v for k, v in overrides.items() if incumbent.get(k) != v}
-    return json.dumps(changed if changed else overrides, default=str) if overrides else "defaults"
+    if not overrides:
+        return "defaults"
+    return json.dumps(changed if changed else overrides, default=str)
 
 
 # ----------------------------------------------------------------------------- driver
@@ -411,7 +415,7 @@ def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, inc
     save_state(out_dir, state)
     for cid, overrides in everything.items():
         print(f"  running {cid} {describe(overrides, incumbent)}", flush=True)
-        run_candidate(engine, overrides, tapes, out_dir, args.language)
+        run_candidate(engine, overrides, tapes, out_dir)
     scores = score_round(everything, tapes, out_dir, args.families, args.gates, args.language, args.parallel)
     return judge(scores, candidate_id(incumbent), ranking)
 
@@ -430,7 +434,7 @@ def _report_round(out_dir, number, incumbent, everything, ordered, qualifying, n
         else "no candidate qualified: plateau"
     )
     lines += ["", outcome, ""]
-    with open(out_dir / "log.md", "a", encoding="utf-8") as log:
+    with open(out_dir / LOG_MD, "a", encoding="utf-8") as log:
         log.write("\n".join(lines) + "\n")
     print("\n".join(lines), flush=True)
 
@@ -459,8 +463,8 @@ def main(argv=None):
     state = load_state(out_dir, seed_defaults(args.engine, start, out_dir))
     # A knob added to the table after the run began is seeded too, so its first moves are neighbours of the real value.
     state["incumbent"] = seed_defaults(args.engine, state["incumbent"], out_dir)
-    if not (out_dir / "log.md").exists():
-        (out_dir / "log.md").write_text(f"# autotune {args.engine}\n\ntapes: {', '.join(tapes)}\n\n", encoding="utf-8")
+    if not (out_dir / LOG_MD).exists():
+        (out_dir / LOG_MD).write_text(f"# autotune {args.engine}\n\ntapes: {', '.join(tapes)}\n\n", encoding="utf-8")
     for number in range(len(state["rounds"]) + 1, args.rounds + 1):
         if not run_round(args, args.engine, tapes, out_dir, state, ranking, number):
             break

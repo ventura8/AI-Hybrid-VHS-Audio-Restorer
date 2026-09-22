@@ -54,9 +54,11 @@ def _scores():
 def test_judge_accepts_only_a_better_candidate_without_new_hard_failures():
     ranking = {"mos.sigmos_col.delta.median": "up", "speech.cer.output.median": "down"}
     verdicts = at.judge(_scores(), "inc", ranking)
-    assert verdicts["good"]["qualifies"] and verdicts["good"]["wins"] == 2
+    assert verdicts["good"]["qualifies"]
+    assert verdicts["good"]["wins"] == 2
     assert not verdicts["bad"]["qualifies"]
-    assert not verdicts["fail"]["qualifies"] and verdicts["fail"]["failures"] == 6.0
+    assert not verdicts["fail"]["qualifies"]
+    assert verdicts["fail"]["failures"] == 6.0
     assert not verdicts["inc"]["qualifies"]
 
 

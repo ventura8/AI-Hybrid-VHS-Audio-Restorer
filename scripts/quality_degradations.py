@@ -19,6 +19,8 @@ from scripts.restoration_quality import audio_io, sibilance
 
 WHISTLE_HZ = 15625.0
 QUIET_SHARE = 0.2
+SIGMOS_NOISE = "mos.sigmos_noise"
+SIGMOS_DISC = "mos.sigmos_disc"
 COMPRESS_ATTACK_S = 0.01
 COMPRESS_RELEASE_S = 0.1
 MUTE_SPACING_S = 1.0
@@ -79,7 +81,7 @@ def _istft(spec, rate, length):
 
 def spectral_oversubtract(vhs, rate, alpha, floor=0.0):
     """Musical noise: subtraction at `alpha` times a noise PSD learned from the quietest frames, no floor."""
-    freqs, times, spec = _stft(np.asarray(vhs, dtype=np.float64), rate)
+    _f, _t, spec = _stft(np.asarray(vhs, dtype=np.float64), rate)
     power = np.abs(spec) ** 2
     frame_level = power.sum(axis=0)
     quiet = frame_level <= np.percentile(frame_level, QUIET_SHARE * 100.0)
@@ -94,7 +96,7 @@ def random_bin_gate(clean, rate, keep_probability, rng):
     return _istft(spec * (rng.random(spec.shape) < keep_probability), rate, len(clean))
 
 
-def griffin_lim_resynth(clean, rate, iterations):
+def griffin_lim_resynth(clean, iterations):
     """The robotic voice: magnitude-only resynthesis with few Griffin-Lim iterations."""
     import librosa
 
@@ -330,11 +332,9 @@ DEGRADATIONS = {
     "hiss": Degradation(
         "speech",
         (40.0, 30.0, 20.0),
-        (Expectation("dsp.residual_noise_db", "up"), Expectation("mos.sigmos_noise", "down"), Expectation("mos.dnsmos_bak", "down", True)),
+        (Expectation("dsp.residual_noise_db", "up"), Expectation(SIGMOS_NOISE, "down"), Expectation("mos.dnsmos_bak", "down", True)),
     ),
-    "hum": Degradation(
-        "speech", (0.003, 0.01, 0.03), (Expectation("dsp.hum_excess_db", "up"), Expectation("mos.sigmos_noise", "down", True))
-    ),
+    "hum": Degradation("speech", (0.003, 0.01, 0.03), (Expectation("dsp.hum_excess_db", "up"), Expectation(SIGMOS_NOISE, "down", True))),
     "underwater": Degradation(
         "speech",
         (8000.0, 6000.0, 4000.0),
@@ -346,7 +346,7 @@ DEGRADATIONS = {
             Expectation("mos.audiobox_pq", "down", True),
         ),
     ),
-    "musical_noise": Degradation("vhs", (2.0, 4.0, 8.0), (Expectation("dsp.lkr", "up"), Expectation("mos.sigmos_disc", "down", True))),
+    "musical_noise": Degradation("vhs", (2.0, 4.0, 8.0), (Expectation("dsp.lkr", "up"), Expectation(SIGMOS_DISC, "down", True))),
     "robotic": Degradation(
         "speech",
         (32, 8, 2),
@@ -359,7 +359,7 @@ DEGRADATIONS = {
             Expectation("speech.cer", "up"),
             Expectation("speech.wer", "up"),
             Expectation("dsp.dropouts", "up"),
-            Expectation("mos.sigmos_disc", "down", True),
+            Expectation(SIGMOS_DISC, "down", True),
         ),
     ),
     "words_spliced": Degradation(
@@ -374,10 +374,8 @@ DEGRADATIONS = {
             Expectation("mos.audiobox_pc", "down", True),
         ),
     ),
-    "clicks": Degradation(
-        "speech", (2.0, 8.0, 20.0), (Expectation("dsp.clicks_per_s", "up"), Expectation("mos.sigmos_disc", "down", True))
-    ),
-    "dropouts": Degradation("speech", (3, 6, 12), (Expectation("dsp.dropouts", "up"), Expectation("mos.sigmos_disc", "down", True))),
+    "clicks": Degradation("speech", (2.0, 8.0, 20.0), (Expectation("dsp.clicks_per_s", "up"), Expectation(SIGMOS_DISC, "down", True))),
+    "dropouts": Degradation("speech", (3, 6, 12), (Expectation("dsp.dropouts", "up"), Expectation(SIGMOS_DISC, "down", True))),
     "whistle": Degradation("speech", (-50.0, -40.0, -30.0), (Expectation("dsp.whistle_db", "up"),)),
     "gain": Degradation("speech", (-3.0, -6.0, -12.0), (Expectation("file.lufs", "down"),)),
     "compression": Degradation("speech", (4.0, 8.0, 20.0), (Expectation("file.lra", "down", True),)),
@@ -389,13 +387,13 @@ DEGRADATIONS = {
             Expectation("dsp.pause_depth_db", "up"),
             Expectation("dsp.pause_pumping_db", "up"),
             Expectation("dsp.gap_air_db", "down"),
-            Expectation("mos.sigmos_disc", "down", True),
+            Expectation(SIGMOS_DISC, "down", True),
         ),
     ),
     "hiss_in_pauses": Degradation(
         "speech",
         (30.0, 20.0, 10.0),
-        (Expectation("dsp.gap_air_db", "up"), Expectation("dsp.residual_noise_db", "up"), Expectation("mos.sigmos_noise", "down", True)),
+        (Expectation("dsp.gap_air_db", "up"), Expectation("dsp.residual_noise_db", "up"), Expectation(SIGMOS_NOISE, "down", True)),
     ),
     # The centroid is blind here: the synthetic fricatives carry too little body for removing
     # it to move them (a few hertz), while on tape the same removal read +370..+620 Hz.
@@ -457,7 +455,7 @@ def _apply_rest(name, level, base, rate, materials, rng):
     if name == "musical_noise":
         return materials["vhs"], spectral_oversubtract(materials["vhs"], rate, level)
     if name == "robotic":
-        return base, griffin_lim_resynth(base, rate, level)
+        return base, griffin_lim_resynth(base, level)
     if name == "words_muted":
         return base, mute_segment(base, rate, 0.3, level)[0]
     if name == "words_spliced":

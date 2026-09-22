@@ -86,8 +86,11 @@ def test_too_little_material_reads_none():
 def test_level_classes_partition_the_frames():
     levels = np.linspace(-80.0, -10.0, 200)
     deep, gap, loud = pause_metrics.level_classes(levels)
-    assert not (deep & gap).any() and not (gap & loud).any()
-    assert deep.sum() >= 20 and gap.sum() >= 20 and loud.sum() >= 20
+    assert not (deep & gap).any()
+    assert not (gap & loud).any()
+    assert deep.sum() >= 20
+    assert gap.sum() >= 20
+    assert loud.sum() >= 20
 
 
 def test_runner_flags_a_window_whose_output_fell_silent():

@@ -47,7 +47,8 @@ def test_measured_loudness_is_logged_with_the_mode_it_allows():
         mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "6.0", "input_tp": "-3.0"})
         mastering._log_loudness_range({"input_lra": "nan"})
     messages = [call.args[0] for call in log.call_args_list]
-    assert "dynamic" in messages[0] and "LRA=18.4" in messages[0]
+    assert "dynamic" in messages[0]
+    assert "LRA=18.4" in messages[0]
     assert "-> linear" in messages[1]
     assert "dynamic" in messages[2]
 

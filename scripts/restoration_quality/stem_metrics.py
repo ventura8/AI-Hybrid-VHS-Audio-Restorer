@@ -37,7 +37,7 @@ BACKGROUND_MIN_DBFS = -45.0
 BACKGROUND_MIN_RATIO_DB = -20.0
 
 
-def load_separator(device, models_dir, output_dir=None):
+def load_separator(models_dir, output_dir=None):
     """The app's separator, loaded once, writing the instrumental stem only."""
     import logging
 
@@ -100,7 +100,7 @@ def _stems(pair, registry):
     """Aligned, gain-matched mono instrumental stems of the pair."""
     stems_dir = pair.cache_dir / "stems"
     stems_dir.mkdir(parents=True, exist_ok=True)
-    separator = registry.get("separator", lambda device, models_dir: load_separator(device, models_dir, stems_dir))
+    separator = registry.get("separator", lambda _device, models_dir: load_separator(models_dir, stems_dir))
     src_stem = separate_once(separator, pair.source_wav, stems_dir, pair.source_key)
     out_stem = separate_once(separator, pair.output_wav, stems_dir, pair.output_key)
     src_audio, rate = audio_io.load_audio(src_stem)

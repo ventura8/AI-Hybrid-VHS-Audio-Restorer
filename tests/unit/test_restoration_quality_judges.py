@@ -30,8 +30,10 @@ def test_scoreq_pads_to_a_multiple_of_320_and_reads_the_scalar():
     scores = mos_models.scoreq_scores(session, np.ones(16001, dtype=np.float64))
     assert scores == {"mos.scoreq_nr": 3.5}
     fed = session.feeds[0]["audio_input"]
-    assert fed.shape == (1, 16320) and fed.dtype == np.float32
-    assert np.all(fed[0, 16001:] == 0.0) and np.all(fed[0, :16001] == 1.0)
+    assert fed.shape == (1, 16320)
+    assert fed.dtype == np.float32
+    assert np.all(fed[0, 16001:] == 0.0)
+    assert np.all(fed[0, :16001] == 1.0)
 
 
 def test_scoreq_leaves_an_exact_multiple_alone_and_skips_empty_audio():
@@ -110,7 +112,8 @@ def test_score_zimtohrli_writes_programme_rows_at_48k():
         judges.score_zimtohrli(pair, card)
     assert set(pair.calls) == {("source", 48000), ("output", 48000)}
     assert [row.output.get("dsp.zimtohrli_loud") for row in card.rows] == [0.25, None, 0.25, 0.25]
-    assert card.rows[0].source["dsp.zimtohrli_loud"] == 0.0 and "dsp.zimtohrli_loud" not in card.rows[1].source
+    assert card.rows[0].source["dsp.zimtohrli_loud"] == 0.0
+    assert "dsp.zimtohrli_loud" not in card.rows[1].source
 
 
 class _FakeMert:
@@ -126,7 +129,8 @@ class _FakeMert:
 
 def _fake_extractor(audio, sampling_rate, return_tensors):
     torch = pytest.importorskip("torch")
-    assert sampling_rate == 24000 and return_tensors == "pt"
+    assert sampling_rate == 24000
+    assert return_tensors == "pt"
     return {"input_values": torch.from_numpy(np.asarray(audio, dtype=np.float32))}
 
 
@@ -154,7 +158,8 @@ def test_score_mert_writes_music_and_mixed_rows_from_the_24k_mix():
     judges.score_mert(pair, card, _Registry(_FakeMert()))
     assert set(pair.calls) == {("source", 24000), ("output", 24000)}
     assert [round(row.output.get("stems.mert_dist", -1.0), 6) for row in card.rows] == [-1.0, 1.0, 1.0, -1.0]
-    assert card.rows[1].source["stems.mert_dist"] == 0.0 and "stems.mert_dist" not in card.rows[0].source
+    assert card.rows[1].source["stems.mert_dist"] == 0.0
+    assert "stems.mert_dist" not in card.rows[0].source
 
 
 def test_load_mert_and_load_scoreq_name_the_download_set(tmp_path):

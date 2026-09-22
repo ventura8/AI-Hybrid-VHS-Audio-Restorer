@@ -117,12 +117,19 @@ def _passes(value, op, threshold):
     return abs(value) <= threshold
 
 
+def _status(value, gate, threshold):
+    """skipped when the value or the threshold is unknown, else passed / failed."""
+    if value is None or threshold is None:
+        return "skipped"
+    return "passed" if _passes(value, gate.op, threshold) else "failed"
+
+
 def evaluate_gates(aggregate, gates=GATES, speaker_floor=None):
     """Verdicts for every gate: passed / failed / skipped (metric absent or floor unknown)."""
     verdicts = []
     for name, gate in gates.items():
         value, threshold = _read(aggregate, gate), _threshold(gate, speaker_floor)
-        status = "skipped" if value is None or threshold is None else ("passed" if _passes(value, gate.op, threshold) else "failed")
+        status = _status(value, gate, threshold)
         verdicts.append(
             {
                 "gate": name,

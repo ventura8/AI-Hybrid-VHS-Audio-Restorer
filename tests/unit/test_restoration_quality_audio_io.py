@@ -141,7 +141,8 @@ def test_dc_free_copy_returns_the_file_itself_unless_dc_dominates(tmp_path):
     sf.write(str(tmp_path / "offset.wav"), clean + 0.49, RATE, subtype="FLOAT")
     assert audio_io.dc_free_copy(tmp_path / "clean.wav", tmp_path / "cache") == tmp_path / "clean.wav"
     copy = audio_io.dc_free_copy(tmp_path / "offset.wav", tmp_path / "cache")
-    assert copy.name.endswith("_dcfree.wav") and audio_io.dc_share(copy) < 1e-6
+    assert copy.name.endswith("_dcfree.wav")
+    assert audio_io.dc_share(copy) < 1e-6
 
 
 def test_route_window_calls_an_infrasonic_capture_silence():

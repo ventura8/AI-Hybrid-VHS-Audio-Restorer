@@ -384,6 +384,7 @@ def test_tonality_is_the_chain_measure_and_needs_a_frame():
     noise = np.random.default_rng(1).normal(0, 0.3, sr * 2).astype(np.float32)
     tonal = modules.auto_scanner._estimate_tonality(tone, sr)
     broadband = modules.auto_scanner._estimate_tonality(noise, sr)
-    assert tonal is not None and broadband is not None
+    assert tonal is not None
+    assert broadband is not None
     assert tonal < modules.auto_scanner.APL_TONAL_FLATNESS_MAX < broadband
     assert modules.auto_scanner._estimate_tonality(tone[:4096], sr) is None

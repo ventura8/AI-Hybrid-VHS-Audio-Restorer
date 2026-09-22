@@ -79,9 +79,11 @@ def test_ordering_rules_reproduce_the_by_ear_verdicts():
         }
     }
     rules = cal.ordering_rules(result, {})
-    assert rules["bug_flagged_muffled"] and rules["bug_in_bottom_two"]
+    assert rules["bug_flagged_muffled"]
+    assert rules["bug_in_bottom_two"]
     assert rules["single4s_duller_than_stitched"]
-    assert rules["apl_not_altered"] and rules["good_in_top"]
+    assert rules["apl_not_altered"]
+    assert rules["good_in_top"]
 
 
 def test_ranking_orders_by_failures_then_composite():
@@ -195,7 +197,8 @@ def test_reevaluate_ordering_reads_the_flags_under_the_derived_gates():
     loose = {"listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -40.0, severity="flag")}
     after = cal.reevaluate_ordering(ordering, loose, {})["tele"]
     assert after["rules"]["flags_reproduced"] is False
-    assert after["flags"] == lists["flags"] and after["clean"] == lists["clean"]
+    assert after["flags"] == lists["flags"]
+    assert after["clean"] == lists["clean"]
 
 
 REPO = Path(cal.__file__).resolve().parent.parent
