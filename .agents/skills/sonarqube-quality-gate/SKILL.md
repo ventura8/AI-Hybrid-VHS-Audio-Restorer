@@ -46,9 +46,11 @@ gh run view <run-id> --repo ventura8/AI-Hybrid-VHS-Audio-Restorer \
 
 - `Not authorized or project not found`: the `SONAR_TOKEN` secret is missing
   or revoked. Only the user creates a token (sonarcloud.io → My Account →
-  Security) and stores it (`gh secret set SONAR_TOKEN --repo ...`); an agent
-  never handles the token value. Re-run the check afterwards
-  (`gh run rerun <run-id> --failed`).
+  Security, or the project's "With GitHub Actions" setup page, which shows
+  one) and stores it; an agent never handles the token value. The one-command
+  path is `.\scripts\set_sonar_token.ps1`: it takes the token at a masked
+  prompt, stores the secret through `gh secret set` and re-runs the failed CI
+  job of the current branch.
 - `QUALITY GATE STATUS: FAILED` with conditions listed: open the analysis
   link in the log, read the failed conditions on new code, fix the code.
 - A scanner error about `coverage.xml` / `junit.xml`: the test step did not
