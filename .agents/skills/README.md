@@ -31,6 +31,9 @@ the Antigravity agent system.
 - [output-quality-harness/SKILL.md](output-quality-harness/SKILL.md): The "AI
   human ear": listener-like scoring, calibration, real-tape tuning and the
   self-driving loop that asks the user only at its plateau.
+- [sonarqube-quality-gate/SKILL.md](sonarqube-quality-gate/SKILL.md): SonarQube
+  Cloud on this repository: the CI scan, reading and fixing findings without
+  suppressions, project settings on sonarcloud.io, failure triage.
 
 Every session that learns a rule, a measured fact or a tool quirk writes it
 into the skill that owns the topic in the same change (`AGENTS.md`, section

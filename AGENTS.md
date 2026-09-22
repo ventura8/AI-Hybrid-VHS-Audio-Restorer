@@ -312,6 +312,10 @@ The repository defines the following modular skills in `.agents/skills/`.
   The "AI human ear": scoring an output like a listener, calibration, tuning
   on real tapes, and the self-driving loop that asks the user only at its
   plateau.
+- [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
+  SonarQube Cloud on this repository: the CI scan, reading and fixing its
+  findings without suppressions, project settings on sonarcloud.io, and the
+  triage of a failed check.
 
 ______________________________________________________________________
 
@@ -345,6 +349,8 @@ Targeted workflow playbooks are maintained under `.agent/workflows/`:
 - [tune_on_real_tapes.md](.agent/workflows/tune_on_real_tapes.md): Measuring a
   listening complaint, letting the autotune loop refine, confirming on full
   tapes and feeding winners back.
+- [sonarqube_findings.md](.agent/workflows/sonarqube_findings.md): Triage of a
+  failed SonarQube Cloud check and fixing its findings at the source.
 
 ______________________________________________________________________
 
