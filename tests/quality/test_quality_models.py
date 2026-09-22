@@ -1,4 +1,4 @@
-"""Every model-backed scorer loads from the model store and returns a finite reading on a short clip."""
+"""Every model-backed scorer loads from the model store and returns a finite reading on a short clip (SCOREQ and MERT too)."""
 
 import math
 
@@ -66,4 +66,22 @@ def test_utmos_scores_in_the_mos_range(registry):
     predictor = registry.get("utmos", speech_models.load_utmos)
     score = speech_models.utmos_score(predictor, _speechlike(), "cuda")
     assert 0.5 <= score <= 5.5
+    registry.release()
+
+
+def test_scoreq_reads_a_mos_on_the_gpu_or_cpu(registry):
+    session = registry.get("scoreq", mos_models.load_scoreq)
+    scores = mos_models.scoreq_scores(session, _speechlike())
+    assert set(scores) == {"mos.scoreq_nr"}
+    assert 0.5 <= scores["mos.scoreq_nr"] <= 5.5
+    registry.release()
+
+
+def test_mert_hears_the_same_music_as_the_same(registry):
+    from scripts.restoration_quality import judges
+
+    model, extractor = registry.get("mert", judges.load_mert)
+    audio = _speechlike()
+    assert judges.mert_distance(model, extractor, audio, audio) < 1e-3
+    assert judges.mert_distance(model, extractor, audio, audio[::-1].copy()) > 1e-3
     registry.release()

@@ -62,6 +62,15 @@ def test_hard_failures_ignore_soft_gates():
     assert g.hard_failures(verdicts) == ["dsp.lkr"]
 
 
+def test_listener_flags_are_counted_apart_from_hard_failures():
+    aggregate = _aggregate(**{"dsp.gap_air_db": (-30.0, -30.0, -5.0, -5.0), "dsp.lkr": (0.0, 0.0, 0.9, 0.9)})
+    verdicts = g.evaluate_gates(aggregate, g.GATES)
+    assert _status(verdicts, "listener.dead_air") == "failed"
+    assert _status(verdicts, "listener.hiss") == "passed"
+    assert g.flag_failures(verdicts) == ["listener.dead_air"]
+    assert g.hard_failures(verdicts) == ["dsp.lkr"]
+
+
 def _write_overrides(tmp_path):
     path = tmp_path / "gates.json"
     custom = {"metric": "dsp.hum_excess_db", "stat": "delta.tail", "op": "<=", "threshold": 1.0}

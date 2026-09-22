@@ -11,16 +11,33 @@ import contextlib
 from dataclasses import dataclass
 
 import numpy as np
+import scipy.ndimage
 import scipy.signal
 
 from scripts import realistic_defects as defects
-from scripts.restoration_quality import audio_io
+from scripts.restoration_quality import audio_io, sibilance
 
 WHISTLE_HZ = 15625.0
 QUIET_SHARE = 0.2
 COMPRESS_ATTACK_S = 0.01
 COMPRESS_RELEASE_S = 0.1
 MUTE_SPACING_S = 1.0
+# The listener degradations: the polish expander's timing (`compand=attacks=0.04:decays=0.18`),
+# its speech test, the 's' bands, and the smear's pre-onset / envelope windows.
+GATE_ATTACK_S = 0.04
+GATE_RELEASE_S = 0.18
+SPEECH_FRAME_S = 0.02
+SPEECH_ABOVE_FLOOR = 4.0
+UNITY_GAIN_SNAP = 1e-3
+SIB_RAMP_S = 0.005
+# What the neural stage takes from under an 's': the 1-4 kHz body (APL's fricative centroid
+# rose +370..+620 Hz on Tele7abc with the body ratio +14 dB). The synthetic voices' fricatives
+# carry little body and a low centroid, so on them the body ratio is the asserted reading
+# and the centroid's direction is reported blind (it moved by a few hertz).
+SIB_BODY_HZ = (1000.0, 4000.0)
+SIB_TOP_HZ = (6000.0, 12000.0)
+SMEAR_PRE_S = 0.03
+SMEAR_ENVELOPE_S = 0.01
 
 
 @contextlib.contextmanager
@@ -164,10 +181,10 @@ def compress(mono, rate, ratio, threshold_db=-45.0):
     return (data * 10.0 ** (-reduction_db / 20.0)).astype(np.float32)
 
 
-def _follow(rectified, rate):
-    """Attack/release envelope follower."""
-    attack = np.exp(-1.0 / (COMPRESS_ATTACK_S * rate))
-    release = np.exp(-1.0 / (COMPRESS_RELEASE_S * rate))
+def _follow(rectified, rate, attack_s=COMPRESS_ATTACK_S, release_s=COMPRESS_RELEASE_S):
+    """Attack/release envelope follower (one pole each way)."""
+    attack = np.exp(-1.0 / (attack_s * rate))
+    release = np.exp(-1.0 / (release_s * rate))
     out = np.empty_like(rectified)
     state = 0.0
     for index, value in enumerate(rectified):
@@ -191,6 +208,104 @@ def benign_requantise(mono, rng):
 def benign_resample_roundtrip(mono, rate):
     up = audio_io._resample(np.asarray(mono, dtype=np.float32), rate, 48000)
     return audio_io._resample(up, 48000, rate)[: len(mono)]
+
+
+# --- the listener degradations: what the user heard on the Tata tapes, one at a time ---------
+
+
+def _frame_level(mono, rate, frame_s):
+    """Per-sample RMS level of `mono` on non-overlapping frames (the trailing partial frame reads as the last full one)."""
+    frame = max(1, int(frame_s * rate))
+    count = len(mono) // frame
+    level = np.sqrt(np.mean(np.asarray(mono[: count * frame], dtype=np.float64).reshape(count, frame) ** 2, axis=1))
+    per_sample = np.repeat(level, frame)
+    return np.concatenate([per_sample, np.full(len(mono) - len(per_sample), level[-1] if count else 0.0)])
+
+
+def speech_mask(mono, rate):
+    """Speech = the 20 ms frames more than four times the p10 frame level (a percentile cut would land inside the pause cluster)."""
+    level = _frame_level(mono, rate, SPEECH_FRAME_S)
+    return level > SPEECH_ABOVE_FLOOR * np.percentile(level, 10.0)
+
+
+def expander_gain(mono, rate):
+    """The polish expander's gain curve on `mono`: its speech mask through a 40 ms attack / 180 ms release follower.
+
+    The follower only nears unity, so its last 0.1 % (under 0.01 dB) is snapped to 1.0: the
+    speech stays bit-identical to the base and only the pauses and the word edges move.
+    """
+    gain = _follow(speech_mask(mono, rate).astype(np.float64), rate, GATE_ATTACK_S, GATE_RELEASE_S)
+    gain[gain > 1.0 - UNITY_GAIN_SNAP] = 1.0
+    return gain
+
+
+def gated_pauses(mono, rate, floor_db):
+    """Dead pauses: the expander's gain drops the gaps `floor_db` under the speech, and the word edges pump with it."""
+    gain = expander_gain(mono, rate)
+    multiplier = gain + (1.0 - gain) * 10.0 ** (floor_db / 20.0)
+    return (np.asarray(mono, dtype=np.float64) * multiplier).astype(np.float32)
+
+
+def hiss_in_pauses(mono, noise, margin_db, rate, rng):
+    """Hiss left in the gaps: the tape noise `hiss` adds at `margin_db`, kept only where the expander's gain is closed."""
+    added = hiss(mono, noise, margin_db, rng).astype(np.float64) - np.asarray(mono, dtype=np.float64)
+    return (np.asarray(mono, dtype=np.float64) + added * (1.0 - expander_gain(mono, rate))).astype(np.float32)
+
+
+def _bandpass(mono, rate, band):
+    """A 4th-order Butterworth band pass, zero phase; the top edge stays under Nyquist."""
+    sos = scipy.signal.butter(4, [band[0], min(band[1], 0.49 * rate)], btype="bandpass", fs=rate, output="sos")
+    return scipy.signal.sosfiltfilt(sos, np.asarray(mono, dtype=np.float64))
+
+
+def fricative_ramp(mono, rate):
+    """The fricative frames of `mono` as a 0..1 weight with 5 ms edges; exactly 0 away from the 's' bursts."""
+    size = max(1, int(SIB_RAMP_S * rate))
+    return np.convolve(sibilance.fricative_mask(mono, rate).astype(np.float64), np.ones(size) / size, mode="same")
+
+
+def _band_lowered(mono, rate, band, depth_db, weight):
+    """`mono` with its `band` lowered by `depth_db` where `weight` is 1; bit-identical where it is 0."""
+    removed = (1.0 - 10.0 ** (-depth_db / 20.0)) * _bandpass(mono, rate, band) * weight
+    return (np.asarray(mono, dtype=np.float64) - removed).astype(np.float32)
+
+
+def sibilants_thinned(mono, rate, depth_db):
+    """The thin 's': the 1-4 kHz body under every fricative lowered by `depth_db` (what APL's neural stage does)."""
+    return _band_lowered(mono, rate, SIB_BODY_HZ, depth_db, fricative_ramp(mono, rate))
+
+
+def sibilants_dulled(mono, rate, depth_db):
+    """The dull 's': the 6-12 kHz top of every fricative lowered by `depth_db` (a de-esser biting too hard)."""
+    return _band_lowered(mono, rate, SIB_TOP_HZ, depth_db, fricative_ramp(mono, rate))
+
+
+def _smear_gain(data, rate, onset, span):
+    """A raised-cosine rise over `span` samples after `onset`, from the pre-onset level to unity.
+
+    The start is the RMS of the 30 ms before the onset over the peak 10 ms RMS inside the span
+    (capped at 1): a hit out of silence is all but removed at its onset and grows back over
+    the span; a hit riding on a bed is only rounded off.
+    """
+    lo = max(0, onset - int(SMEAR_PRE_S * rate))
+    before, after = data[lo:onset], data[onset:][:span]
+    size = max(1, int(SMEAR_ENVELOPE_S * rate))
+    post_peak = np.sqrt(scipy.ndimage.uniform_filter1d(after**2, size, mode="nearest").max())
+    start = min(1.0, np.sqrt(np.mean(before**2)) / (post_peak + 1e-12)) if len(before) else 1.0
+    return start + (1.0 - start) * 0.5 * (1.0 - np.cos(np.pi * np.arange(len(after)) / span))
+
+
+def transient_smear(mono, rate, smear_ms):
+    """Softened attacks: the `smear_ms` after every onset of `mono` rise from the pre-onset level instead of hitting at once."""
+    from scripts.restoration_quality import transient_metrics
+
+    data = np.asarray(mono, dtype=np.float64)
+    span = max(1, int(smear_ms * rate / 1000.0))
+    gain = np.ones(len(data))
+    for onset in (int(o) for o in transient_metrics.onset_samples(data, rate)):
+        stop = min(len(data), onset + span)
+        gain[onset:stop] = np.minimum(gain[onset:stop], _smear_gain(data, rate, onset, span))
+    return (data * gain).astype(np.float32)
 
 
 @dataclass(frozen=True)
@@ -266,43 +381,103 @@ DEGRADATIONS = {
     "whistle": Degradation("speech", (-50.0, -40.0, -30.0), (Expectation("dsp.whistle_db", "up"),)),
     "gain": Degradation("speech", (-3.0, -6.0, -12.0), (Expectation("file.lufs", "down"),)),
     "compression": Degradation("speech", (4.0, 8.0, 20.0), (Expectation("file.lra", "down", True),)),
+    # The listener degradations (v2): each reproduces one thing the user heard on the Tata tapes.
+    "gated_pauses": Degradation(
+        "speech",
+        (-15.0, -30.0, -45.0),
+        (
+            Expectation("dsp.pause_depth_db", "up"),
+            Expectation("dsp.pause_pumping_db", "up"),
+            Expectation("dsp.gap_air_db", "down"),
+            Expectation("mos.sigmos_disc", "down", True),
+        ),
+    ),
+    "hiss_in_pauses": Degradation(
+        "speech",
+        (30.0, 20.0, 10.0),
+        (Expectation("dsp.gap_air_db", "up"), Expectation("dsp.residual_noise_db", "up"), Expectation("mos.sigmos_noise", "down", True)),
+    ),
+    # The centroid is blind here: the synthetic fricatives carry too little body for removing
+    # it to move them (a few hertz), while on tape the same removal read +370..+620 Hz.
+    "sibilants_thinned": Degradation(
+        "speech", (3.0, 6.0, 12.0), (Expectation("dsp.sib_centroid_hz", "up", True), Expectation("dsp.sib_body_db", "up"))
+    ),
+    "sibilants_dulled": Degradation(
+        "speech",
+        (3.0, 6.0, 12.0),
+        (Expectation("dsp.sib_centroid_hz", "down"), Expectation("dsp.sib_body_db", "down"), Expectation("dsp.hf_8k16k", "down", True)),
+    ),
+    "transient_smear": Degradation(
+        "music",
+        (20.0, 50.0, 120.0),
+        (
+            Expectation("dsp.attack_db", "down"),
+            Expectation("dsp.onset_corr", "down", True),
+            Expectation("stems.envelope_corr", "down", True),
+        ),
+    ),
 }
 
-BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms")
+LISTENER = ("gated_pauses", "hiss_in_pauses", "sibilants_thinned", "sibilants_dulled", "transient_smear")
+# `identity_music` gives the stem and transient readings a benign floor of their own.
+BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music")
+
+
+def benign_base(name):
+    """The material a benign case starts from: the music bed for the `*_music` cases, the speech target otherwise."""
+    return "music" if name.endswith("_music") else "speech"
 
 
 def apply(name, level, base, rate, materials, rng):
     """The (source, output) pair for one degradation at one level."""
+    if name in LISTENER:
+        return _apply_listener(name, level, base, rate, materials, rng)
     if name == "hiss":
         return base, hiss(base, materials["noise"], level, rng)
     if name == "hum":
         return base, hum(base, rate, level, rng)
     if name == "underwater":
         return base, lowpass(base, rate, level)
-    if name == "musical_noise":
-        return materials["vhs"], spectral_oversubtract(materials["vhs"], rate, level)
     return _apply_rest(name, level, base, rate, materials, rng)
 
 
+def _apply_listener(name, level, base, rate, materials, rng):
+    if name == "gated_pauses":
+        return base, gated_pauses(base, rate, level)
+    if name == "hiss_in_pauses":
+        return base, hiss_in_pauses(base, materials["noise"], level, rate, rng)
+    if name == "sibilants_thinned":
+        return base, sibilants_thinned(base, rate, level)
+    if name == "sibilants_dulled":
+        return base, sibilants_dulled(base, rate, level)
+    return base, transient_smear(base, rate, level)
+
+
 def _apply_rest(name, level, base, rate, materials, rng):
+    if name == "musical_noise":
+        return materials["vhs"], spectral_oversubtract(materials["vhs"], rate, level)
     if name == "robotic":
         return base, griffin_lim_resynth(base, rate, level)
     if name == "words_muted":
         return base, mute_segment(base, rate, 0.3, level)[0]
     if name == "words_spliced":
         return base, splice_from(base, materials["donor"], rate, level)
+    return _apply_defects(name, level, base, rate, materials, rng)
+
+
+def _apply_defects(name, level, base, rate, materials, rng):
     if name == "background_stripped":
         return music_attenuated(materials["voice"], materials["music"], level)
-    return _apply_defects(name, level, base, rate, rng)
-
-
-def _apply_defects(name, level, base, rate, rng):
     if name == "clicks":
         return base, crackle(base, rate, level, rng)
     if name == "dropouts":
         return base, dropouts(base, rate, level, rng)
     if name == "whistle":
         return base, whistle(base, rate, level, rng)
+    return _apply_level(name, level, base, rate)
+
+
+def _apply_level(name, level, base, rate):
     if name == "gain":
         return base, gain(base, level)
     return base, compress(base, rate, level)
@@ -310,7 +485,7 @@ def _apply_defects(name, level, base, rate, rng):
 
 def apply_benign(name, base, rate, rng):
     """The (source, output) pair for one benign transform: every metric must read nothing."""
-    if name == "identity":
+    if name.startswith("identity"):
         return base, np.asarray(base, dtype=np.float32).copy()
     if name == "requantise":
         return base, benign_requantise(base, rng)

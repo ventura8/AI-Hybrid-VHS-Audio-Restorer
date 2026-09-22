@@ -513,6 +513,70 @@ the sha256 of every file recorded on first fetch and refused on mismatch.
 source and from every output, with an `index.md`: the user is the judge, the
 harness only points at where to listen. `--metrics dsp` needs no model.
 
+### The listener readings
+
+The first listening round (2026-09-20) said three things the readings above
+did not: two `auto_pure_linear` outputs were "silent in pauses", a cathar
+output "has hiss", and `auto_pure_linear` "creates distortion of spoken
+'s'". The pause readings could not tell the first two apart (the median
+level of the quiet frames was lower on the hissy output), and nothing read
+the 's'. Every restoration drives the deepest pauses to -96..-104 dBFS, so a
+mean over them is noise; the ear reacts elsewhere. Three readings, all
+native-rate DSP on the source's own frame classes, reproduce the verdicts
+(`scripts/restoration_quality/pause_metrics.py`, `sibilance.py`,
+`transient_metrics.py`):
+
+- `dsp.gap_air_db`: the 3-10 kHz power in the inter-word gaps (source
+  frames between the p15 and p40 levels) over the loud frames. Source -6 dB
+  on Tele7abc; the "silent" outputs -27, the "hissy" one -18.5, the accepted
+  cathar 0.7.5 output -22.6. `listener.hiss` flags at or above -20,
+  `listener.dead_air` at or below -25.
+- `dsp.pause_depth_db`: the loud frames' median level minus the deep frames'
+  (under p15), output minus source. The roformer variant +41 (the long
+  pauses collapse), APL baseline +36, cathar +28..+32; `listener.pause_collapse`
+  flags above +34.
+- `dsp.sib_centroid_hz`: on the fricative frames of the source (at least
+  12 dB above the pause floor, 4-12 kHz power 10 dB above the gaps' hiss,
+  centroid above 3.5 kHz, more than 40 % of the power in 4-12 kHz), the
+  output's spectral centroid minus the source's, net of the same shift on the
+  non-fricative loud frames. `auto_pure_linear` +370..+620 Hz (its neural
+  stage empties the 1-4 kHz body under the 's'), cathar -100..-380 (its
+  de-esser lowers the top; the listener did not object). `listener.sibilance_thin`
+  flags above +300, `listener.sibilance_dull` below -600. `dsp.sib_body_db`
+  and `dsp.sib_level_db` show what moved.
+- `dsp.attack_db`, `dsp.onset_corr`, `dsp.percussive_share_db` (music and
+  mixed windows): the attacks' rise on the source's onsets (median-filter
+  HPSS, level-normalised) and how the onset curve survived; both engines
+  soften Gaudeamus's attacks (cathar -4.5 dB tail, APL -2.0).
+  `listener.attack` flags a tail under -4 dB.
+- `dsp.output_silent`: a window with programme whose output routes as
+  silence (the output is routed too); a hard gate.
+
+These gates carry the severity `flag`: the tuning loop counts them (a
+candidate may not add flags) but they do not veto until a second listening
+round confirms their thresholds. Re-scored with them, the Tele7abc
+listening set flags exactly what the listener flagged and nothing they
+accepted (`experiments/tata_listen/check_verdicts.py`;
+`score_listen.py <slug> --dsp-rescore` re-reads the dsp family into a
+stored report, keeping the MOS, ASR and stem results).
+
+Three learned readings were added beside them as guardrails: `mos.scoreq_nr`
+(SCOREQ, NeurIPS 2024, the no-reference MOS that with UTMOS correlated best
+with listeners in URGENT 2024; the "natural" model's ONNX export, vendored
+from Zenodo, 16 kHz), `mos.dnsmos_gap` (P.835 SIG minus BAK: the voice
+paying for the quiet), `speech.ssl_dist` (the cosine distance between the
+WavLM encoder's mean-pooled layer-6 states of source and output, an
+over-suppression reading that needs no transcript), and `stems.mert_dist`
+(MERT-v1-95M embedding distance on the full mix, the most balanced correlate
+with listeners in a 2025 separation test). `dsp.zimtohrli_loud` (Google's
+48 kHz psychoacoustic distance on the loud frames) has its loader but no
+binding: the PyPI wheel is published by a third party, not by the project,
+so it is not installed. An audio-LLM A/B judge was deliberately left out:
+the published evidence is system-level, open models collapse to one score,
+positional bias needs both orders, and nothing was validated on Romanian or
+tape; it would only ever break ties between near-equal winners at the end,
+never score inside the loop.
+
 ### Calibrating the output-quality metrics
 
 None of the models saw VHS degradation or Romanian, so before the harness

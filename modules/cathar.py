@@ -26,6 +26,7 @@ except ImportError:
 
 from .config import (
     CATHAR_ALPHA,
+    CATHAR_ALPHA_HIGH,
     CATHAR_AZIMUTH_MAX_MS,
     CATHAR_AZIMUTH_METHOD,
     CATHAR_BETA,
@@ -63,6 +64,7 @@ from .config import (
     CATHAR_INPAINT_MAX_GAP_MS,
     CATHAR_MONO_BELOW_HZ,
     CATHAR_MUSIC_ALPHA,
+    CATHAR_MUSIC_ALPHA_HIGH,
     CATHAR_MUSIC_ENABLE_COHERENT,
     CATHAR_MUSIC_ENABLE_DEPLOSIVE,
     CATHAR_MUSIC_ENABLE_NOISEPRINT,
@@ -70,6 +72,7 @@ from .config import (
     CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
     CATHAR_REPAIR_STRENGTH,
+    CATHAR_SPLIT_BAND_HZ,
     NOTCH_FREQ,
 )
 from .utils import CATHAR_BIN, FFMPEG_BIN, is_valid_audio, log_msg, run_command_with_progress
@@ -659,16 +662,48 @@ def _material_settings(strategy):
         )
         return {
             "alpha": CATHAR_MUSIC_ALPHA,
+            "alpha_high": CATHAR_MUSIC_ALPHA_HIGH,
             "noiseprint": CATHAR_MUSIC_ENABLE_NOISEPRINT,
             "coherent": CATHAR_MUSIC_ENABLE_COHERENT,
             "deplosive": CATHAR_MUSIC_ENABLE_DEPLOSIVE,
         }
     return {
         "alpha": CATHAR_ALPHA,
+        "alpha_high": CATHAR_ALPHA_HIGH,
         "noiseprint": CATHAR_ENABLE_NOISEPRINT,
         "coherent": CATHAR_ENABLE_COHERENT,
         "deplosive": CATHAR_ENABLE_DEPLOSIVE,
     }
+
+
+def _split_band_wanted():
+    """Whether the denoise runs once per band: a crossover is set and the method has a factor to split."""
+    return CATHAR_SPLIT_BAND_HZ > 0 and CATHAR_DENOISE_METHOD != "wiener"
+
+
+def _cathar_denoise_split(current, work_dir, settings, np_path, total_duration):
+    """The subtraction once per band (`modules/split_band.py`): `alpha` under the crossover, `alpha_high` above it.
+
+    The high pass renders into its own directory so its sidecar cache stays apart from the
+    low pass's; the two are recombined through a complementary linear-phase crossover.
+    """
+    from . import split_band
+
+    low = _cathar_denoise_step(
+        current, work_dir, alpha=settings["alpha"], coherent=settings["coherent"], noiseprint_path=np_path, total_duration=total_duration
+    )
+    high_dir = work_dir / "split_high"
+    high_dir.mkdir(parents=True, exist_ok=True)
+    high = _cathar_denoise_step(
+        current,
+        high_dir,
+        alpha=settings["alpha_high"],
+        coherent=settings["coherent"],
+        noiseprint_path=np_path,
+        total_duration=total_duration,
+    )
+    log_msg(f"    [Cathar] Split band at {CATHAR_SPLIT_BAND_HZ} Hz: alpha {settings['alpha']:g} below, {settings['alpha_high']:g} above.")
+    return split_band.recombine(low, high, work_dir / f"splitband_{CATHAR_SPLIT_BAND_HZ}_{current.name}", CATHAR_SPLIT_BAND_HZ)
 
 
 def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, strategy=None):
@@ -682,7 +717,15 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
     if settings["noiseprint"]:
         probe_s = _probe_duration_s(total_duration, current)
         np_path = _cathar_noiseprint_step(current, work_dir, duration_s=probe_s, stitched=probe_s > NOISEPRINT_SHORT_S)
-    current = _cathar_denoise_step(
-        current, work_dir, alpha=settings["alpha"], coherent=settings["coherent"], noiseprint_path=np_path, total_duration=total_duration
-    )
+    if _split_band_wanted():
+        current = _cathar_denoise_split(current, work_dir, settings, np_path, total_duration)
+    else:
+        current = _cathar_denoise_step(
+            current,
+            work_dir,
+            alpha=settings["alpha"],
+            coherent=settings["coherent"],
+            noiseprint_path=np_path,
+            total_duration=total_duration,
+        )
     return _cathar_polish_pass(current, work_dir, total_duration=total_duration)

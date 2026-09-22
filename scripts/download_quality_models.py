@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """Fetch the output-quality models into the model store, pinned to a revision and a hash.
 
-    download_quality_models.py [--set all|mos|speech] [--check] [--models-dir models]
+    download_quality_models.py [--set all|mos|speech|stems] [--check] [--models-dir models]
 
-Each model is fetched from a pinned upstream revision (a Hugging Face commit or a GitHub
-commit) and every file is hashed after download. The first fetch records the observed
-sha256 of each file in `<models-dir>/<name>/MANIFEST.json`; a later run that hashes
-differently is refused, the way `scripts/download_dnsmos.py` refuses a mismatched file.
-The weights themselves are not tracked; this script is, and pins what it fetched.
+Each model is fetched from a pinned upstream revision (a Hugging Face commit, a GitHub
+commit or a versioned Zenodo record) and every file is hashed after download. The first
+fetch records the observed sha256 of each file in `<models-dir>/<name>/MANIFEST.json`; a
+later run that hashes differently is refused, the way `scripts/download_dnsmos.py`
+refuses a mismatched file. The weights themselves are not tracked; this script is, and
+pins what it fetched.
 
 UTMOS is loaded through torch.hub from a pinned release tag; `torch.hub.set_dir` keeps
 its checkpoint under the model store too.
 
-Licences: SIGMOS, Whisper, WavLM, UTMOS - MIT; Audiobox Aesthetics - CC-BY-4.0.
+Licences: SIGMOS, Whisper, WavLM, UTMOS - MIT; Audiobox Aesthetics - CC-BY-4.0;
+SCOREQ - MIT code, CC-BY-4.0 weights; MERT-v1-95M - CC-BY-NC-4.0 (research use only).
 """
 
 import argparse
@@ -92,6 +94,56 @@ PINS = {
         "source": "https://github.com/tarepan/SpeechMOS",
         "size_mb": 380,
     },
+    # Pinned 2026-09-22. The ONNX exports the `scoreq` package itself downloads (its
+    # `Scoreq._init_onnx`, record 15739280 v2 of 2025-06-25); the package is not installed
+    # because it depends on plain onnxruntime, which must never sit beside onnxruntime-gpu.
+    "scoreq": {
+        "set": "mos",
+        "kind": "url",
+        "base": "https://zenodo.org/records/15739280/files/",
+        "files": ["adapt_nr_telephone.onnx", "fixed_nmr_telephone.onnx"],
+        "license": "MIT code (alessandroragano/scoreq); CC-BY-4.0 weights (Zenodo record 15739280)",
+        "source": "https://zenodo.org/records/15739280",
+        "size_mb": 756,
+        "notes": [
+            "SCOREQ: Speech Quality Assessment with Contrastive Regression, Ragano, Skoglund and",
+            "Hines, NeurIPS 2024, <https://arxiv.org/abs/2410.06675>; code at",
+            "<https://github.com/alessandroragano/scoreq> (its `onnx-scripts/export_to_onnx.py`",
+            "made these files from the PyTorch weights of Zenodo record 13860326).",
+            "",
+            '- `adapt_nr_telephone.onnx`: no-reference MOS, the "natural" data domain (the',
+            "  package's `Scoreq(data_domain='natural', mode='nr')`); read by",
+            "  `scripts/restoration_quality/mos_models.py` as `mos.scoreq_nr`.",
+            "- `fixed_nmr_telephone.onnx`: the non-matching-reference embedding of the same",
+            "  domain (`mode='ref'`); the score is the L2 distance of two embeddings. Kept",
+            "  beside the NR file, not read by the harness yet.",
+            "",
+            "Input: mono float32 at 16 kHz, shape `(1, samples)`, zero-padded to a multiple",
+            "of 320 samples (the wav2vec 2.0 feature-encoder stride), no normalisation; one",
+            "MOS-like scalar out. Trained on segments up to 4 s, evaluated up to 15 s.",
+        ],
+    },
+    "mert-v1-95m": {
+        "set": "stems",
+        "kind": "hf",
+        "repo": "m-a-p/MERT-v1-95M",
+        "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+        "files": ["config.json", "preprocessor_config.json", "configuration_MERT.py", "modeling_MERT.py", "pytorch_model.bin"],
+        "license": "CC-BY-NC-4.0 (m-a-p/MERT-v1-95M): research use, no commercial use",
+        "source": "https://huggingface.co/m-a-p/MERT-v1-95M",
+        "size_mb": 378,
+        "notes": [
+            "MERT: Acoustic Music Understanding Model with Large-Scale Self-supervised Training,",
+            "Li et al. 2023, <https://arxiv.org/abs/2306.00107>. A 95M-parameter HuBERT-style",
+            "encoder for music, 24 kHz input, 75 Hz frame rate, 12 transformer layers.",
+            "",
+            "Loaded with `trust_remote_code=True` from the two pinned `.py` files beside the",
+            "config; `scripts/restoration_quality/judges.py` reads `stems.mert_dist`, one minus",
+            "the cosine of the time-averaged layer-12 states of the source and the output.",
+            "This checkpoint has `feature_extractor_cqt: false`, so `nnAudio` is imported but",
+            "not exercised. The `MERT-v1-95M_fairseq.pt` of the repository is not fetched.",
+        ],
+    },
 }
 
 
@@ -123,7 +175,8 @@ def _verify(target_dir, name, observed, pinned=None):
     _manifest_path(target_dir).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _fetch_github(pin, target_dir):
+def _fetch_url(pin, target_dir):
+    """Plain files under one base URL (a GitHub raw tree, a Zenodo record): `base` + name, hashed like the rest."""
     for name in pin["files"]:
         target = target_dir / name
         if not target.exists():
@@ -152,7 +205,7 @@ def _fetch_torchhub(pin, target_dir):
         _verify(target_dir, f"checkpoints/{checkpoint.name}", _sha256(checkpoint))
 
 
-FETCHERS = {"github": _fetch_github, "hf": _fetch_hf, "torchhub": _fetch_torchhub}
+FETCHERS = {"github": _fetch_url, "url": _fetch_url, "hf": _fetch_hf, "torchhub": _fetch_torchhub}
 
 
 def _write_readme(name, pin, target_dir):
@@ -164,6 +217,8 @@ def _write_readme(name, pin, target_dir):
         "",
         f"Licence: {pin['license']}.",
         "",
+        *pin.get("notes", []),
+        *([""] if pin.get("notes") else []),
         "`MANIFEST.json` holds the sha256 of every file as observed on first fetch; a later",
         "fetch that hashes differently is refused.",
         "",
@@ -196,10 +251,15 @@ def check(name, pin, models_dir=MODELS_DIR):
     target_dir = models_dir / name
     manifest = _load_manifest(target_dir)
     missing, present = _split_present(target_dir, pin.get("files") or list(manifest))
-    bad = _mismatched(target_dir, manifest, present)
-    if missing or bad:
-        print(f"{name}: missing {missing or '-'}; mismatched {bad or '-'}")
-    return not (missing or bad)
+    return _report(name, missing, _mismatched(target_dir, manifest, present))
+
+
+def _report(name, missing, bad):
+    """False, with one line naming what is missing or mismatched, when anything is; True otherwise."""
+    if not (missing or bad):
+        return True
+    print(f"{name}: missing {missing or '-'}; mismatched {bad or '-'}")
+    return False
 
 
 def _selected(which):
@@ -208,7 +268,7 @@ def _selected(which):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--set", default="all", choices=("all", "mos", "speech"))
+    parser.add_argument("--set", default="all", choices=("all", "mos", "speech", "stems"))
     parser.add_argument("--check", action="store_true", help="hash what is present, download nothing")
     parser.add_argument("--models-dir", type=Path, default=MODELS_DIR)
     args = parser.parse_args(argv)

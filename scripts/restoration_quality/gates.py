@@ -11,11 +11,16 @@ import json
 from dataclasses import asdict, dataclass
 
 SOFT = "soft"
+HARD = "hard"
+# A listener flag: a reading that reproduced what the user heard on the Tata tapes (dead
+# pauses, hiss left, thinned sibilants, softened attacks) and is counted by the tuning
+# loop, but does not veto on its own until a second listening round confirms its threshold.
+FLAG = "flag"
 
 
 @dataclass(frozen=True)
 class Gate:
-    """One veto rule. `severity` is "hard" (vetoes) or "soft" (reported only)."""
+    """One veto rule. `severity` is "hard" (vetoes), "flag" (counted by the loop) or "soft" (reported only)."""
 
     metric: str
     stat: str
@@ -56,6 +61,19 @@ GATES = {
     "speech.utmos": Gate("speech.utmos", "delta.median", ">=", -0.3, "naturalness", SOFT),
     "mos.audiobox_pq": Gate("mos.audiobox_pq", "delta.median", ">=", -0.3, "production quality", SOFT),
     "mos.audiobox_pc": Gate("mos.audiobox_pc", "delta.median", ">=", -0.5, "scene simplified: background stripped"),
+    "mos.dnsmos_gap": Gate("mos.dnsmos_gap", "delta.median", ">=", -0.7, "SIG under BAK: the speech paid for the quiet", SOFT),
+    "speech.hallucinated": Gate("speech.hallucinated", "tail", "<=", 0.0, "Whisper invents text where the output is silent", SOFT),
+    "dsp.output_silent": Gate("dsp.output_silent", "tail", "<=", 0.0, "a window with programme fell silent"),
+    # Listener flags; starting values from the Tata listening set, re-derived by calibration.
+    "listener.hiss": Gate("dsp.gap_air_db", "median", "<=", -20.0, "air left in the inter-word gaps: hiss", FLAG),
+    "listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -25.0, "the gaps emptied: silent pauses", FLAG),
+    "listener.pause_collapse": Gate("dsp.pause_depth_db", "delta.median", "<=", 34.0, "the pauses dropped far under the speech", FLAG),
+    # Thin and dull are two flags with different bounds: a de-esser lowers the top of every 's'
+    # (cathar reads -100..-380 Hz on Tele7abc and the listener did not object), the neural
+    # stage empties the body under it (APL +370..+620 Hz: "distortion of spoken 's'").
+    "listener.sibilance_thin": Gate("dsp.sib_centroid_hz", "delta.median", "<=", 300.0, "the 's' lost its body: thin, lisping", FLAG),
+    "listener.sibilance_dull": Gate("dsp.sib_centroid_hz", "delta.median", ">=", -600.0, "the 's' lost its top: dull", FLAG),
+    "listener.attack": Gate("dsp.attack_db", "delta.tail", ">=", -4.0, "attacks softened: transients smeared", FLAG),
 }
 
 
@@ -122,4 +140,13 @@ def evaluate_gates(aggregate, gates=GATES, speaker_floor=None):
 
 def hard_failures(verdicts):
     """Names of the hard gates that failed."""
-    return [verdict["gate"] for verdict in verdicts if verdict["status"] == "failed" and verdict["severity"] != SOFT]
+    return _failed(verdicts, HARD)
+
+
+def flag_failures(verdicts):
+    """Names of the listener flags that failed."""
+    return _failed(verdicts, FLAG)
+
+
+def _failed(verdicts, severity):
+    return [verdict["gate"] for verdict in verdicts if verdict["status"] == "failed" and verdict["severity"] == severity]

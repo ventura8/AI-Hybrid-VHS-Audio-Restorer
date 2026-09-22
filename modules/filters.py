@@ -36,9 +36,12 @@ from .config import (
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
+    CRT_NOTCH_Q,
     ENABLE_ADECLICK,
     ENABLE_DYNAMIC_EXPANDER,
     ENABLE_LINEAR_AIR,
+    EXPANDER_DEPTH_DB,
+    EXPANDER_KNEE_OFFSET_DB,
     HIGHPASS_FREQ,
     LINEAR_AIR_GAIN_DB,
     NOTCH_FREQ,
@@ -115,7 +118,7 @@ def _append_notch_filters(filters, notch_freq, crt_notch=0.0, resonance_freq=0.0
     """
     _append_mains_notches(filters, notch_freq)
     if crt_notch > 0:
-        filters.append(f"bandreject=f={crt_notch}:width_type=q:w=30")
+        filters.append(f"bandreject=f={crt_notch}:width_type=q:w={CRT_NOTCH_Q:g}")
     if resonance_freq > 0:
         filters.append(f"bandreject=f={resonance_freq}:width_type=q:w=12")
 
@@ -1106,13 +1109,21 @@ def _filter_precondition_step(original_wav, output_wav, precond_config, total_du
     )
 
 
-def _build_full_audio_expander_filter(noise_floor_db=None):
-    """Constructs an adaptive downward dynamic expander curve based on noise floor."""
+def _build_full_audio_expander_filter(noise_floor_db=None, depth_db=None, knee_offset_db=None):
+    """Constructs an adaptive downward dynamic expander curve based on noise floor.
+
+    The curve pushes what sits under the knee (`noise_floor + knee_offset`, clamped to -60..-35
+    dBFS) down by `depth_db` more, and maps -90 dBFS to -100: this is the stage that turns a
+    denoised pause into dead air. `expander_depth_db` / `expander_knee_offset_db` in the config
+    move it (7 / +4 are the shipped curve); the tuning loop searches them.
+    """
+    depth = EXPANDER_DEPTH_DB if depth_db is None else float(depth_db)
+    offset = EXPANDER_KNEE_OFFSET_DB if knee_offset_db is None else float(knee_offset_db)
     if noise_floor_db is None:
-        return "compand=attacks=0.04:decays=0.18:points=-90/-100|-65/-72|-45/-45|0/0"
-    knee = max(-60.0, min(-35.0, float(noise_floor_db) + 4.0))
+        return f"compand=attacks=0.04:decays=0.18:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
+    knee = max(-60.0, min(-35.0, float(noise_floor_db) + offset))
     mid = round((knee - 90.0) / 2.0, 1)
-    return f"compand=attacks=0.04:decays=0.18:points=-90/-100|{mid:.1f}/{mid - 7.0:.1f}|{knee:.1f}/{knee:.1f}|0/0"
+    return f"compand=attacks=0.04:decays=0.18:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
 
 
 def _build_linear_air_filter(gain_db=None):

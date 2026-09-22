@@ -1204,6 +1204,8 @@ def _denoise_and_polish_full_audio_step(
     plosive_tamer=False,
     tone_cancel=False,
     resemble_denoise=False,
+    sibilant_guard=False,
+    pause_floor=False,
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
@@ -1240,7 +1242,29 @@ def _denoise_and_polish_full_audio_step(
             ),
         )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)
+    stages = {"sibilant_guard": sibilant_guard, "pause_floor": pause_floor, "apply_air": apply_air}
+    return _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages)
+
+
+def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages):
+    """After the neural stage: the sibilant guard (against the pre-neural audio), the polish, then the pause floor.
+
+    The guard runs before the polish so the expander sees the restored fricatives; the pause
+    floor runs after it so the expander cannot take the fill back out. Its reference is the
+    pre-conditioned audio the chain started from.
+    """
+    if stages.get("sibilant_guard"):
+        from . import sibilant_guard as _sibilant_guard
+
+        cleaned_wav = _sibilant_guard.apply_when_needed(surgical_wav, cleaned_wav, audio_dir, strategy=strategy)
+    polished = _polish_full_audio_step(
+        cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=stages.get("apply_air", False)
+    )
+    if stages.get("pause_floor"):
+        from . import pause_floor as _pause_floor
+
+        polished = _pause_floor.apply_when_needed(original_wav, polished, audio_dir, strategy=strategy)
+    return polished
 
 
 def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None):

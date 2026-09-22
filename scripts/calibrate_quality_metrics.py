@@ -12,7 +12,10 @@ it monotonic across the levels, and does the mildest level already clear three t
 benign noise floor (identity, requantisation, a resample round trip, small shifts)? The
 known-ordering set is the user's own tapes with outputs judged by ear this week: the
 de-esser bug must be flagged muffled, the single 4 s probe must lose to the stitched one
-on coloration and highs, APL must not read as altered.
+on coloration and highs, APL must not read as altered. A manifest entry may also carry
+`flags` / `clean` lists per listener gate (the labels the user heard failing / clean on
+that tape); those lists pick the known-bad / known-good readings for that gate and the
+`flags_reproduced` rule checks that every flagged label fails it and every clean one passes.
 
 Writes `report.json`, `report.md` and `gates.json` (the thresholds, in the format
 `scripts/restoration_quality/gates.py:load_gates` reads).
@@ -103,7 +106,7 @@ def _write_pair(out_dir, case_id, source, output, rate):
 def _degradation_cases(materials, language, out_dir, rng):
     cases = []
     for name, spec in deg.DEGRADATIONS.items():
-        base = materials[spec.base] if spec.base != "music" else materials["voice"]
+        base = materials[spec.base]
         for level in spec.levels:
             source, output = deg.apply(name, level, base, materials["rate"], materials, rng)
             paths = _write_pair(out_dir / language, f"{name}_{level}", source, output, materials["rate"])
@@ -114,7 +117,7 @@ def _degradation_cases(materials, language, out_dir, rng):
 def _benign_cases(materials, language, out_dir, rng):
     cases = []
     for name in deg.BENIGN:
-        source, output = deg.apply_benign(name, materials["speech"], materials["rate"], rng)
+        source, output = deg.apply_benign(name, materials[deg.benign_base(name)], materials["rate"], rng)
         paths = _write_pair(out_dir / language, f"benign_{name}", source, output, materials["rate"])
         cases.append(Case("benign", name, None, language, *paths))
     return cases
@@ -156,10 +159,15 @@ def score_cases(cases, families, registry, cache_dir, scores_dir):
     return scores
 
 
+def _cases_of(cases, kind, name=None):
+    """The cases of one kind, narrowed to one degradation when `name` is given."""
+    return [c for c in cases if c.kind == kind and name in (None, c.name)]
+
+
 def noise_floor(cases, scores):
     """Per metric: the benign centre (median delta) and floor (p95 |delta - centre|) over every benign case."""
     values = {}
-    for case in (c for c in cases if c.kind == "benign"):
+    for case in _cases_of(cases, "benign"):
         for metric, value in scores[case.case_id].items():
             values.setdefault(metric, []).append(value)
     return {metric: _centre_and_floor(v) for metric, v in values.items()}
@@ -173,11 +181,16 @@ def _centre_and_floor(values):
 def _level_values(cases, scores, name, metric):
     """`{level: [delta per language]}` for one degradation and metric, levels in table order."""
     out = {level: [] for level in deg.DEGRADATIONS[name].levels}
-    for case in (c for c in cases if c.kind == "degradation" and c.name == name):
+    for case in _cases_of(cases, "degradation", name):
         value = scores[case.case_id].get(metric)
         if value is not None:
             out[case.level].append(value)
     return out
+
+
+def _level_medians(per_level):
+    """The median delta per level, None where a level has no readings."""
+    return [float(np.median(v)) if v else None for v in per_level.values()]
 
 
 def _signed(direction, value):
@@ -200,23 +213,17 @@ def _status(direction, monotonic, effect_mild):
 def check_expectation(name, expectation, cases, scores, floor):
     """direction / monotonic / effect for one (degradation, metric); None readings make the check 'unscored'."""
     per_level = _level_values(cases, scores, name, expectation.metric)
-    medians = [np.median(v) if v else None for v in per_level.values()]
+    medians = _level_medians(per_level)
     result = {"degradation": name, "metric": expectation.metric, "blind": expectation.blind}
-    if any(m is None for m in medians):
+    if None in medians:
         return {**result, "status": "unscored"}
     reference = floor.get(expectation.metric, {"centre": 0.0, "floor": 0.0})
     signed = [_signed(expectation.direction, m - reference["centre"]) for m in medians]
     monotonic = _monotonic_share(per_level, expectation.direction, reference["centre"])
     effect_mild = float(signed[0] / (reference["floor"] + 1e-9))
     direction = bool(signed[-1] > 0)
-    return {
-        **result,
-        "direction": direction,
-        "monotonic_share": monotonic,
-        "effect_mild": effect_mild,
-        "medians": [float(m) for m in medians],
-        "status": _status(direction, monotonic, effect_mild),
-    }
+    verdict = {"direction": direction, "monotonic_share": monotonic, "effect_mild": effect_mild, "medians": medians}
+    return {**result, **verdict, "status": _status(direction, monotonic, effect_mild)}
 
 
 def run_checks(cases, scores, floor):
@@ -265,21 +272,59 @@ def _duller(result, worse, better):
     return _lower(result, worse, better, "dsp.hf_4k8k") or _lower(result, worse, better, "mos.sigmos_col")
 
 
-def ordering_rules(result, floor):
-    """The known-ordering rules on one tape's scored variants; rules whose variants are absent are left out."""
-    variants = result["variants"]
-    ranking = harness_ranking(result, floor)
-    rules = {"ranking": ranking}
+def _engine_rules(variants, ranking):
+    """The de-esser bug must read muffled and rank in the bottom two; APL must not read as altered."""
+    rules = {}
     if "deesser_bug" in variants:
         rules["bug_flagged_muffled"] = _failed(variants["deesser_bug"], MUFFLED_GATES)
         rules["bug_in_bottom_two"] = "deesser_bug" in ranking[-2:]
-    if "single4s" in variants and "stitched" in variants:
-        rules["single4s_duller_than_stitched"] = _duller(result, "single4s", "stitched")
     if "apl" in variants:
         rules["apl_not_altered"] = not _failed(variants["apl"], ALTERED_GATES)
-    good = [label for label in KNOWN_GOOD if label in variants]
-    rules["good_in_top"] = all(ranking.index(label) < len(good) for label in good) if good else None
     return rules
+
+
+def _good_in_top(variants, ranking):
+    """Whether every known-good variant present sits inside the top `len(good)` of the ranking; None when none is present."""
+    good = [label for label in KNOWN_GOOD if label in variants]
+    return all(ranking.index(label) < len(good) for label in good) if good else None
+
+
+def _gate_status(variant, name):
+    """The status one variant's verdict holds for gate `name`, or "skipped" when it has none."""
+    return next((v["status"] for v in variant["verdicts"] if v["gate"] == name), "skipped")
+
+
+def _listed(per_gate, status):
+    """`[(gate, label, status)]` for every label in `{gate: [labels]}`."""
+    return [(gate, label, status) for gate, labels in per_gate.items() for label in labels]
+
+
+def _wanted(flags, clean):
+    """What the listener's lists demand of the verdicts: flagged labels fail their gate, clean labels pass it."""
+    return _listed(flags or {}, "failed") + _listed(clean or {}, "passed")
+
+
+def _flags_reproduced(variants, flags, clean):
+    """Every flagged label fails its gate and every clean label passes it; None when the tape lists none."""
+    checks = [_gate_status(variants[label], gate) == status for gate, label, status in _wanted(flags, clean) if label in variants]
+    return all(checks) if checks else None
+
+
+def ordering_rules(result, floor, flags=None, clean=None):
+    """The known-ordering rules on one tape's scored variants; rules whose variants are absent read None or are left out."""
+    variants = result["variants"]
+    ranking = harness_ranking(result, floor)
+    rules = {"ranking": ranking, **_engine_rules(variants, ranking)}
+    if "single4s" in variants and "stitched" in variants:
+        rules["single4s_duller_than_stitched"] = _duller(result, "single4s", "stitched")
+    rules["good_in_top"] = _good_in_top(variants, ranking)
+    rules["flags_reproduced"] = _flags_reproduced(variants, flags, clean)
+    return rules
+
+
+def _tape_record(result, floor, ranks, flags, clean):
+    """One tape's record: the rules on its scored variants, the result, and the manifest's by-ear ranks and flag lists."""
+    return {"rules": ordering_rules(result, floor, flags, clean), "result": result, "ranks": ranks, "flags": flags, "clean": clean}
 
 
 def run_known_ordering(manifest_path, families, registry, cache_dir, floor, out_dir):
@@ -287,6 +332,7 @@ def run_known_ordering(manifest_path, families, registry, cache_dir, floor, out_
 
     Each tape carries its own by-ear ranks: the single 4 s probe is a known-bad output on
     Tele7abc and a known-good one on SOTI and Vaccin, so good and bad are read per tape.
+    A tape may also carry `flags` / `clean` label lists per listener gate.
     """
     manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     out = {}
@@ -299,7 +345,7 @@ def run_known_ordering(manifest_path, families, registry, cache_dir, floor, out_
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(result, indent=1, default=runner._json_default), encoding="utf-8")
         result = json.loads(path.read_text(encoding="utf-8"))
-        out[tape] = {"rules": ordering_rules(result, floor), "result": result, "ranks": entry.get("by_ear_rank", {})}
+        out[tape] = _tape_record(result, floor, entry.get("by_ear_rank", {}), entry.get("flags", {}), entry.get("clean", {}))
     return out
 
 
@@ -311,7 +357,7 @@ def reevaluate_ordering(ordering, gates, floor):
         for variant in result["variants"].values():
             variant["verdicts"] = gates_mod.evaluate_gates(variant["aggregate"], gates, variant.get("speaker_floor"))
             variant["hard_failures"] = gates_mod.hard_failures(variant["verdicts"])
-        out[tape] = {"rules": ordering_rules(result, floor), "result": result, "ranks": entry.get("ranks", {})}
+        out[tape] = _tape_record(result, floor, entry.get("ranks", {}), entry.get("flags", {}), entry.get("clean", {}))
     return out
 
 
@@ -323,17 +369,59 @@ def _verdict_value(variant, gate):
     return None
 
 
-def _gate_metric_values(ordering, gate):
-    """`(good, bad)` readings of the gate across the known-ordering set, good/bad by each tape's own by-ear ranks."""
-    good, bad = [], []
+def _by_flags(tape, label, name):
+    """ "bad" / "good" / "neither" from the tape's flag lists for gate `name`; None when the tape has no lists for it."""
+    flags, clean = tape.get("flags", {}), tape.get("clean", {})
+    if name not in flags and name not in clean:
+        return None
+    return "bad" if label in flags.get(name, ()) else "good" if label in clean.get(name, ()) else "neither"
+
+
+def _by_rank(tape, label):
+    """ "good" / "bad" / "neither" from the tape's by-ear rank of `label`."""
+    rank = tape.get("ranks", {}).get(label)
+    if rank is None:
+        return "neither"
+    return "good" if rank <= GOOD_RANK_MAX else "bad" if rank >= BAD_RANK_MIN else "neither"
+
+
+def _has_lists(ordering, name):
+    """Whether any tape carries flag / clean lists for gate `name`."""
+    return any(name in tape.get("flags", {}) or name in tape.get("clean", {}) for tape in ordering.values())
+
+
+def _side(tape, label, name, listed):
+    """The side of one variant: by the tape's lists when the gate is listed anywhere, else by its by-ear rank.
+
+    Once a gate has per-gate lists, tapes without them stay out of it: a by-ear rank is an
+    overall preference (a hissy cathar output ranked first on SOTI), not a verdict on that
+    one reading, and mixing the two pushed every listener threshold past the flagged outputs.
+    """
+    if listed:
+        return _by_flags(tape, label, name) or "neither"
+    return _by_rank(tape, label)
+
+
+def _sided_values(ordering, gate, name):
+    """`[(side, value)]` for every scored variant, sided by flag lists where the gate has them, else by rank."""
+    listed = _has_lists(ordering, name)
+    out = []
     for tape in ordering.values():
-        ranks = tape.get("ranks", {})
         for label, variant in tape["result"]["variants"].items():
             value = _verdict_value(variant, gate)
-            if value is None or label not in ranks:
-                continue
-            (good if ranks[label] <= GOOD_RANK_MAX else bad if ranks[label] >= BAD_RANK_MIN else []).append(value)
-    return good, bad
+            if value is not None:
+                out.append((_side(tape, label, name, listed), value))
+    return out
+
+
+def _gate_metric_values(ordering, gate, name=None):
+    """`(good, bad)` readings of the gate across the known-ordering set.
+
+    A tape that lists `flags` / `clean` labels for gate `name` is read by those lists (bad =
+    flagged, good = clean); every other tape by its by-ear ranks.
+    """
+    sided = _sided_values(ordering, gate, name)
+    return [value for side, value in sided if side == "good"], [value for side, value in sided if side == "bad"]
 
 
 def _worst(values, op):
@@ -367,8 +455,8 @@ def _from_floor(gate, spread):
     return {"threshold": float(threshold), "severity": gate.severity, "source": "floor"}
 
 
-def derive_gate(gate, floor, ordering):
-    """A threshold for one gate, or None for relative and unmeasured gates.
+def derive_gate(gate, floor, ordering, name=None):
+    """A threshold for one gate (`name` in `GATES`), or None for relative and unmeasured gates.
 
     Order of preference: a clear gap between the known-good and known-bad outputs; else
     the hand-set threshold, relaxed to the worst known-good reading plus three floors when
@@ -377,7 +465,7 @@ def derive_gate(gate, floor, ordering):
     spread = floor.get(gate.metric, {}).get("floor")
     if not isinstance(gate.threshold, (int, float)) or spread is None:
         return None
-    good, bad = _gate_metric_values(ordering, gate) if ordering else ([], [])
+    good, bad = _gate_metric_values(ordering, gate, name)
     return _from_ordering(gate, good, bad, spread) or _from_good_bound(gate, good, spread) or _from_floor(gate, spread)
 
 
@@ -393,8 +481,16 @@ def _from_good_bound(gate, good, spread):
 
 
 def derive_gates(floor, ordering):
-    derived = {name: derive_gate(gate, floor, ordering) for name, gate in GATES.items()}
+    derived = {name: derive_gate(gate, floor, ordering, name) for name, gate in GATES.items()}
     return {name: value for name, value in derived.items() if value}
+
+
+def _as_gates(derived):
+    """`Gate` objects for the derived thresholds, on top of the hand-set definitions."""
+    fields = {
+        name: {**gates_mod.asdict(GATES[name]), "threshold": g["threshold"], "severity": g["severity"]} for name, g in derived.items()
+    }
+    return {name: gates_mod.Gate(**values) for name, values in fields.items()}
 
 
 def _check_line(row):
@@ -406,34 +502,49 @@ def _check_line(row):
     return f"| {row['degradation']} | {row['metric']}{blind} | {cells} | {medians} |"
 
 
+def _ordering_lines(title, ordering):
+    """A markdown section listing every tape's rules."""
+    lines = ["", f"## {title}", ""]
+    return lines + [f"- **{tape}**: " + ", ".join(f"{k}={v}" for k, v in entry["rules"].items()) for tape, entry in ordering.items()]
+
+
+def _floor_lines(floor):
+    lines = ["", "## Benign floor", "", "| metric | centre | floor (p95) |", "|---|---|---|"]
+    return lines + [f"| {metric} | {v['centre']:+.4f} | {v['floor']:.4f} |" for metric, v in sorted(floor.items())]
+
+
+def _gate_lines(gates):
+    lines = ["", "## Derived gates", "", "| gate | threshold | severity | source |", "|---|---|---|---|"]
+    return lines + [f"| {name} | {g['threshold']:+.3f} | {g['severity']} | {g['source']} |" for name, g in gates.items()]
+
+
 def _markdown(checks, floor, ordering, gates, ordering_after):
     head = "| degradation | metric | status | direction | monotonic | effect (x floor) | medians |"
     lines = ["# Output-quality metric calibration", "", "## Sensitivity", "", head, "|---|---|---|---|---|---|---|"]
-    lines += [_check_line(row) for row in checks]
-    lines += ["", "## Benign floor", "", "| metric | centre | floor (p95) |", "|---|---|---|"]
-    lines += [f"| {metric} | {v['centre']:+.4f} | {v['floor']:.4f} |" for metric, v in sorted(floor.items())]
-    lines += ["", "## Known ordering (default gates)", ""]
-    lines += [f"- **{tape}**: " + ", ".join(f"{k}={v}" for k, v in entry["rules"].items()) for tape, entry in ordering.items()]
-    lines += ["", "## Known ordering (derived gates)", ""]
-    lines += [f"- **{tape}**: " + ", ".join(f"{k}={v}" for k, v in entry["rules"].items()) for tape, entry in ordering_after.items()]
-    lines += ["", "## Derived gates", "", "| gate | threshold | severity | source |", "|---|---|---|---|"]
-    lines += [f"| {name} | {g['threshold']:+.3f} | {g['severity']} | {g['source']} |" for name, g in gates.items()]
+    lines += [_check_line(row) for row in checks] + _floor_lines(floor)
+    lines += _ordering_lines("Known ordering (default gates)", ordering)
+    lines += _ordering_lines("Known ordering (derived gates)", ordering_after) + _gate_lines(gates)
     return "\n".join(lines) + "\n"
 
 
+def _rules_of(ordering):
+    return {tape: entry["rules"] for tape, entry in ordering.items()}
+
+
 def _write_reports(out, checks, floor, ordering, gates, cases, ordering_after=None):
+    after = ordering_after or {}
     out.mkdir(parents=True, exist_ok=True)
     (out / "gates.json").write_text(json.dumps(gates, indent=2) + "\n", encoding="utf-8")
     report = {
         "checks": checks,
         "floor": floor,
-        "ordering": {t: e["rules"] for t, e in ordering.items()},
-        "ordering_with_derived_gates": {t: e["rules"] for t, e in (ordering_after or {}).items()},
+        "ordering": _rules_of(ordering),
+        "ordering_with_derived_gates": _rules_of(after),
         "gates": gates,
         "cases": [asdict(c) for c in cases],
     }
     (out / "report.json").write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
-    (out / "report.md").write_text(_markdown(checks, floor, ordering, gates, ordering_after or {}), encoding="utf-8")
+    (out / "report.md").write_text(_markdown(checks, floor, ordering, gates, after), encoding="utf-8")
 
 
 def _parse_args(argv=None):
@@ -458,16 +569,16 @@ def main(argv=None):
     checks = run_checks(cases, scores, floor)
     ordering = run_known_ordering(args.known_ordering, families, registry, cache_dir, floor, args.out) if args.known_ordering else {}
     gates = derive_gates(floor, ordering)
-    derived = {
-        name: gates_mod.Gate(**{**gates_mod.asdict(GATES[name]), "threshold": g["threshold"], "severity": g["severity"]})
-        for name, g in gates.items()
-    }
-    ordering_after = reevaluate_ordering(ordering, {**GATES, **derived}, floor)
+    ordering_after = reevaluate_ordering(ordering, {**GATES, **_as_gates(gates)}, floor)
     _write_reports(args.out, checks, floor, ordering, gates, cases, ordering_after)
-    failed = [c for c in checks if c["status"] == "fail" and not c["blind"]]
+    failed = _non_blind_failures(checks)
     summary = f"{len(checks) - len(failed)}/{len(checks)} sensitivity checks pass; {len(failed)} non-blind failures"
     print(f"{summary}; report at {args.out / 'report.md'}")
     return 1 if failed else 0
+
+
+def _non_blind_failures(checks):
+    return [c for c in checks if c["status"] == "fail" and not c["blind"]]
 
 
 if __name__ == "__main__":

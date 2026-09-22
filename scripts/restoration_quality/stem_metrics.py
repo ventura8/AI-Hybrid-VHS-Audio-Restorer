@@ -12,7 +12,8 @@ from pathlib import Path
 import numpy as np
 
 from modules.utils import MODELS_DIR
-from scripts.restoration_quality import audio_io
+from scripts.restoration_quality import audio_io, dsp_metrics, judges
+from scripts.restoration_quality.runner import UNAVAILABLE_ERRORS, row_slice
 from scripts.score_reference import _lsd_db, _si_sdr_db
 
 STEM_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
@@ -28,11 +29,9 @@ OCTAVES_HZ = (
     (8000.0, 16000.0),
 )
 ENVELOPE_S = 0.02
-# The CRT line whistle (15625 Hz PAL, 15734 Hz NTSC) can carry most of a VHS capture's
-# 8-16 kHz energy; removing it is restoration, not music lost, so the octave reading
-# leaves these bands out on both sides.
-CRT_LINE_HZ = (15625.0, 15734.0)
-CRT_LINE_HALF_WIDTH_HZ = 250.0
+# The CRT line whistle is left out of every band reading (`dsp_metrics.band_bins`).
+CRT_LINE_HZ = dsp_metrics.CRT_LINE_HZ
+CRT_LINE_HALF_WIDTH_HZ = dsp_metrics.CRT_LINE_HALF_WIDTH_HZ
 SILENT_STEM_RMS = 1e-4
 BACKGROUND_MIN_DBFS = -45.0
 BACKGROUND_MIN_RATIO_DB = -20.0
@@ -77,9 +76,7 @@ def octave_ratio_db(source, output, rate):
 
 
 def _octave(freqs, src, out, low, high):
-    band = (freqs >= low) & (freqs < high)
-    for line in CRT_LINE_HZ:
-        band &= np.abs(freqs - line) > CRT_LINE_HALF_WIDTH_HZ
+    band = dsp_metrics.band_bins(freqs, (low, high))
     src_energy = src[band].sum()
     if src_energy <= 0.0 or src_energy < SILENT_STEM_RMS**2 * len(src):
         return None
@@ -138,9 +135,19 @@ def score(pair, card, registry):
     src, out, rate = _stems(pair, registry)
     for row in card.rows:
         begin, end = int(round(row.start_s * rate)), int(round(row.end_s * rate))
-        mix = pair.source[int(round(row.start_s * pair.rate)) : int(round(row.end_s * pair.rate))]
+        mix = pair.source[row_slice(pair, row)]
         row.output["stems.has_background"] = float(end <= len(src) and has_background(src[begin:end], mix))
         if not row.output["stems.has_background"]:
             continue
         for name, value in _window_readings(src[begin:end], out[begin:end], rate).items():
             row.source[name], row.output[name] = 0.0, value
+    _mert(pair, card, registry)
+
+
+def _mert(pair, card, registry):
+    """The MERT distance on the full mix, after the separator is released; a missing model costs only this reading."""
+    registry.release()
+    try:
+        judges.score_mert(pair, card, registry)
+    except UNAVAILABLE_ERRORS as exc:
+        print(f"{judges.MERT_KEY} unavailable: {type(exc).__name__}: {exc}")

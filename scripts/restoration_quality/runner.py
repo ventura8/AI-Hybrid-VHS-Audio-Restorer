@@ -11,8 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.restoration_quality import audio_io, dsp_metrics
-from scripts.restoration_quality.gates import GATES, evaluate_gates, hard_failures
+from scripts.restoration_quality import audio_io, dsp_metrics, pause_metrics, sibilance, transient_metrics
+from scripts.restoration_quality.gates import GATES, evaluate_gates, flag_failures, hard_failures
 from scripts.restoration_quality.scorecard import METRICS, ScoreCard, WindowRow, aggregate
 
 ALL_FAMILIES = ("dsp", "stems", "speech", "mos")
@@ -62,6 +62,8 @@ class Pair:
         self.source, self.output, self.lag = audio_io.align_pair(self.raw_source, self.raw_output)
         self.windows = audio_io.windows(len(self.source), self.rate, seconds, hop)
         self.routes = [audio_io.route_window(self.source[w.slice_of(self.rate)], self.rate) for w in self.windows]
+        # The output is routed too: a window with programme whose output reads as silence is dead air.
+        self.output_routes = [audio_io.route_window(self.output[w.slice_of(self.rate)], self.rate) for w in self.windows]
         self.source_key, self.output_key = audio_io.file_key(self.source_wav), audio_io.file_key(self.output_wav)
         self._resampled = {}
 
@@ -81,7 +83,10 @@ class Pair:
 
 
 def _rows_for(pair):
-    return [WindowRow(w.index, w.start_s, w.end_s, route) for w, route in zip(pair.windows, pair.routes)]
+    output_routes = getattr(pair, "output_routes", None) or pair.routes
+    return [
+        WindowRow(w.index, w.start_s, w.end_s, route, output_route=out) for w, route, out in zip(pair.windows, pair.routes, output_routes)
+    ]
 
 
 def _dsp_window(pair, row):
@@ -106,6 +111,27 @@ def _both(row, name, function, src, out, rate):
     row.source[name], row.output[name] = function(src, rate), function(out, rate)
 
 
+def _listener_window(pair, row):
+    """The listener readings on one window: the pauses as the ear hears them, and a window that fell silent."""
+    sl = row_slice(pair, row)
+    src, out = pair.source[sl], pair.output[sl]
+    readings = {**pause_metrics.pause_readings(src, out, pair.rate), **sibilance.sib_readings(src, out, pair.rate)}
+    if row.route in ("music", "mixed"):
+        readings.update(transient_metrics.transient_readings(src, out, pair.rate))
+    for name, (src_value, out_value) in readings.items():
+        row.source[f"dsp.{name}"], row.output[f"dsp.{name}"] = src_value, out_value
+    _abs_delta(row, "dsp.sib_centroid_hz", "dsp.sib_centroid_abs_hz")
+    silent = row.output_route == "silence" and row.route != "silence"
+    row.source["dsp.output_silent"], row.output["dsp.output_silent"] = 0.0, 1.0 if silent else 0.0
+
+
+def _abs_delta(row, name, abs_name):
+    """The rankable form of a signed paired reading: |output - source| on the output side, zero on the source side."""
+    src_value, out_value = row.source.get(name), row.output.get(name)
+    missing = src_value is None or out_value is None
+    row.source[abs_name], row.output[abs_name] = 0.0, (None if missing else abs(out_value - src_value))
+
+
 def row_slice(pair, row):
     return slice(int(round(row.start_s * pair.rate)), int(round(row.end_s * pair.rate)))
 
@@ -113,6 +139,8 @@ def row_slice(pair, row):
 def _dsp_family(pair, card, _registry):
     for row in card.rows:
         _dsp_window(pair, row)
+        _listener_window(pair, row)
+    _zimtohrli(pair, card)
     src_lufs, src_lra = dsp_metrics.loudness(pair.raw_source, pair.rate)
     out_lufs, out_lra = dsp_metrics.loudness(pair.raw_output, pair.rate)
     card.file["file.lufs"] = {"source": src_lufs, "output": out_lufs, "delta": out_lufs - src_lufs}
@@ -120,6 +148,21 @@ def _dsp_family(pair, card, _registry):
     trade = dsp_metrics.trade(pair.source_wav, pair.output_wav) or {}
     for key, value in trade.items():
         card.file[f"file.{key}"] = {"source": 0.0, "output": value, "delta": value}
+
+
+_UNAVAILABLE_SAID = set()
+
+
+def _zimtohrli(pair, card):
+    """The 48 kHz psychoacoustic distance on the loud frames; a missing binding costs only this reading, said once."""
+    from scripts.restoration_quality import judges
+
+    try:
+        judges.score_zimtohrli(pair, card)
+    except UNAVAILABLE_ERRORS as exc:
+        if "zimtohrli" not in _UNAVAILABLE_SAID:
+            _UNAVAILABLE_SAID.add("zimtohrli")
+            print(f"dsp.zimtohrli_loud unavailable: {type(exc).__name__}: {exc}")
 
 
 def _stems_family(pair, card, registry):
@@ -203,6 +246,7 @@ def card_to_dict(card, path):
                 "start_s": r.start_s,
                 "end_s": r.end_s,
                 "route": r.route,
+                "output_route": r.output_route,
                 "source": r.source,
                 "output": r.output,
                 "delta": r.delta(),
@@ -214,6 +258,7 @@ def card_to_dict(card, path):
         "speaker_floor": card.speaker_floor,
         "verdicts": card.verdicts,
         "hard_failures": hard_failures(card.verdicts),
+        "listener_flags": flag_failures(card.verdicts),
         "passed": getattr(card, "passed", None),
     }
 
@@ -254,6 +299,7 @@ def aggregates_for_tuning(result, label):
     for name, entry in variant["aggregate"].items():
         flat.update(_flat_entry(name, entry))
     flat["gates.hard_failures"] = float(len(variant["hard_failures"]))
+    flat["gates.listener_flags"] = float(len(variant.get("listener_flags", [])))
     flat["gates.passed"] = 1.0 if variant["passed"] else 0.0
     return flat
 

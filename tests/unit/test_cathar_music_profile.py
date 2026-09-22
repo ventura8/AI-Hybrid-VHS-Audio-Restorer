@@ -42,11 +42,13 @@ def test_material_settings_are_the_speech_defaults_or_the_music_profile():
         patch("modules.cathar.CATHAR_MUSIC_ENABLE_NOISEPRINT", False),
         patch("modules.cathar.CATHAR_MUSIC_ENABLE_COHERENT", True),
         patch("modules.cathar.CATHAR_MUSIC_ENABLE_DEPLOSIVE", False),
+        patch("modules.cathar.CATHAR_ALPHA_HIGH", 3.0),
+        patch("modules.cathar.CATHAR_MUSIC_ALPHA_HIGH", 0.25),
     ):
         speech = cathar._material_settings(_strategy(0.001))
         music = cathar._material_settings(_strategy(0.2))
-    assert speech == {"alpha": 2.0, "noiseprint": True, "coherent": False, "deplosive": True}
-    assert music == {"alpha": 0.5, "noiseprint": False, "coherent": True, "deplosive": False}
+    assert speech == {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True}
+    assert music == {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False}
 
 
 def _run_pipeline(tmp_path, strategy):

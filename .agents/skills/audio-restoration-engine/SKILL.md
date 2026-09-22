@@ -160,6 +160,36 @@ audio alignment, or FFmpeg multiplexing.
   the profile keeps 5/5 bit-identity. Values come from the music autotune
   (`experiments/autotune_music`); re-read them from its `final.json` before
   touching the defaults.
+- **Listener-round stages (2026-09-23)**: every new behaviour is a
+  config-gated, default-off stage the tuning loop switches, and identity
+  stays 5/5 with defaults. What the listener heard and where the lever is:
+  "silent in pauses" is the polish expander (`_build_full_audio_expander_filter`
+  pushes what sits under its knee a further 7-10 dB down and maps -90 dBFS
+  to -100; `expander_depth_db`, `expander_knee_offset_db`) plus the mask
+  denoiser leaving near-silence, so `modules/pause_floor.py` puts the
+  source's own pause texture back (`pause_floor_fill_db` under the source's
+  pause level, quiet = within 10 dB of the p15 level, only the deficit,
+  never above the source) after the expander in both engines; the mux then
+  runs `loudnorm ... linear=true`, which ffmpeg silently turns dynamic when
+  the measured LRA exceeds the target (`loudnorm_target_lra`, the run log
+  states which mode held). "distortion of spoken 's'" is the neural stage
+  emptying the 1-4 kHz body under fricatives (`dsp.sib_centroid_hz`
+  +370..+620 Hz): `modules/sibilant_guard.py` puts a share of the pre-neural
+  high band back inside the fricative events only. cathar's hiss and its
+  shaved highs get one factor each side of a crossover
+  (`modules/split_band.py`, `cathar_split_band_hz`, `cathar_alpha_high`).
+  Music loses its stem under a full-mix chain: `modules/apl_stems.py` runs
+  the chain on the vocal stem and passes the background through the notches
+  and a bounded MMSE floor (`apl_music_bg_floor_db`), keyed like cathar's
+  profile on `profile.tonal_persistence`. New stages copy
+  `modules/plosive_tamer.py`'s shape (streamed blocks, `atomic_target`,
+  gain curves snapped to exactly 0/1 so untouched samples stay bit-exact,
+  `STAGE_FAILURES` -> log and return the input).
+- **Knob table hygiene**: a key the app overrides per material must be in
+  the loop's `KNOBS` or its rounds are inert there (the music loop's rounds
+  4-5 moved `cathar_alpha` while the music profile overrode it: three
+  candidates rendered byte-identical audio); when several candidates score
+  exactly alike, hash their audio before spending another round.
 - **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
   (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
   is measured before it replaces `.venv/Scripts/cathar.exe`. Stages our

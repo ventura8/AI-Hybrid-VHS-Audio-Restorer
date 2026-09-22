@@ -112,6 +112,40 @@ _NUMERIC_CONFIG_FIELDS = (
     # output is the same bytes as when it runs alone. Neural modes hold their models on
     # the GPU per job, so raise this with the GPU memory in mind.
     ("batch_jobs", int, 1, 1, 16),
+    # The mux's EBU R128 loudness range target. ffmpeg's loudnorm runs in linear mode only while
+    # the measured LRA is at or under the target; a denoised interview whose pauses fell silent
+    # measures well above 11 LU, so the filter falls back to dynamic mode and rides the gain
+    # between words -- pauses lifted, pumping added -- after every engine has finished. A higher
+    # target keeps the mux linear (one gain) on such material; 11 is the broadcast default.
+    ("loudnorm_target_lra", float, 11.0, 1.0, 50.0),
+    # The polish expander's depth under its knee and where the knee sits above the scanner's
+    # noise floor (modules/filters.py). 7 dB / +4 dB are the shipped curve; the listener heard
+    # the pauses "switch off" under it on the APL outputs.
+    ("expander_depth_db", float, 7.0, 0.0, 30.0),
+    ("expander_knee_offset_db", float, 4.0, -20.0, 20.0),
+    # Q of the CRT line-whistle notch in the pre-conditioning graph: 30 is the shipped width.
+    ("crt_notch_q", float, 30.0, 5.0, 200.0),
+    # The pause floor keeper (modules/pause_floor.py): in the frames the source calls quiet, an
+    # attenuated copy of the source is put back under the restored audio so a pause keeps its
+    # own, quieter texture instead of collapsing to dead air (the listener's "silent in pauses").
+    # The fill sits this many dB under the source's own pause level; frames above the quiet
+    # percentile are never touched.
+    ("pause_floor_fill_db", float, 12.0, 0.0, 60.0),
+    ("pause_floor_quiet_percentile", float, 15.0, 1.0, 100.0),
+    # cathar's split-band subtraction (modules/split_band.py): above the crossover the denoise
+    # runs a second time at cathar_alpha_high (cathar_music_alpha_high on music), so the hiss
+    # in the highs and the speech band get their own factor. 0 keeps the single pass.
+    ("cathar_split_band_hz", int, 0, 0, 20000),
+    ("cathar_alpha_high", float, 2.0, 0.0),
+    ("cathar_music_alpha_high", float, 0.5, 0.0),
+    # auto_pure_linear's stem path on music (modules/apl_stems.py): the chain runs on the vocal
+    # stem only and the background passes through the notches and a bounded suppressor.
+    ("apl_music_persistence_min", float, 0.05, 0.0, 1.0),
+    ("apl_music_bg_floor_db", float, -10.0, -60.0, 0.0),
+    # auto_pure_linear's sibilant guard (modules/sibilant_guard.py): on the fricative frames of
+    # the pre-neural audio, this share of the high band is put back so the 's' keeps its shape.
+    ("apl_sibilant_mix", float, 0.5, 0.0, 1.0),
+    ("apl_sibilant_guard_hz", int, 4000, 1000, 12000),
     ("afftdn_nr", float, 10.0, 0.0),
     ("afftdn_nf", float, -55.0, None),
     ("highpass_freq", int, 80, 0),
@@ -498,6 +532,10 @@ _BOOL_CONFIG_FIELDS = (
     ("cathar_music_enable_noiseprint", False),
     ("cathar_music_enable_coherent", False),
     ("cathar_music_enable_deplosive", False),
+    # The listener-round stages, off until the tuning loop accepts them (see the numeric keys).
+    ("enable_pause_floor", False),
+    ("apl_music_stem_path", False),
+    ("apl_enable_sibilant_guard", False),
     ("cathar_enable_deesser", True),
     ("cathar_enable_dereverb", False),
     ("cathar_dereverb_wpe", True),
@@ -821,6 +859,22 @@ ENABLE_DEESSER = bool(CONFIG.get("enable_deesser", True))
 ENABLE_LOUDNORM = bool(CONFIG.get("enable_loudnorm", True))
 ENABLE_DYNAMIC_EXPANDER = bool(CONFIG.get("enable_dynamic_expander", True))
 ENABLE_LINEAR_AIR = bool(CONFIG.get("enable_linear_air", True))
+LOUDNORM_TARGET_LRA = float(CONFIG.get("loudnorm_target_lra", 11.0))
+EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
+EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 4.0))
+CRT_NOTCH_Q = float(CONFIG.get("crt_notch_q", 30.0))
+ENABLE_PAUSE_FLOOR = bool(CONFIG.get("enable_pause_floor", False))
+PAUSE_FLOOR_FILL_DB = float(CONFIG.get("pause_floor_fill_db", 12.0))
+PAUSE_FLOOR_QUIET_PERCENTILE = float(CONFIG.get("pause_floor_quiet_percentile", 15.0))
+CATHAR_SPLIT_BAND_HZ = int(CONFIG.get("cathar_split_band_hz", 0))
+CATHAR_ALPHA_HIGH = float(CONFIG.get("cathar_alpha_high", 2.0))
+CATHAR_MUSIC_ALPHA_HIGH = float(CONFIG.get("cathar_music_alpha_high", 0.5))
+APL_MUSIC_STEM_PATH = bool(CONFIG.get("apl_music_stem_path", False))
+APL_MUSIC_PERSISTENCE_MIN = float(CONFIG.get("apl_music_persistence_min", 0.05))
+APL_MUSIC_BG_FLOOR_DB = float(CONFIG.get("apl_music_bg_floor_db", -10.0))
+APL_ENABLE_SIBILANT_GUARD = bool(CONFIG.get("apl_enable_sibilant_guard", False))
+APL_SIBILANT_MIX = float(CONFIG.get("apl_sibilant_mix", 0.5))
+APL_SIBILANT_GUARD_HZ = int(CONFIG.get("apl_sibilant_guard_hz", 4000))
 APL_ENABLE_SPECTRAL_DENOISE = bool(CONFIG.get("apl_enable_spectral_denoise", True))
 APL_SPECTRAL_ALPHA = float(CONFIG["apl_spectral_alpha"])
 APL_SPECTRAL_ALPHA_TONAL = float(CONFIG.get("apl_spectral_alpha_tonal", 2.0))

@@ -268,12 +268,14 @@ inside that directory is ever deleted.
 
 The output-quality harness keeps its own weights beside them, in
 `models/sigmos/`, `models/whisper-large-v3-turbo/`,
-`models/wavlm-base-plus-sv/`, `models/audiobox-aesthetics/` and
-`models/utmos/`, fetched by `scripts/download_quality_models.py` from
-pinned upstream revisions; each directory carries a README with the
-licence and a `MANIFEST.json` with the sha256 of every file. No
-`config.yaml` key names them. See `docs/validation.md`, "Output
-validation harness".
+`models/wavlm-base-plus-sv/`, `models/audiobox-aesthetics/`,
+`models/utmos/`, `models/scoreq/` (the NeurIPS 2024 no-reference MOS, ONNX
+weights from Zenodo, CC-BY-4.0) and `models/mert-v1-95m/` (the music
+embedding whose distance reads the non-vocal stem, CC-BY-NC-4.0, research
+use), fetched by `scripts/download_quality_models.py` from pinned upstream
+revisions; each directory carries a README with the licence and a
+`MANIFEST.json` with the sha256 of every file. No `config.yaml` key names
+them. See `docs/validation.md`, "Output validation harness".
 
 ## Batches
 

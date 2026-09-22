@@ -23,8 +23,8 @@ def _verdict_table(result):
 
 def _verdict_cell(verdict):
     mark = {"passed": "PASS", "failed": "FAIL", "skipped": "skip"}[verdict["status"]]
-    soft = " (soft)" if verdict["severity"] == "soft" and verdict["status"] == "failed" else ""
-    return f"{mark}{soft} {_fmt(verdict['value'])}"
+    kind = f" ({verdict['severity']})" if verdict["severity"] != "hard" and verdict["status"] == "failed" else ""
+    return f"{mark}{kind} {_fmt(verdict['value'])}"
 
 
 def _scored_names(result):
@@ -63,7 +63,9 @@ def _status_lines(result):
     for label, variant in result["variants"].items():
         summary = ", ".join(f"{family}: {status}" for family, status in variant["families"].items())
         verdict = "PASS" if variant["passed"] else "FAIL " + ", ".join(variant["hard_failures"])
-        lines.append(f"- **{label}** \u2014 {verdict}; lag {variant['lag_samples']} samples; {summary}")
+        flags = variant.get("listener_flags") or []
+        heard = f"; listener flags: {', '.join(flags)}" if flags else ""
+        lines.append(f"- **{label}** \u2014 {verdict}{heard}; lag {variant['lag_samples']} samples; {summary}")
     return lines + [""]
 
 

@@ -53,8 +53,21 @@ class AutoPureLinearMode(BaseRestorationMode):
                 plosive_tamer=True,
                 tone_cancel=True,
                 resemble_denoise=APL_USE_RESEMBLE_DENOISE,
+                # The listener-round stages read their own switches (apl_enable_sibilant_guard,
+                # enable_pause_floor); opting in here lets a sweep of those switches reach the chain.
+                sibilant_guard=True,
+                pause_floor=True,
             )
 
+        from .. import apl_stems
+
+        # Music (held partials at or above apl_music_persistence_min) takes the stem path when it is
+        # switched on: the chain on the vocal stem, the music through the notches; a separator
+        # failure falls back to the single-track path below.
+        if apl_stems.wanted(strategy) and apl_stems.execute(
+            work_dir, clean_wav, original_wav, video_path, final_output_video, video_dur, strategy, denoise_step
+        ):
+            return
         processing._process_single_track_pipeline(
             work_dir,
             clean_wav,

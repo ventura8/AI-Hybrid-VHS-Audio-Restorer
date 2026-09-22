@@ -40,8 +40,24 @@ from scripts.restoration_quality import audio_io  # noqa: E402
 
 ENV_PREFIX = "env:"
 ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
+ROFORMER_AGGR = "denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt"
 CATHAR_076 = "experiments/cathar-0.7.6/cathar.exe"
 SCORER_PARALLEL = 2
+
+# Knobs both engines share: the polish expander (the stage that turns a denoised pause into
+# dead air), the mux's loudness-range target (loudnorm drops to dynamic mode above it and rides
+# the gain between words) and the CRT notch width.
+SHARED_KNOBS = {
+    "enable_dynamic_expander": [True, False],
+    "expander_depth_db": [4.0, 7.0, 12.0],
+    "expander_knee_offset_db": [0.0, 4.0, 8.0],
+    "loudnorm_target_lra": [11.0, 20.0, 40.0],
+    "crt_notch_q": [30.0, 60.0, 120.0],
+    # The pause floor keeper (modules/pause_floor.py): the source's own pause texture put back
+    # this many dB under its level, so a pause never collapses to dead air.
+    "enable_pause_floor": [False, True],
+    "pause_floor_fill_db": [8.0, 12.0, 18.0, 24.0],
+}
 
 # Ordered candidate values per knob; None means "the app's default" (the override is dropped).
 KNOBS = {
@@ -59,7 +75,20 @@ KNOBS = {
         "cathar_enable_enhance": [True, False],
         "cathar_enable_deplosive": [True, False],
         "cathar_repair_strength": [2, 4],
+        # The music profile (modules/cathar.py) overrides cathar_alpha, the print, the coherent
+        # path and the deplosive on every clip whose held partials reach the floor, so on a music
+        # clip only these keys move; the rounds before they were knobs moved nothing there.
+        "cathar_music_alpha": [0.25, 0.5, 1.0],
+        "cathar_music_enable_noiseprint": [False, True],
+        "cathar_music_enable_coherent": [False, True],
+        "cathar_music_enable_deplosive": [False, True],
+        "cathar_music_persistence_min": [0.005, 0.02, 0.05],
+        # Split-band subtraction (modules/split_band.py): the highs get their own factor.
+        "cathar_split_band_hz": [0, 4000, 6000, 8000],
+        "cathar_alpha_high": [0.5, 1.0, 1.5, 2.0, 3.0],
+        "cathar_music_alpha_high": [0.25, 0.5, 1.0],
         f"{ENV_PREFIX}AI_RESTORE_CATHAR_BIN": [None, CATHAR_076],
+        **SHARED_KNOBS,
     },
     # On the Tata tapes the scanner reads a spectral flatness of 0.022 (< apl_tonal_flatness_max 0.035),
     # so APL takes its tonal path: apl_spectral_alpha_tonal and apl_noiseprint_tonal_s are the live
@@ -71,11 +100,20 @@ KNOBS = {
         "apl_tonal_flatness_max": [0.01, 0.035],
         "enable_linear_air": [True, False],
         "linear_air_gain_db": [1.0, 2.0],
-        "apl_neural_model": [None, ROFORMER],
+        "apl_neural_model": [None, ROFORMER, ROFORMER_AGGR],
         "apl_enable_learned_blend": [True, False],
-        "enable_dynamic_expander": [True, False],
         "apl_enable_spectral_denoise": [True, False],
         "apl_use_native_suppress": [False, True],
+        # The native suppressor's gain floor: what a pause keeps once the subtraction slot is on.
+        "apl_suppress_gain_floor_db": [-30.0, -20.0, -12.0],
+        # The sibilant guard (modules/sibilant_guard.py): the 's' keeps its body under the neural stage.
+        "apl_enable_sibilant_guard": [False, True],
+        "apl_sibilant_mix": [0.3, 0.5, 0.8],
+        # The stem path on music (modules/apl_stems.py); 0.005 admits Gaudeamus (held partials 0.009).
+        "apl_music_stem_path": [False, True],
+        "apl_music_persistence_min": [0.005, 0.02, 0.05],
+        "apl_music_bg_floor_db": [-20.0, -10.0, -5.0, 0.0],
+        **SHARED_KNOBS,
     },
 }
 ENGINES = {
@@ -283,13 +321,16 @@ def _verdict(cid, tape_scores, per_tape, incumbent_id):
     known = [r for r in ranks.values() if r is not None]
     wins = sum(1 for slug, r in ranks.items() if r is not None and r < per_tape[slug][incumbent_id])
     failures = sum(flat.get("gates.hard_failures", 0.0) for flat in tape_scores.values())
-    return {"mean_rank": float(np.mean(known)) if known else None, "wins": wins, "failures": failures, "per_tape": ranks}
+    flags = sum(flat.get("gates.listener_flags", 0.0) for flat in tape_scores.values())
+    return {"mean_rank": float(np.mean(known)) if known else None, "wins": wins, "failures": failures, "flags": flags, "per_tape": ranks}
 
 
 def _beats(verdict, base, n_tapes):
+    """Better mean rank, ahead on at least half the tapes, no more hard failures and no more listener flags."""
     if verdict["mean_rank"] is None or base["mean_rank"] is None:
         return False
-    return verdict["mean_rank"] < base["mean_rank"] and verdict["wins"] * 2 >= n_tapes and verdict["failures"] <= base["failures"]
+    no_worse = verdict["failures"] <= base["failures"] and verdict.get("flags", 0.0) <= base.get("flags", 0.0)
+    return verdict["mean_rank"] < base["mean_rank"] and verdict["wins"] * 2 >= n_tapes and no_worse
 
 
 def describe(overrides, incumbent):
@@ -350,11 +391,12 @@ def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, inc
 
 def _report_round(out_dir, number, incumbent, everything, ordered, qualifying, n_tapes):
     lines = [f"## round {number}", "", f"incumbent `{candidate_id(incumbent)}` {describe(incumbent, {})}", ""]
-    lines += ["| candidate | change | mean rank | wins | hard failures | qualifies |", "|---|---|---|---|---|---|"]
+    lines += ["| candidate | change | mean rank | wins | hard failures | flags | qualifies |", "|---|---|---|---|---|---|---|"]
     for cid, v in ordered:
         rank = "-" if v["mean_rank"] is None else f"{v['mean_rank']:.2f}"
         flag = "yes" if v["qualifies"] else "-"
-        lines.append(f"| {cid} | {describe(everything[cid], incumbent)} | {rank} | {v['wins']}/{n_tapes} | {v['failures']:.0f} | {flag} |")
+        cells = f"{rank} | {v['wins']}/{n_tapes} | {v['failures']:.0f} | {v.get('flags', 0.0):.0f} | {flag}"
+        lines.append(f"| {cid} | {describe(everything[cid], incumbent)} | {cells} |")
     outcome = (
         f"accepted `{qualifying[0]}` -> {describe(everything[qualifying[0]], incumbent)}"
         if qualifying
@@ -371,7 +413,7 @@ def main(argv=None):
     parser.add_argument("--engine", choices=list(KNOBS), required=True)
     parser.add_argument("--tapes", type=Path, required=True, help="JSON {slug: video path}")
     parser.add_argument("--out", type=Path, default=Path("experiments/autotune"))
-    parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v1.yaml"))
+    parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v2.yaml"))
     # The loop stops at a plateau (user: "stop only when no more improvements are possible"); the cap is a safety net.
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--families", default="dsp,stems,speech,mos")

@@ -1,10 +1,14 @@
 """The calibration's pure logic: floors, sensitivity checks, ordering rules and gate derivation."""
 
+import functools
+import json
 from pathlib import Path
+
+import pytest
 
 from scripts import calibrate_quality_metrics as cal
 from scripts import quality_degradations as deg
-from scripts.restoration_quality.gates import Gate
+from scripts.restoration_quality.gates import GATES, Gate
 
 
 def _case(kind, name, level, language="en"):
@@ -12,16 +16,18 @@ def _case(kind, name, level, language="en"):
 
 
 def _benign_cases_and_scores():
+    """One case per benign name; the hf_4k8k deltas sit on a symmetric 0.1 grid, so the centre is 0 and the floor its edge."""
     cases = [_case("benign", name, None) for name in deg.BENIGN]
-    scores = {c.case_id: {"dsp.hf_4k8k": 0.1 * i - 0.25, "speech.cer": 0.02} for i, c in enumerate(cases)}
-    return cases, scores
+    half = (len(cases) - 1) / 2.0
+    scores = {c.case_id: {"dsp.hf_4k8k": 0.1 * (i - half), "speech.cer": 0.02} for i, c in enumerate(cases)}
+    return cases, scores, 0.1 * half
 
 
 def test_noise_floor_centres_and_spreads_each_metric():
-    cases, scores = _benign_cases_and_scores()
+    cases, scores, edge = _benign_cases_and_scores()
     floor = cal.noise_floor(cases, scores)
     assert abs(floor["dsp.hf_4k8k"]["centre"]) < 1e-9
-    assert 0.2 < floor["dsp.hf_4k8k"]["floor"] <= 0.25
+    assert abs(floor["dsp.hf_4k8k"]["floor"] - edge) < 1e-9
     assert floor["speech.cer"]["floor"] == 0.0
 
 
@@ -123,3 +129,112 @@ def test_derive_gate_never_vetoes_a_known_good_output():
     derived = cal.derive_gate(gate, floor, ordering)
     assert derived["source"] == "known good bound"
     assert abs(derived["threshold"] - 1.4) < 1e-9
+
+
+def _flagged_ordering(bad_value, good_value):
+    """One tape read by flag lists for `listener.dead_air`: `bad` flagged, `good` clean, and `spare` ranked 1 but on neither list."""
+
+    def variant(value):
+        return {"verdicts": [{"gate": "listener.dead_air", "metric": "dsp.gap_air_db", "stat": "median", "value": value}]}
+
+    variants = {"bad": variant(bad_value), "good": variant(good_value), "spare": variant(-99.0)}
+    lists = {"flags": {"listener.dead_air": ["bad"]}, "clean": {"listener.dead_air": ["good"]}}
+    return {"tele": {"result": {"variants": variants}, "ranks": {"spare": 1}, **lists}}
+
+
+def test_gate_metric_values_follow_the_flag_lists_when_the_tape_has_them():
+    gate = Gate("dsp.gap_air_db", "median", ">=", -25.0, severity="flag")
+    assert cal._gate_metric_values(_flagged_ordering(-33.0, -11.0), gate, "listener.dead_air") == ([-11.0], [-33.0])
+    # Another gate has no lists on this tape: the by-ear ranks decide, and only `spare` is ranked.
+    assert cal._gate_metric_values(_flagged_ordering(-33.0, -11.0), gate, "listener.hiss") == ([-99.0], [])
+    assert cal._gate_metric_values(_flagged_ordering(-33.0, -11.0), gate) == ([-99.0], [])
+
+
+def test_derive_gate_uses_the_flag_lists_of_its_own_gate():
+    gate = Gate("dsp.gap_air_db", "median", ">=", -25.0, severity="flag")
+    floor = {"dsp.gap_air_db": {"centre": 0.0, "floor": 1.0}}
+    derived = cal.derive_gate(gate, floor, _flagged_ordering(-33.0, -11.0), "listener.dead_air")
+    assert derived == {"threshold": -22.0, "severity": "flag", "source": "known ordering"}
+
+
+def _listened(statuses):
+    """Variants with one `listener.hiss` verdict each, at the given status."""
+    verdict = {"metric": "dsp.gap_air_db", "stat": "median", "value": 0.0, "severity": "flag"}
+    return {
+        label: {"hard_failures": [], "verdicts": [{**verdict, "gate": "listener.hiss", "status": status}], "aggregate": {}}
+        for label, status in statuses.items()
+    }
+
+
+def test_flags_reproduced_needs_every_flagged_label_failing_and_every_clean_one_passing():
+    flags, clean = {"listener.hiss": ["hissy"]}, {"listener.hiss": ["quiet"]}
+    reproduced = {"variants": _listened({"hissy": "failed", "quiet": "passed"})}
+    assert cal.ordering_rules(reproduced, {}, flags, clean)["flags_reproduced"] is True
+    clean_failed = {"variants": _listened({"hissy": "failed", "quiet": "failed"})}
+    assert cal.ordering_rules(clean_failed, {}, flags, clean)["flags_reproduced"] is False
+    flag_missed = {"variants": _listened({"hissy": "passed", "quiet": "passed"})}
+    assert cal.ordering_rules(flag_missed, {}, flags, clean)["flags_reproduced"] is False
+
+
+def test_flags_reproduced_is_unread_without_lists_or_with_labels_the_tape_lacks():
+    flag_missed = {"variants": _listened({"hissy": "passed", "quiet": "passed"})}
+    assert cal.ordering_rules(flag_missed, {})["flags_reproduced"] is None
+    assert cal.ordering_rules(flag_missed, {}, {"listener.hiss": ["absent"]}, {})["flags_reproduced"] is None
+
+
+def _aggregate(gap_air_db):
+    return {"aggregate": {"dsp.gap_air_db": {"output": {"median": gap_air_db}}}}
+
+
+def test_reevaluate_ordering_reads_the_flags_under_the_derived_gates():
+    variants = {"dead": _aggregate(-33.0), "live": _aggregate(-11.0)}
+    lists = {"flags": {"listener.dead_air": ["dead"]}, "clean": {"listener.dead_air": ["live"]}}
+    ordering = {"tele": {"result": {"variants": variants}, "ranks": {}, **lists}}
+    strict = {"listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -25.0, severity="flag")}
+    assert cal.reevaluate_ordering(ordering, strict, {})["tele"]["rules"]["flags_reproduced"] is True
+    loose = {"listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -40.0, severity="flag")}
+    after = cal.reevaluate_ordering(ordering, loose, {})["tele"]
+    assert after["rules"]["flags_reproduced"] is False
+    assert after["flags"] == lists["flags"] and after["clean"] == lists["clean"]
+
+
+REPO = Path(cal.__file__).resolve().parent.parent
+LISTEN_GATES = ("listener.dead_air", "listener.pause_collapse", "listener.hiss", "listener.sibilance_thin", "listener.sibilance_dull")
+
+
+@functools.lru_cache(maxsize=None)
+def _manifest(name):
+    return json.loads((REPO / "experiments" / "quality_calibration" / name).read_text(encoding="utf-8"))
+
+
+def _listen():
+    """The listened Tele7abc tape of the v2 manifest and its label set."""
+    listen = _manifest("known_ordering_v2.json")["tele7abc_listen"]
+    return listen, set(listen["variants"])
+
+
+def test_v2_manifest_keeps_the_old_tapes():
+    v1, v2 = _manifest("known_ordering.json"), _manifest("known_ordering_v2.json")
+    assert {tape: v2[tape] for tape in v1} == v1
+
+
+def test_the_listened_tele7abc_has_thirteen_variants_of_a_mov_with_lists_for_every_listen_gate():
+    listen, labels = _listen()
+    assert len(labels) == 13
+    assert listen["source"].endswith(".mov")
+    assert set(listen["flags"]) == set(listen["clean"]) == set(LISTEN_GATES)
+
+
+@pytest.mark.parametrize("gate", LISTEN_GATES)
+def test_each_listen_gate_is_a_flag_whose_lists_name_disjoint_listened_labels(gate):
+    listen, labels = _listen()
+    assert GATES[gate].severity == "flag"
+    assert set(listen["flags"][gate]) | set(listen["clean"][gate]) <= labels
+    assert not set(listen["flags"][gate]) & set(listen["clean"][gate])
+
+
+def test_the_by_ear_ranks_name_listened_labels_and_leave_the_finals_unranked():
+    listen, labels = _listen()
+    assert set(listen["by_ear_rank"]) <= labels
+    assert listen["by_ear_rank"]["cathar075__alpha_2_0"] == 1
+    assert {"final_apl", "final_cathar"} <= labels - set(listen["by_ear_rank"])

@@ -28,10 +28,14 @@ class CatharMode(BaseRestorationMode):
         clean_wav, strategy = processing._resolve_preconditioned_audio(work_dir, original_wav, video_dur, self.mode_name, strategy)
 
         def cathar_step(in_wav, out_dir, total_duration=None):
+            from .. import pause_floor
+
             raw_restored = filter_cathar_vhs_pipeline(in_wav, out_dir, total_duration=total_duration, strategy=strategy)
-            return processing._polish_full_audio_step(
+            polished = processing._polish_full_audio_step(
                 raw_restored, out_dir, total_duration=total_duration, strategy=strategy, apply_air=False
             )
+            # After the expander, so it cannot take the fill back out; off by default (enable_pause_floor).
+            return pause_floor.apply_when_needed(in_wav, polished, out_dir, strategy=strategy)
 
         processing._process_single_track_pipeline(
             work_dir,

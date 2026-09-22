@@ -28,6 +28,7 @@ class WindowRow:
     route: str
     source: dict = field(default_factory=dict)
     output: dict = field(default_factory=dict)
+    output_route: str = ""
 
     def delta(self):
         """output - source for every metric read on both sides."""
@@ -65,10 +66,26 @@ METRICS = {
         MetricSpec("dsp.dropouts", "dsp", "lower", "count", ("speech", "music", "mixed")),
         MetricSpec("dsp.whistle_db", "dsp", "lower", "dB", ("speech", "music", "mixed", "silence")),
         MetricSpec("dsp.hum_excess_db", "dsp", "lower", "dB", ("speech", "music", "mixed", "silence")),
+        # Listener readings (scripts/restoration_quality/pause_metrics.py, sibilance.py, transient_metrics.py).
+        MetricSpec("dsp.gap_air_db", "dsp", "lower", "dB", ("speech", "mixed")),
+        MetricSpec("dsp.pause_depth_db", "dsp", "lower", "dB", ("speech", "mixed")),
+        MetricSpec("dsp.output_silent", "dsp", "lower", "", ("speech", "music", "mixed")),
+        MetricSpec("dsp.sib_centroid_hz", "dsp", "lower", "Hz", ("speech", "mixed")),
+        MetricSpec("dsp.sib_centroid_abs_hz", "dsp", "lower", "Hz", ("speech", "mixed")),
+        MetricSpec("dsp.sib_body_db", "dsp", "lower", "dB", ("speech", "mixed")),
+        MetricSpec("dsp.sib_level_db", "dsp", "lower", "dB", ("speech", "mixed")),
+        MetricSpec("dsp.attack_db", "dsp", "higher", "dB", ("music", "mixed")),
+        MetricSpec("dsp.onset_corr", "dsp", "higher", "", ("music", "mixed")),
+        MetricSpec("dsp.percussive_share_db", "dsp", "higher", "dB", ("music", "mixed")),
+        MetricSpec("dsp.zimtohrli_loud", "dsp", "lower", "", ("speech", "music", "mixed")),
         MetricSpec("stems.si_sdr_db", "stems", "higher", "dB"),
         MetricSpec("stems.lsd_db", "stems", "lower", "dB"),
         MetricSpec("stems.octave_ratio_db", "stems", "higher", "dB"),
         MetricSpec("stems.envelope_corr", "stems", "higher", ""),
+        MetricSpec("stems.has_background", "stems", "higher", ""),
+        MetricSpec("stems.mert_dist", "stems", "lower", ""),
+        MetricSpec("speech.hallucinated", "speech", "lower", "", ("speech", "mixed")),
+        MetricSpec("speech.ssl_dist", "speech", "lower", "", ("speech", "mixed")),
         MetricSpec("speech.cer", "speech", "lower", "", ("speech", "mixed")),
         MetricSpec("speech.wer", "speech", "lower", "", ("speech", "mixed")),
         MetricSpec("speech.avg_logprob", "speech", "higher", "", ("speech", "mixed")),
@@ -86,6 +103,8 @@ METRICS = {
         MetricSpec("mos.dnsmos_bak", "mos", "higher", "MOS", ("speech", "mixed")),
         MetricSpec("mos.dnsmos_ovrl", "mos", "higher", "MOS", ("speech", "mixed")),
         MetricSpec("mos.dnsmos_p808", "mos", "higher", "MOS", ("speech", "mixed")),
+        MetricSpec("mos.dnsmos_gap", "mos", "higher", "MOS", ("speech", "mixed")),
+        MetricSpec("mos.scoreq_nr", "mos", "higher", "MOS", ("speech", "mixed")),
         MetricSpec("mos.audiobox_pq", "mos", "higher", ""),
         MetricSpec("mos.audiobox_pc", "mos", "higher", ""),
         MetricSpec("mos.audiobox_ce", "mos", "higher", ""),

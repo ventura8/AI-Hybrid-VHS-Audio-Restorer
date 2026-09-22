@@ -5,6 +5,7 @@ import scipy.signal
 
 from scripts import quality_degradations as deg
 from scripts import realistic_defects as defects
+from scripts.restoration_quality import scorecard
 
 RATE = 44100
 
@@ -104,3 +105,12 @@ def test_every_benign_transform_applies():
     for name in deg.BENIGN:
         source, output = deg.apply_benign(name, voice, RATE, rng)
         assert len(output) >= len(source), name
+
+
+def test_listener_degradations_are_dispatched_and_name_registered_metrics():
+    """Each listener case has a base, three levels and expectations that name metrics the scorecard registers."""
+    for name in deg.LISTENER:
+        spec = deg.DEGRADATIONS[name]
+        assert spec.base in ("speech", "music")
+        assert len(spec.levels) == 3
+        assert all(expectation.metric in scorecard.METRICS for expectation in spec.expects), name

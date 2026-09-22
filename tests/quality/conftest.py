@@ -1,4 +1,4 @@
-"""Opt-in tests that load the output-quality models (Whisper, WavLM, UTMOS, SIGMOS, Audiobox).
+"""Opt-in tests that load the output-quality models (Whisper, WavLM, UTMOS, SIGMOS, SCOREQ, Audiobox, MERT).
 
 Gated at collection, like tests/hardware: these modules import the ml dependency group
 and need the weights `scripts/download_quality_models.py` fetches, neither of which CI

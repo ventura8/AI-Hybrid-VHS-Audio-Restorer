@@ -19,6 +19,11 @@ LKR_BAND_HZ = (1000.0, 8000.0)
 LKR_MIN_FRAMES = 20
 HF_REFERENCE_HZ = (300.0, 4000.0)
 HF_BANDS_HZ = {"hf_4k8k": (4000.0, 8000.0), "hf_8k16k": (8000.0, 16000.0)}
+# The CRT line whistle (15625 Hz PAL, 15734 Hz NTSC) can carry most of a VHS capture's
+# 8-16 kHz energy; removing it is restoration, not air lost, so every band reading leaves
+# these bins out on both sides (the stem octave reading shares the constants).
+CRT_LINE_HZ = (15625.0, 15734.0)
+CRT_LINE_HALF_WIDTH_HZ = 250.0
 CLICK_HIGHPASS_HZ = 4000.0
 CLICK_FLOOR_FRAME_S = 0.01
 CLICK_FLOOR_PERCENTILE = 90.0
@@ -150,9 +155,17 @@ def hf_ratio_db(mono, rate, band_hz):
 
 
 def _band_ratio_db(freqs, psd, band_hz):
-    band = psd[(freqs >= band_hz[0]) & (freqs < band_hz[1])].sum()
+    band = psd[band_bins(freqs, band_hz)].sum()
     body = psd[(freqs >= HF_REFERENCE_HZ[0]) & (freqs < HF_REFERENCE_HZ[1])].sum()
     return float(10.0 * np.log10((band + 1e-20) / (body + 1e-20)))
+
+
+def band_bins(freqs, band_hz):
+    """Bins inside `band_hz` with the CRT line and its +-250 Hz skirt left out."""
+    bins = (freqs >= band_hz[0]) & (freqs < band_hz[1])
+    for line in CRT_LINE_HZ:
+        bins &= np.abs(freqs - line) > CRT_LINE_HALF_WIDTH_HZ
+    return bins
 
 
 def loud_band_ratios_db(source, output, rate, frame=4096):
@@ -165,15 +178,20 @@ def loud_band_ratios_db(source, output, rate, frame=4096):
     count = min(len(source), len(output)) // frame
     if count == 0:
         return {name: (None, None) for name in HF_BANDS_HZ}
-    src = np.asarray(source[: count * frame], dtype=np.float64).reshape(count, frame)
-    out = np.asarray(output[: count * frame], dtype=np.float64).reshape(count, frame)
-    level = np.sqrt(np.mean(src**2, axis=1))
+    freqs, src_psd, level = framed_psd(source[: count * frame], rate, frame)
+    _freqs, out_psd, _level = framed_psd(output[: count * frame], rate, frame)
     loud = level >= np.percentile(level, LOUD_PERCENTILE)
-    window = np.hanning(frame)
-    freqs = np.fft.rfftfreq(frame, 1.0 / rate)
-    src_psd = np.mean(np.abs(np.fft.rfft(src[loud] * window, axis=1)) ** 2, axis=0)
-    out_psd = np.mean(np.abs(np.fft.rfft(out[loud] * window, axis=1)) ** 2, axis=0)
-    return {name: (_band_ratio_db(freqs, src_psd, band), _band_ratio_db(freqs, out_psd, band)) for name, band in HF_BANDS_HZ.items()}
+    src_mean, out_mean = np.mean(src_psd[loud], axis=0), np.mean(out_psd[loud], axis=0)
+    return {name: (_band_ratio_db(freqs, src_mean, band), _band_ratio_db(freqs, out_mean, band)) for name, band in HF_BANDS_HZ.items()}
+
+
+def framed_psd(mono, rate, frame):
+    """Per non-overlapping frame: `(freqs, power (frames, bins), rms level (frames,))`, Hann-windowed rfft power."""
+    count = len(mono) // frame
+    frames = np.asarray(mono[: count * frame], dtype=np.float64).reshape(count, frame)
+    level = np.sqrt(np.mean(frames**2, axis=1))
+    power = np.abs(np.fft.rfft(frames * np.hanning(frame), axis=1)) ** 2
+    return np.fft.rfftfreq(frame, 1.0 / rate), power, level
 
 
 def click_density(mono, rate):

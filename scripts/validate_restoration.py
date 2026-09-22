@@ -45,7 +45,25 @@ def _parse_args(argv=None):
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--cache-dir", type=Path, default=Path("experiments/quality_cache"))
     parser.add_argument("--gates", type=Path, default=None)
+    parser.add_argument(
+        "--merge-into",
+        type=Path,
+        default=None,
+        help="an earlier --report JSON: the families scored now replace theirs in it (the rest is kept), verdicts re-read",
+    )
     return parser.parse_args(argv)
+
+
+def _merged(result, args, gates):
+    """`result` merged into the stored report named by --merge-into, or `result` itself."""
+    if not args.merge_into or not args.merge_into.exists():
+        return result
+    import json
+
+    from scripts.tune_restoration import merge_families
+
+    stored = json.loads(args.merge_into.read_text(encoding="utf-8"))
+    return merge_families(stored, result, _families(args.metrics), gates)
 
 
 def _outputs_from_dir(source, outputs_dir):
@@ -90,6 +108,7 @@ def main(argv=None):
         language=args.language,
     )
     listen_index = listening.render_listening_set(result, cards, args.listen_dir, count=args.worst) if args.listen_dir else None
+    result = _merged(result, args, gates)
     if args.report:
         runner.write_result(result, args.report)
     if args.markdown:

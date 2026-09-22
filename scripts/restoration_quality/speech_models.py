@@ -25,6 +25,8 @@ MAX_NEW_TOKENS = 220
 REPEAT_NGRAM = 3
 REPEAT_COUNT = 3
 FLOOR_PERCENTILE = 10.0
+# WavLM-base-plus-sv encoder layer whose mean-pooled hidden states carry the SSL distance.
+SSL_LAYER = 6
 CEDILLA_TO_COMMA = str.maketrans({"\u015f": "\u0219", "\u0163": "\u021b", "\u015e": "\u0218", "\u0162": "\u021a"})
 
 
@@ -146,16 +148,31 @@ class TranscriptCache:
         return self.records[slot]
 
 
-def xvector(model, extractor, audio16k):
+def embeddings(model, extractor, audio16k):
+    """`(x-vector, SSL embedding)` from one WavLM pass, both unit length.
+
+    The x-vector is the speaker reading. The SSL embedding is the mean over time of the
+    encoder's layer `SSL_LAYER` hidden states: its cosine distance between source and output
+    is an over-suppression reading that needs no transcript (ArtiFree's detector, 2025).
+    """
     import torch
 
     inputs = extractor(audio16k, sampling_rate=audio_io.SPEECH_RATE, return_tensors="pt", padding=True)
     with torch.inference_mode():
-        embedding = model(
-            **{k: v.to(model.device, dtype=model.dtype) if v.dtype.is_floating_point else v.to(model.device) for k, v in inputs.items()}
-        ).embeddings[0]
-    embedding = embedding.float().cpu().numpy()
-    return embedding / (np.linalg.norm(embedding) + 1e-9)
+        result = model(
+            **{k: v.to(model.device, dtype=model.dtype) if v.dtype.is_floating_point else v.to(model.device) for k, v in inputs.items()},
+            output_hidden_states=True,
+        )
+    hidden = result.hidden_states[min(SSL_LAYER, len(result.hidden_states) - 1)][0].float().mean(dim=0).cpu().numpy()
+    return _unit(result.embeddings[0].float().cpu().numpy()), _unit(hidden)
+
+
+def _unit(vector):
+    return vector / (np.linalg.norm(vector) + 1e-9)
+
+
+def xvector(model, extractor, audio16k):
+    return embeddings(model, extractor, audio16k)[0]
 
 
 def speaker_floor(embeddings):
@@ -202,7 +219,9 @@ def _asr(pair, card, registry):
 def _asr_row(row, src, out):
     row.source["speech.avg_logprob"], row.output["speech.avg_logprob"] = src["avg_logprob"], out["avg_logprob"]
     row.source["speech.no_speech_prob"], row.output["speech.no_speech_prob"] = src["no_speech_prob"], out["no_speech_prob"]
-    row.output["speech.hallucinated"] = float(hallucinated(out, row.route))
+    # The output transcript is judged on the output's own route: text on a window that fell silent is invented.
+    row.source["speech.hallucinated"] = 0.0
+    row.output["speech.hallucinated"] = float(hallucinated(out, getattr(row, "output_route", "") or row.route))
     if hallucinated(src, row.route):
         return
     cer, wer = cer_wer(src["text"], out["text"])
@@ -213,11 +232,12 @@ def _asr_row(row, src, out):
 def _speaker(pair, card, registry):
     model, extractor = registry.get("wavlm", load_wavlm)
     rows = _speech_rows(card)
-    source_embeddings = [xvector(model, extractor, _window(pair, "source", row)) for row in rows]
-    card.speaker_floor = speaker_floor(source_embeddings)
-    for row, src_embedding in zip(rows, source_embeddings):
-        out_embedding = xvector(model, extractor, _window(pair, "output", row))
-        row.source["speech.speaker_cos"], row.output["speech.speaker_cos"] = 0.0, float(np.dot(src_embedding, out_embedding))
+    source_embeddings = [embeddings(model, extractor, _window(pair, "source", row)) for row in rows]
+    card.speaker_floor = speaker_floor([xvec for xvec, _ssl in source_embeddings])
+    for row, (src_xvec, src_ssl) in zip(rows, source_embeddings):
+        out_xvec, out_ssl = embeddings(model, extractor, _window(pair, "output", row))
+        row.source["speech.speaker_cos"], row.output["speech.speaker_cos"] = 0.0, float(np.dot(src_xvec, out_xvec))
+        row.source["speech.ssl_dist"], row.output["speech.ssl_dist"] = 0.0, float(1.0 - np.dot(src_ssl, out_ssl))
 
 
 def _naturalness(pair, card, registry):

@@ -85,6 +85,35 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   125 s, whole clips shorter than that keep the 0.75 s probe.
 - Whole tapes are the ground truth: an excerpt's noise probe is not the full
   tape's. Confirm any winner on the full tapes.
+- The listener readings (v2, 2026-09-23) exist because the median level of
+  the quiet frames could not tell "silent in pauses" from "has hiss" (every
+  restoration drives the deepest pauses to -96..-104 dBFS): read the gaps
+  (`dsp.gap_air_db`, 3-10 kHz on the p15-p40 frames over the loud frames)
+  and the pause depth relative to the speech (`dsp.pause_depth_db`), both
+  immune to the gain match; read the 's' on the source's fricative frames
+  (`dsp.sib_centroid_hz`, net of the plain-frame shift; hiss frames have a
+  high centroid too, so a fricative must also stand 10 dB over the gaps'
+  4-12 kHz power); read music attacks on the source's onsets
+  (`dsp.attack_db`, level-normalised). Their gates are `flag`s
+  (`listener.*`): the loop counts them (`_beats` refuses more flags), they
+  do not veto until a second listening round confirms the thresholds, and
+  the calibration derives them from per-gate `flags` / `clean` label lists
+  in `known_ordering_v2.json` (a single by-ear rank cannot say "hissy but
+  not dead"). Split a flag when one direction is accepted by ear and the
+  other is not (`sibilance_thin` above +300 Hz, `sibilance_dull` below
+  -600: cathar's de-esser reads -100..-380 and nobody objected).
+- Re-scoring one family into a stored report:
+  `validate_restoration.py ... --metrics dsp --merge-into report.json`
+  (`score_listen.py <slug> --dsp-rescore`), then
+  `experiments/tata_listen/check_verdicts.py` must reproduce every verdict
+  the user gave before a reading is trusted.
+- Learned judges stay guardrails: SCOREQ (`mos.scoreq_nr`, vendored ONNX,
+  never `pip install scoreq`: it drags plain onnxruntime beside
+  onnxruntime-gpu), `mos.dnsmos_gap`, `speech.ssl_dist`, `stems.mert_dist`
+  (MERT under transformers 5.17 returns no hidden states; the last hidden
+  state is layer 12). Zimtohrli's PyPI wheel is third-party, so it is not
+  installed; the loader raises ImportError and the runner records the
+  reading unavailable. No audio-LLM judge inside the loop.
 - Speech and music want different engine settings (cathar: alpha 1.5 with
   the stitched print on dialogue, alpha 0.5 with no print on music), so a
   tuning result is only as good as the material gate that applies it. Before

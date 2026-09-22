@@ -64,6 +64,17 @@ The engine supports 10 execution modes configured in `config.yaml`:
     separation. Removes more tape noise than `cathar` while disturbing the
     programme less, and removes mains hum where neither mode used to; see
     `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`.
+  - Listener-round stages, off until the tuning loop accepts them
+    (`modules/processing.py::_post_neural_stages`): the sibilant guard
+    (`modules/sibilant_guard.py`, `apl_enable_sibilant_guard`: the 's' keeps
+    the body the neural stage empties), the pause floor keeper
+    (`modules/pause_floor.py`, `enable_pause_floor`, after the expander), and
+    on music the stem path (`modules/apl_stems.py`, `apl_music_stem_path`:
+    the chain on the vocal stem, the music through the notches and a bounded
+    suppressor). The polish expander's depth and knee
+    (`expander_depth_db`, `expander_knee_offset_db`), the mux's
+    `loudnorm_target_lra` (loudnorm turns dynamic above it) and `crt_notch_q`
+    are keys both engines share.
 - **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
   - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
     floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the
@@ -109,6 +120,11 @@ The engine supports 10 execution modes configured in `config.yaml`:
     `cathar_music_persistence_min`, the denoise runs at `cathar_music_alpha`
     with the `cathar_music_enable_*` switches; the band ratios read every
     music clip as dialogue, so they cannot make this call.
+  - Listener-round stages, off until the tuning loop accepts them:
+    split-band subtraction (`cathar_split_band_hz`, a second denoise pass at
+    `cathar_alpha_high` above the crossover, recombined through
+    `modules/split_band.py`) and the pause floor keeper
+    (`modules/pause_floor.py`, `enable_pause_floor`, after the expander).
 - **`hybrid`** (`*_Hybrid_Cleaned.<ext>`):
   - Stages: BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$
     UVR-DeNoise $\\rightarrow$ DTW Sync $\\rightarrow$ amix.

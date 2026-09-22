@@ -482,6 +482,7 @@ def _merge_variant(old, fresh, prefixes, gates):
     old["file"], old["families"] = fresh["file"], {**old["families"], **fresh["families"]}
     old["verdicts"] = gates_mod.evaluate_gates(old["aggregate"], gates, old.get("speaker_floor"))
     old["hard_failures"] = gates_mod.hard_failures(old["verdicts"])
+    old["listener_flags"] = gates_mod.flag_failures(old["verdicts"])
     old["passed"] = not old["hard_failures"]
 
 
@@ -495,6 +496,7 @@ def flatten_pair(result, label, gates=None):
     if gates is not None:
         verdicts = gates_mod.evaluate_gates(variant["aggregate"], gates, variant.get("speaker_floor"))
         variant["hard_failures"] = gates_mod.hard_failures(verdicts)
+        variant["listener_flags"] = gates_mod.flag_failures(verdicts)
         variant["passed"] = not variant["hard_failures"]
     flat = runner.aggregates_for_tuning(result, label)
     flat["hard_failures"] = variant["hard_failures"]

@@ -450,6 +450,28 @@ cathar_dereverb_strength: 2.0
 #   - true:  Applies calibrated high-frequency presence air curve (+2.0 dB @ 7.5 kHz) to linear tracks (Default).
 #   - false: Disabled.
 #
+# expander_depth_db / expander_knee_offset_db:
+#   - The expander's depth under its knee and the knee's offset above the scanner's
+#     noise floor (7 dB / +4 dB are the shipped curve). This is the stage that turned a
+#     denoised pause into dead air on the auto_pure_linear outputs ("silent in
+#     pauses"); the tuning loop searches both.
+#
+# enable_pause_floor / pause_floor_fill_db / pause_floor_quiet_percentile:
+#   - The pause floor keeper: in the frames the source calls quiet (at or under its
+#     quiet percentile level), an attenuated copy of the source is put back under the
+#     restored audio so a pause keeps its own, quieter texture, pause_floor_fill_db
+#     under the source's pause level. Off until the loop accepts it.
+#
+# loudnorm_target_lra:
+#   - The mux's EBU R128 loudness-range target. ffmpeg's loudnorm holds its linear
+#     mode only while the measured range is at or under it; a denoised interview with
+#     silent pauses measures well above the broadcast 11 LU and the mux then rides the
+#     gain between words. The run log states the measured range and the mode.
+#
+# crt_notch_q:
+#   - Q of the CRT line-whistle notch in the pre-conditioning graph (30 is the shipped
+#     width).
+#
 # preserve_original_audio_track:
 #   - true:  Preserves original untouched audio as Stream 2 alongside restored audio in container.
 #   - false: Output container contains restored clean audio track only (Default).
@@ -457,6 +479,13 @@ cathar_dereverb_strength: 2.0
 enable_deesser: true
 enable_loudnorm: true
 enable_dynamic_expander: true
+expander_depth_db: 7.0
+expander_knee_offset_db: 4.0
+enable_pause_floor: false
+pause_floor_fill_db: 12.0
+pause_floor_quiet_percentile: 15.0
+loudnorm_target_lra: 11.0
+crt_notch_q: 30.0
 enable_linear_air: true
 linear_air_gain_db: 2.0
 preserve_original_audio_track: false
