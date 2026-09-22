@@ -1,0 +1,36 @@
+# Music-preservation round on Internet Archive clips that carry music (chosen by the harness
+# router: tonal persistence >= 0.05 on instrumental clips, >= 0.06 on speech-over-a-bed) plus
+# the first minute of the Gaudeamus tape. The ranking is what a listener wants from music:
+# the background stem intact (worst octave, SI-SDR, spectral distance, envelope), the air
+# kept, no musical noise, and the tape noise still gone. Speech readings are left out.
+
+excerpt_s: 15
+margin_s: 0
+
+engines:
+  cathar: {process_mode: cathar, suffix: _Cathar_Cleaned}
+  apl: {process_mode: auto_pure_linear, suffix: _PureLinear_Cleaned}
+
+gates:
+  max_failed_excerpts: 4
+
+ranking:
+  stems.octave_ratio_db.output.tail: up
+  stems.si_sdr_db.output.median: up
+  stems.lsd_db.output.median: down
+  stems.envelope_corr.output.median: up
+  dsp.hf_4k8k.delta.median: up
+  dsp.hf_8k16k.delta.tail: up
+  mos.sigmos_col.delta.median: up
+  mos.sigmos_noise.delta.median: up
+  mos.audiobox_pq.delta.median: up
+  mos.audiobox_pc.delta.median: up
+  dsp.lkr.delta.median: down
+  dsp.residual_noise_db.output.median: down
+  dsp.pause_pumping_db.delta.median: down
+
+variants:
+  cathar:
+    baseline: {}
+  apl:
+    baseline: {}

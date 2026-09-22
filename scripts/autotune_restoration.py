@@ -12,7 +12,7 @@ plateau); `--rounds` (default 20) is only a safety cap. The listener is asked at
 usage:
   autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
                           [--grid scripts/tune_grids/tata_v1.yaml] [--families dsp,stems,speech,mos]
-                          [--start '{"cathar_alpha": 2.0}'] [--language ro] [--gates gates.json]
+                          [--start '{"cathar_alpha": 2.0}' | --start-file final.json] [--language ro] [--gates gates.json]
                           [--parallel 2]
 
 `tapes.json` maps a slug to a video path. Everything is resumable: candidates are keyed by
@@ -372,6 +372,7 @@ def main(argv=None):
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--families", default="dsp,stems,speech,mos")
     parser.add_argument("--start", default="{}", help="JSON overrides to start from")
+    parser.add_argument("--start-file", type=Path, default=None, help="a final.json of an earlier run to start from (wins over --start)")
     parser.add_argument("--language", default="ro")
     parser.add_argument("--parallel", type=int, default=SCORER_PARALLEL, help="tape scorers running at once (about 4 GB RAM each)")
     parser.add_argument("--gates", type=Path, default=tune.DEFAULT_GATES if tune.DEFAULT_GATES.exists() else None)
@@ -381,7 +382,8 @@ def main(argv=None):
     out_dir = args.out / args.engine
     out_dir.mkdir(parents=True, exist_ok=True)
     ranking = tune.load_grid(args.grid)["ranking"]
-    state = load_state(out_dir, seed_defaults(args.engine, json.loads(args.start), out_dir))
+    start = json.loads(args.start_file.read_text(encoding="utf-8")) if args.start_file else json.loads(args.start)
+    state = load_state(out_dir, seed_defaults(args.engine, start, out_dir))
     # A knob added to the table after the run began is seeded too, so its first moves are neighbours of the real value.
     state["incumbent"] = seed_defaults(args.engine, state["incumbent"], out_dir)
     if not (out_dir / "log.md").exists():
