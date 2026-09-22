@@ -327,6 +327,19 @@ def _tape_record(result, floor, ranks, flags, clean):
     return {"rules": ordering_rules(result, floor, flags, clean), "result": result, "ranks": ranks, "flags": flags, "clean": clean}
 
 
+def _manifest_inside_repo(manifest_path):
+    """The manifest as a resolved path inside the repository; anything else is refused.
+
+    The path comes from the command line; the manifests live under `assets/quality_calibration`
+    (or `experiments/`), and a path that resolves elsewhere is a mistake, not a manifest.
+    """
+    root = Path(__file__).resolve().parents[1]
+    resolved = Path(manifest_path).resolve()
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise SystemExit(f"--known-ordering must name a manifest file inside {root}: {manifest_path}")
+    return resolved
+
+
 def run_known_ordering(manifest_path, families, registry, cache_dir, floor, out_dir):
     """Scores every tape in the manifest once (persisted under out_dir/ordering) and applies the rules.
 
@@ -334,7 +347,7 @@ def run_known_ordering(manifest_path, families, registry, cache_dir, floor, out_
     Tele7abc and a known-good one on SOTI and Vaccin, so good and bad are read per tape.
     A tape may also carry `flags` / `clean` label lists per listener gate.
     """
-    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    manifest = json.loads(_manifest_inside_repo(manifest_path).read_text(encoding="utf-8"))
     out = {}
     for tape, entry in manifest.items():
         path = Path(out_dir) / "ordering" / f"{tape}.json"

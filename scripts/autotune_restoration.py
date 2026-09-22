@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -284,13 +285,39 @@ def _score_path(out_dir, cid, slug):
     return out_dir / "cands" / cid / f"{slug}.score.json"
 
 
-def _launch_scorer(slug, tape, cids, out_dir, families, gates, language):
-    args = [PYTHON, str(REPO / "scripts" / "validate_restoration.py"), str(tape)]
+LANGUAGE_RE = re.compile(r"^[a-z]{2,3}$")
+
+
+def _existing_path(value, what):
+    """A command-line path resolved and checked to exist; a value shaped like an option is refused."""
+    text = str(value)
+    if text.startswith("-"):
+        raise SystemExit(f"{what} looks like an option, not a path: {text}")
+    resolved = Path(text).resolve()
+    if not resolved.exists():
+        raise SystemExit(f"{what} does not exist: {resolved}")
+    return resolved
+
+
+def _scorer_arguments(slug, tape, cids, out_dir, families, gates, language):
+    """The scorer's argument list from checked inputs: the tape and the gates must exist, the language is a code."""
+    if not LANGUAGE_RE.match(language):
+        raise SystemExit(f"--language must be a two- or three-letter code: {language!r}")
+    unknown = set(families) - set(tune.runner.ALL_FAMILIES)
+    if unknown:
+        raise SystemExit(f"unknown metric families: {sorted(unknown)}")
+    out_dir = _existing_path(out_dir, "--out")
+    args = [PYTHON, str(REPO / "scripts" / "validate_restoration.py"), str(_existing_path(tape, "tape"))]
     args += [f"{cid}={out_dir / 'cands' / cid / f'{slug}.wav'}" for cid in cids]
     args += ["--metrics", ",".join(families), "--language", language, "--cache-dir", str(out_dir / "cache")]
     args += ["--report", str(out_dir / "rounds" / f"score_{slug}.json")]
     if gates:
-        args += ["--gates", str(gates)]
+        args += ["--gates", str(_existing_path(gates, "--gates"))]
+    return args
+
+
+def _launch_scorer(slug, tape, cids, out_dir, families, gates, language):
+    args = _scorer_arguments(slug, tape, cids, out_dir, families, gates, language)
     log = open(out_dir / "rounds" / f"score_{slug}.log", "a", encoding="utf-8")
     proc = subprocess.Popen(args, cwd=str(REPO), stdout=log, stderr=subprocess.STDOUT, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     return log, proc

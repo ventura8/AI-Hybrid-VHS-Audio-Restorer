@@ -28,6 +28,7 @@ import argparse
 import json
 import re
 import sys
+import tempfile
 import tomllib
 import urllib.request
 from pathlib import Path
@@ -327,6 +328,7 @@ class Refresh:
         self.text = recompute_hash(self.text)
         if apply and not self.report["problems"]:
             LOCK.write_text(self.text, encoding="utf-8")
+        report_path = _report_path_allowed(report_path)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(self.report, indent=1), encoding="utf-8")
         r = self.report
@@ -335,6 +337,19 @@ class Refresh:
             f"source-pinned {len(r['source_pinned'])}, problems {r['problems']}"
         )
         return 1 if r["problems"] else 0
+
+
+def _report_path_allowed(report_path):
+    """The report path resolved, and refused unless it lies inside the repository or the temp directory.
+
+    The path comes from the command line; a report belongs under `experiments/` or a scratch
+    directory, never anywhere a stray argument could point.
+    """
+    resolved = Path(report_path).resolve()
+    allowed = (ROOT.resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(resolved.is_relative_to(base) for base in allowed):
+        raise SystemExit(f"--report must lie inside {allowed[0]} or {allowed[1]}: {report_path}")
+    return resolved
 
 
 def _parse_args(argv=None):

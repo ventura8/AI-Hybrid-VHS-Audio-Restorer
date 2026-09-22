@@ -118,7 +118,9 @@ def _pearson(a, b):
     """Pearson correlation, 0.0 when either side has no variance."""
     a, b = a - a.mean(), b - b.mean()
     norm = np.sqrt((a * a).sum() * (b * b).sum())
-    return 0.0 if norm == 0.0 else float((a * b).sum() / norm)
+    if norm < 1e-12:
+        return 0.0
+    return float((a * b).sum() / norm)
 
 
 def _side(mono, rate):

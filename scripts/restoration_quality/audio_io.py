@@ -13,7 +13,9 @@ import numpy as np
 import soundfile as sf
 
 from modules.auto_scanner import _compute_chunk_spectrum, _music_ratio_from_spectrum, _speech_ratio_from_spectrum
-from modules.tonal_persistence import syllabic_modulation, tonal_persistence  # noqa: F401 - the router's readings, shared with the app
+
+# The router's readings, shared with the app (re-exported for the tests and the calibration).
+from modules.tonal_persistence import syllabic_modulation, tonal_persistence  # noqa: F401
 from modules.utils import FFMPEG_BIN
 from scripts.score_reference import _align, _match_gain
 
