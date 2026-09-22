@@ -16,6 +16,9 @@ HARD = "hard"
 # pauses, hiss left, thinned sibilants, softened attacks) and is counted by the tuning
 # loop, but does not veto on its own until a second listening round confirms its threshold.
 FLAG = "flag"
+# The two aggregate statistics a gate reads: the window median and the bad-end tail.
+MEDIAN = "delta.median"
+TAIL = "delta.tail"
 
 
 @dataclass(frozen=True)
@@ -43,37 +46,37 @@ GATES = {
     "speech.speaker": Gate(
         "speech.speaker_cos", "tail", ">=", "floor-0.05", "timbre: cosine to the source under the tape's own intra-speaker floor"
     ),
-    "speech.logprob": Gate("speech.avg_logprob", "delta.tail", ">=", -0.15, "ASR confidence must not fall"),
-    "mos.sigmos_col": Gate("mos.sigmos_col", "delta.median", ">=", -0.3, "coloration: muffled / metallic timbre"),
-    "mos.sigmos_disc": Gate("mos.sigmos_disc", "delta.tail", ">=", -0.3, "discontinuity: chopping, musical noise"),
-    "mos.sigmos_noise": Gate("mos.sigmos_noise", "delta.median", ">=", 0.0, "the output must not read noisier than the source"),
+    "speech.logprob": Gate("speech.avg_logprob", TAIL, ">=", -0.15, "ASR confidence must not fall"),
+    "mos.sigmos_col": Gate("mos.sigmos_col", MEDIAN, ">=", -0.3, "coloration: muffled / metallic timbre"),
+    "mos.sigmos_disc": Gate("mos.sigmos_disc", TAIL, ">=", -0.3, "discontinuity: chopping, musical noise"),
+    "mos.sigmos_noise": Gate("mos.sigmos_noise", MEDIAN, ">=", 0.0, "the output must not read noisier than the source"),
     "stems.octave": Gate("stems.octave_ratio_db", "tail", ">=", -3.0, "background stripped: non-vocal stem down in some octave"),
-    "dsp.hf_4k8k": Gate("dsp.hf_4k8k", "delta.median", ">=", -8.0, "presence band lost: muffled speech"),
-    "dsp.pause_pumping": Gate("dsp.pause_pumping_db", "delta.median", "<=", 12.0, "pause floor switches on and off between words", "soft"),
-    "dsp.hf_8k16k": Gate("dsp.hf_8k16k", "delta.median", ">=", -12.0, "air band lost: sibilance eaten"),
-    "dsp.lkr": Gate("dsp.lkr", "delta.median", "<=", 0.3, "musical noise"),
-    "dsp.hum": Gate("dsp.hum_excess_db", "delta.median", "<=", 3.0, "hum must not appear"),
-    "dsp.clicks": Gate("dsp.clicks_per_s", "delta.tail", "<=", 0.5, "clicks must not appear"),
-    "dsp.dropouts": Gate("dsp.dropouts", "delta.tail", "<=", 1.0, "no new holes in the programme"),
-    "dsp.whistle": Gate("dsp.whistle_db", "delta.median", "<=", 3.0, "line whistle must not appear"),
-    "file.lra": Gate("file.lra", "delta.median", ">=", -3.0, "dynamics squashed"),
-    "file.lufs": Gate("file.lufs", "delta.median", "abs<=", 1.5, "level moved", SOFT),
-    "speech.utmos": Gate("speech.utmos", "delta.median", ">=", -0.3, "naturalness", SOFT),
-    "mos.audiobox_pq": Gate("mos.audiobox_pq", "delta.median", ">=", -0.3, "production quality", SOFT),
-    "mos.audiobox_pc": Gate("mos.audiobox_pc", "delta.median", ">=", -0.5, "scene simplified: background stripped"),
-    "mos.dnsmos_gap": Gate("mos.dnsmos_gap", "delta.median", ">=", -0.7, "SIG under BAK: the speech paid for the quiet", SOFT),
+    "dsp.hf_4k8k": Gate("dsp.hf_4k8k", MEDIAN, ">=", -8.0, "presence band lost: muffled speech"),
+    "dsp.pause_pumping": Gate("dsp.pause_pumping_db", MEDIAN, "<=", 12.0, "pause floor switches on and off between words", "soft"),
+    "dsp.hf_8k16k": Gate("dsp.hf_8k16k", MEDIAN, ">=", -12.0, "air band lost: sibilance eaten"),
+    "dsp.lkr": Gate("dsp.lkr", MEDIAN, "<=", 0.3, "musical noise"),
+    "dsp.hum": Gate("dsp.hum_excess_db", MEDIAN, "<=", 3.0, "hum must not appear"),
+    "dsp.clicks": Gate("dsp.clicks_per_s", TAIL, "<=", 0.5, "clicks must not appear"),
+    "dsp.dropouts": Gate("dsp.dropouts", TAIL, "<=", 1.0, "no new holes in the programme"),
+    "dsp.whistle": Gate("dsp.whistle_db", MEDIAN, "<=", 3.0, "line whistle must not appear"),
+    "file.lra": Gate("file.lra", MEDIAN, ">=", -3.0, "dynamics squashed"),
+    "file.lufs": Gate("file.lufs", MEDIAN, "abs<=", 1.5, "level moved", SOFT),
+    "speech.utmos": Gate("speech.utmos", MEDIAN, ">=", -0.3, "naturalness", SOFT),
+    "mos.audiobox_pq": Gate("mos.audiobox_pq", MEDIAN, ">=", -0.3, "production quality", SOFT),
+    "mos.audiobox_pc": Gate("mos.audiobox_pc", MEDIAN, ">=", -0.5, "scene simplified: background stripped"),
+    "mos.dnsmos_gap": Gate("mos.dnsmos_gap", MEDIAN, ">=", -0.7, "SIG under BAK: the speech paid for the quiet", SOFT),
     "speech.hallucinated": Gate("speech.hallucinated", "tail", "<=", 0.0, "Whisper invents text where the output is silent", SOFT),
     "dsp.output_silent": Gate("dsp.output_silent", "tail", "<=", 0.0, "a window with programme fell silent"),
     # Listener flags; starting values from the Tata listening set, re-derived by calibration.
     "listener.hiss": Gate("dsp.gap_air_db", "median", "<=", -20.0, "air left in the inter-word gaps: hiss", FLAG),
     "listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -25.0, "the gaps emptied: silent pauses", FLAG),
-    "listener.pause_collapse": Gate("dsp.pause_depth_db", "delta.median", "<=", 34.0, "the pauses dropped far under the speech", FLAG),
+    "listener.pause_collapse": Gate("dsp.pause_depth_db", MEDIAN, "<=", 34.0, "the pauses dropped far under the speech", FLAG),
     # Thin and dull are two flags with different bounds: a de-esser lowers the top of every 's'
     # (cathar reads -100..-380 Hz on Tele7abc and the listener did not object), the neural
     # stage empties the body under it (APL +370..+620 Hz: "distortion of spoken 's'").
-    "listener.sibilance_thin": Gate("dsp.sib_centroid_hz", "delta.median", "<=", 300.0, "the 's' lost its body: thin, lisping", FLAG),
-    "listener.sibilance_dull": Gate("dsp.sib_centroid_hz", "delta.median", ">=", -600.0, "the 's' lost its top: dull", FLAG),
-    "listener.attack": Gate("dsp.attack_db", "delta.tail", ">=", -4.0, "attacks softened: transients smeared", FLAG),
+    "listener.sibilance_thin": Gate("dsp.sib_centroid_hz", MEDIAN, "<=", 300.0, "the 's' lost its body: thin, lisping", FLAG),
+    "listener.sibilance_dull": Gate("dsp.sib_centroid_hz", MEDIAN, ">=", -600.0, "the 's' lost its top: dull", FLAG),
+    "listener.attack": Gate("dsp.attack_db", TAIL, ">=", -4.0, "attacks softened: transients smeared", FLAG),
 }
 
 

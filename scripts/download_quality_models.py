@@ -283,8 +283,9 @@ def main(argv=None):
 
 
 def _check_all(selected, models_dir):
-    checks = [check(name, pin, models_dir) for name, pin in selected.items()]  # every model is checked, not just the first missing
-    ok = all(checks)
+    ok = True
+    for name, pin in selected.items():  # every model is checked, not just the first missing one
+        ok = check(name, pin, models_dir) and ok
     print("all present" if ok else "run scripts/download_quality_models.py to fetch the missing models")
     return 0 if ok else 1
 
