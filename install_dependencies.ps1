@@ -240,7 +240,7 @@ else {
 # 4. Install runtime dependencies with Poetry (verbose)
 Write-Information "`nStep 3: Installing runtime dependencies with Poetry..."
 Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "--upgrade", "pip")
-Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "poetry==2.4.3")
+Invoke-CheckedCommand $VenvPy @("-m", "pip", "install", "poetry==2.5.1")
 
 # Prevent Poetry from inheriting an unrelated active environment (for example, an external "venv").
 if ($env:VIRTUAL_ENV) {

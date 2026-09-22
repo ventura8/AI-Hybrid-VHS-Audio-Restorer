@@ -58,6 +58,9 @@ librosa = "^1.0.0"
 # Aesthetics predictor. Weights are fetched by scripts/download_quality_models.py.
 jiwer = "^4.0.0"
 audiobox-aesthetics = "^0.0.4"
+# MERT-v1-95M's remote code imports nnAudio only for its CQT front end, which the pinned
+# checkpoint has off, so nnAudio is not a dependency. Zimtohrli is deliberately not pinned:
+# see scripts/restoration_quality/judges.py.
 # Declared explicitly because audio-separator imports it without declaring it, and
 # librosa 1.0 dropped the transitive dependency that used to supply it. Without this the
 # next lock regeneration silently removes audioread and every UVR-based mode dies on

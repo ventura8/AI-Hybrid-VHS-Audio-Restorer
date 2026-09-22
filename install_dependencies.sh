@@ -244,7 +244,7 @@ echo "Cathar ready: $VENV_DIR/bin/cathar ($CATHAR_EXPECTED_VER)"
 # Step 4: Install Dependencies via Poetry
 echo -e "\nStep 4: Installing Dependencies via Poetry..."
 "$VENV_PY" -m pip install --upgrade pip
-"$VENV_PY" -m pip install poetry==2.4.3
+"$VENV_PY" -m pip install poetry==2.5.1
 
 "$VENV_PY" -m poetry config --local virtualenvs.in-project true
 "$VENV_PY" -m poetry config --local virtualenvs.create false
