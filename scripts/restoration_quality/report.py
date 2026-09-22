@@ -49,11 +49,12 @@ def _family_table(result, family):
 
 
 def _metric_row(result, name, labels):
-    first = result["variants"][labels[0]]["aggregate"].get(name, {})
-    source = first.get("source", {}).get("median") if first else None
+    # A side with no finite reading aggregates to None (an output-only metric has no source side).
+    first = result["variants"][labels[0]]["aggregate"].get(name) or {}
+    source = (first.get("source") or {}).get("median")
     cells = []
     for label in labels:
-        entry = result["variants"][label]["aggregate"].get(name, {}).get("delta") or {}
+        entry = (result["variants"][label]["aggregate"].get(name) or {}).get("delta") or {}
         cells.append(f"{_fmt(entry.get('median'))} | {_fmt(entry.get('tail'))}")
     return f"| {name} | {_fmt(source)} | " + " | ".join(cells) + " |"
 
