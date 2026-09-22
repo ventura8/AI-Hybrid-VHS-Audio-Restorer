@@ -93,10 +93,47 @@ def extract_wav(source, cache_dir):
     return target
 
 
+# A capture can carry a DC offset the app's 2 Hz blocker removes; three Internet Archive
+# music clips sat at +0.49 with the programme 23-27 dB below it, so every comparison
+# against the raw source read the blocker as destruction. The harness blocks DC itself.
+DC_SHARE_MAX = 0.01
+
+
 def load_audio(path):
-    """The file as float32 `(frames, channels)` plus its rate."""
+    """The file as float32 `(frames, channels)` plus its rate, with any DC offset removed per channel."""
     audio, rate = sf.read(str(path), dtype="float32", always_2d=True)
-    return audio, int(rate)
+    return remove_dc(audio), int(rate)
+
+
+def remove_dc(audio):
+    """`audio` minus each channel's mean (a constant offset is what a broken capture carries)."""
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.size == 0:
+        return audio
+    return (audio - audio.mean(axis=0, keepdims=True)).astype(np.float32)
+
+
+def dc_share(path):
+    """The share of a file's power that is DC, read before any blocking."""
+    audio, _rate = sf.read(str(path), dtype="float32", always_2d=True)
+    if audio.size == 0:
+        return 0.0
+    mono = audio.mean(axis=1)
+    return float(np.mean(mono) ** 2 / (np.mean(mono**2) + 1e-20))
+
+
+def dc_free_copy(path, cache_dir):
+    """`path` itself when its DC share is negligible, else a DC-blocked WAV copy under `cache_dir`."""
+    path = Path(path)
+    if dc_share(path) < DC_SHARE_MAX:
+        return path
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    target = cache_dir / f"{file_key(path)}_dcfree.wav"
+    if not target.exists():
+        audio, rate = load_audio(path)
+        sf.write(str(target), audio, rate, subtype="FLOAT")
+    return target
 
 
 def to_mono(audio):

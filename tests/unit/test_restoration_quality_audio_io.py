@@ -118,3 +118,27 @@ def test_syllabic_modulation_reads_the_four_hertz_bursts():
 def test_route_window_calls_a_held_tone_music_and_syllabic_bursts_not_music():
     assert audio_io.route_window(_chord(), RATE) == "music"
     assert audio_io.route_window(_syllables(), RATE) != "music"
+
+
+def test_load_audio_removes_a_dc_offset_per_channel(tmp_path):
+    import soundfile as sf
+
+    t = np.arange(RATE) / RATE
+    stereo = np.stack([0.1 * np.sin(2 * np.pi * 440 * t) + 0.49, 0.1 * np.sin(2 * np.pi * 440 * t) - 0.2], axis=1).astype(np.float32)
+    sf.write(str(tmp_path / "dc.wav"), stereo, RATE, subtype="FLOAT")
+    audio, rate = audio_io.load_audio(tmp_path / "dc.wav")
+    assert rate == RATE
+    assert np.abs(audio.mean(axis=0)).max() < 1e-4
+    assert abs(float(np.sqrt(np.mean(audio[:, 0] ** 2))) - 0.1 / np.sqrt(2)) < 1e-3
+
+
+def test_dc_free_copy_returns_the_file_itself_unless_dc_dominates(tmp_path):
+    import soundfile as sf
+
+    t = np.arange(RATE) / RATE
+    clean = (0.1 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    sf.write(str(tmp_path / "clean.wav"), clean, RATE, subtype="FLOAT")
+    sf.write(str(tmp_path / "offset.wav"), clean + 0.49, RATE, subtype="FLOAT")
+    assert audio_io.dc_free_copy(tmp_path / "clean.wav", tmp_path / "cache") == tmp_path / "clean.wav"
+    copy = audio_io.dc_free_copy(tmp_path / "offset.wav", tmp_path / "cache")
+    assert copy.name.endswith("_dcfree.wav") and audio_io.dc_share(copy) < 1e-6

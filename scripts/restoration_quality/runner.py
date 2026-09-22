@@ -50,7 +50,10 @@ class Pair:
     """The aligned, gain-matched source/output pair and its windows, shared by every family."""
 
     def __init__(self, source_wav, output_wav, cache_dir, seconds, hop):
-        self.source_wav, self.output_wav, self.cache_dir = Path(source_wav), Path(output_wav), Path(cache_dir)
+        self.cache_dir = Path(cache_dir)
+        # Path-based consumers (the stem separator, the trade metric) must see DC-free audio too.
+        self.source_wav = audio_io.dc_free_copy(source_wav, self.cache_dir)
+        self.output_wav = audio_io.dc_free_copy(output_wav, self.cache_dir)
         source_audio, self.rate = audio_io.load_audio(self.source_wav)
         output_audio, output_rate = audio_io.load_audio(self.output_wav)
         if output_rate != self.rate:

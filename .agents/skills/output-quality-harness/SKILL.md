@@ -61,6 +61,11 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   A detector change is followed by a `--metrics dsp` re-check into a
   separate `--out`, never over the gates in use.
 - Read HF ratios on source-loud frames only; pauses confound them.
+- Block DC before comparing (the loader does): a capture can be almost
+  entirely offset (three IA music clips at +0.49, programme 23-27 dB below),
+  and against the raw source the app's correct 2 Hz blocker scored as if it
+  had destroyed the music (SI-SDR -42, octave -58). When a whole clip scores
+  absurdly, check the source before the engine.
 - What the user hears and the standard metrics miss has to become a metric:
   "silent pauses" became pumping and tilt, a dither-scale "click" at
   -90 dBFS became the absolute click floor. Measure the specific thing on the

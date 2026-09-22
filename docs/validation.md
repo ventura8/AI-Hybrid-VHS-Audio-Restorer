@@ -456,7 +456,10 @@ gates:
   level (a denoiser's mask opening and closing between words; a source pause
   moves 4 dB, every denoiser measured 11-23 dB), and tilt, the low band's
   residual minus the high band's (rumble kept and air taken reads positive,
-  hiss left reads negative, a uniform reduction reads 0).
+  hiss left reads negative, a uniform reduction reads 0). Both sides are
+  read with their DC offset removed: three Internet Archive music clips sat
+  at +0.49 with the programme 23-27 dB below, and against such a source the
+  app's 2 Hz blocker read as destruction of the music.
 - `stems`: the app's own BS-RoFormer splits source and output; on the
   non-vocal stem SI-SDR, log-spectral distance, the worst octave and the
   envelope correlation say whether music and ambience survived. Read only
