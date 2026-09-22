@@ -25,10 +25,15 @@ class _FakeSession:
         return [np.array([[3.5]], dtype=np.float32)]
 
 
-def test_scoreq_pads_to_a_multiple_of_320_and_reads_the_scalar():
+def test_scoreq_reads_the_scalar():
     session = _FakeSession()
     scores = mos_models.scoreq_scores(session, np.ones(16001, dtype=np.float64))
     assert scores == {"mos.scoreq_nr": 3.5}
+
+
+def test_scoreq_pads_to_a_multiple_of_320():
+    session = _FakeSession()
+    mos_models.scoreq_scores(session, np.ones(16001, dtype=np.float64))
     fed = session.feeds[0]["audio_input"]
     assert fed.shape == (1, 16320)
     assert fed.dtype == np.float32

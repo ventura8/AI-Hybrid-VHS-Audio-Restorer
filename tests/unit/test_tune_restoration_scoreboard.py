@@ -62,7 +62,7 @@ def test_best_engine_per_tape_ranks_across_engines():
     assert best["vaccin"]["engine"] == "cathar"
 
 
-def test_scoreboard_renders_tables_recommendation_and_warnings():
+def _board():
     grid = {"engines": {"cathar": {}, "apl": {}}, "ranking": {"k": "up"}}
     manifest = {"config_sha256": "abc123def456", "excerpts": [{"excerpt": "x"}], "tapes_dir": "D:/tapes"}
     summaries = {
@@ -70,10 +70,18 @@ def test_scoreboard_renders_tables_recommendation_and_warnings():
         "cathar__alpha": {**_summary(2.0, per_tape={"soti": {"k": 2.0}}), "veto_reasons": [], "overrides": {"cathar_alpha": 3.5}},
         "apl__baseline": {**_summary(0.0, vetoed=True, per_tape={"soti": {"k": 0.0}}), "veto_reasons": ["dsp.lkr"], "overrides": {}},
     }
-    board = tr.build_scoreboard("t", grid, manifest, summaries)
-    text = tr.render_scoreboard_md(board)
+    return tr.build_scoreboard("t", grid, manifest, summaries)
+
+
+def test_scoreboard_recommends_the_best_unvetoed_variant_per_engine():
+    board = _board()
     assert board["recommendation"]["cathar"]["best"] == "cathar__alpha"
     assert board["recommendation"]["apl"]["best"] is None
+
+
+def test_scoreboard_renders_warnings_and_survives_json():
+    board = _board()
+    text = tr.render_scoreboard_md(board)
     assert "## Warnings" in text
     assert "dsp.lkr" in text
     assert json.loads(json.dumps(board, default=str))["per_tape_engine"]["soti"]["variant"] == "cathar__alpha"
@@ -104,15 +112,22 @@ def _pair(clicks, disc):
     return {"variants": {"v": variant}, "metrics": {"dsp.clicks_per_s": {"family": "dsp"}}}
 
 
-def test_merge_families_replaces_only_the_rescored_family_and_rereads_verdicts():
+def _merged_variant():
     stored, fresh = _pair(clicks=2.0, disc=-0.9), _pair(clicks=0.0, disc=-0.1)
     stored["variants"]["v"]["families"]["mos"] = "ok"
     gates = {"clicks": tr.gates_mod.Gate("dsp.clicks_per_s", "delta.median", "<=", 0.5)}
-    merged = tr.merge_families(stored, fresh, ("dsp",), gates)
-    variant = merged["variants"]["v"]
+    return tr.merge_families(stored, fresh, ("dsp",), gates)["variants"]["v"]
+
+
+def test_merge_families_replaces_only_the_rescored_family():
+    variant = _merged_variant()
     assert variant["rows"][0]["delta"] == {"dsp.clicks_per_s": 0.0, "mos.sigmos_disc": -0.9}
     assert variant["aggregate"]["mos.sigmos_disc"]["delta"]["median"] == -0.9
     assert variant["families"] == {"dsp": "ok", "mos": "ok"}
+
+
+def test_merge_families_rereads_the_verdicts():
+    variant = _merged_variant()
     assert variant["passed"] is True
     assert variant["hard_failures"] == []
 

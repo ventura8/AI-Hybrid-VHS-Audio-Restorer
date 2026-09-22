@@ -68,7 +68,7 @@ def _variant(failures, composite, extra=None):
     return {"hard_failures": list(failures), "verdicts": verdicts, "aggregate": aggregate}
 
 
-def test_ordering_rules_reproduce_the_by_ear_verdicts():
+def _by_ear_rules():
     result = {
         "variants": {
             "deesser_bug": _variant(["dsp.hf_4k8k"], -3.0, {"dsp.hf_4k8k": {"delta": {"median": -30.0}}}),
@@ -78,9 +78,17 @@ def test_ordering_rules_reproduce_the_by_ear_verdicts():
             "cathar075": _variant([], 0.4),
         }
     }
-    rules = cal.ordering_rules(result, {})
+    return cal.ordering_rules(result, {})
+
+
+def test_ordering_rules_flag_the_deesser_bug_and_sink_it():
+    rules = _by_ear_rules()
     assert rules["bug_flagged_muffled"]
     assert rules["bug_in_bottom_two"]
+
+
+def test_ordering_rules_place_the_good_variants_where_the_ear_did():
+    rules = _by_ear_rules()
     assert rules["single4s_duller_than_stitched"]
     assert rules["apl_not_altered"]
     assert rules["good_in_top"]

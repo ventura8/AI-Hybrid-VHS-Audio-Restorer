@@ -197,6 +197,9 @@ def test_benign_music_identity_is_exact_and_starts_from_the_music_bed():
     assert source is music
     assert output is not music
     assert np.array_equal(output, music)
+
+
+def test_benign_bases_route_the_music_identity_to_the_music_bed():
     assert deg.benign_base("identity_music") == "music"
     assert deg.benign_base("identity") == "speech"
     assert deg.benign_base("shift_5ms") == "speech"

@@ -83,11 +83,14 @@ def test_too_little_material_reads_none():
     assert pause_metrics.pause_readings(flat, flat, RATE)["gap_air_db"] == (None, None)
 
 
-def test_level_classes_partition_the_frames():
-    levels = np.linspace(-80.0, -10.0, 200)
-    deep, gap, loud = pause_metrics.level_classes(levels)
+def test_level_classes_are_disjoint():
+    deep, gap, loud = pause_metrics.level_classes(np.linspace(-80.0, -10.0, 200))
     assert not (deep & gap).any()
     assert not (gap & loud).any()
+
+
+def test_level_classes_each_hold_enough_frames():
+    deep, gap, loud = pause_metrics.level_classes(np.linspace(-80.0, -10.0, 200))
     assert deep.sum() >= 20
     assert gap.sum() >= 20
     assert loud.sum() >= 20
