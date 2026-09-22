@@ -44,3 +44,15 @@ def test_aggregate_only_uses_rows_on_the_metric_routes():
     result = sc.aggregate(rows)
     assert result["dsp.hf_4k8k"]["output"]["n"] == 1
     assert result["dsp.hf_4k8k"]["delta"]["median"] == -1.0
+
+
+def test_octave_ratio_ignores_the_crt_line():
+    from scripts.restoration_quality import stem_metrics
+
+    rate = 44100
+    t = np.arange(2 * rate) / rate
+    rng = np.random.default_rng(3)
+    music = (0.05 * rng.standard_normal(len(t))).astype(np.float32)
+    with_line = music + (0.5 * np.sin(2 * np.pi * 15625.0 * t)).astype(np.float32)
+    # Removing the line from a capture is restoration: the worst octave must not read it as loss.
+    assert stem_metrics.octave_ratio_db(with_line, music, rate) > -1.0

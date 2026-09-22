@@ -46,7 +46,11 @@ SCORER_PARALLEL = 2
 # Ordered candidate values per knob; None means "the app's default" (the override is dropped).
 KNOBS = {
     "cathar": {
-        "cathar_alpha": [1.5, 2.0, 2.5, 3.0],
+        # 0.5 and 1.0, and no print at all, exist for music: on a music-dominant clip the print
+        # learned from the music's own quietest window removes no noise and only shaves the top
+        # octave (alpha 1.5: -14 dB at 8-16 kHz, quiet frames +1.3 dB; alpha 0.5: -1.6 dB).
+        "cathar_alpha": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+        "cathar_enable_noiseprint": [True, False],
         "cathar_beta": [0.005, 0.01, 0.02],
         "cathar_deesser_threshold": [6.0, 9.0, 12.0],
         "cathar_enable_deesser": [True, False],

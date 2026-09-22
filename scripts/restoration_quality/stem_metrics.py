@@ -28,6 +28,11 @@ OCTAVES_HZ = (
     (8000.0, 16000.0),
 )
 ENVELOPE_S = 0.02
+# The CRT line whistle (15625 Hz PAL, 15734 Hz NTSC) can carry most of a VHS capture's
+# 8-16 kHz energy; removing it is restoration, not music lost, so the octave reading
+# leaves these bands out on both sides.
+CRT_LINE_HZ = (15625.0, 15734.0)
+CRT_LINE_HALF_WIDTH_HZ = 250.0
 SILENT_STEM_RMS = 1e-4
 BACKGROUND_MIN_DBFS = -45.0
 BACKGROUND_MIN_RATIO_DB = -20.0
@@ -73,6 +78,8 @@ def octave_ratio_db(source, output, rate):
 
 def _octave(freqs, src, out, low, high):
     band = (freqs >= low) & (freqs < high)
+    for line in CRT_LINE_HZ:
+        band &= np.abs(freqs - line) > CRT_LINE_HALF_WIDTH_HZ
     src_energy = src[band].sum()
     if src_energy <= 0.0 or src_energy < SILENT_STEM_RMS**2 * len(src):
         return None
