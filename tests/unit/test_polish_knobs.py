@@ -41,14 +41,22 @@ def test_loudnorm_target_reads_the_configured_range():
         assert mastering._loudnorm_target_args() == "I=-16.0:TP=-1.0:LRA=40.0"
 
 
-def test_measured_loudness_is_logged_with_the_mode_it_allows():
+def _loudness_messages():
     with patch("modules.mastering.log_msg") as log:
         mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "18.4", "input_tp": "-3.0"})
         mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "6.0", "input_tp": "-3.0"})
         mastering._log_loudness_range({"input_lra": "nan"})
-    messages = [call.args[0] for call in log.call_args_list]
+    return [call.args[0] for call in log.call_args_list]
+
+
+def test_a_wide_measured_range_is_logged_as_dynamic_mode():
+    messages = _loudness_messages()
     assert "dynamic" in messages[0]
     assert "LRA=18.4" in messages[0]
+
+
+def test_a_narrow_range_stays_linear_and_an_unreadable_one_is_called_dynamic():
+    messages = _loudness_messages()
     assert "-> linear" in messages[1]
     assert "dynamic" in messages[2]
 

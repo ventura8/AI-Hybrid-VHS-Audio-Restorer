@@ -51,15 +51,21 @@ def _scores():
     }
 
 
-def test_judge_accepts_only_a_better_candidate_without_new_hard_failures():
-    ranking = {"mos.sigmos_col.delta.median": "up", "speech.cer.output.median": "down"}
-    verdicts = at.judge(_scores(), "inc", ranking)
+RANKING = {"mos.sigmos_col.delta.median": "up", "speech.cer.output.median": "down"}
+
+
+def test_judge_accepts_the_candidate_that_wins_every_tape():
+    verdicts = at.judge(_scores(), "inc", RANKING)
     assert verdicts["good"]["qualifies"]
     assert verdicts["good"]["wins"] == 2
+    assert not verdicts["inc"]["qualifies"]
+
+
+def test_judge_rejects_a_worse_candidate_and_one_with_new_hard_failures():
+    verdicts = at.judge(_scores(), "inc", RANKING)
     assert not verdicts["bad"]["qualifies"]
     assert not verdicts["fail"]["qualifies"]
     assert verdicts["fail"]["failures"] == 6.0
-    assert not verdicts["inc"]["qualifies"]
 
 
 def test_matching_value_reads_booleans_and_numbers_the_way_the_app_reports_them():

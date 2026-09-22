@@ -36,16 +36,25 @@ def test_run_parallel_batch_reports_the_failed_files(tmp_path, capsys, monkeypat
     assert (tmp_path / "logs").is_dir()
 
 
-def test_restore_in_child_runs_this_entry_point_on_one_file_with_a_log(tmp_path, capsys):
+def _restore_one_in_child(tmp_path):
     completed = MagicMock(returncode=0)
     with patch("restore_audio_hybrid.subprocess.run", return_value=completed) as run:
         code = restore_audio_hybrid._restore_in_child(Path("tape one.mov"), tmp_path)
-    cmd = run.call_args[0][0]
+    return code, run.call_args
+
+
+def test_restore_in_child_runs_this_entry_point_on_one_file(tmp_path):
+    code, call = _restore_one_in_child(tmp_path)
+    cmd = call[0][0]
     assert code == 0
     assert cmd[0] == sys.executable
     assert cmd[1].endswith("restore_audio_hybrid.py")
     assert cmd[2] == "tape one.mov"
-    assert run.call_args.kwargs["stdin"] is restore_audio_hybrid.subprocess.DEVNULL
+
+
+def test_restore_in_child_detaches_stdin_and_keeps_a_log(tmp_path, capsys):
+    _code, call = _restore_one_in_child(tmp_path)
+    assert call.kwargs["stdin"] is restore_audio_hybrid.subprocess.DEVNULL
     assert (tmp_path / "tape one.log").exists()
     assert "done" in capsys.readouterr().out
 

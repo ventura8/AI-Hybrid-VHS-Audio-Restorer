@@ -152,14 +152,22 @@ def test_block_size_does_not_change_the_result_and_the_file_is_reused(tmp_path):
     assert first.stat().st_mtime_ns == stamp
 
 
-def test_envelope_lag_finds_a_shift_and_alignment_trims_to_the_overlap():
+def _shifted_pair():
     env = np.abs(np.random.default_rng(1).standard_normal(400)) + 0.01
-    shifted = np.concatenate([np.full(3, 0.01), env[:-3]])
+    return env, np.concatenate([np.full(3, 0.01), env[:-3]])
+
+
+def test_envelope_lag_finds_a_shift_and_alignment_trims_to_the_overlap():
+    env, shifted = _shifted_pair()
     assert pause_floor.envelope_lag(env, shifted) == 3
     ref, res, lag = pause_floor._aligned(env, shifted)
     assert lag == 3
     assert len(ref) == len(res) == 397
     assert np.allclose(ref, res)
+
+
+def test_alignment_reads_the_opposite_shift_as_a_negative_lag():
+    env, shifted = _shifted_pair()
     ref, res, lag = pause_floor._aligned(shifted, env)
     assert lag == -3
     assert len(ref) == len(res) == 397
