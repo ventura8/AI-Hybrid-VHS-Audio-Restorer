@@ -177,6 +177,14 @@ This runner orchestrates the complete local/CI quality gate set:
 1. **Test Suite & Coverage**: `pytest` with strict per-file $\\ge 90.00%$
    coverage gate.
 1. **Coverage Badge Regeneration**: Updates `assets/coverage.svg`.
+1. **SonarQube Cloud (CI only)**: after the tests, CI uploads `coverage.xml`
+   and `junit.xml` to sonarcloud.io (`sonar-project.properties`: project
+   `ventura8_AI-Hybrid-VHS-Audio-Restorer`, sources `modules`, `scripts`,
+   `restore_audio_hybrid.py`, tests `tests`) and waits for the quality gate,
+   which blocks the check. Its new-code conditions (bugs, vulnerabilities,
+   hotspots reviewed, duplications, coverage on new code) apply on top of the
+   local gates; treat a Sonar finding like a lint error: fix it, never
+   suppress it. A fork PR skips the scan (no access to `SONAR_TOKEN`).
 
 ### Mandatory Hardware Validation on Code Changes & Review Waves
 

@@ -3,6 +3,7 @@
 ![AI Hybrid VHS Audio Restorer Logo](assets/logo.svg)
 
 ![Python](assets/python.svg) ![Coverage](assets/coverage.svg)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ventura8_AI-Hybrid-VHS-Audio-Restorer&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ventura8_AI-Hybrid-VHS-Audio-Restorer)
 [![Downloads][downloads-badge]][releases]
 
 ## Documentation

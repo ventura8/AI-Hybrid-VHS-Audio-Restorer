@@ -694,4 +694,11 @@ both are the user's call.
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment
-drift.
+drift. One gate runs in CI only: after the test step, the SonarQube Cloud scan
+(`sonar-project.properties`, `SonarSource/sonarqube-scan-action`) uploads the
+same `coverage.xml` plus pytest's `junit.xml` to sonarcloud.io and waits for
+the project's quality gate, which fails the check on a new bug, vulnerability,
+unreviewed security hotspot, duplication or coverage shortfall in the new
+code. The token is the repository secret `SONAR_TOKEN`; pull requests from
+forks skip the step because they cannot read it, and the project's Automatic
+Analysis stays off on sonarcloud.io so the CI-based analysis is the only one.

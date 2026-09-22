@@ -83,6 +83,7 @@ start_workflow.bat
 .coverage
 coverage.xml
 coverage.json
+junit.xml
 htmlcov/
 .mypy_cache/
 nosetests.xml

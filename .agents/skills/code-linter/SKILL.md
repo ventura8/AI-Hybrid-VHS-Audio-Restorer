@@ -75,6 +75,17 @@ poetry run python tests/tooling/radon_cc_gate.py
 poetry run python tests/tooling/radon_mi_gate.py
 ```
 
+### 7. SonarQube Cloud (CI only)
+
+`sonar-project.properties` binds the repository to the sonarcloud.io project
+`ventura8_AI-Hybrid-VHS-Audio-Restorer` (organization `ventura8`); the CI
+validation job runs `SonarSource/sonarqube-scan-action` after the tests with
+`coverage.xml` and `junit.xml`, and `sonar.qualitygate.wait=true` makes the
+quality gate block the check. There is no local scanner: read the findings on
+sonarcloud.io (or through the SonarQube IDE binding) and fix them at the
+source; a `# NOSONAR` marker counts as a suppression and is forbidden like
+every other one. Exclusions belong in the properties file with a reason.
+
 ## Hard Invariants
 
 - **Line Length**: Python code max line length is 140.
