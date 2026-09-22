@@ -103,6 +103,12 @@ The engine supports 10 execution modes configured in `config.yaml`:
     $\\rightarrow$ de-esser $\\rightarrow$ SBR enhance $\\rightarrow$ sync.
   - Use case: Spectral spikes, sustained tonal programme, zero AI
     hallucination for music and ambient archives. (`cathar_vhs` is an alias).
+  - Music profile: when the scanner's tonal persistence
+    (`modules/tonal_persistence.py`, median share of held spectral peaks;
+    music 0.064-0.225, speech over a bed under 0.033) reaches
+    `cathar_music_persistence_min`, the denoise runs at `cathar_music_alpha`
+    with the `cathar_music_enable_*` switches; the band ratios read every
+    music clip as dialogue, so they cannot make this call.
 - **`hybrid`** (`*_Hybrid_Cleaned.<ext>`):
   - Stages: BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$
     UVR-DeNoise $\\rightarrow$ DTW Sync $\\rightarrow$ amix.

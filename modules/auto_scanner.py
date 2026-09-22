@@ -158,6 +158,17 @@ PROBE_LOUD_PERCENTILE = 70.0
 PROBE_BAND_HZ = (300.0, 3400.0)
 
 
+def _estimate_tonal_persistence(mono_signal, sr):
+    """Median tonal persistence over the analysed material's 15 s windows: music holds its partials.
+
+    The band ratios read every archive music clip as dialogue (speech ratio 1.0); this is
+    the reading cathar's music profile keys on (`modules/tonal_persistence.py`).
+    """
+    from .tonal_persistence import median_persistence
+
+    return round(median_persistence(mono_signal, sr), 4)
+
+
 def _probe_programme_similarity(mono_signal, sr):
     """How much auto_pure_linear's noise probe resembles the programme, as a correlation.
 
@@ -615,6 +626,7 @@ def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
     ambient_ratio = _estimate_ambient_texture_ratio(mono_signal, sr)
     onset_periodicity = _estimate_onset_periodicity(mono_signal, sr)
     tonality = _estimate_tonality(mono_signal, sr)
+    tonal_persistence = _estimate_tonal_persistence(mono_signal, sr)
     probe_similarity = _probe_programme_similarity(mono_signal, sr)
     nf_db, nr_db = _estimate_noise_floor_and_reduction(mono_signal)
     crt_notch = _detect_crt_flyback_notch(mono_signal, sr)
@@ -635,6 +647,7 @@ def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
         "ambient_ratio": ambient_ratio,
         "onset_periodicity": onset_periodicity,
         "tonality": tonality,
+        "tonal_persistence": tonal_persistence,
         "probe_similarity": probe_similarity,
         "noise_floor_db": nf_db,
         "reduction_db": nr_db,
@@ -718,6 +731,7 @@ def _log_strategy_decision(strategy, executed_mode=None):
     log_msg(f"    - Ambient Textures: {prof.get('ambient_ratio', 0.0) * 100:.1f}%")
     log_msg(f"    - Rhythm          : {_describe_rhythm(prof.get('onset_periodicity', 0.0))}")
     log_msg(f"    - Tonality        : {_describe_tonality(prof.get('tonality'))}")
+    log_msg(f"    - Held Partials   : {prof.get('tonal_persistence', 0.0):.4f} (music holds 0.06 and up)")
     log_msg(f"    - Noise Probe     : {_describe_probe(prof.get('probe_similarity'))}")
     log_msg(f"    - Tape Noise Floor: {prof.get('noise_floor_db', -45.0):.1f} dB")
     log_msg(f"    - Mains Hum       : {_describe_hum(prof.get('notch_hz', 0.0))}")

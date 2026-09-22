@@ -484,9 +484,13 @@ gates:
 
 Every reading is a paired delta, output minus source, over 15 s windows every
 7.5 s, aggregated as a median and a tail (p10 or p90, always the bad end).
-Windows are routed by the scanner's own band ratios: speech metrics run on
-speech and mixed windows, stems and Audiobox on every window that is not
-silent. Learned predictors are guardrails, never objectives: in the URGENT
+Windows are routed by the scanner's band ratios and by tonal persistence
+(`modules/tonal_persistence.py`, the share of prominent spectral peaks held
+for eight 93 ms frames; the band ratios alone read every archive music clip as
+dialogue): speech metrics run on speech and mixed windows, stems and Audiobox
+on every window that is not silent. The same reading, as a whole-file median,
+is what the scanner reports as `tonal_persistence` and what cathar's music
+profile keys on. Learned predictors are guardrails, never objectives: in the URGENT
 2024 challenge the systems that topped DNSMOS and NISQA ranked at the bottom
 with listeners, and single-scalar MOS models cannot tell an over-suppressed
 voice from a noisy one. Only SIGMOS's coloration and discontinuity axes make

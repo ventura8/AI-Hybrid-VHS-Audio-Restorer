@@ -298,6 +298,23 @@ arnndn_enable_adeclick: true
 #     -3.0, for 1.6 dB less noise removed (11.4 against 13.1); chosen by ear on
 #     the same tapes. 3.5 and the Wiener filter lose every listener-side reading.
 #
+# cathar_music_profile / cathar_music_persistence_min / cathar_music_alpha /
+# cathar_music_enable_noiseprint / cathar_music_enable_coherent /
+# cathar_music_enable_deplosive:
+#   - The settings a music tape gets instead of cathar_alpha, cathar_enable_noiseprint,
+#     cathar_enable_coherent and cathar_enable_deplosive. The speech settings shave
+#     music: a print learned from music is programme, and subtracting it at the speech
+#     factor takes 8-16 kHz down 14 dB and removes no noise. The self-driving loop on
+#     11 Internet Archive music clips and the first minute of Gaudeamus settled on
+#     subtraction at 0.5 with no learned print, the coherent path on and the deplosive
+#     off: 22 hard-gate failures against 28 at the speech settings, ahead on 9-10 of 12
+#     clips each round (docs/validation.md).
+#   - A tape is music when the scanner's tonal persistence (the median share of held
+#     spectral peaks over 15 s windows; the band ratios read every music clip as
+#     dialogue) is at least cathar_music_persistence_min: music clips read 0.064-0.225,
+#     speech over a music bed 0.007-0.033, dry dialogue under 0.003, so 0.05 sits in
+#     the gap. cathar_music_profile false gives every tape the speech settings.
+#
 # cathar_beta:
 #   - Spectral floor to prevent musical noise artifacts (suggested: 0.005 to 0.05, default: 0.01)
 #
@@ -400,6 +417,12 @@ cathar_enable_mono_below: true
 cathar_mono_below_hz: 100
 cathar_enable_deplosive: true
 cathar_deplosive_strength: 4
+cathar_music_profile: true
+cathar_music_persistence_min: 0.05
+cathar_music_alpha: 0.5
+cathar_music_enable_noiseprint: false
+cathar_music_enable_coherent: true
+cathar_music_enable_deplosive: false
 cathar_enable_deesser: true
 cathar_deesser_bands: 3
 cathar_deesser_freq: 4000

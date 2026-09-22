@@ -62,6 +62,12 @@ from .config import (
     CATHAR_INPAINT_ITERATIONS,
     CATHAR_INPAINT_MAX_GAP_MS,
     CATHAR_MONO_BELOW_HZ,
+    CATHAR_MUSIC_ALPHA,
+    CATHAR_MUSIC_ENABLE_COHERENT,
+    CATHAR_MUSIC_ENABLE_DEPLOSIVE,
+    CATHAR_MUSIC_ENABLE_NOISEPRINT,
+    CATHAR_MUSIC_PERSISTENCE_MIN,
+    CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
     CATHAR_REPAIR_STRENGTH,
     NOTCH_FREQ,
@@ -532,7 +538,7 @@ def _cathar_clean_transients(current_wav, work_dir, total_duration=None):
     return current_wav
 
 
-def _cathar_precondition_pass(current_wav, work_dir, total_duration=None):
+def _cathar_precondition_pass(current_wav, work_dir, total_duration=None, deplosive=None):
     """Executes initial sub-audible, azimuth, and impulse noise suppression stages."""
     if CATHAR_ENABLE_DEWIND:
         current_wav = _cathar_dewind_step(current_wav, work_dir, total_duration=total_duration)
@@ -541,9 +547,14 @@ def _cathar_precondition_pass(current_wav, work_dir, total_duration=None):
     if CATHAR_ENABLE_MONO_BELOW:
         current_wav = _cathar_mono_below_step(current_wav, work_dir, total_duration=total_duration)
     current_wav = _cathar_clean_transients(current_wav, work_dir, total_duration=total_duration)
-    if CATHAR_ENABLE_DEPLOSIVE:
+    if _deplosive_wanted(deplosive):
         current_wav = _cathar_deplosive_step(current_wav, work_dir, total_duration=total_duration)
     return current_wav
+
+
+def _deplosive_wanted(deplosive):
+    """The material's deplosive switch when the pipeline passed one, else the configured default."""
+    return CATHAR_ENABLE_DEPLOSIVE if deplosive is None else bool(deplosive)
 
 
 def _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None):
@@ -626,15 +637,52 @@ def _material_duration_s(total_duration, wav_path):
         return 0.0
 
 
+def _is_music_material(strategy):
+    """Whether the scanner read the tape as music: held partials at or above the profile's floor.
+
+    The band ratios read every archive music clip as dialogue, so the profile keys on the
+    tonal persistence instead (`modules/tonal_persistence.py`, thresholds in
+    `modules/config.py`). A strategy without the reading (an older scan, a test stub) is
+    speech.
+    """
+    persistence = (strategy or {}).get("profile", {}).get("tonal_persistence")
+    return bool(CATHAR_MUSIC_PROFILE and persistence is not None and float(persistence) >= CATHAR_MUSIC_PERSISTENCE_MIN)
+
+
+def _material_settings(strategy):
+    """The stage settings this material takes: the music profile, or the speech defaults."""
+    if _is_music_material(strategy):
+        log_msg(
+            f"    [Cathar] Music profile: held partials {strategy['profile']['tonal_persistence']:.4f}; "
+            f"subtracting at {CATHAR_MUSIC_ALPHA:g}, learned print {'on' if CATHAR_MUSIC_ENABLE_NOISEPRINT else 'off'}, "
+            f"coherent {'on' if CATHAR_MUSIC_ENABLE_COHERENT else 'off'}, deplosive {'on' if CATHAR_MUSIC_ENABLE_DEPLOSIVE else 'off'}."
+        )
+        return {
+            "alpha": CATHAR_MUSIC_ALPHA,
+            "noiseprint": CATHAR_MUSIC_ENABLE_NOISEPRINT,
+            "coherent": CATHAR_MUSIC_ENABLE_COHERENT,
+            "deplosive": CATHAR_MUSIC_ENABLE_DEPLOSIVE,
+        }
+    return {
+        "alpha": CATHAR_ALPHA,
+        "noiseprint": CATHAR_ENABLE_NOISEPRINT,
+        "coherent": CATHAR_ENABLE_COHERENT,
+        "deplosive": CATHAR_ENABLE_DEPLOSIVE,
+    }
+
+
 def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, strategy=None):
     """Orchestrates the full Cathar VHS audio restoration pipeline."""
     _require_cathar_binary()
     notch_freq = _resolve_notch_freq(strategy)
-    current = _cathar_precondition_pass(original_wav, work_dir, total_duration=total_duration)
+    settings = _material_settings(strategy)
+    current = _cathar_precondition_pass(original_wav, work_dir, total_duration=total_duration, deplosive=settings["deplosive"])
     current = _cathar_repair_pass(current, work_dir, notch_freq=notch_freq, total_duration=total_duration)
     np_path = None
-    if CATHAR_ENABLE_NOISEPRINT:
+    if settings["noiseprint"]:
         probe_s = _probe_duration_s(total_duration, current)
         np_path = _cathar_noiseprint_step(current, work_dir, duration_s=probe_s, stitched=probe_s > NOISEPRINT_SHORT_S)
-    current = _cathar_denoise_step(current, work_dir, noiseprint_path=np_path, total_duration=total_duration)
+    current = _cathar_denoise_step(
+        current, work_dir, alpha=settings["alpha"], coherent=settings["coherent"], noiseprint_path=np_path, total_duration=total_duration
+    )
     return _cathar_polish_pass(current, work_dir, total_duration=total_duration)

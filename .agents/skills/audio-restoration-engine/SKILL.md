@@ -145,6 +145,21 @@ audio alignment, or FFmpeg multiplexing.
   (colouration +0.125 against +0.062, discontinuity tail -0.34 against
   -0.42, CER 0.058 against 0.093) for 1.6 dB less removal; 3.5 and Wiener
   lose every listener-side reading.
+- **cathar music profile**: the speech settings shave music (a print learned
+  from music is programme; subtracting it at the speech factor takes 8-16 kHz
+  down 14 dB and removes no noise), so `filter_cathar_vhs_pipeline` reads the
+  material from the strategy: `profile.tonal_persistence` at or above
+  `cathar_music_persistence_min` (0.05) switches the denoise to
+  `cathar_music_alpha` and the `cathar_music_enable_*` switches
+  (`_material_settings`). The scanner's band ratios cannot make the call
+  (speech ratio 1.0 on every archive music clip); the persistence reading
+  lives in `modules/tonal_persistence.py`, shared with the harness router, and
+  is a whole-file median over 15 s windows above -50 dBFS. Measured: music
+  clips 0.064-0.225, speech over a bed 0.007-0.033 (three identity clips
+  included), dry dialogue under 0.003; no identity clip crosses the floor, so
+  the profile keeps 5/5 bit-identity. Values come from the music autotune
+  (`experiments/autotune_music`); re-read them from its `final.json` before
+  touching the defaults.
 - **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
   (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
   is measured before it replaces `.venv/Scripts/cathar.exe`. Stages our

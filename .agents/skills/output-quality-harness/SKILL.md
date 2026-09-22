@@ -85,6 +85,16 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   125 s, whole clips shorter than that keep the 0.75 s probe.
 - Whole tapes are the ground truth: an excerpt's noise probe is not the full
   tape's. Confirm any winner on the full tapes.
+- Speech and music want different engine settings (cathar: alpha 1.5 with
+  the stitched print on dialogue, alpha 0.5 with no print on music), so a
+  tuning result is only as good as the material gate that applies it. Before
+  proposing one, run the app's own scanner on the tuning set, the identity
+  clips and the speech tapes (`_extract_profile_from_signal`) and look for a
+  reading that separates them with margin: the band ratios read every music
+  clip as dialogue; the whole-file median tonal persistence separated the
+  sets 0.064-0.225 against under 0.033. The gate lives in the app
+  (`modules/tonal_persistence.py`, `cathar_music_persistence_min`) and the
+  harness router imports the same functions.
 
 ## Tuning on real tapes
 

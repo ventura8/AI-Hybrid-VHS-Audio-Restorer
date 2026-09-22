@@ -201,7 +201,16 @@
   `*_Cathar_Cleaned`. - The binary is the one beside the interpreter (the
   venv), then `~/.cargo/bin`; `AI_RESTORE_CATHAR_BIN` in the environment
   names another build, so an upgrade can be measured on the tuning excerpts
-  before it replaces the validated binary. - `auto` (default): - Intelligent
+  before it replaces the validated binary. - Music profile: a tape whose
+  tonal persistence (the scanner's median share of held spectral peaks over
+  15 s windows; music 0.064-0.225, speech over a bed 0.007-0.033, dry
+  dialogue under 0.003) reaches `cathar_music_persistence_min` (0.05) is
+  denoised at `cathar_music_alpha` (0.5) with `cathar_music_enable_noiseprint`
+  (false), `cathar_music_enable_coherent` and `cathar_music_enable_deplosive`
+  (false) in place of the speech settings, because a print learned from music
+  is programme and subtracting it at the speech factor shaves 8-16 kHz by
+  14 dB while removing no noise; `cathar_music_profile` false keeps the speech
+  settings everywhere. - `auto` (default): - Intelligent
   acoustic profile scan
   (speech, music, rhythm, tonality, noise floor, hum, clicks) that names the
   material, tunes the pre-conditioning and the models, and runs

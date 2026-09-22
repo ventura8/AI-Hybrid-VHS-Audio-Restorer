@@ -118,6 +118,18 @@ _NUMERIC_CONFIG_FIELDS = (
     ("notch_freq", float, 50.0, 0.0),
     ("arnndn_highpass_freq", int, 80, 0),
     ("cathar_alpha", float, 2.0, 0.0),
+    # cathar's music profile. The speech settings shave music: a print learned from music
+    # is programme, and subtracting it at the speech factor takes 8-16 kHz down 14 dB and
+    # removes no noise. The self-driving loop on 11 Internet Archive music clips and the
+    # first minute of Gaudeamus (docs/validation.md) settled on subtraction at 0.5 with no
+    # learned print, the coherent path on and the deplosive off: 22 hard-gate failures
+    # against 28 at the speech settings, ahead on 9-10 of 12 clips each round. The profile
+    # applies when the scanner's tonal persistence (median share of held spectral peaks
+    # over 15 s windows, `modules/tonal_persistence.py`) reads at least
+    # cathar_music_persistence_min: the music clips read 0.064-0.225, speech over a bed
+    # 0.007-0.033, dry dialogue under 0.003; 0.05 sits in the gap.
+    ("cathar_music_persistence_min", float, 0.05, 0.0, 1.0),
+    ("cathar_music_alpha", float, 0.5, 0.0),
     ("cathar_beta", float, 0.01, 0.0),
     ("cathar_dewind_cutoff", int, 80, 0),
     ("cathar_declick_threshold", float, 8.0, 0.0),
@@ -479,6 +491,12 @@ _BOOL_CONFIG_FIELDS = (
     ("cathar_enable_noiseprint", True),
     ("cathar_enable_mono_below", True),
     ("cathar_enable_deplosive", True),
+    # The music profile (see cathar_music_alpha): switched as a whole, then its three stage
+    # switches. Off, every tape gets the speech settings.
+    ("cathar_music_profile", True),
+    ("cathar_music_enable_noiseprint", False),
+    ("cathar_music_enable_coherent", True),
+    ("cathar_music_enable_deplosive", False),
     ("cathar_enable_deesser", True),
     ("cathar_enable_dereverb", False),
     ("cathar_dereverb_wpe", True),
@@ -790,6 +808,12 @@ CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", 6.0))
 CATHAR_ENABLE_DEREVERB = bool(CONFIG.get("cathar_enable_dereverb", False))
 CATHAR_DEREVERB_WPE = bool(CONFIG.get("cathar_dereverb_wpe", True))
 CATHAR_DEREVERB_STRENGTH = float(CONFIG.get("cathar_dereverb_strength", 2.0))
+CATHAR_MUSIC_PROFILE = bool(CONFIG.get("cathar_music_profile", True))
+CATHAR_MUSIC_PERSISTENCE_MIN = float(CONFIG.get("cathar_music_persistence_min", 0.05))
+CATHAR_MUSIC_ALPHA = float(CONFIG.get("cathar_music_alpha", 0.5))
+CATHAR_MUSIC_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_music_enable_noiseprint", False))
+CATHAR_MUSIC_ENABLE_COHERENT = bool(CONFIG.get("cathar_music_enable_coherent", True))
+CATHAR_MUSIC_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_music_enable_deplosive", False))
 
 # Advanced Audio Polish & Archival Configs
 ENABLE_DEESSER = bool(CONFIG.get("enable_deesser", True))

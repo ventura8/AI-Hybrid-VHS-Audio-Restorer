@@ -13,6 +13,7 @@ import numpy as np
 import soundfile as sf
 
 from modules.auto_scanner import _compute_chunk_spectrum, _music_ratio_from_spectrum, _speech_ratio_from_spectrum
+from modules.tonal_persistence import syllabic_modulation, tonal_persistence  # noqa: F401 - the router's readings, shared with the app
 from modules.utils import FFMPEG_BIN
 from scripts.score_reference import _align, _match_gain
 
@@ -24,18 +25,15 @@ SILENCE_DBFS = -50.0
 SPEECH_RATIO_MIN = 0.25
 MUSIC_RATIO_MIN = 0.20
 # The scanner's music ratio reads 0.03-0.06 on the music of a 1991 VHS (Gaudeamus), so the
-# router also reads tonal persistence: the share of spectral peaks (100-4000 Hz, 12 dB
-# prominent, 93 ms frames) that hold for the next eight frames. Instrumental music 0.02,
-# speech over a music bed 0.005-0.011, dry speech 0.000-0.001; speech is told from singing
-# by its syllabic modulation (envelope power density at 3-8 Hz over 0.5-3 Hz, 0.18-1.2
-# against 0.13-0.14 on the instrumental; a steady envelope reads 0).
+# router also reads tonal persistence (`modules.tonal_persistence`): the share of spectral
+# peaks (100-4000 Hz, 12 dB prominent, 93 ms frames) that hold for the next eight frames.
+# Instrumental music 0.02 and up, speech over a music bed 0.005-0.011, dry speech
+# 0.000-0.001; speech is told from singing by its syllabic modulation (envelope power
+# density at 3-8 Hz over 0.5-3 Hz, 0.18-1.2 against 0.13-0.14 on the instrumental; a steady
+# envelope reads 0).
 PERSISTENCE_MUSIC = 0.015
 PERSISTENCE_MIXED = 0.004
 SYLLABIC_MAX_MUSIC = 0.2
-SYLLABIC_MIN_DEPTH = 0.05
-PERSISTENCE_NPERSEG = 4096
-PERSISTENCE_HOLD_FRAMES = 8
-PERSISTENCE_PROMINENCE_DB = 12.0
 # A broken capture (three Internet Archive clips: a +0.49 DC offset with 5 Hz harmonics
 # under it) carries almost all its power below 80 Hz; its steady harmonics look like held
 # tones to the persistence reading, so such a window is not programme at all.
@@ -227,43 +225,3 @@ def infrasonic_share(mono, rate):
         return 0.0
     freqs, power = scipy.signal.welch(x, rate, nperseg=min(8192, len(x)))
     return float(power[freqs < INFRASONIC_HZ].sum() / (power.sum() + 1e-20))
-
-
-def tonal_persistence(mono, rate):
-    """Share of prominent spectral peaks (100-4000 Hz) still present in each of the next eight frames."""
-    import scipy.signal
-
-    freqs, _t, z = scipy.signal.stft(
-        np.asarray(mono, dtype=np.float64), fs=rate, nperseg=PERSISTENCE_NPERSEG, noverlap=PERSISTENCE_NPERSEG * 3 // 4
-    )
-    magnitude = 20.0 * np.log10(np.abs(z[(freqs >= 100.0) & (freqs <= 4000.0)]) + 1e-9)
-    peaks = np.zeros(magnitude.shape, dtype=bool)
-    for i in range(magnitude.shape[1]):
-        idx, _props = scipy.signal.find_peaks(magnitude[:, i], prominence=PERSISTENCE_PROMINENCE_DB)
-        peaks[idx, i] = True
-    hold = PERSISTENCE_HOLD_FRAMES
-    if peaks.shape[1] <= hold:
-        return 0.0
-    total = int(peaks[:, :-hold].sum())
-    if total == 0:
-        return 0.0
-    held = sum(int((peaks[:, i] & peaks[:, i + 1 : i + 1 + hold].all(axis=1)).sum()) for i in range(peaks.shape[1] - hold))
-    return held / total
-
-
-def syllabic_modulation(mono, rate):
-    """Envelope energy at 3-8 Hz over 0.5-3 Hz (20 ms envelope): the syllable rate of speech and singing."""
-    import scipy.signal
-
-    frame = max(1, int(0.02 * rate))
-    count = len(mono) // frame
-    if count < 64:
-        return 0.0
-    envelope = np.sqrt(np.mean(np.asarray(mono[: count * frame], dtype=np.float64).reshape(count, frame) ** 2, axis=1))
-    if envelope.std() < SYLLABIC_MIN_DEPTH * (envelope.mean() + 1e-12):
-        return 0.0
-    envelope -= envelope.mean()
-    f, power = scipy.signal.welch(envelope, fs=1.0 / (frame / rate), nperseg=min(256, count))
-    syllabic = power[(f >= 3.0) & (f <= 8.0)].mean()
-    slow = power[(f >= 0.5) & (f < 3.0)].mean()
-    return float(syllabic / (slow + 1e-12))
