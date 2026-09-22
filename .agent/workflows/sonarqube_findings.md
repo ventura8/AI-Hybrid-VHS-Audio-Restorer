@@ -21,6 +21,13 @@ user points at a SonarCloud finding. The skill
 1. Bugs, vulnerabilities, code smells: fix the code; no `# NOSONAR`, no
    "won't fix" / "accept" on sonarcloud.io (the Zero Suppression Policy
    applies to Sonar like to every local linter).
+1. Fix the gate-relevant findings first (reliability and security ratings:
+   bugs and vulnerabilities), push, confirm `QUALITY GATE STATUS: PASSED`,
+   then the maintainability findings in a second commit; the full list of a
+   PR comes from `api/issues/search?...&pullRequest=<n>` (see the skill).
+1. When a composite assertion is split, run `radon cc -n B tests` before the
+   gate: more than four asserts in one test is a B and the local gate
+   rejects it; split the test over a shared builder.
 1. Security hotspots: fix, or review as safe with the evidence written in
    the review.
 1. Coverage on new code under the floor: write the tests (the local rule is

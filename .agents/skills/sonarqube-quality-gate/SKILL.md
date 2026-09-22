@@ -91,3 +91,31 @@ here and in `docs/validation.md` ("CI Parity") in the same change.
   otherwise SonarCloud rejects the CI analysis as a conflicting method.
 - The scan reads `sonar-project.properties` from the checkout root; the
   `args` input of the action only adds `-D` properties on top.
+- The issue list of a pull request is readable without the UI: a logged-in
+  browser session can fetch
+  `https://sonarcloud.io/api/issues/search?componentKeys=<project>&pullRequest=<n>&resolved=false&ps=500`
+  (the branch and main listings read 0 while only the PR has been analysed).
+- "LLM-supplied CLI argument" vulnerabilities (`pythonsecurity:S8705/S8707`)
+  point at `argparse` values reaching `subprocess` or a file path unchecked;
+  the fix is a validator on the way in (a regex for a code, a membership test
+  against the known set, an existing path that does not start with `-`, a
+  resolved path required to sit under the repository or the temp dir), not a
+  suppression. The first pass fixed exactly these and the gate passed.
+- Sonar's "split this composite assertion" (`python:S9073`) and radon's
+  cyclomatic gate pull against each other: radon counts every `assert` as a
+  branch, so a test may hold at most four assertions after the split. Split
+  the test over a shared builder instead (`_board()`, `_merged_variant()`
+  style), never merge the asserts back.
+- Sonar's `S5857` suggestion `[^"]*` for `refresh_lock.block_meta` is wrong:
+  `poetry.lock` markers hold escaped quotes (`python_version >= \"3.9\"`),
+  so the negated class stops early and the marker reads as absent. A lock
+  value ends at its line, so the greedy `.*` with `$` under `re.M` is the
+  equivalent form that Sonar accepts.
+- `S1172` (unused parameter) on a function that is one of a table of
+  same-shaped callables (the degradations, the model loaders): drop the
+  parameter and adapt the call site or the lambda in the registry; a leading
+  underscore is not exempt.
+- `S107` (over 13 parameters) on `_denoise_and_polish_full_audio_step`: the
+  post-neural switches arrive as `**stages`, validated against
+  `POST_NEURAL_STAGES` and normalised to booleans, so a misspelt switch is
+  still a `TypeError` and every caller keeps its keywords.
