@@ -65,7 +65,15 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   entirely offset (three IA music clips at +0.49, programme 23-27 dB below),
   and against the raw source the app's correct 2 Hz blocker scored as if it
   had destroyed the music (SI-SDR -42, octave -58). When a whole clip scores
-  absurdly, check the source before the engine.
+  absurdly, check the source before the engine. The same captures are 96 %
+  power below 80 Hz (5 Hz harmonics): the router calls such a window silence.
+- Waveform readings punish what the ear does not hear: cathar's 80 Hz dewind
+  shifts phase on bass-heavy programme and SI-SDR goes to -0.8 correlation;
+  the worst-octave reading starts at 125 Hz for the same reason (both engines
+  high-pass at 80 Hz by design). Rank magnitude readings (LSD, octave,
+  envelope, HF), show SI-SDR.
+- Before a tuning set is used, scan its sources: DC share, sub-80 Hz share,
+  route; drop degenerate captures rather than letting the loop chase them.
 - What the user hears and the standard metrics miss has to become a metric:
   "silent pauses" became pumping and tilt, a dither-scale "click" at
   -90 dBFS became the absolute click floor. Measure the specific thing on the

@@ -142,3 +142,11 @@ def test_dc_free_copy_returns_the_file_itself_unless_dc_dominates(tmp_path):
     assert audio_io.dc_free_copy(tmp_path / "clean.wav", tmp_path / "cache") == tmp_path / "clean.wav"
     copy = audio_io.dc_free_copy(tmp_path / "offset.wav", tmp_path / "cache")
     assert copy.name.endswith("_dcfree.wav") and audio_io.dc_share(copy) < 1e-6
+
+
+def test_route_window_calls_an_infrasonic_capture_silence():
+    t = np.arange(4 * RATE) / RATE
+    junk = sum(0.2 / k * np.sin(2 * np.pi * 5.3 * k * t) for k in range(1, 12)).astype(np.float32)
+    assert audio_io.infrasonic_share(junk, RATE) > audio_io.INFRASONIC_SHARE_MAX
+    assert audio_io.route_window(junk, RATE) == "silence"
+    assert audio_io.infrasonic_share(_chord(), RATE) < 0.05

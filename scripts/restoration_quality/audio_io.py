@@ -36,6 +36,11 @@ SYLLABIC_MIN_DEPTH = 0.05
 PERSISTENCE_NPERSEG = 4096
 PERSISTENCE_HOLD_FRAMES = 8
 PERSISTENCE_PROMINENCE_DB = 12.0
+# A broken capture (three Internet Archive clips: a +0.49 DC offset with 5 Hz harmonics
+# under it) carries almost all its power below 80 Hz; its steady harmonics look like held
+# tones to the persistence reading, so such a window is not programme at all.
+INFRASONIC_HZ = 80.0
+INFRASONIC_SHARE_MAX = 0.9
 
 
 @dataclass(frozen=True)
@@ -197,7 +202,7 @@ def windows(n_samples, rate, seconds=15.0, hop=7.5):
 def route_window(mono, rate):
     """speech | music | mixed | silence: the scanner's band ratios, then tonal persistence where they read nothing."""
     rms = float(np.sqrt(np.mean(np.asarray(mono, dtype=np.float64) ** 2)) + 1e-12)
-    if 20.0 * np.log10(rms) < SILENCE_DBFS:
+    if 20.0 * np.log10(rms) < SILENCE_DBFS or infrasonic_share(mono, rate) > INFRASONIC_SHARE_MAX:
         return "silence"
     power, freqs = _compute_chunk_spectrum(np.asarray(mono, dtype=np.float32), rate)
     speech = _speech_ratio_from_spectrum(power, freqs)
@@ -210,6 +215,18 @@ def route_window(mono, rate):
     if persistence >= PERSISTENCE_MIXED:
         return "mixed"
     return "speech" if speech >= SPEECH_RATIO_MIN else "mixed"
+
+
+def infrasonic_share(mono, rate):
+    """Share of the window's power below 80 Hz (DC removed)."""
+    import scipy.signal
+
+    x = np.asarray(mono, dtype=np.float64)
+    x = x - x.mean()
+    if len(x) < 1024:
+        return 0.0
+    freqs, power = scipy.signal.welch(x, rate, nperseg=min(8192, len(x)))
+    return float(power[freqs < INFRASONIC_HZ].sum() / (power.sum() + 1e-20))
 
 
 def tonal_persistence(mono, rate):

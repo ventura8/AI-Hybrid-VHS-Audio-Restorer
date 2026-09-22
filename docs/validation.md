@@ -459,10 +459,16 @@ gates:
   hiss left reads negative, a uniform reduction reads 0). Both sides are
   read with their DC offset removed: three Internet Archive music clips sat
   at +0.49 with the programme 23-27 dB below, and against such a source the
-  app's 2 Hz blocker read as destruction of the music.
+  app's 2 Hz blocker read as destruction of the music. A window with more
+  than 90 % of its power below 80 Hz (the same captures: 5 Hz harmonics under
+  the offset) is routed as silence, not as the held tones the persistence
+  reading would take it for.
 - `stems`: the app's own BS-RoFormer splits source and output; on the
-  non-vocal stem SI-SDR, log-spectral distance, the worst octave and the
-  envelope correlation say whether music and ambience survived. Read only
+  non-vocal stem SI-SDR, log-spectral distance, the worst octave (from
+  125 Hz: both engines run an 80 Hz rumble high-pass, so the 63-125 Hz octave
+  of a bass-heavy source always reads as lost) and the envelope correlation
+  say whether music and ambience survived. SI-SDR is shown, never ranked: a
+  filter's phase shift turns it negative while the ear hears nothing. Read only
   where the source's stem carries a background (above -45 dBFS and within
   20 dB of the mix); an interview without music skips it.
 - `speech` (16 kHz): Whisper large-v3-turbo transcribes source and output

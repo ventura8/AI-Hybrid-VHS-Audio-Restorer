@@ -16,8 +16,9 @@ from scripts.restoration_quality import audio_io
 from scripts.score_reference import _lsd_db, _si_sdr_db
 
 STEM_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+# From 125 Hz: both engines run an 80 Hz rumble high-pass by design, so the 63-125 Hz octave
+# of a bass-heavy source always reads as lost and says nothing about the music above it.
 OCTAVES_HZ = (
-    (63.0, 125.0),
     (125.0, 250.0),
     (250.0, 500.0),
     (500.0, 1000.0),

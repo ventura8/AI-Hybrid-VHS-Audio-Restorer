@@ -16,7 +16,8 @@ gates:
 
 ranking:
   stems.octave_ratio_db.output.tail: up
-  stems.si_sdr_db.output.median: up
+  # SI-SDR is shown, never ranked: a phase shift from a filter (cathar's 80 Hz dewind on
+  # bass-heavy programme) turns it negative while the ear hears nothing.
   stems.lsd_db.output.median: down
   stems.envelope_corr.output.median: up
   dsp.hf_4k8k.delta.median: up
