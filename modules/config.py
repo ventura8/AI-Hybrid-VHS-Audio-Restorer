@@ -121,9 +121,10 @@ _NUMERIC_CONFIG_FIELDS = (
     # cathar's music profile. The speech settings shave music: a print learned from music
     # is programme, and subtracting it at the speech factor takes 8-16 kHz down 14 dB and
     # removes no noise. The self-driving loop on 11 Internet Archive music clips and the
-    # first minute of Gaudeamus (docs/validation.md) settled on subtraction at 0.5 with no
-    # learned print, the coherent path on and the deplosive off: 22 hard-gate failures
-    # against 28 at the speech settings, ahead on 9-10 of 12 clips each round. The profile
+    # first minute of Gaudeamus (docs/validation.md) settled, over five rounds, on
+    # subtraction at 0.5 with no learned print, the coherent path off and the deplosive off:
+    # 22 hard-gate failures against 28 at the speech settings, ahead on 6-10 of 12 clips in
+    # every accepted round; the 0.7.6 build, on by env in the loop, was not a knob. The profile
     # applies when the scanner's tonal persistence (median share of held spectral peaks
     # over 15 s windows, `modules/tonal_persistence.py`) reads at least
     # cathar_music_persistence_min: the music clips read 0.064-0.225, speech over a bed
@@ -495,7 +496,7 @@ _BOOL_CONFIG_FIELDS = (
     # switches. Off, every tape gets the speech settings.
     ("cathar_music_profile", True),
     ("cathar_music_enable_noiseprint", False),
-    ("cathar_music_enable_coherent", True),
+    ("cathar_music_enable_coherent", False),
     ("cathar_music_enable_deplosive", False),
     ("cathar_enable_deesser", True),
     ("cathar_enable_dereverb", False),
@@ -812,7 +813,7 @@ CATHAR_MUSIC_PROFILE = bool(CONFIG.get("cathar_music_profile", True))
 CATHAR_MUSIC_PERSISTENCE_MIN = float(CONFIG.get("cathar_music_persistence_min", 0.05))
 CATHAR_MUSIC_ALPHA = float(CONFIG.get("cathar_music_alpha", 0.5))
 CATHAR_MUSIC_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_music_enable_noiseprint", False))
-CATHAR_MUSIC_ENABLE_COHERENT = bool(CONFIG.get("cathar_music_enable_coherent", True))
+CATHAR_MUSIC_ENABLE_COHERENT = bool(CONFIG.get("cathar_music_enable_coherent", False))
 CATHAR_MUSIC_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_music_enable_deplosive", False))
 
 # Advanced Audio Polish & Archival Configs
