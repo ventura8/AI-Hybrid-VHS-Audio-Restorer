@@ -41,7 +41,11 @@ judge; the user's ear decides only at the end.
 1. Ask for the verdict on the specific windows the harness names.
 1. Feed the accepted settings back: `config.yaml` and `modules/config.py`
    with the measured-effect comment, `docs/configuration.md`, and re-base the
-   cathar identity reference (`experiments/cathar_ab.py <tag>`, then copy the
-   run into `experiments/cathar_ab_head` and rewrite `cathar_ab_head.json`,
-   keeping the previous reference as `cathar_ab_head_before_<tag>`).
+   cathar identity reference (`experiments/cathar_ab.py <tag>` with a tag
+   never used before, since an existing run directory is resumed and proves
+   nothing; then copy the run into `experiments/cathar_ab_head` and rewrite
+   `cathar_ab_head.json`, keeping the previous reference as
+   `cathar_ab_head_before_<tag>`). Where the speech and music plateaus
+   disagree on a shared key, add a music-profile key; a knob the final
+   carries but an accepted switch made inert stays at its shipped value.
 1. Run the full local quality gate before pushing.

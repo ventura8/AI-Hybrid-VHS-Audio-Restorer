@@ -691,6 +691,38 @@ unless it is gated by material length as the noise probe is, and the
 `auto_cathar_*` routing was calibrated with cathar on its shipped settings;
 both are the user's call.
 
+### The listener round's plateaus
+
+The self-driving loop (`scripts/autotune_restoration.py`, the harness's
+listener readings as the judge) ran both engines on the four full Tata tapes
+and on the 12 music clips between 2026-09-23 and 2026-09-26, from the v1
+plateaus, with cathar 0.7.6. Each loop stopped when no candidate qualified:
+
+- cathar on the tapes (four rounds): alpha 1.0, de-esser threshold 12, knee
+  +8 dB, pause floor on, loudness range 20. Its v1 plateau had already set
+  beta 0.02, repair strength 2, the coherent path and the enhance off, and
+  the 4.5 s stitched print.
+- `auto_pure_linear` on the tapes (six rounds, hard failures 7 to 4): the
+  dynamic expander at 12 dB under a +8 dB knee, pause floor on, the sibilant
+  guard at 0.8, loudness range 20; from v1 the Mel-RoFormer denoiser and the
+  subtraction stage off. The hiss flag on every tape and the thin-'s' flag
+  on Vaccin never moved.
+- cathar on music (four rounds, hard failures 31 to 27): de-esser off, the
+  coherent path on, CRT notch Q 60, expander depth 4 dB.
+- `auto_pure_linear` on music (two rounds, hard failures 35 to 30): the
+  Mel-RoFormer back off, the chain's own model.
+
+The plateaus were fed back on 2026-09-26 (`config.yaml`, `modules/config.py`,
+this page's siblings): where speech and music disagreed on a shared key the
+music profile got its own key (`cathar_music_enable_deesser`,
+`cathar_music_expander_depth_db`, `cathar_music_crt_notch_q`,
+`apl_music_neural_model`; `apl_expander_depth_db` for the engine split), and
+knobs the accepted switches made inert stayed at their shipped values. The
+cathar identity reference was re-based on the new defaults and 0.7.6 (the
+previous reference is `experiments/cathar_ab_head_before_feedback_2026_09_26`).
+The listening set `D:\Tata\New folder\variants\v2` (every plateau beside its
+source, with `index.md`) is what confirms or overrides them by ear.
+
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment

@@ -101,7 +101,8 @@ fi
 
 # Step 3b: Verify Cathar Audio Restoration Toolkit
 echo -e "\nStep 3b: Checking Cathar audio restoration toolkit..."
-CATHAR_EXPECTED_VER="0.7.3"
+# 0.7.6: the build both engines were tuned on in the listener round (docs/validation.md).
+CATHAR_EXPECTED_VER="0.7.6"
 
 check_cathar_ver() {
     local bin="$1"
@@ -127,9 +128,9 @@ CATHAR_BASE_URL="https://github.com/vbasky/cathar/releases/download/v${CATHAR_EX
 # target|archive extension|sha256 of the published archive, per platform.
 cathar_release_for_host() {
     case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) echo "x86_64-unknown-linux-gnu tar.gz dbf1b92d3991ad70f9b03094afee385f8c54497184cd5c5196694928c7dbdea4" ;;
-    Darwin-arm64) echo "aarch64-apple-darwin tar.gz 4a502cee5dbb4b66a8467484460d89398e3d4401e1b2611d17ce0c6f1f87669b" ;;
-    Darwin-x86_64) echo "x86_64-apple-darwin tar.gz 3768e6bc11f951cdc374f13dc81de217b572e46213c5c2564bec583231ddc000" ;;
+    Linux-x86_64) echo "x86_64-unknown-linux-gnu tar.gz 004e701e7fe2a3256dcc7bd7eb42865940cddd8f562bab59d4a41d8f4de6c73c" ;;
+    Darwin-arm64) echo "aarch64-apple-darwin tar.gz a5c2d4570ecef9ad3c91ea53b9dd4bbd7e1f563cfcaf5f8264d556905a568211" ;;
+    Darwin-x86_64) echo "x86_64-apple-darwin tar.gz e84fc8ee5721143e36b022f07b3b0d358ad275c26887a85d6101ff4a3048665a" ;;
     *) return 1 ;;
     esac
 }

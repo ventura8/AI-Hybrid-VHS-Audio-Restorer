@@ -19,13 +19,18 @@ the single-track path.
 from pathlib import Path
 
 from .config import APL_MUSIC_BG_FLOOR_DB, APL_MUSIC_PERSISTENCE_MIN, APL_MUSIC_STEM_PATH, APL_NOISEPRINT_TONAL_S, APL_SUPPRESS_DD_ALPHA
+from .tonal_persistence import material_is_music
 from .utils import log_msg
+
+
+def music_material(strategy):
+    """Whether the scanner read the tape as music for this engine: held partials at or above `apl_music_persistence_min`."""
+    return material_is_music(strategy, APL_MUSIC_PERSISTENCE_MIN)
 
 
 def wanted(strategy):
     """Whether the scanner read the tape as music and the stem path is switched on."""
-    persistence = (strategy or {}).get("profile", {}).get("tonal_persistence")
-    return bool(APL_MUSIC_STEM_PATH and persistence is not None and float(persistence) >= APL_MUSIC_PERSISTENCE_MIN)
+    return bool(APL_MUSIC_STEM_PATH and music_material(strategy))
 
 
 def _background_pass(background_wav, work_dir, total_duration, strategy):

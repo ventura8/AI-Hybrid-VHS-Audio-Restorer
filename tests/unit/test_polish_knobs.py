@@ -8,10 +8,23 @@ import modules.mastering as mastering
 
 
 def test_expander_defaults_reproduce_the_shipped_curves():
+    """7 dB under a knee 8 dB over the floor: the listener round's curve for cathar on speech."""
     assert filters._build_full_audio_expander_filter() == "compand=attacks=0.04:decays=0.18:points=-90/-100|-65/-72|-45/-45|0/0"
     assert (
-        filters._build_full_audio_expander_filter(-52.0) == "compand=attacks=0.04:decays=0.18:points=-90/-100|-69.0/-76.0|-48.0/-48.0|0/0"
+        filters._build_full_audio_expander_filter(-52.0) == "compand=attacks=0.04:decays=0.18:points=-90/-100|-67.0/-74.0|-44.0/-44.0|0/0"
     )
+
+
+def test_the_polish_filter_takes_the_callers_expander_depth():
+    """auto_pure_linear's 12 dB and cathar's 4 dB on music reach the curve; None keeps the shared depth."""
+    strategy = {"profile": {"noise_floor_db": -52.0}}
+    with patch("modules.filters.ENABLE_DYNAMIC_EXPANDER", True), patch("modules.filters.ENABLE_LINEAR_AIR", False):
+        shared = filters.build_full_audio_polish_filter(strategy)
+        deep = filters.build_full_audio_polish_filter(strategy, depth_db=12.0)
+        shallow = filters.build_full_audio_polish_filter(strategy, depth_db=4.0)
+    assert shared.endswith("|-67.0/-74.0|-44.0/-44.0|0/0")
+    assert deep.endswith("|-67.0/-79.0|-44.0/-44.0|0/0")
+    assert shallow.endswith("|-67.0/-71.0|-44.0/-44.0|0/0")
 
 
 def test_expander_depth_and_knee_offset_move_the_curve():
@@ -35,14 +48,23 @@ def test_crt_notch_width_follows_the_config():
     assert stages[-1] == "bandreject=f=15625.0:width_type=q:w=120"
 
 
+def test_a_precondition_config_can_name_its_own_crt_notch_width():
+    """cathar's music profile puts its width into the config the graph is built from; absent, the shared Q holds."""
+    graph = filters._precondition_filter_from_config({"highpass_hz": 80, "notch_hz": 0.0, "crt_notch_hz": 15625.0, "crt_notch_q": 60.0})
+    assert graph.endswith("bandreject=f=15625.0:width_type=q:w=60")
+    graph = filters._precondition_filter_from_config({"highpass_hz": 80, "notch_hz": 0.0, "crt_notch_hz": 15625.0})
+    assert graph.endswith("bandreject=f=15625.0:width_type=q:w=30")
+
+
 def test_loudnorm_target_reads_the_configured_range():
-    assert mastering._loudnorm_target_args() == "I=-16.0:TP=-1.0:LRA=11.0"
+    assert mastering._loudnorm_target_args() == "I=-16.0:TP=-1.0:LRA=20.0"
     with patch.object(cfg, "LOUDNORM_TARGET_LRA", 40.0):
         assert mastering._loudnorm_target_args() == "I=-16.0:TP=-1.0:LRA=40.0"
 
 
 def _loudness_messages():
-    with patch("modules.mastering.log_msg") as log:
+    """The three verdicts at the broadcast 11 LU target: 18.4 measured is over it, 6.0 under it, nan unreadable."""
+    with patch("modules.mastering.log_msg") as log, patch.object(cfg, "LOUDNORM_TARGET_LRA", 11.0):
         mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "18.4", "input_tp": "-3.0"})
         mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "6.0", "input_tp": "-3.0"})
         mastering._log_loudness_range({"input_lra": "nan"})

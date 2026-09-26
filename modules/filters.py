@@ -107,7 +107,7 @@ def _append_mains_notches(filters, notch_freq):
         filters.append(f"bandreject=f={harmonic}:width_type=q:w=15")
 
 
-def _append_notch_filters(filters, notch_freq, crt_notch=0.0, resonance_freq=0.0):
+def _append_notch_filters(filters, notch_freq, crt_notch=0.0, resonance_freq=0.0, crt_notch_q=None):
     """Appends fundamental, harmonic, CRT flyback, and resonance notch filters.
 
     Args:
@@ -115,10 +115,12 @@ def _append_notch_filters(filters, notch_freq, crt_notch=0.0, resonance_freq=0.0
         notch_freq (float): Fundamental mains buzz frequency (50 Hz / 60 Hz).
         crt_notch (float): CRT horizontal line whistle (15625 Hz / 15734 Hz).
         resonance_freq (float): Enclosure acoustic resonance peak frequency (Hz).
+        crt_notch_q (float, optional): Q of the CRT notch; the configured width when None.
     """
     _append_mains_notches(filters, notch_freq)
     if crt_notch > 0:
-        filters.append(f"bandreject=f={crt_notch}:width_type=q:w={CRT_NOTCH_Q:g}")
+        width = CRT_NOTCH_Q if crt_notch_q is None else float(crt_notch_q)
+        filters.append(f"bandreject=f={crt_notch}:width_type=q:w={width:g}")
     if resonance_freq > 0:
         filters.append(f"bandreject=f={resonance_freq}:width_type=q:w=12")
 
@@ -272,6 +274,7 @@ def _build_precondition_filter_string(
     balance_db=0.0,
     crt_notch=0.0,
     resonance_freq=0.0,
+    crt_notch_q=None,
 ):
     """Builds non-destructive pre-conditioning filter string.
 
@@ -285,6 +288,7 @@ def _build_precondition_filter_string(
         balance_db (float): Stereo channel balance difference in dB.
         crt_notch (float): CRT line whistle frequency in Hz.
         resonance_freq (float): Enclosure resonance frequency in Hz.
+        crt_notch_q (float, optional): Q of the CRT notch (`crt_notch_q` in the config when None).
 
     Returns:
         str: Formatted FFmpeg filter string or 'anull'.
@@ -296,7 +300,7 @@ def _build_precondition_filter_string(
         filters.append(f"highpass=f={highpass_freq}")
     if enable_adeclick:
         filters.append("adeclick")
-    _append_notch_filters(filters, notch_freq, crt_notch, resonance_freq)
+    _append_notch_filters(filters, notch_freq, crt_notch, resonance_freq, crt_notch_q)
     return ",".join(filters) if filters else "anull"
 
 
@@ -1089,6 +1093,7 @@ def _precondition_filter_from_config(precond_config):
         balance_db=float(precond_config.get("balance_db", 0.0)),
         crt_notch=float(precond_config.get("crt_notch_hz", 0.0)),
         resonance_freq=float(precond_config.get("resonance_hz", 0.0)),
+        crt_notch_q=precond_config.get("crt_notch_q"),
     )
 
 
@@ -1142,18 +1147,23 @@ def _append_linear_air_stage(stages, apply_air):
             stages.append(air)
 
 
-def _append_expander_stage(stages, strategy):
-    """Appends adaptive downward dynamic expander stage if enabled."""
+def _append_expander_stage(stages, strategy, depth_db=None):
+    """Appends adaptive downward dynamic expander stage if enabled; `depth_db` overrides the shared depth."""
     if ENABLE_DYNAMIC_EXPANDER:
         noise_floor_db = (strategy or {}).get("profile", {}).get("noise_floor_db")
-        stages.append(_build_full_audio_expander_filter(noise_floor_db))
+        stages.append(_build_full_audio_expander_filter(noise_floor_db, depth_db=depth_db))
 
 
-def build_full_audio_polish_filter(strategy=None, apply_air=False):
-    """Assembles the chained polish filter with optional linear air and dynamic expander."""
+def build_full_audio_polish_filter(strategy=None, apply_air=False, depth_db=None):
+    """Assembles the chained polish filter with optional linear air and dynamic expander.
+
+    `depth_db` is the expander depth the engine and material ask for (auto_pure_linear's
+    `apl_expander_depth_db`, cathar's `cathar_music_expander_depth_db` on music); None takes
+    the shared `expander_depth_db`.
+    """
     stages = []
     _append_linear_air_stage(stages, apply_air)
-    _append_expander_stage(stages, strategy)
+    _append_expander_stage(stages, strategy, depth_db)
     return ",".join(stages) if stages else None
 
 

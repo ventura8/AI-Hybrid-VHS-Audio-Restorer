@@ -22,6 +22,14 @@ def test_wanted_keys_on_the_switch_and_the_persistence_floor(switch, persistence
     assert apl_stems.wanted({}) is False
 
 
+def test_music_material_is_the_persistence_floor_alone():
+    """The engine's music reading does not depend on the stem path's switch."""
+    with patch("modules.apl_stems.APL_MUSIC_STEM_PATH", False), patch("modules.apl_stems.APL_MUSIC_PERSISTENCE_MIN", 0.05):
+        assert apl_stems.music_material(_strategy(0.2)) is True
+        assert apl_stems.music_material(_strategy(0.01)) is False
+        assert apl_stems.music_material(None) is False
+
+
 def _run(tmp_path, floor_db, separator=None, suppressor=None):
     calls = {}
 

@@ -46,4 +46,5 @@ def test_the_denoise_step_threads_the_switches_through(tmp_path):
     ):
         out = processing._denoise_and_polish_full_audio_step(tmp_path / "o.wav", tmp_path, sibilant_guard=True, pause_floor=True)
     assert out == tmp_path / "done.wav"
-    assert post.call_args.args[-1] == {"sibilant_guard": True, "pause_floor": True, "apply_air": False}
+    assert post.call_args.args[-2] == {"sibilant_guard": True, "pause_floor": True, "apply_air": False}
+    assert post.call_args.args[-1] is None

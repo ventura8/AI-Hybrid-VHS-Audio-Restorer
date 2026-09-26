@@ -25,6 +25,13 @@ def _quiet_wav(tmp_path):
     return wav
 
 
+@pytest.fixture(autouse=True)
+def _stage_switched_on():
+    """The stage is off by default since the listener round; these tests pin what it does when on."""
+    with patch.object(spectral_denoise, "APL_ENABLE_SPECTRAL_DENOISE", True):
+        yield
+
+
 def test_disabled_by_configuration_skips_the_stage(quiet_wav):
     """The stage can be switched off wholesale without touching the chain."""
     with patch.object(spectral_denoise, "APL_ENABLE_SPECTRAL_DENOISE", False):
@@ -109,7 +116,7 @@ def test_the_noise_probe_is_this_modes_own_and_leaves_cathar_alone(quiet_wav, tm
         spectral_denoise.apply_when_needed(quiet_wav, tmp_path)
     assert mock_noiseprint.call_args.kwargs["duration_s"] == spectral_denoise.APL_NOISEPRINT_DURATION_S
     assert spectral_denoise.APL_NOISEPRINT_DURATION_S == 4.0
-    assert config.CATHAR_NOISEPRINT_DURATION_S == 6.0
+    assert config.CATHAR_NOISEPRINT_DURATION_S == 4.5
 
 
 def test_a_failed_subtraction_leaves_the_audio_usable(quiet_wav, tmp_path):

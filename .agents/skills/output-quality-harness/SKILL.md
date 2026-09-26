@@ -193,7 +193,15 @@ keeping until the listening set is built from the finals
 remove the half-written candidate directory and the `.temp_work_*` folder
 beside the source before relaunching, or the resume trips over them.
 
-Only when both engines have plateaued: produce the listening set, send the
-scoreboard, ask the user. Feed a winner back into `config.yaml` and
-`modules/config.py` with the measured-effect comment, then re-base the cathar
-identity reference (see the audio-restoration-engine skill).
+Only when both engines have plateaued: produce the listening set
+(`experiments/tata_listen/build_listen_v2.py` copies each final's outputs
+beside their sources and writes an index with the settings diff and the
+harness readings), send the index, ask the user. Feed a winner back into
+`config.yaml` and `modules/config.py` with the measured-effect comment, then
+re-base the cathar identity reference (see the audio-restoration-engine
+skill). Two rules from the 2026-09-26 feed-back: a shared key the speech and
+music plateaus disagree on gets a music-profile key, never a compromise
+value; and a final carries every knob the loop touched, including ones an
+accepted switch made inert (the subtraction's factor, probe and native
+suppressor once `apl_enable_spectral_denoise` is off), so read the code
+before feeding a knob back and leave the inert ones at their shipped value.

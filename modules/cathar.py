@@ -65,9 +65,12 @@ from .config import (
     CATHAR_MONO_BELOW_HZ,
     CATHAR_MUSIC_ALPHA,
     CATHAR_MUSIC_ALPHA_HIGH,
+    CATHAR_MUSIC_CRT_NOTCH_Q,
     CATHAR_MUSIC_ENABLE_COHERENT,
+    CATHAR_MUSIC_ENABLE_DEESSER,
     CATHAR_MUSIC_ENABLE_DEPLOSIVE,
     CATHAR_MUSIC_ENABLE_NOISEPRINT,
+    CATHAR_MUSIC_EXPANDER_DEPTH_DB,
     CATHAR_MUSIC_PERSISTENCE_MIN,
     CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
@@ -75,6 +78,7 @@ from .config import (
     CATHAR_SPLIT_BAND_HZ,
     NOTCH_FREQ,
 )
+from .tonal_persistence import material_is_music
 from .utils import CATHAR_BIN, FFMPEG_BIN, is_valid_audio, log_msg, run_command_with_progress
 
 
@@ -581,9 +585,9 @@ def _cathar_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=N
     return current
 
 
-def _cathar_polish_pass(current_wav, work_dir, total_duration=None):
-    """Applies sibilance de-essing and high-frequency harmonic synthesis."""
-    if CATHAR_ENABLE_DEESSER:
+def _cathar_polish_pass(current_wav, work_dir, total_duration=None, deesser=None):
+    """Applies sibilance de-essing (the material's switch; the speech default when None) and harmonic synthesis."""
+    if CATHAR_ENABLE_DEESSER if deesser is None else deesser:
         current_wav = _cathar_deesser_step(current_wav, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_ENHANCE:
         current_wav = _cathar_enhance_step(current_wav, work_dir, total_duration=total_duration)
@@ -648,31 +652,54 @@ def _is_music_material(strategy):
     `modules/config.py`). A strategy without the reading (an older scan, a test stub) is
     speech.
     """
-    persistence = (strategy or {}).get("profile", {}).get("tonal_persistence")
-    return bool(CATHAR_MUSIC_PROFILE and persistence is not None and float(persistence) >= CATHAR_MUSIC_PERSISTENCE_MIN)
+    return bool(CATHAR_MUSIC_PROFILE and material_is_music(strategy, CATHAR_MUSIC_PERSISTENCE_MIN))
+
+
+def music_expander_depth_db(strategy):
+    """The polish expander's depth on music (`cathar_music_expander_depth_db`), None on speech (the shared depth)."""
+    return CATHAR_MUSIC_EXPANDER_DEPTH_DB if _is_music_material(strategy) else None
+
+
+def music_crt_notch_q(strategy):
+    """The CRT notch width on music (`cathar_music_crt_notch_q`), None on speech (the shared `crt_notch_q`)."""
+    return CATHAR_MUSIC_CRT_NOTCH_Q if _is_music_material(strategy) else None
+
+
+def _log_music_profile(strategy, settings):
+    switches = ", ".join(f"{name} {'on' if settings[key] else 'off'}" for name, key in _MUSIC_SWITCH_NAMES)
+    log_msg(
+        f"    [Cathar] Music profile: held partials {strategy['profile']['tonal_persistence']:.4f}; "
+        f"subtracting at {settings['alpha']:g}, {switches}."
+    )
+
+
+_MUSIC_SWITCH_NAMES = (("learned print", "noiseprint"), ("coherent", "coherent"), ("deplosive", "deplosive"), ("de-esser", "deesser"))
 
 
 def _material_settings(strategy):
     """The stage settings this material takes: the music profile, or the speech defaults."""
     if _is_music_material(strategy):
-        log_msg(
-            f"    [Cathar] Music profile: held partials {strategy['profile']['tonal_persistence']:.4f}; "
-            f"subtracting at {CATHAR_MUSIC_ALPHA:g}, learned print {'on' if CATHAR_MUSIC_ENABLE_NOISEPRINT else 'off'}, "
-            f"coherent {'on' if CATHAR_MUSIC_ENABLE_COHERENT else 'off'}, deplosive {'on' if CATHAR_MUSIC_ENABLE_DEPLOSIVE else 'off'}."
-        )
-        return {
-            "alpha": CATHAR_MUSIC_ALPHA,
-            "alpha_high": CATHAR_MUSIC_ALPHA_HIGH,
-            "noiseprint": CATHAR_MUSIC_ENABLE_NOISEPRINT,
-            "coherent": CATHAR_MUSIC_ENABLE_COHERENT,
-            "deplosive": CATHAR_MUSIC_ENABLE_DEPLOSIVE,
-        }
+        settings = _music_settings()
+        _log_music_profile(strategy, settings)
+        return settings
     return {
         "alpha": CATHAR_ALPHA,
         "alpha_high": CATHAR_ALPHA_HIGH,
         "noiseprint": CATHAR_ENABLE_NOISEPRINT,
         "coherent": CATHAR_ENABLE_COHERENT,
         "deplosive": CATHAR_ENABLE_DEPLOSIVE,
+        "deesser": CATHAR_ENABLE_DEESSER,
+    }
+
+
+def _music_settings():
+    return {
+        "alpha": CATHAR_MUSIC_ALPHA,
+        "alpha_high": CATHAR_MUSIC_ALPHA_HIGH,
+        "noiseprint": CATHAR_MUSIC_ENABLE_NOISEPRINT,
+        "coherent": CATHAR_MUSIC_ENABLE_COHERENT,
+        "deplosive": CATHAR_MUSIC_ENABLE_DEPLOSIVE,
+        "deesser": CATHAR_MUSIC_ENABLE_DEESSER,
     }
 
 
@@ -728,4 +755,4 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
             noiseprint_path=np_path,
             total_duration=total_duration,
         )
-    return _cathar_polish_pass(current, work_dir, total_duration=total_duration)
+    return _cathar_polish_pass(current, work_dir, total_duration=total_duration, deesser=settings["deesser"])

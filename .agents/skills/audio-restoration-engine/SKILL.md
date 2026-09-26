@@ -141,10 +141,14 @@ audio alignment, or FFmpeg multiplexing.
   the print learns sibilance; the shipped print is stitched from eight 0.75 s
   windows spread by level over the quietest 20 % (10 ms crossfades), only
   from 20 x `cathar_noiseprint_duration_s` of material.
-- **cathar alpha 2.0**: chosen by ear and by the harness on five real tapes
-  (colouration +0.125 against +0.062, discontinuity tail -0.34 against
-  -0.42, CER 0.058 against 0.093) for 1.6 dB less removal; 3.5 and Wiener
-  lose every listener-side reading.
+- **cathar alpha 2.0 -> 1.0**: 2.0 was chosen by ear and by the harness on
+  five real tapes (colouration +0.125 against +0.062, discontinuity tail
+  -0.34 against -0.42, CER 0.058 against 0.093) for 1.6 dB less removal;
+  3.5 and Wiener lose every listener-side reading. The listener round
+  (2026-09-25, `docs/validation.md`, "The listener round's plateaus") took
+  it to 1.0 with beta 0.02, repair strength 2, the coherent path and the
+  enhance off, the 4.5 s stitched print and de-esser threshold 12, on cathar
+  0.7.6; the identity reference was re-based on those defaults.
 - **cathar music profile**: the speech settings shave music (a print learned
   from music is programme; subtracting it at the speech factor takes 8-16 kHz
   down 14 dB and removes no noise), so `filter_cathar_vhs_pipeline` reads the
@@ -161,8 +165,14 @@ audio alignment, or FFmpeg multiplexing.
   (`experiments/autotune_music`); re-read them from its `final.json` before
   touching the defaults.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
-  config-gated, default-off stage the tuning loop switches, and identity
-  stays 5/5 with defaults. What the listener heard and where the lever is:
+  config-gated stage the tuning loop switches, shipped off until a loop
+  accepts it (the pause floor and the sibilant guard are on since
+  2026-09-25; the stem path and the split band stay off). A shared key the
+  two materials disagree on gets a music-profile key rather than a
+  compromise (`cathar_music_enable_deesser`, `cathar_music_expander_depth_db`,
+  `cathar_music_crt_notch_q`, `apl_music_neural_model`; `apl_expander_depth_db`
+  where the engines disagree). What the listener heard and where the lever
+  is:
   "silent in pauses" is the polish expander (`_build_full_audio_expander_filter`
   pushes what sits under its knee a further 7-10 dB down and maps -90 dBFS
   to -100; `expander_depth_db`, `expander_knee_offset_db`) plus the mask
@@ -192,7 +202,9 @@ audio alignment, or FFmpeg multiplexing.
   exactly alike, hash their audio before spending another round.
 - **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
   (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
-  is measured before it replaces `.venv/Scripts/cathar.exe`. Stages our
+  is measured before it replaces `.venv/Scripts/cathar.exe`; 0.7.6 replaced
+  0.7.3 on 2026-09-26 after the listener round tuned both engines on it
+  (both installers pin the version and the archive checksums). Stages our
   chain calls were bit-identical between 0.7.5 and 0.7.6; the upstream
   `cathar vhs` chain is not a candidate (single quietest-4 s probe, alpha 3:
   colouration -0.43, discontinuity tail -1.61 on Tele7abc; vbasky/cathar#26).

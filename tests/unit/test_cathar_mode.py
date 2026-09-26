@@ -314,7 +314,7 @@ def test_filter_cathar_vhs_pipeline(tmp_path):
         noiseprint_path=work_dir / "noise.np.json",
         total_duration=None,
     )
-    mock_pol.assert_called_once_with(original_wav, work_dir, total_duration=None)
+    mock_pol.assert_called_once_with(original_wav, work_dir, total_duration=None, deesser=cathar.CATHAR_ENABLE_DEESSER)
 
 
 def test_process_cathar_mode(tmp_path):

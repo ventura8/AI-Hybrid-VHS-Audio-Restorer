@@ -7,7 +7,7 @@ bandreject notching, adaptive UVR-DeNoise neural inference, and linear air polis
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..config import APL_ENABLE_HUM_CANCEL, APL_USE_DEEPFILTERNET, APL_USE_RESEMBLE_DENOISE
+from ..config import APL_ENABLE_HUM_CANCEL, APL_EXPANDER_DEPTH_DB, APL_USE_DEEPFILTERNET, APL_USE_RESEMBLE_DENOISE
 from .base import BaseRestorationMode
 
 
@@ -53,8 +53,11 @@ class AutoPureLinearMode(BaseRestorationMode):
                 plosive_tamer=True,
                 tone_cancel=True,
                 resemble_denoise=APL_USE_RESEMBLE_DENOISE,
+                # The mode's own expander depth (apl_expander_depth_db); denoise_only keeps the shared one.
+                expander_depth_db=APL_EXPANDER_DEPTH_DB,
                 # The listener-round stages read their own switches (apl_enable_sibilant_guard,
-                # enable_pause_floor); opting in here lets a sweep of those switches reach the chain.
+                # enable_pause_floor, both on since the listener round); opting in here lets a
+                # sweep of those switches reach the chain.
                 sibilant_guard=True,
                 pause_floor=True,
             )

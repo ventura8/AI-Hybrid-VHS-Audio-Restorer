@@ -132,8 +132,10 @@ else {
 Write-Information "`nStep 2b: Checking local Cathar audio restoration toolkit..."
 $localCatharPath = "$VenvScripts\cathar.exe"
 $cargoCatharPath = "$env:USERPROFILE\.cargo\bin\cathar.exe"
-$CatharExpectedVersion = "0.7.3"
-$CatharVersionPattern = "^cathar 0\.7\.3$"
+# 0.7.6: the build both engines were tuned on in the listener round (docs/validation.md); its
+# vhs de-esser fix (vbasky/cathar#26) is upstream's version of the guard this app carries.
+$CatharExpectedVersion = "0.7.6"
+$CatharVersionPattern = "^cathar 0\.7\.6$"
 
 function Test-CatharExecutable {
     param([string]$Path)
@@ -192,7 +194,7 @@ if (-not (Test-CatharExecutable $localCatharPath)) {
         # dies on "LNK1104: cannot open file 'msvcrt.lib'" without the LIB paths a Developer
         # Command Prompt sets, and its GNU host dies on a missing MinGW dlltool.exe. A
         # checksum-verified download is the same approach used for FFmpeg above.
-        $CatharSha256 = "2f29d80a9837af863f9f87f2d126dc8a25c53df600d4ec9788ee3c93443b7d49"
+        $CatharSha256 = "2761f54c27124086ddf92b9b14ba5bf89f675f2e80d1d354baf569d8697870f9"
         $CatharAsset = "cathar-v$CatharExpectedVersion-x86_64-pc-windows-msvc.zip"
         $CatharUrl = "https://github.com/vbasky/cathar/releases/download/v$CatharExpectedVersion/$CatharAsset"
 

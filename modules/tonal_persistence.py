@@ -82,6 +82,18 @@ def syllabic_modulation(mono, rate):
     return float(syllabic / (slow + 1e-12))
 
 
+def material_is_music(strategy, floor):
+    """Whether the scanner read the tape as music: held partials at or above `floor`.
+
+    The band ratios read every archive music clip as dialogue, so both engines' music
+    settings key on the tonal persistence the scanner stores in `profile.tonal_persistence`
+    (music clips 0.064-0.225, speech over a bed 0.007-0.033, dry dialogue under 0.003). A
+    strategy without the reading (an older scan, a test stub) is speech.
+    """
+    persistence = (strategy or {}).get("profile", {}).get("tonal_persistence")
+    return persistence is not None and float(persistence) >= float(floor)
+
+
 def median_persistence(mono, rate, window_s=WINDOW_S):
     """The median tonal persistence over the file's 15 s windows that carry programme, 0.0 when none does.
 

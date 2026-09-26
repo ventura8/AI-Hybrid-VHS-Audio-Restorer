@@ -111,7 +111,8 @@ def test_switched_off_returns_the_restored_audio_and_writes_nothing(tmp_path):
     source = _voice()
     reference = _write(tmp_path / "ref.wav", source)
     restored = _write(tmp_path / "res.wav", _gated(source))
-    assert pause_floor.apply_when_needed(reference, restored, tmp_path) == restored
+    with patch("modules.pause_floor.ENABLE_PAUSE_FLOOR", False):
+        assert pause_floor.apply_when_needed(reference, restored, tmp_path) == restored
     assert _nothing_written(tmp_path)
 
 

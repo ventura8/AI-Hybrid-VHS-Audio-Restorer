@@ -44,11 +44,42 @@ def test_material_settings_are_the_speech_defaults_or_the_music_profile():
         patch("modules.cathar.CATHAR_MUSIC_ENABLE_DEPLOSIVE", False),
         patch("modules.cathar.CATHAR_ALPHA_HIGH", 3.0),
         patch("modules.cathar.CATHAR_MUSIC_ALPHA_HIGH", 0.25),
+        patch("modules.cathar.CATHAR_ENABLE_DEESSER", True),
+        patch("modules.cathar.CATHAR_MUSIC_ENABLE_DEESSER", False),
     ):
         speech = cathar._material_settings(_strategy(0.001))
         music = cathar._material_settings(_strategy(0.2))
-    assert speech == {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True}
-    assert music == {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False}
+    assert speech == {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True, "deesser": True}
+    assert music == {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False, "deesser": False}
+
+
+def test_the_music_profile_has_its_own_expander_depth_and_notch_width():
+    """On music the polish expander and the CRT notch take the profile's values; on speech the shared ones (None)."""
+    with (
+        patch("modules.cathar.CATHAR_MUSIC_PROFILE", True),
+        patch("modules.cathar.CATHAR_MUSIC_PERSISTENCE_MIN", 0.05),
+        patch("modules.cathar.CATHAR_MUSIC_EXPANDER_DEPTH_DB", 4.0),
+        patch("modules.cathar.CATHAR_MUSIC_CRT_NOTCH_Q", 60.0),
+    ):
+        assert cathar.music_expander_depth_db(_strategy(0.2)) == 4.0
+        assert cathar.music_crt_notch_q(_strategy(0.2)) == 60.0
+        assert cathar.music_expander_depth_db(_strategy(0.001)) is None
+        assert cathar.music_crt_notch_q(None) is None
+
+
+def test_the_deesser_follows_the_material(tmp_path):
+    """The polish pass runs the de-esser when the material's switch says so, the speech default when unspecified."""
+    wav = tmp_path / "in.wav"
+    with (
+        patch("modules.cathar._cathar_deesser_step", side_effect=lambda w, *_a, **_k: w.with_name("deessed.wav")) as deess,
+        patch("modules.cathar.CATHAR_ENABLE_ENHANCE", False),
+        patch("modules.cathar.CATHAR_ENABLE_DEESSER", True),
+    ):
+        assert cathar._cathar_polish_pass(wav, tmp_path, deesser=False) == wav
+        deess.assert_not_called()
+        assert cathar._cathar_polish_pass(wav, tmp_path).name == "deessed.wav"
+        assert cathar._cathar_polish_pass(wav, tmp_path, deesser=True).name == "deessed.wav"
+        assert deess.call_count == 2
 
 
 def _run_pipeline(tmp_path, strategy):
