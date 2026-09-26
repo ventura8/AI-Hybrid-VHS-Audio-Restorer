@@ -88,7 +88,20 @@ primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / ".venv
 # 1. Base Binary Paths
 FFMPEG_BIN = _resolve_binary("ffmpeg", scripts_dirs)
 FFPROBE_BIN = _resolve_binary("ffprobe", scripts_dirs)
-CATHAR_BIN = _resolve_binary("cathar", scripts_dirs, extra_dirs=_cargo_bin_dirs())
+
+
+def _cathar_binary(env=None):
+    """The Cathar CLI to shell out to.
+
+    `AI_RESTORE_CATHAR_BIN` names a second build beside the validated one, so an
+    upgrade can be measured on the tuning excerpts before it replaces the binary
+    every other job resolves; otherwise the usual lookup (venv, then ~/.cargo/bin).
+    """
+    override = (os.environ if env is None else env).get("AI_RESTORE_CATHAR_BIN", "").strip()
+    return override or _resolve_binary("cathar", scripts_dirs, extra_dirs=_cargo_bin_dirs())
+
+
+CATHAR_BIN = _cathar_binary()
 
 # 2. NVIDIA / CUDA Library Injection (Critical for Hybrid GPUs & Linux / Windows)
 extra_paths = [str(p) for p in scripts_dirs]

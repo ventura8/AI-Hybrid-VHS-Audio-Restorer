@@ -26,6 +26,7 @@ except ImportError:
 
 from .config import (
     CATHAR_ALPHA,
+    CATHAR_ALPHA_HIGH,
     CATHAR_AZIMUTH_MAX_MS,
     CATHAR_AZIMUTH_METHOD,
     CATHAR_BETA,
@@ -62,10 +63,22 @@ from .config import (
     CATHAR_INPAINT_ITERATIONS,
     CATHAR_INPAINT_MAX_GAP_MS,
     CATHAR_MONO_BELOW_HZ,
+    CATHAR_MUSIC_ALPHA,
+    CATHAR_MUSIC_ALPHA_HIGH,
+    CATHAR_MUSIC_CRT_NOTCH_Q,
+    CATHAR_MUSIC_ENABLE_COHERENT,
+    CATHAR_MUSIC_ENABLE_DEESSER,
+    CATHAR_MUSIC_ENABLE_DEPLOSIVE,
+    CATHAR_MUSIC_ENABLE_NOISEPRINT,
+    CATHAR_MUSIC_EXPANDER_DEPTH_DB,
+    CATHAR_MUSIC_PERSISTENCE_MIN,
+    CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
     CATHAR_REPAIR_STRENGTH,
+    CATHAR_SPLIT_BAND_HZ,
     NOTCH_FREQ,
 )
+from .tonal_persistence import material_is_music
 from .utils import CATHAR_BIN, FFMPEG_BIN, is_valid_audio, log_msg, run_command_with_progress
 
 
@@ -264,6 +277,15 @@ def _cathar_deesser_step(
     total_duration=None,
 ):
     output_wav = output_dir / f"deessed_{input_wav.name}"
+    if int(bands) > 1 and float(threshold) <= 0:
+        # Multiband threshold is dB above each band's running average; a non-positive
+        # value engages the de-esser on every frame and strips everything above `freq`.
+        log_msg(
+            f"    [Cathar] De-esser threshold {threshold} dB with {bands} bands keeps the stage "
+            f"engaged on every frame and mutes speech above {freq} Hz; using cathar's suggested 6 dB.",
+            is_error=True,
+        )
+        threshold = 6.0
     cmd = ["deesser", "--bands", str(bands), "-f", str(freq), f"--threshold={threshold}"]
     return _run_cathar_step(cmd, input_wav, output_wav, "Multiband Sibilance Control", "Cathar De-Esser", total_duration)
 
@@ -344,6 +366,93 @@ def _extract_noiseprint_slice(input_wav, slice_wav, duration_s):
     return is_valid_audio(slice_wav)
 
 
+# A pause on a dialogue tape is short: a single 4 s window rarely fits inside one, so it
+# carries speech and the print learns sibilance (measured on a 134 s tape: the quietest 4 s
+# sat 12 dB above the quietest 0.75 s, correlated 0.86 with the loud frames in the speech
+# band, and the subtraction took 6 dB more off speech at 8-12 kHz). A single 0.75 s window
+# is a pause but too short to average the hiss. So on a tape the print is stitched from
+# several 0.75 s pauses spread across the quietest fifth of the windows: the shape of a
+# pause, the level of the typical floor, the length to average it.
+NOISEPRINT_WINDOW_S = 0.75
+NOISEPRINT_HOP_S = 0.25
+NOISEPRINT_LEVEL_SHARE = 0.2
+NOISEPRINT_CROSSFADE_S = 0.01
+
+
+def _window_levels(wav_path, hop_frames, window_hops):
+    """RMS of every window (window_hops hops long) at hop spacing, streamed from the file."""
+    energies = []
+    with sf.SoundFile(str(wav_path)) as handle:
+        for block in handle.blocks(blocksize=hop_frames * 240, dtype="float32", always_2d=True):
+            mono = block.mean(axis=1)
+            frames = len(mono) // hop_frames
+            energies.extend(np.mean(mono[: frames * hop_frames].reshape(frames, hop_frames) ** 2, axis=1).tolist())
+    energies = np.asarray(energies, dtype=np.float64)
+    if len(energies) < window_hops:
+        return np.zeros(0), np.zeros(0, dtype=int)
+    summed = np.convolve(energies, np.ones(window_hops), mode="valid")
+    return np.sqrt(summed / window_hops), np.arange(len(summed)) * hop_frames
+
+
+def _pick_pause_windows(levels, starts, window_frames, count, level_share=NOISEPRINT_LEVEL_SHARE):
+    """Starts of `count` non-overlapping windows spread evenly by level over the quietest share."""
+    if len(levels) == 0:
+        return []
+    picked = _quietest_non_overlapping(levels, starts, window_frames, level_share)
+    if not picked:
+        return []
+    by_level = sorted(picked, key=lambda s: levels[int(np.searchsorted(starts, s))])
+    chosen = np.linspace(0, len(by_level) - 1, min(count, len(by_level))).astype(int)
+    return sorted(by_level[k] for k in chosen)
+
+
+def _quietest_non_overlapping(levels, starts, window_frames, level_share):
+    """Starts of the windows within the quietest share, quietest first, each at least a window apart."""
+    cut = np.percentile(levels, level_share * 100.0)
+    order = [int(k) for k in np.argsort(levels, kind="stable") if levels[k] <= cut]
+    picked = []
+    for k in order:
+        if _clear_of(int(starts[k]), picked, window_frames):
+            picked.append(int(starts[k]))
+    return picked
+
+
+def _clear_of(start, picked, window_frames):
+    return all(abs(start - j) >= window_frames for j in picked)
+
+
+def _stitch_windows(wav_path, starts, window_frames, crossfade_frames):
+    """Concatenates the windows with short crossfades so the seams add no click to the print."""
+    ramp = np.linspace(0.0, 1.0, crossfade_frames, dtype=np.float32)[:, None]
+    out = None
+    for start in starts:
+        seg, _rate = sf.read(str(wav_path), dtype="float32", start=start, frames=window_frames, always_2d=True)
+        if out is None:
+            out = seg.copy()
+            continue
+        out[-crossfade_frames:] = out[-crossfade_frames:] * (1.0 - ramp) + seg[:crossfade_frames] * ramp
+        out = np.concatenate([out, seg[crossfade_frames:]])
+    return out
+
+
+def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s):
+    """Writes a probe stitched from the quiet pauses of input_wav, about duration_s long in total."""
+    info = sf.info(str(input_wav))
+    rate = info.samplerate
+    hop = int(NOISEPRINT_HOP_S * rate)
+    window_hops = max(1, round(NOISEPRINT_WINDOW_S / NOISEPRINT_HOP_S))
+    window = hop * window_hops
+    count = max(1, round(duration_s / NOISEPRINT_WINDOW_S))
+    levels, starts = _window_levels(input_wav, hop, window_hops)
+    picked = _pick_pause_windows(levels, starts, window, count)
+    if not picked:
+        return False
+    stitched = _stitch_windows(input_wav, picked, window, int(NOISEPRINT_CROSSFADE_S * rate))
+    sf.write(str(slice_wav), stitched, rate, subtype="FLOAT")
+    log_msg(f"    [Cathar] Noise print stitched from {len(picked)} pauses at {', '.join(f'{s / rate:.1f}' for s in picked)} s")
+    return is_valid_audio(slice_wav)
+
+
 def _execute_noiseprint(slice_wav, output_json):
     cmd_np = [CATHAR_BIN, "noiseprint", str(slice_wav), "-o", str(output_json), "--no-banner"]
     run_command_with_progress(cmd_np, description="Cathar Learn Noiseprint")
@@ -366,23 +475,40 @@ def _validate_existing_noiseprint(output_json):
         return False
 
 
-def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_DURATION_S):
-    """Learns an empirical noise print JSON from the quietest section of input_wav."""
-    output_json = output_dir / f"noise_{input_wav.stem}.np.json"
+def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_DURATION_S, stitched=False):
+    """Learns an empirical noise print JSON from the quietest section of input_wav.
+
+    `stitched` learns it from several quiet pauses instead of one window (see
+    _extract_stitched_noiseprint); the single-window path is untouched, so every caller
+    that does not ask for it keeps its output.
+    """
+    output_json = output_dir / _noiseprint_name(input_wav, duration_s, stitched)
     if _validate_existing_noiseprint(output_json):
         return output_json
     slice_wav = output_dir / f"silence_probe_{input_wav.stem}.wav"
+    extract = _extract_stitched_noiseprint if stitched else _extract_noiseprint_slice
     try:
-        if not _extract_noiseprint_slice(input_wav, slice_wav, duration_s):
-            return None
-        return _execute_noiseprint(slice_wav, output_json)
-
+        return _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json)
     except Exception as exc:
         log_msg(f"    [Cathar] Noiseprint extraction bypassed: {exc}")
         return None
     finally:
         if slice_wav.exists():
             slice_wav.unlink()
+
+
+def _noiseprint_name(input_wav, duration_s, stitched):
+    """The print is named by how it was learned: a preserved work directory must not hand a
+    0.75 s single-window print to a later stitched 6 s request, or the reverse."""
+    mode = "stitched" if stitched else "single"
+    return f"noise_{input_wav.stem}_{mode}_{float(duration_s):g}s.np.json"
+
+
+def _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json):
+    """The probe slice through cathar's noiseprint, or None when there was nothing to learn from."""
+    if not extract(input_wav, slice_wav, duration_s):
+        return None
+    return _execute_noiseprint(slice_wav, output_json)
 
 
 def _build_cathar_denoise_cmd(method, alpha, beta, coherent, noiseprint_path=None):
@@ -419,7 +545,7 @@ def _cathar_clean_transients(current_wav, work_dir, total_duration=None):
     return current_wav
 
 
-def _cathar_precondition_pass(current_wav, work_dir, total_duration=None):
+def _cathar_precondition_pass(current_wav, work_dir, total_duration=None, deplosive=None):
     """Executes initial sub-audible, azimuth, and impulse noise suppression stages."""
     if CATHAR_ENABLE_DEWIND:
         current_wav = _cathar_dewind_step(current_wav, work_dir, total_duration=total_duration)
@@ -428,9 +554,14 @@ def _cathar_precondition_pass(current_wav, work_dir, total_duration=None):
     if CATHAR_ENABLE_MONO_BELOW:
         current_wav = _cathar_mono_below_step(current_wav, work_dir, total_duration=total_duration)
     current_wav = _cathar_clean_transients(current_wav, work_dir, total_duration=total_duration)
-    if CATHAR_ENABLE_DEPLOSIVE:
+    if _deplosive_wanted(deplosive):
         current_wav = _cathar_deplosive_step(current_wav, work_dir, total_duration=total_duration)
     return current_wav
+
+
+def _deplosive_wanted(deplosive):
+    """The material's deplosive switch when the pipeline passed one, else the configured default."""
+    return CATHAR_ENABLE_DEPLOSIVE if deplosive is None else bool(deplosive)
 
 
 def _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None):
@@ -454,9 +585,9 @@ def _cathar_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=N
     return current
 
 
-def _cathar_polish_pass(current_wav, work_dir, total_duration=None):
-    """Applies sibilance de-essing and high-frequency harmonic synthesis."""
-    if CATHAR_ENABLE_DEESSER:
+def _cathar_polish_pass(current_wav, work_dir, total_duration=None, deesser=None):
+    """Applies sibilance de-essing (the material's switch; the speech default when None) and harmonic synthesis."""
+    if CATHAR_ENABLE_DEESSER if deesser is None else deesser:
         current_wav = _cathar_deesser_step(current_wav, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_ENHANCE:
         current_wav = _cathar_enhance_step(current_wav, work_dir, total_duration=total_duration)
@@ -479,12 +610,149 @@ def _resolve_notch_freq(strategy):
     return float(NOTCH_FREQ) if notch_hz is None else float(notch_hz)
 
 
+# The noise print is learned from the quietest stretch of the capture, and the stretch has to
+# be a pause: on a 15 s clip a 4 s window is a quarter of the material and carries programme,
+# on a two-hour tape it is almost certainly pure noise. So the full window is used only once
+# the material is at least this many times longer than it (6 s from 120 s of tape); anything
+# shorter keeps the 0.75 s cathar shipped with, exactly, so every corpus-length clip and
+# 60 s excerpt stays bit-identical while a real tape gets the full window.
+NOISEPRINT_SHORT_S = 0.75
+NOISEPRINT_MIN_MATERIAL_RATIO = 20.0
+
+
+def _probe_duration_s(total_duration, wav_path, cap_s=CATHAR_NOISEPRINT_DURATION_S):
+    """Seconds of quiet tape to learn the noise print from: the cap on a tape, 0.75 s on a clip.
+
+    Measured on a 134 s dialogue tape, 0.75 s removed 3.40 dB of noise for 0.12 dB of
+    programme deviation and 4 s removed 11.58 for 0.30 -- the 0.75 s print is too short to
+    average the hiss, so it under-subtracts in most bins and over-subtracts in a few.
+    """
+    cap = float(cap_s)
+    if cap <= NOISEPRINT_SHORT_S:
+        return cap
+    duration = _material_duration_s(total_duration, wav_path)
+    return cap if duration >= cap * NOISEPRINT_MIN_MATERIAL_RATIO else NOISEPRINT_SHORT_S
+
+
+def _material_duration_s(total_duration, wav_path):
+    """The known duration, else the WAV header's, else 0."""
+    if total_duration and total_duration > 0:
+        return total_duration
+    try:
+        return sf.info(str(wav_path)).duration
+    except Exception:
+        return 0.0
+
+
+def _is_music_material(strategy):
+    """Whether the scanner read the tape as music: held partials at or above the profile's floor.
+
+    The band ratios read every archive music clip as dialogue, so the profile keys on the
+    tonal persistence instead (`modules/tonal_persistence.py`, thresholds in
+    `modules/config.py`). A strategy without the reading (an older scan, a test stub) is
+    speech.
+    """
+    return bool(CATHAR_MUSIC_PROFILE and material_is_music(strategy, CATHAR_MUSIC_PERSISTENCE_MIN))
+
+
+def music_expander_depth_db(strategy):
+    """The polish expander's depth on music (`cathar_music_expander_depth_db`), None on speech (the shared depth)."""
+    return CATHAR_MUSIC_EXPANDER_DEPTH_DB if _is_music_material(strategy) else None
+
+
+def music_crt_notch_q(strategy):
+    """The CRT notch width on music (`cathar_music_crt_notch_q`), None on speech (the shared `crt_notch_q`)."""
+    return CATHAR_MUSIC_CRT_NOTCH_Q if _is_music_material(strategy) else None
+
+
+def _log_music_profile(strategy, settings):
+    switches = ", ".join(f"{name} {'on' if settings[key] else 'off'}" for name, key in _MUSIC_SWITCH_NAMES)
+    log_msg(
+        f"    [Cathar] Music profile: held partials {strategy['profile']['tonal_persistence']:.4f}; "
+        f"subtracting at {settings['alpha']:g}, {switches}."
+    )
+
+
+_MUSIC_SWITCH_NAMES = (("learned print", "noiseprint"), ("coherent", "coherent"), ("deplosive", "deplosive"), ("de-esser", "deesser"))
+
+
+def _material_settings(strategy):
+    """The stage settings this material takes: the music profile, or the speech defaults."""
+    if _is_music_material(strategy):
+        settings = _music_settings()
+        _log_music_profile(strategy, settings)
+        return settings
+    return {
+        "alpha": CATHAR_ALPHA,
+        "alpha_high": CATHAR_ALPHA_HIGH,
+        "noiseprint": CATHAR_ENABLE_NOISEPRINT,
+        "coherent": CATHAR_ENABLE_COHERENT,
+        "deplosive": CATHAR_ENABLE_DEPLOSIVE,
+        "deesser": CATHAR_ENABLE_DEESSER,
+    }
+
+
+def _music_settings():
+    return {
+        "alpha": CATHAR_MUSIC_ALPHA,
+        "alpha_high": CATHAR_MUSIC_ALPHA_HIGH,
+        "noiseprint": CATHAR_MUSIC_ENABLE_NOISEPRINT,
+        "coherent": CATHAR_MUSIC_ENABLE_COHERENT,
+        "deplosive": CATHAR_MUSIC_ENABLE_DEPLOSIVE,
+        "deesser": CATHAR_MUSIC_ENABLE_DEESSER,
+    }
+
+
+def _split_band_wanted():
+    """Whether the denoise runs once per band: a crossover is set and the method has a factor to split."""
+    return CATHAR_SPLIT_BAND_HZ > 0 and CATHAR_DENOISE_METHOD != "wiener"
+
+
+def _cathar_denoise_split(current, work_dir, settings, np_path, total_duration):
+    """The subtraction once per band (`modules/split_band.py`): `alpha` under the crossover, `alpha_high` above it.
+
+    The high pass renders into its own directory so its sidecar cache stays apart from the
+    low pass's; the two are recombined through a complementary linear-phase crossover.
+    """
+    from . import split_band
+
+    low = _cathar_denoise_step(
+        current, work_dir, alpha=settings["alpha"], coherent=settings["coherent"], noiseprint_path=np_path, total_duration=total_duration
+    )
+    high_dir = work_dir / "split_high"
+    high_dir.mkdir(parents=True, exist_ok=True)
+    high = _cathar_denoise_step(
+        current,
+        high_dir,
+        alpha=settings["alpha_high"],
+        coherent=settings["coherent"],
+        noiseprint_path=np_path,
+        total_duration=total_duration,
+    )
+    log_msg(f"    [Cathar] Split band at {CATHAR_SPLIT_BAND_HZ} Hz: alpha {settings['alpha']:g} below, {settings['alpha_high']:g} above.")
+    return split_band.recombine(low, high, work_dir / f"splitband_{CATHAR_SPLIT_BAND_HZ}_{current.name}", CATHAR_SPLIT_BAND_HZ)
+
+
 def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, strategy=None):
     """Orchestrates the full Cathar VHS audio restoration pipeline."""
     _require_cathar_binary()
     notch_freq = _resolve_notch_freq(strategy)
-    current = _cathar_precondition_pass(original_wav, work_dir, total_duration=total_duration)
+    settings = _material_settings(strategy)
+    current = _cathar_precondition_pass(original_wav, work_dir, total_duration=total_duration, deplosive=settings["deplosive"])
     current = _cathar_repair_pass(current, work_dir, notch_freq=notch_freq, total_duration=total_duration)
-    np_path = _cathar_noiseprint_step(current, work_dir) if CATHAR_ENABLE_NOISEPRINT else None
-    current = _cathar_denoise_step(current, work_dir, noiseprint_path=np_path, total_duration=total_duration)
-    return _cathar_polish_pass(current, work_dir, total_duration=total_duration)
+    np_path = None
+    if settings["noiseprint"]:
+        probe_s = _probe_duration_s(total_duration, current)
+        np_path = _cathar_noiseprint_step(current, work_dir, duration_s=probe_s, stitched=probe_s > NOISEPRINT_SHORT_S)
+    if _split_band_wanted():
+        current = _cathar_denoise_split(current, work_dir, settings, np_path, total_duration)
+    else:
+        current = _cathar_denoise_step(
+            current,
+            work_dir,
+            alpha=settings["alpha"],
+            coherent=settings["coherent"],
+            noiseprint_path=np_path,
+            total_duration=total_duration,
+        )
+    return _cathar_polish_pass(current, work_dir, total_duration=total_duration, deesser=settings["deesser"])

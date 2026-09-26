@@ -149,19 +149,26 @@ dtw_resolution: 25
 # Controls the complexity and engine of the restoration pipeline.
 #
 # enable_multipass (Multi-Pass Cascaded Pipeline Toggle):
-#   - When true (default), enables 4-pass restoration:
-#     Pass 1 (Dual-Resolution Scan) -> Pass 2 (Analog Pre-Conditioning DSP) ->
-#     Pass 3 (AI Neural Separation & Speech Reconstruction) -> Pass 4 (Residual Polish & DTW Sync).
-#   - Eliminates AI hallucination and phase smearing caused by tape clicks and hum.
+#   - Kept for compatibility and no longer read. It used to send 'auto' to the 4-pass
+#     'multipass_auto' engine on dialogue; that engine measured 0.11 dB of noise removed on
+#     real tape against 10.10 for 'auto_pure_linear', so 'auto' no longer runs it. Set
+#     process_mode to 'multipass_auto' to run the 4-pass engine explicitly.
 #
 # process_mode:
-#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned). (Default)
+#   - 'auto_pure_linear'   : Full-Mix Pure Speech & Ambient Denoising Engine (*_PureLinear_Cleaned).
 #                            Dual-resolution scan, analog pre-conditioning, gated physical repair, hum
 #                            cancellation, plosive control, noise-profile subtraction and UVR-DeNoise.
 #   - 'auto_pure'          : Multi-Step Pure Speech & Ambient Denoising Engine (*_Pure_Cleaned).
 #                            Denoises voice without generative AI vocoder synthesis while cleanly
 #                            conserving and denoising original music and ambient acoustics.
-#   - 'auto'               : AI Auto-Detection & Restoration Engine with Multi-Pass Scan.
+#   - 'auto'               : AI Auto-Detection & Restoration Engine (*_Auto_Cleaned). (Default) Profiles the
+#                            tape (speech, music, rhythm, tonality, noise floor, hum) and runs
+#                            'auto_pure_linear', which leads 'cathar' on every class measured on
+#                            real tape; runs 'cathar' on sustained tonal programme with no silence
+#                            for the noise probe to learn from, where cathar deviates less for
+#                            2-3 dB less removal ('auto_cathar_tonal', false keeps 'auto_pure_linear'
+#                            there), and when the neural denoiser is not installed; cathar only when
+#                            it is installed, and 'auto_ffmpeg_native' when neither engine is.
 #   - 'multipass_auto'     : Explicit 4-Pass Cascaded AI & DSP Restoration Engine (*_MultiPass_Cleaned).
 #   - 'multipass'          : Compatibility alias for 'multipass_auto'.
 #   - 'hybrid'             : Full AI separation + vocal enhance + background denoise.
@@ -179,8 +186,17 @@ dtw_resolution: 25
 #                            decrackle, declip, adaptive dehum, dewow, and phase-coherent denoise.
 #   - 'cathar_vhs'         : Compatibility alias for 'cathar'.
 # ------------------------------------------------------------------------------
-process_mode: "auto_pure_linear"
+process_mode: "auto"
 enable_multipass: true
+# Files restored at the same time when a folder or several files are given. cathar is
+# single-threaded and its stages run one after another (measured on a 134 s tape: the
+# SBR enhance stage 12 s of CPU for 12 s of wall, the same with RAYON_NUM_THREADS set),
+# so more cores only help through more files at once; each file runs in its own
+# interpreter with its own work directory and its output is bit-identical to a solo
+# run. 1 keeps the sequential batch. Neural modes load their models once per job
+# (about 6 GB of GPU memory each for auto_pure_linear): 8 suits cathar on a 32-core
+# machine; use 2-4 for the neural modes.
+batch_jobs: 8
 
 # ------------------------------------------------------------------------------
 # Native FFmpeg Filter Settings (for 'vhs_native' mode; 'ffmpeg_native' alias)
@@ -271,10 +287,48 @@ arnndn_enable_adeclick: true
 #   - Default: 'spectral'
 #
 # cathar_alpha:
-#   - Noise subtraction aggressiveness factor (suggested: 1.0 to 6.0, default: 2.5)
+#   - Noise subtraction aggressiveness factor (suggested: 1.0 to 6.0, default: 2.0)
 #   - Empirical tuning: reduced from 3.0 to 2.5 for more transparent restoration
 #     on cleaner tapes (NF < -50 dB); prevents musical noise artifacts without
 #     sacrificing effective hiss removal on noisier captures.
+#   - 2.0 (from 2.5) on the output-quality harness over 13 excerpts of five real
+#     tapes (docs/validation.md): SIGMOS colouration +0.125 against +0.062,
+#     discontinuity tail -0.34 against -0.42, Whisper CER 0.058 against 0.093,
+#     Audiobox PQ -0.11 against -0.35, 4-8 kHz on loud frames -2.5 dB against
+#     -3.0, for 1.6 dB less noise removed (11.4 against 13.1); chosen by ear on
+#     the same tapes. 3.5 and the Wiener filter lose every listener-side reading.
+#   - 1.0 (from 2.0) is the listener round's plateau (2026-09-25, cathar 0.7.6):
+#     the self-driving loop on the four full Tata tapes took 2.0 to 1.5 judging on
+#     the v1 harness, then to 1.0 judging on the listener readings (gap air, pause
+#     depth, sibilance), each move ahead on at least three of the four tapes. The
+#     same plateau set cathar_beta 0.02, cathar_repair_strength 2, the coherent
+#     path and the SBR enhance off on speech, cathar_noiseprint_duration_s 4.5 and
+#     cathar_deesser_threshold 12 (listed beside each key below). The plateau is
+#     the harness's; the listening round on
+#     D:\Tata\New folder\variants\v2 is what confirms or overrides it.
+#
+# cathar_music_profile / cathar_music_persistence_min / cathar_music_alpha /
+# cathar_music_enable_noiseprint / cathar_music_enable_coherent /
+# cathar_music_enable_deplosive / cathar_music_enable_deesser /
+# cathar_music_expander_depth_db / cathar_music_crt_notch_q:
+#   - The settings a music tape gets instead of cathar_alpha, cathar_enable_noiseprint,
+#     cathar_enable_coherent, cathar_enable_deplosive, cathar_enable_deesser,
+#     expander_depth_db and crt_notch_q. The speech settings shave
+#     music: a print learned from music is programme, and subtracting it at the speech
+#     factor takes 8-16 kHz down 14 dB and removes no noise. The self-driving loop on
+#     11 Internet Archive music clips and the first minute of Gaudeamus settled, over
+#     five rounds, on subtraction at 0.5 with no learned print, the coherent path off
+#     and the deplosive off: 22 hard-gate failures against 28 at the speech settings,
+#     ahead on 6-10 of 12 clips in every accepted round (docs/validation.md).
+#   - The listener round (2026-09-25, four rounds on the same 12 clips, hard-gate
+#     failures 31 -> 27) then switched the de-esser off and the coherent path on,
+#     narrowed the CRT notch to Q 60 and set the polish expander to 4 dB on music,
+#     each accepted on 8-9 of 12 clips.
+#   - A tape is music when the scanner's tonal persistence (the median share of held
+#     spectral peaks over 15 s windows; the band ratios read every music clip as
+#     dialogue) is at least cathar_music_persistence_min: music clips read 0.064-0.225,
+#     speech over a music bed 0.007-0.033, dry dialogue under 0.003, so 0.05 sits in
+#     the gap. cathar_music_profile false gives every tape the speech settings.
 #
 # cathar_beta:
 #   - Spectral floor to prevent musical noise artifacts (suggested: 0.005 to 0.05, default: 0.01)
@@ -326,15 +380,31 @@ arnndn_enable_adeclick: true
 #   - cathar_inpaint_max_gap_ms is milliseconds; iterations is a positive count.
 #   - cathar_declip_threshold is normalized peak amplitude from 0.0 to 1.0.
 #   - cathar_enhance_method accepts 'replicate' or 'interpolate'.
-#   - cathar_noiseprint_duration_s is seconds; dehum_harmonics is a positive count.
+#   - cathar_noiseprint_duration_s is the total quiet tape, in seconds, the noise print is
+#     learned from on a tape of 120 s or more (twenty times the print): stitched from that many 0.75 s pauses spread
+#     over the quietest fifth of the tape, because a single long window on dialogue
+#     carries speech and the print then strips sibilance (measured: one 4 s window took
+#     6 dB more off speech at 8-12 kHz than a 0.75 s one). Eight stitched pauses (6 s)
+#     removed 6.7 dB of noise on a 134 s dialogue tape against 3.4 dB for the single
+#     0.75 s window, at the same speech highs and with 5-6 dB less hiss in the pauses.
+#     Material under twenty times the print (120 s at 6 s) keeps the single 0.75 s
+#     window, so a 15 s clip is unchanged.
+#     dehum_harmonics is a positive count.
 #   - cathar_deplosive_strength, cathar_deesser_bands, and cathar_repair_strength
 #     are positive stage-strength/count settings; cathar_deesser_freq is Hz and
-#     cathar_deesser_threshold is dB; cathar_dereverb_strength is a positive gain.
+#     cathar_dereverb_strength is a positive gain.
+#   - cathar_deesser_threshold is dB and its meaning depends on cathar_deesser_bands:
+#     with bands > 1 (default 3) it is dB ABOVE each band's running average (6 is
+#     cathar's suggested value; 12, the listener round's plateau on speech, only
+#     catches the loud 's'); with bands = 1 it is the HF/broadband ratio, where
+#     cathar's default is -24. A negative value with bands > 1 keeps the de-esser
+#     engaged on every frame and removes everything above cathar_deesser_freq
+#     (measured -28 dB from 4-12 kHz on real tape: muffled, "underwater" speech).
 # ------------------------------------------------------------------------------
 cathar_denoise_method: "spectral"
-cathar_alpha: 2.5
-cathar_beta: 0.01
-cathar_enable_coherent: true
+cathar_alpha: 1.0
+cathar_beta: 0.02
+cathar_enable_coherent: false
 cathar_enable_dewind: true
 cathar_dewind_cutoff: 80
 cathar_enable_azimuth: true
@@ -351,22 +421,31 @@ cathar_enable_declip: true
 cathar_declip_threshold: 0.95
 cathar_enable_dehum: true
 cathar_enable_repair: true
-cathar_repair_strength: 4
+cathar_repair_strength: 2
 cathar_enable_dewow: false
-cathar_enable_enhance: true
+cathar_enable_enhance: false
 cathar_enhance_method: "replicate"
 cathar_enable_noiseprint: true
-cathar_noiseprint_duration_s: 0.75
+cathar_noiseprint_duration_s: 4.5
 cathar_dehum_adaptive: true
 cathar_dehum_harmonics: 8
 cathar_enable_mono_below: true
 cathar_mono_below_hz: 100
 cathar_enable_deplosive: true
 cathar_deplosive_strength: 4
+cathar_music_profile: true
+cathar_music_persistence_min: 0.05
+cathar_music_alpha: 0.5
+cathar_music_enable_noiseprint: false
+cathar_music_enable_coherent: true
+cathar_music_enable_deplosive: false
+cathar_music_enable_deesser: false
+cathar_music_expander_depth_db: 4.0
+cathar_music_crt_notch_q: 60.0
 cathar_enable_deesser: true
 cathar_deesser_bands: 3
 cathar_deesser_freq: 4000
-cathar_deesser_threshold: -24
+cathar_deesser_threshold: 12
 cathar_enable_dereverb: false
 cathar_dereverb_wpe: true
 cathar_dereverb_strength: 2.0
@@ -390,6 +469,33 @@ cathar_dereverb_strength: 2.0
 #   - true:  Applies calibrated high-frequency presence air curve (+2.0 dB @ 7.5 kHz) to linear tracks (Default).
 #   - false: Disabled.
 #
+# expander_depth_db / expander_knee_offset_db:
+#   - The expander's depth under its knee and the knee's offset above the scanner's
+#     noise floor (7 dB / +4 dB were the curve v1.3.2 shipped). This is the stage that
+#     turned a denoised pause into dead air on the auto_pure_linear outputs ("silent
+#     in pauses"); the tuning loop searches both. The listener round put the knee
+#     8 dB over the floor for every engine and material and kept 7 dB of depth for
+#     cathar on speech; auto_pure_linear takes 12 dB (apl_expander_depth_db, in
+#     modules/config.py) and cathar on music 4 dB (cathar_music_expander_depth_db).
+#
+# enable_pause_floor / pause_floor_fill_db / pause_floor_quiet_percentile:
+#   - The pause floor keeper: in the frames the source calls quiet (at or under its
+#     quiet percentile level), an attenuated copy of the source is put back under the
+#     restored audio so a pause keeps its own, quieter texture, pause_floor_fill_db
+#     under the source's pause level. On since the listener round: all four loops
+#     accepted it at 12 dB and none moved it (8 and 18 dB lost every round).
+#
+# loudnorm_target_lra:
+#   - The mux's EBU R128 loudness-range target. ffmpeg's loudnorm holds its linear
+#     mode only while the measured range is at or under it; a denoised interview with
+#     silent pauses measures well above the broadcast 11 LU and the mux then rides the
+#     gain between words. The run log states the measured range and the mode. 20 is
+#     the listener round's plateau, accepted by all four loops.
+#
+# crt_notch_q:
+#   - Q of the CRT line-whistle notch in the pre-conditioning graph (30 is the shipped
+#     width; cathar's music profile narrows it to cathar_music_crt_notch_q).
+#
 # preserve_original_audio_track:
 #   - true:  Preserves original untouched audio as Stream 2 alongside restored audio in container.
 #   - false: Output container contains restored clean audio track only (Default).
@@ -397,6 +503,13 @@ cathar_dereverb_strength: 2.0
 enable_deesser: true
 enable_loudnorm: true
 enable_dynamic_expander: true
+expander_depth_db: 7.0
+expander_knee_offset_db: 8.0
+enable_pause_floor: true
+pause_floor_fill_db: 12.0
+pause_floor_quiet_percentile: 15.0
+loudnorm_target_lra: 20.0
+crt_notch_q: 30.0
 enable_linear_air: true
 linear_air_gain_db: 2.0
 preserve_original_audio_track: false

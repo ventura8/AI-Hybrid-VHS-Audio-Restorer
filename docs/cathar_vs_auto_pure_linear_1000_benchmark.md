@@ -371,14 +371,100 @@ than forced.
   candidates were out of scope, and the two masking candidates measured lost to
   UVR-DeNoise.
 
+### What `auto` runs
+
+`auto` profiles the tape, names the material -- sustained rhythmic music,
+dialogue, non-vocal music or ambience, tape noise -- and runs one engine for
+it. Until v1.3.2 it ran the four-pass stem-separation engine on dialogue,
+`denoise_only` on music and `auto_ffmpeg_native` on tape noise, and never the
+two modes this document is about. Measured on the same 136 clips with the same
+metric, at v1.3.2, every engine `auto` could dispatch reads as follows; the
+classes are the scanner's own, read on the same clips.
+
+| Class | APL | cathar | multipass | denoise_only | auto FFmpeg |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| Speech, 90 | **10.10/0.29** | 6.16/0.31 | -0.25/0.14 | 0.33/0.13 | 0.76/0.06 |
+| Music, 45 | **11.63/0.36** | 5.89/0.66 | 0.27/0.13 | 0.73/0.23 | 0.62/0.09 |
+| All, 136 | **10.10/0.31** | 6.02/0.44 | 0.11/0.14 | 0.35/0.16 | 0.72/0.06 |
+
+Speech is the dialogue class and Music the rhythmic-music class; APL is
+`auto_pure_linear`, multipass is `multipass_auto` and auto FFmpeg is
+`auto_ffmpeg_native`. Counted clip by clip against `auto_pure_linear`, wins
+on both halves first and losses on both second:
+
+| Class | cathar | multipass | denoise_only | auto FFmpeg |
+| :--- | ---: | ---: | ---: | ---: |
+| Speech, 90 | 7 / 42 | 2 / 19 | 4 / 16 | 3 / 10 |
+| Music, 45 | 1 / 28 | 1 / 9 | 1 / 12 | 1 / 5 |
+| All, 136 | 8 / 70 | 3 / 28 | 5 / 28 | 4 / 15 |
+
+The three engines `auto` used to run leave the noise on the tape: the stem
+engine's generative enhancer adds level to the quiet frames of dialogue,
+and the neural denoiser on its own, without the subtraction and the repair
+stages around it, takes a third of a decibel. `cathar` removes it, and is
+beaten on both halves by `auto_pure_linear` on every class.
+
+### What separates `cathar` from `auto_pure_linear`
+
+The corpus clips are fifteen seconds long, the worst case for a noise probe,
+so the question was put to longer material too: 81 readable sixty-second
+excerpts cut at four points of each of 21 local captures (home, television
+and event recordings, PAL, 2 to 184 minutes long). `auto_pure_linear` leads
+there as well, and more clearly -- 10.12/0.07 against `cathar`'s 6.27/0.11,
+winning both halves on 44 excerpts against 4 -- because with a minute of
+tape the quietest 4 s is far likelier to be noise.
+
+Some thirty readings of the source were then scored against the per-clip
+outcome on both sets (`experiments/auto_engines_v140/separate.py`): the
+scanner's own (speech, music, ambience, rhythm, flatness, noise floor, hum,
+clicks, clipping, azimuth, line standard), the metric's (quiet-to-loud
+spread, crest), and readings built around the engines' mechanism -- the
+level of the quietest 4 s and 0.75 s (each engine's probe), the flatness of
+each, how far the 4 s window sits above the quietest fifth of the frames,
+and how closely its speech-band spectrum follows the loud frames'. No
+reading routes `cathar` to a class it wins on both halves: a leave-one-out
+search for one routes 16 clips and loses 9 of them, and the eight corpus
+wins and four local wins are spread over every reading. The direction the
+two sets agree on is the mechanism. `auto_pure_linear` learns its profile
+from the quietest 4 s and subtracts at a factor tuned for speech; `cathar`
+learns from the quietest 0.75 s at a gentler one (on a tape of 80 s or more
+`cathar` stitches eight such pauses; the 15 s clips and 60 s excerpts
+measured here stay on one, so the routing below rests on that window).
+Where the quietest 4 s is
+shaped like the programme (correlation of the speech-band spectra 0.9 or
+more), the material is tonal (flatness under 0.04) and there is no
+sustained beat, `cathar` deviates less on 10 of 14 corpus clips (0.21 dB
+against 0.54) and 9 of 15 local excerpts (0.15 against 0.19), each time for
+2-3 dB less noise removed, with wins on both halves a wash (4 against 4, 2
+against 4). Under every other reading `cathar` is behind on both.
+
+So from v1.3.3 `auto` runs `auto_pure_linear` on every class, hands that one
+condition to `cathar` as a fidelity preference (`auto_cathar_tonal`;
+`auto_cathar_flatness_max`, `auto_cathar_probe_similarity`), and runs `cathar`
+when the neural denoiser is not installed (when cathar is installed; with
+neither engine available the `auto_ffmpeg_native` chain is the last resort), the
+one case where the deterministic engine is the best that can run; the rule and
+these numbers sit together in `modules/auto_scanner.py`. Routed that way the
+corpus reads 9.74/0.27 against 10.10/0.31 for `auto_pure_linear` throughout, and
+the local excerpts 10.00/0.07 against 10.12/0.07. The local set is not published
+with this repository; its catalogue and measurements are kept under
+`experiments/local_corpus/` and `experiments/auto_engines_v140/`.
+
 ______________________________________________________________________
 
 ## 7. Which mode to use
 
 - **General restoration, and any capture with tape hiss, mains hum, rumble
-  or plosive-heavy dialogue** -> `auto_pure_linear`, the default from v1.3.0.
+  or plosive-heavy dialogue** -> `auto_pure_linear`, the default from v1.3.0
+  to v1.3.2 and what `auto`, the default from v1.3.3, runs on it.
   It leads on every row measured on real tape and repairs the same physical
   damage `cathar` does, gated on the defect being there.
+- **A machine without the neural stack, or a folder of mixed tapes** -> `auto`,
+  which runs `auto_pure_linear` wherever the neural denoiser is installed,
+  `cathar` on sustained tonal programme with no silence for the probe and where
+  the neural denoiser is not installed (when cathar is installed; with neither
+  engine available the `auto_ffmpeg_native` chain is the last resort), and
+  prints the profile and the evidence it decided on for each tape.
 - **Crackle, dropouts, clipping or azimuth skew** -> either. Both repair
   these; `auto_pure_linear` runs the stages only where the defect is
   detected, where `cathar` applies its cascade throughout.
@@ -392,7 +478,7 @@ ______________________________________________________________________
   48 hum tapes do, and no narrow tracker follows them.
 - **CRT line whistle** -> either; both remove it completely.
 
-`auto_pure_linear` is the default from this release. Changing a released
+`auto` is the default from this release. Changing a released
 default is a decision for a release, not a benchmark, and this one was taken
 on the table above: every row measured on real tape, with `cathar` unchanged
 and one line of `config.yaml` away.
@@ -411,7 +497,9 @@ ______________________________________________________________________
   ```
 
 - **Benchmark** measures both modes on the trade metric and keeps the restored
-  outputs for the readings that follow:
+  outputs for the readings that follow (the other engines in "What `auto`
+  runs" were measured the same way with `--modes multipass_auto`,
+  `denoise_only` and `auto_ffmpeg_native`):
 
   ```bash
   poetry run python scripts/measure_tradeoff.py \

@@ -181,22 +181,6 @@ def test_relative_deviation_guards(observed, expected):
     assert modules.auto_scanner._relative_deviation(observed) == pytest.approx(expected)
 
 
-@pytest.mark.parametrize(
-    "speech,music,ambient,nf,expected_mode",
-    [
-        (0.5, 0.4, 0.2, -45.0, "hybrid"),
-        (0.6, 0.05, 0.05, -60.0, "hybrid"),
-        (0.6, 0.05, 0.05, -35.0, "hybrid"),
-        (0.05, 0.5, 0.1, -45.0, "denoise_only"),
-        (0.05, 0.05, 0.05, -30.0, "auto_ffmpeg_native"),
-    ],
-)
-def test_select_strategy_mode_rules(speech, music, ambient, nf, expected_mode):
-    """Verify decision rules for every mode _select_strategy_mode can return."""
-    mode, _ = modules.auto_scanner._select_strategy_mode(speech, music, ambient, nf)
-    assert mode == expected_mode
-
-
 def test_evaluate_restoration_strategy():
     """Verify parameter auto-tuning and strategy payload generation."""
     profile = {
@@ -206,8 +190,9 @@ def test_evaluate_restoration_strategy():
         "noise_floor_db": -40.0,
         "has_drift": True,
     }
-    strategy = modules.auto_scanner.evaluate_restoration_strategy(profile)
-    assert strategy["mode"] == "hybrid"
+    with patch("modules.auto_scanner._neural_denoiser_available", return_value=True):
+        strategy = modules.auto_scanner.evaluate_restoration_strategy(profile)
+    assert strategy["mode"] == "auto_pure_linear"
     assert strategy["sync_method"] == "dtw"
     assert strategy["enhance_nfe"] <= 128
     assert "profile" in strategy
@@ -224,8 +209,9 @@ def test_scan_and_decide_restoration_strategy(tmp_path):
     sf.write(str(wav_file), audio, sr)
 
     strategy = modules.auto_scanner.scan_and_decide_restoration_strategy(wav_file)
-    assert strategy["mode"] in ("hybrid", "arnndn_speech", "denoise_only", "auto_ffmpeg_native")
+    assert strategy["mode"] in ("auto_pure_linear", "cathar", "auto_ffmpeg_native")
     assert strategy["enhance_nfe"] <= 128
+    assert strategy["profile"]["tonality"] is not None
 
 
 def test_scan_and_decide_fallback_on_read_failure(tmp_path):
@@ -233,9 +219,13 @@ def test_scan_and_decide_fallback_on_read_failure(tmp_path):
     wav_file = tmp_path / "corrupt.wav"
     wav_file.write_text("not-a-wav-file")
 
-    with patch("modules.auto_scanner._read_stereo_audio_for_analysis", return_value=(None, None)):
+    with (
+        patch("modules.auto_scanner._read_stereo_audio_for_analysis", return_value=(None, None)),
+        patch("modules.auto_scanner._neural_denoiser_available", return_value=True),
+    ):
         strategy = modules.auto_scanner.scan_and_decide_restoration_strategy(wav_file)
-        assert strategy["mode"] == "hybrid"
+    assert strategy["mode"] == "auto_pure_linear"
+    assert strategy["reason"].startswith("Audio could not be profiled")
 
 
 def test_pick_optimal_denoise_model():
@@ -361,23 +351,40 @@ def test_onset_periodicity_of_silence_is_zero():
 
 
 @pytest.mark.parametrize(
-    ("periodicity", "expected_mode"),
+    ("periodicity", "expected_material"),
     [
         # Rhythm is checked before the dialogue gate: sung vocals trip every
-        # speech test, so a music video would otherwise always reach 'hybrid'.
-        (0.60, "denoise_only"),
-        (0.45, "denoise_only"),
-        (0.44, "hybrid"),
-        (0.10, "hybrid"),
+        # speech test, so a music video would otherwise always read as dialogue.
+        (0.60, "rhythmic music"),
+        (0.45, "rhythmic music"),
+        (0.44, "dialogue"),
+        (0.10, "dialogue"),
     ],
 )
-def test_rhythmic_music_routes_away_from_stem_separation(periodicity, expected_mode):
-    """Speech-dominant input still reaches 'hybrid' unless a real beat is present."""
-    mode, _ = modules.auto_scanner._select_strategy_mode(1.0, 0.02, 0.04, -45.0, True, periodicity)
-    assert mode == expected_mode
+def test_rhythmic_music_is_read_before_the_dialogue_gate(periodicity, expected_material):
+    """Speech-dominant input reads as dialogue unless a real beat is present."""
+    with patch("modules.auto_scanner._neural_denoiser_available", return_value=True):
+        _mode, reason = modules.auto_scanner._select_strategy_mode(1.0, 0.02, 0.04, -45.0, True, periodicity)
+    assert modules.auto_scanner.ENGINE_EVIDENCE[expected_material] in reason
 
 
 def test_strategy_passes_measured_periodicity_into_mode_selection():
     """The profile value must actually reach the decision, not a default."""
     profile = {"speech_ratio": 1.0, "music_ratio": 0.02, "ambient_ratio": 0.04, "onset_periodicity": 0.7}
-    assert modules.auto_scanner.evaluate_restoration_strategy(profile)["mode"] == "denoise_only"
+    with patch("modules.auto_scanner._neural_denoiser_available", return_value=True):
+        reason = modules.auto_scanner.evaluate_restoration_strategy(profile)["reason"]
+    assert reason.startswith("Sustained rhythmic music")
+
+
+def test_tonality_is_the_chain_measure_and_needs_a_frame():
+    """The profile's flatness is the number the chain gates on; short input reads as unmeasured."""
+    sr = 44100
+    t = np.arange(sr * 2, dtype=np.float32) / float(sr)
+    tone = (0.5 * np.sin(2.0 * np.pi * 440.0 * t)).astype(np.float32)
+    noise = np.random.default_rng(1).normal(0, 0.3, sr * 2).astype(np.float32)
+    tonal = modules.auto_scanner._estimate_tonality(tone, sr)
+    broadband = modules.auto_scanner._estimate_tonality(noise, sr)
+    assert tonal is not None
+    assert broadband is not None
+    assert tonal < modules.auto_scanner.APL_TONAL_FLATNESS_MAX < broadband
+    assert modules.auto_scanner._estimate_tonality(tone[:4096], sr) is None

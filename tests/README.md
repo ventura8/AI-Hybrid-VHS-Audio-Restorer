@@ -3,6 +3,9 @@
 - tests/unit: fast unit-level tests for modules and helpers.
 - tests/integration: broader flow and entry-point behavior tests.
 - tests/tooling: validation/reporting helpers used by local pipeline and CI.
+- tests/quality: opt-in checks that load the output-quality models; collected
+  only with `AI_RESTORE_QUALITY_MODELS=1` (weights from
+  `scripts/download_quality_models.py`).
 
 Tooling scripts:
 

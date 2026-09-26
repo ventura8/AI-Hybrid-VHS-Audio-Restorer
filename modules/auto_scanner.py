@@ -5,6 +5,11 @@ textures (birds, cars, ambient soundscapes), musical harmonics, and analog
 tape defects to automatically deploy the optimal restoration pipeline.
 """
 
+import importlib.util
+import os
+import shutil
+from pathlib import Path
+
 try:
     import numpy as np
 except ImportError:
@@ -16,6 +21,11 @@ except ImportError:
     sf = None
 
 from .config import (
+    APL_NOISEPRINT_DURATION_S,
+    APL_TONAL_FLATNESS_MAX,
+    AUTO_CATHAR_FLATNESS_MAX,
+    AUTO_CATHAR_PROBE_SIMILARITY,
+    AUTO_CATHAR_TONAL,
     BACKGROUND_MIX_VOL,
     ENHANCE_NFE,
     ENHANCE_TAU,
@@ -36,7 +46,7 @@ from .filters import (
     _estimate_noise_floor_and_reduction,
     _read_stereo_audio_for_analysis,
 )
-from .utils import log_msg
+from .utils import CATHAR_BIN, log_msg
 
 # Upper bound on sliding temporal windows, mirroring the flutter detector cap.
 MAX_TEMPORAL_WINDOWS = 60
@@ -124,6 +134,80 @@ def _estimate_ambient_texture_ratio(mono_signal, sr):
 
     fft_power, freqs = _compute_chunk_spectrum(mono_signal, sr)
     return _ambient_ratio_from_spectrum(fft_power, freqs)
+
+
+def _estimate_tonality(mono_signal, sr):
+    """Median spectral flatness in 100-5000 Hz, or None when the signal is too short to frame.
+
+    The same measure the restoration chain gates its subtraction factor on, so the scanner
+    reports the number the engines will act on rather than a second opinion of it.
+    """
+    try:
+        from .spectral_denoise import TONALITY_FRAME, tonality_of_signal
+    except ImportError:  # pragma: no cover - scipy is a hard dependency of the chain
+        return None
+    if len(mono_signal) < TONALITY_FRAME * 2:
+        return None
+    return round(tonality_of_signal(mono_signal, sr), 4)
+
+
+# The trade metric's frame and percentiles: the quietest fifth of the frames is where a
+# noise probe is learned, the loudest three tenths is the programme.
+PROBE_FRAME = 1024
+PROBE_LOUD_PERCENTILE = 70.0
+PROBE_BAND_HZ = (300.0, 3400.0)
+
+
+def _estimate_tonal_persistence(mono_signal, sr):
+    """Median tonal persistence over the analysed material's 15 s windows: music holds its partials.
+
+    The band ratios read every archive music clip as dialogue (speech ratio 1.0); this is
+    the reading cathar's music profile keys on (`modules/tonal_persistence.py`).
+    """
+    from .tonal_persistence import median_persistence
+
+    return round(median_persistence(mono_signal, sr), 4)
+
+
+def _probe_programme_similarity(mono_signal, sr):
+    """How much auto_pure_linear's noise probe resembles the programme, as a correlation.
+
+    The chain learns its noise profile from the quietest 4 s and subtracts it at a factor
+    tuned for speech. On a tape with true silence that window is noise and the correlation
+    is low; on sustained music with no pauses it is programme, the speech-band shape of the
+    probe follows the loud frames', and the subtraction takes programme with the noise.
+    None when the recording is too short to hold the probe and a loud stretch beside it.
+    """
+    from .cathar import _evaluate_quiet_probes
+
+    probe_len = int(APL_NOISEPRINT_DURATION_S * sr)
+    frames = len(mono_signal) // PROBE_FRAME
+    if frames < 8 or len(mono_signal) <= probe_len * 2:
+        return None
+    start = _evaluate_quiet_probes(mono_signal, probe_len)
+    end = start + probe_len
+    loud_shape = _speech_band_shape(_loudest_frames(mono_signal, frames), sr)
+    probe_shape = _speech_band_shape(mono_signal[start:end], sr)
+    if not (np.any(loud_shape) and np.any(probe_shape)):
+        return None
+    return round(float(np.corrcoef(loud_shape, probe_shape)[0, 1]), 3)
+
+
+def _loudest_frames(mono_signal, frames):
+    """The frames at or above the loud percentile, joined: the programme the metric reads."""
+    blocks = mono_signal[: frames * PROBE_FRAME].reshape(frames, PROBE_FRAME)
+    levels = 20.0 * np.log10(np.sqrt(np.mean(blocks**2, axis=1)) + 1e-9)
+    return blocks[levels >= np.percentile(levels, PROBE_LOUD_PERCENTILE)].reshape(-1)
+
+
+def _speech_band_shape(segment, sr):
+    """The segment's speech-band log spectrum with its mean removed."""
+    import scipy.signal
+
+    freqs, psd = scipy.signal.welch(segment, sr, nperseg=4096)
+    band = (freqs >= PROBE_BAND_HZ[0]) & (freqs <= PROBE_BAND_HZ[1])
+    spectrum = 10.0 * np.log10(psd[band] + 1e-20)
+    return spectrum - spectrum.mean()
 
 
 def _refine_peak_bin(spectrum, peak_idx):
@@ -340,9 +424,10 @@ def _scan_temporal_scene_windows(mono_signal, sr, window_sec=5.0, hop_sec=2.5):
 
 def _build_default_strategy():
     """Builds fallback restoration strategy when analysis cannot be performed."""
+    mode, reason = _select_strategy_mode(0.5, 0.3, 0.2, -45.0)
     return {
-        "mode": "hybrid",
-        "reason": "Default multi-source hybrid restoration.",
+        "mode": mode,
+        "reason": f"Audio could not be profiled; {reason}",
         "vocals_model": "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
         "denoise_model": "UVR-DeNoise-Lite.pth",
         "arnndn_model": "cb.rnnn",
@@ -378,21 +463,108 @@ def _is_rhythmic_music(onset_periodicity):
     return onset_periodicity >= MUSIC_PERIODICITY_THRESHOLD
 
 
-def _select_strategy_mode(speech_ratio, music_ratio, ambient_ratio, nf_db, has_dialogue=False, onset_periodicity=0.0):
-    """Categorizes acoustic profile into optimal restoration engine mode."""
-    del nf_db
+# Every engine `auto` could dispatch, measured on the 136 readable clips of the real-tape
+# corpus with scripts/measure_tradeoff.py: median noise removed / programme deviation in
+# dB, then how many clips the engine wins on both halves against auto_pure_linear and how
+# many it loses on both. The classes are the scanner's own, read on the same clips.
+#
+#   class            auto_pure_linear  cathar           multipass_auto   denoise_only     auto_ffmpeg_native
+#   dialogue (90)    10.10/0.29        6.16/0.31  7/42  -0.25/0.14 2/19  0.33/0.13  4/16  0.76/0.06  3/10
+#   rhythmic (45)    11.63/0.36        5.89/0.66  1/28   0.27/0.13 1/9   0.73/0.23  1/12  0.62/0.09  1/5
+#   all (136)        10.10/0.31        6.02/0.44  8/70   0.11/0.14 3/28  0.35/0.16  5/28  0.72/0.06  4/15
+#
+# The three engines the scanner used to run -- the stem engine on dialogue, denoise_only on
+# music, auto_ffmpeg_native on tape noise -- leave the noise on the tape. cathar removes it,
+# and is beaten on both halves by auto_pure_linear on every class, on 81 sixty-second
+# excerpts of 21 local tapes as on the corpus (10.12/0.07 against 6.27/0.11; 44 clips to 4).
+#
+# What separates the two is the noise probe. auto_pure_linear learns its profile from the
+# quietest 4 s and subtracts at a factor tuned for speech, then runs a neural stage; cathar
+# learns from the quietest 0.75 s at a gentler factor. Where the tape has true silence the
+# 4 s window is noise and auto_pure_linear is ahead on both halves. Where sustained tonal
+# programme never pauses, the window is programme, and the subtraction shaves it. Of some
+# thirty readings tried on both corpora (experiments/auto_engines_v140/separate.py), that
+# one -- tonal, the quietest 4 s shaped like the loud frames, no sustained beat -- is the
+# only condition under which cathar deviates less on most clips: 10 of 14 on the corpus
+# (0.21 dB against 0.54) and 9 of 15 locally (0.15 against 0.19), each time for 2-3 dB
+# less noise removed, and wins-both a wash (4/4 and 2/4). No reading hands cathar a class
+# it wins outright; a leave-one-out search for one routes 16 clips and loses 9 of them.
+# So auto_pure_linear runs everywhere, cathar takes that tonal condition as a fidelity
+# preference (auto_cathar_tonal), and cathar runs wherever the neural denoiser cannot: it
+# is the one full-chain engine that needs no model.
+ENGINE_EVIDENCE = {
+    "rhythmic music": "11.63/0.36 dB against cathar 5.89/0.66 on 45 rhythmic clips",
+    "dialogue": "10.10/0.29 dB against cathar 6.16/0.31 on 90 dialogue clips",
+    "music or ambience": "10.10/0.31 dB against cathar 6.02/0.44 over 136 clips",
+    "tape noise": "10.10/0.31 dB against cathar 6.02/0.44 over 136 clips",
+}
+TONAL_PROBE_EVIDENCE = "cathar deviates less on 10 of 14 such corpus clips and 9 of 15 local, for 2-3 dB less removal"
+# No sustained beat: rhythmic music reads its transients as pauses the probe can use.
+TONAL_PERIODICITY_MAX = 0.3
+NEURAL_ENGINE = "auto_pure_linear"
+DETERMINISTIC_ENGINE = "cathar"
+LAST_RESORT_ENGINE = "auto_ffmpeg_native"
+
+
+def _classify_material(speech_ratio, music_ratio, ambient_ratio, has_dialogue, onset_periodicity):
+    """Names what the tape carries: the class the engine choice is reasoned about."""
     # Checked before the dialogue gate: sung vocals trip every speech test, so a
-    # music video would otherwise always be routed to stem separation.
+    # music video would otherwise always be read as dialogue.
     if _is_rhythmic_music(onset_periodicity):
-        return "denoise_only", "Sustained rhythmic music; preserving instruments without stem separation."
-
+        return "rhythmic music", "Sustained rhythmic music"
     if _is_dialogue_present(speech_ratio, has_dialogue):
-        return "hybrid", "Dialogue / speech detected with background acoustics."
-
+        return "dialogue", "Dialogue / speech over background acoustics"
     if _is_pure_music_or_ambience(speech_ratio, music_ratio, ambient_ratio):
-        return "denoise_only", "Non-vocal music / environmental ambience (preserves instruments & textures)."
+        return "music or ambience", "Non-vocal music / environmental ambience"
+    return "tape noise", "Analog tape noise dominant with no dialogue"
 
-    return "auto_ffmpeg_native", "Analog tape noise dominant with no dialogue detected."
+
+def _neural_denoiser_available():
+    """Whether the UVR denoiser can run at all: audio-separator is installed."""
+    return importlib.util.find_spec("audio_separator") is not None
+
+
+def _cathar_available():
+    """Whether the cathar binary resolves to a runnable executable.
+
+    A name on PATH resolves through `shutil.which`; a direct path must be a file and, off
+    Windows, executable. A directory or an empty setting reads as not installed, so `auto`
+    falls back rather than dispatching to a chain that cannot start.
+    """
+    if not CATHAR_BIN:
+        return False
+    if shutil.which(CATHAR_BIN) is not None:
+        return True
+    binary = Path(CATHAR_BIN)
+    return binary.is_file() and (os.name == "nt" or os.access(binary, os.X_OK))
+
+
+def _probe_carries_programme(tonality, probe_similarity, onset_periodicity):
+    """Whether the tape is sustained tonal programme with no silence for the 4 s probe."""
+    if not AUTO_CATHAR_TONAL or None in (tonality, probe_similarity):
+        return False
+    tonal = tonality < AUTO_CATHAR_FLATNESS_MAX
+    probe_is_programme = probe_similarity >= AUTO_CATHAR_PROBE_SIMILARITY
+    return tonal and probe_is_programme and onset_periodicity < TONAL_PERIODICITY_MAX
+
+
+def _select_strategy_mode(
+    speech_ratio, music_ratio, ambient_ratio, nf_db, has_dialogue=False, onset_periodicity=0.0, tonality=None, probe_similarity=None
+):
+    """Picks the engine for the material, and says which evidence the pick rests on."""
+    del nf_db
+    material, description = _classify_material(speech_ratio, music_ratio, ambient_ratio, has_dialogue, onset_periodicity)
+    cathar = _cathar_available()
+    if _neural_denoiser_available():
+        if cathar and _probe_carries_programme(tonality, probe_similarity, onset_periodicity):
+            return DETERMINISTIC_ENGINE, (
+                f"{description}, sustained tonal programme with no silence for the noise probe "
+                f"(flatness {tonality:.4f}, probe similarity {probe_similarity:.2f}); {TONAL_PROBE_EVIDENCE}"
+            )
+        return NEURAL_ENGINE, f"{description}; {NEURAL_ENGINE} leads {DETERMINISTIC_ENGINE}, {ENGINE_EVIDENCE[material]}"
+    if cathar:
+        return DETERMINISTIC_ENGINE, f"{description}; the neural denoiser is not installed, so the deterministic engine runs"
+    return LAST_RESORT_ENGINE, f"{description}; neither the neural denoiser nor {DETERMINISTIC_ENGINE} is installed"
 
 
 def _tune_adaptive_enhance_tau(nf_db):
@@ -414,7 +586,9 @@ def evaluate_restoration_strategy(profile):
     has_dialogue = profile.get("temporal_profile", {}).get("has_dialogue", speech >= 0.20)
     periodicity = profile.get("onset_periodicity", 0.0)
 
-    mode, reason = _select_strategy_mode(speech, music, ambient, nf_db, has_dialogue, periodicity)
+    mode, reason = _select_strategy_mode(
+        speech, music, ambient, nf_db, has_dialogue, periodicity, profile.get("tonality"), profile.get("probe_similarity")
+    )
     sync = "dtw" if profile.get("has_drift", False) else "shift"
     tau = _tune_adaptive_enhance_tau(nf_db)
 
@@ -451,6 +625,9 @@ def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
     music_ratio = _estimate_music_harmonic_ratio(mono_signal, sr)
     ambient_ratio = _estimate_ambient_texture_ratio(mono_signal, sr)
     onset_periodicity = _estimate_onset_periodicity(mono_signal, sr)
+    tonality = _estimate_tonality(mono_signal, sr)
+    tonal_persistence = _estimate_tonal_persistence(mono_signal, sr)
+    probe_similarity = _probe_programme_similarity(mono_signal, sr)
     nf_db, nr_db = _estimate_noise_floor_and_reduction(mono_signal)
     crt_notch = _detect_crt_flyback_notch(mono_signal, sr)
     notch = _detect_mains_buzz_notch(mono_signal, sr, crt_notch)
@@ -469,6 +646,9 @@ def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
         "music_ratio": music_ratio,
         "ambient_ratio": ambient_ratio,
         "onset_periodicity": onset_periodicity,
+        "tonality": tonality,
+        "tonal_persistence": tonal_persistence,
+        "probe_similarity": probe_similarity,
         "noise_floor_db": nf_db,
         "reduction_db": nr_db,
         "notch_hz": notch,
@@ -497,7 +677,49 @@ def _log_selected_mode(strategy, executed_mode):
         log_msg(f"  [AI Auto-Decision] Target Mode: '{chosen}'")
     else:
         log_msg(f"  [AI Auto-Decision] Best-fit Mode: '{chosen}' (advisory; running '{executed_mode}')")
-    log_msg(f"    - Rationale       : {strategy['reason']}")
+    material, _separator, verdict = strategy["reason"].partition("; ")
+    log_msg(f"    - Rationale       : {material}")
+    if verdict:
+        log_msg(f"    - Verdict         : {verdict}")
+
+
+def _describe_rhythm(onset_periodicity):
+    """Reads the onset periodicity against the music threshold."""
+    verdict = "sustained beat" if _is_rhythmic_music(onset_periodicity) else "no sustained beat"
+    return f"onset periodicity {onset_periodicity:.3f} ({verdict})"
+
+
+def _describe_tonality(tonality):
+    """Reads the spectral flatness against the chain's tonal gate."""
+    if tonality is None:
+        return "not measured"
+    verdict = "tonal programme" if tonality < APL_TONAL_FLATNESS_MAX else "broadband programme"
+    return f"spectral flatness {tonality:.4f} ({verdict})"
+
+
+def _describe_probe(probe_similarity):
+    """Reads what auto_pure_linear's 4 s noise probe would learn from."""
+    if probe_similarity is None:
+        return "not measured"
+    if probe_similarity >= AUTO_CATHAR_PROBE_SIMILARITY:
+        return f"quietest {APL_NOISEPRINT_DURATION_S:g} s carries the programme (similarity {probe_similarity:.2f})"
+    return f"quietest {APL_NOISEPRINT_DURATION_S:g} s is noise (similarity {probe_similarity:.2f})"
+
+
+def _describe_hum(notch_hz):
+    """Reads the mains notch the pre-conditioning will apply."""
+    return f"{notch_hz:.2f} Hz notch" if notch_hz else "none detected"
+
+
+def _describe_engines():
+    """Names the engines the decision chose between and what each is for."""
+    neural = "installed" if _neural_denoiser_available() else "not installed"
+    cathar = "installed" if _cathar_available() else "not installed"
+    return (
+        f"{NEURAL_ENGINE} (default; leads every measured class; neural denoiser {neural}), "
+        f"{DETERMINISTIC_ENGINE} (deterministic DSP; sustained tonal programme with no silence, "
+        f"or no neural denoiser; {cathar})"
+    )
 
 
 def _log_strategy_decision(strategy, executed_mode=None):
@@ -507,8 +729,14 @@ def _log_strategy_decision(strategy, executed_mode=None):
     log_msg(f"    - Speech Presence : {prof.get('speech_ratio', 0.0) * 100:.1f}%")
     log_msg(f"    - Music / Harmony : {prof.get('music_ratio', 0.0) * 100:.1f}%")
     log_msg(f"    - Ambient Textures: {prof.get('ambient_ratio', 0.0) * 100:.1f}%")
+    log_msg(f"    - Rhythm          : {_describe_rhythm(prof.get('onset_periodicity', 0.0))}")
+    log_msg(f"    - Tonality        : {_describe_tonality(prof.get('tonality'))}")
+    log_msg(f"    - Held Partials   : {prof.get('tonal_persistence', 0.0):.4f} (music holds 0.06 and up)")
+    log_msg(f"    - Noise Probe     : {_describe_probe(prof.get('probe_similarity'))}")
     log_msg(f"    - Tape Noise Floor: {prof.get('noise_floor_db', -45.0):.1f} dB")
+    log_msg(f"    - Mains Hum       : {_describe_hum(prof.get('notch_hz', 0.0))}")
     _log_selected_mode(strategy, executed_mode)
+    log_msg(f"    - Engines         : {_describe_engines()}")
     log_msg(f"    - Settings        : Enhance NFE={strategy['enhance_nfe']}, Sync={strategy['sync_method']}")
     log_msg(f"    - Models          : Vocals={strategy.get('vocals_model')}, DeNoise={strategy.get('denoise_model')}")
 

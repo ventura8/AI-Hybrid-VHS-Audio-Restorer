@@ -2,6 +2,7 @@ import hashlib
 import json
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 import modules.cathar as cathar
@@ -199,9 +200,9 @@ def test_cathar_deesser_step(tmp_path):
     """De-esser formats command arguments with equals threshold."""
     in_wav = tmp_path / "in.wav"
     with patch("modules.cathar._run_cathar_step") as mock_step:
-        cathar._cathar_deesser_step(in_wav, tmp_path, bands=3, freq=4000, threshold=-24.0)
+        cathar._cathar_deesser_step(in_wav, tmp_path, bands=3, freq=4000, threshold=6.0)
         cmd = mock_step.call_args[0][0]
-        assert cmd == ["deesser", "--bands", "3", "-f", "4000", "--threshold=-24.0"]
+        assert cmd == ["deesser", "--bands", "3", "-f", "4000", "--threshold=6.0"]
 
 
 def test_build_cathar_denoise_cmd_wiener(tmp_path):
@@ -226,7 +227,6 @@ def test_build_cathar_denoise_cmd_spectral(tmp_path):
 def test_find_quiet_window(tmp_path):
     """Finds quiet window using RMS probe evaluation."""
     fake_wav = tmp_path / "silence.wav"
-    import numpy as np
 
     fake_data = np.ones((44100 * 3, 2), dtype=np.float32)
     mid_start = 22050
@@ -261,14 +261,27 @@ def test_cathar_noiseprint_step(tmp_path):
     assert result == out_dir / "noise_input.np.json"
     mock_exec.assert_called_once()
 
-    # Pre-existing noiseprint JSON is returned directly
-    existing_json = out_dir / "noise_input.np.json"
+    # A pre-existing print learned the same way is returned directly
+    existing_json = out_dir / "noise_input_single_6s.np.json"
     existing_json.write_text("{}")
-    assert cathar._cathar_noiseprint_step(in_wav, out_dir) == existing_json
+    assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=6.0) == existing_json
 
     # Bypassed when extraction fails
     with patch("modules.cathar._extract_noiseprint_slice", return_value=False):
         assert cathar._cathar_noiseprint_step(tmp_path / "other.wav", out_dir) is None
+
+
+def test_cathar_noiseprint_cache_is_keyed_by_how_the_print_was_learned(tmp_path):
+    """A preserved work directory must not hand a single-window print to a stitched request, or the reverse."""
+    in_wav = tmp_path / "input.wav"
+    out_dir = tmp_path / "work"
+    out_dir.mkdir()
+    (out_dir / "noise_input_single_0.75s.np.json").write_text("{}")
+    with patch("modules.cathar._extract_stitched_noiseprint", return_value=False):
+        assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=6.0, stitched=True) is None
+    with patch("modules.cathar._extract_noiseprint_slice", return_value=False):
+        assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=6.0, stitched=False) is None
+    assert cathar._cathar_noiseprint_step(in_wav, out_dir, duration_s=0.75) == out_dir / "noise_input_single_0.75s.np.json"
 
 
 def test_filter_cathar_vhs_pipeline(tmp_path):
@@ -290,11 +303,18 @@ def test_filter_cathar_vhs_pipeline(tmp_path):
         strategy = {"precondition_filters": {"notch_hz": 50.0}}
         result = cathar.filter_cathar_vhs_pipeline(original_wav, work_dir, strategy=strategy)
     assert result == original_wav
-    mock_pre.assert_called_once_with(original_wav, work_dir, total_duration=None)
+    mock_pre.assert_called_once_with(original_wav, work_dir, total_duration=None, deplosive=cathar.CATHAR_ENABLE_DEPLOSIVE)
     mock_rep.assert_called_once_with(original_wav, work_dir, notch_freq=50.0, total_duration=None)
     mock_np.assert_called_once()
-    mock_den.assert_called_once_with(original_wav, work_dir, noiseprint_path=work_dir / "noise.np.json", total_duration=None)
-    mock_pol.assert_called_once_with(original_wav, work_dir, total_duration=None)
+    mock_den.assert_called_once_with(
+        original_wav,
+        work_dir,
+        alpha=cathar.CATHAR_ALPHA,
+        coherent=cathar.CATHAR_ENABLE_COHERENT,
+        noiseprint_path=work_dir / "noise.np.json",
+        total_duration=None,
+    )
+    mock_pol.assert_called_once_with(original_wav, work_dir, total_duration=None, deesser=cathar.CATHAR_ENABLE_DEESSER)
 
 
 def test_process_cathar_mode(tmp_path):
@@ -360,57 +380,3 @@ def test_promote_cathar_tmp_unlinks_existing_output(tmp_path):
         res = cathar._promote_cathar_tmp(tmp_wav, out_wav, "PromoteTest")
     assert res == out_wav
     assert out_wav.read_bytes() == b"new_valid_audio"
-
-
-def _read_mono_samples_with(fake_wav, samples):
-    """Runs _read_mono_samples against a stubbed soundfile reader."""
-    mock_info = MagicMock()
-    mock_info.frames = 1000
-    mock_info.samplerate = 44100
-    with patch("modules.cathar.sf.info", return_value=mock_info):
-        with patch("modules.cathar.sf.read", return_value=(samples, 44100)):
-            return cathar._read_mono_samples(fake_wav)
-
-
-def test_read_mono_samples_downmixes_stereo(tmp_path):
-    """Verifies _read_mono_samples downmixes stereo to bounded float32 mono."""
-    import numpy as np
-
-    mono, sr, source_start = _read_mono_samples_with(tmp_path / "test.wav", np.ones((500, 2), dtype=np.float32))
-    assert mono.shape == (500,)
-    assert sr == 44100
-    assert source_start == 0
-
-
-def test_read_mono_samples_passes_mono_through(tmp_path):
-    """Verifies _read_mono_samples leaves already-mono input unchanged."""
-    import numpy as np
-
-    mono, sr, source_start = _read_mono_samples_with(tmp_path / "test.wav", np.ones((500,), dtype=np.float32))
-    assert mono.shape == (500,)
-    assert sr == 44100
-    assert source_start == 0
-
-
-def test_noiseprint_helpers_and_error_handling(tmp_path):
-    """Tests _extract_noiseprint_slice, _execute_noiseprint, and noiseprint error handling."""
-    slice_wav = tmp_path / "slice.wav"
-    out_json = tmp_path / "out.np.json"
-
-    with (
-        patch("modules.cathar._find_quiet_window", return_value=1.5),
-        patch("modules.cathar.run_command_with_progress") as mock_run,
-        patch("modules.cathar.is_valid_audio", return_value=True),
-    ):
-        assert cathar._extract_noiseprint_slice(tmp_path / "in.wav", slice_wav, 0.75) is True
-        mock_run.assert_called_once()
-
-    with patch("modules.cathar.run_command_with_progress") as mock_run:
-        out_json.write_text("{}")
-        assert cathar._execute_noiseprint(slice_wav, out_json) == out_json
-        mock_run.assert_called_once()
-
-    # Exception inside _cathar_noiseprint_step logs warning and returns None
-    in_wav = tmp_path / "in_exc.wav"
-    with patch("modules.cathar._extract_noiseprint_slice", side_effect=RuntimeError("Extraction crashed")):
-        assert cathar._cathar_noiseprint_step(in_wav, tmp_path) is None

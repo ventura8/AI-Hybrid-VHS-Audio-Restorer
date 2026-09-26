@@ -75,6 +75,17 @@ poetry run python tests/tooling/radon_cc_gate.py
 poetry run python tests/tooling/radon_mi_gate.py
 ```
 
+### 7. SonarQube Cloud (CI only)
+
+`sonar-project.properties` binds the repository to the sonarcloud.io project
+`ventura8_AI-Hybrid-VHS-Audio-Restorer` (organization `ventura8`); the CI
+validation job runs `SonarSource/sonarqube-scan-action` after the tests with
+`coverage.xml` and `junit.xml`, and `sonar.qualitygate.wait=true` makes the
+quality gate block the check. There is no local scanner: read the findings on
+sonarcloud.io (or through the SonarQube IDE binding) and fix them at the
+source; a `# NOSONAR` marker counts as a suppression and is forbidden like
+every other one. Exclusions belong in the properties file with a reason.
+
 ## Hard Invariants
 
 - **Line Length**: Python code max line length is 140.
@@ -84,4 +95,8 @@ poetry run python tests/tooling/radon_mi_gate.py
   `isort`, `ruff`, `flake8`, `pylint`, `radon`) as production modules.
 - **Radon Grades**: Every single block must be Cyclomatic Complexity Grade A
   (CC $\\le 5$), and every file must be Maintainability Index Grade A (MI $\\ge
-  20$).
+  20$). Radon counts every `assert` as a branch, so a test keeps at most four.
+  MI falls with file length: a unit test file past about 450 lines reads
+  under 20 whatever its style, so split it by topic (the 2026-09-21 gate
+  forced `test_cathar_noiseprint.py`, `test_tune_restoration_scoreboard.py`
+  and `test_utils_binaries.py` out of files that had grown past that).

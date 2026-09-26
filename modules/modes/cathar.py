@@ -23,15 +23,25 @@ class CatharMode(BaseRestorationMode):
     ) -> None:
         """Executes pure-Rust Cathar DSP restoration pipeline tailored for VHS captures."""
         from .. import processing
-        from ..cathar import filter_cathar_vhs_pipeline
+        from ..cathar import filter_cathar_vhs_pipeline, music_expander_depth_db
 
         clean_wav, strategy = processing._resolve_preconditioned_audio(work_dir, original_wav, video_dur, self.mode_name, strategy)
 
         def cathar_step(in_wav, out_dir, total_duration=None):
+            from .. import pause_floor
+
             raw_restored = filter_cathar_vhs_pipeline(in_wav, out_dir, total_duration=total_duration, strategy=strategy)
-            return processing._polish_full_audio_step(
-                raw_restored, out_dir, total_duration=total_duration, strategy=strategy, apply_air=False
+            # The expander's depth follows the material: the shared depth on speech, the music profile's on music.
+            polished = processing._polish_full_audio_step(
+                raw_restored,
+                out_dir,
+                total_duration=total_duration,
+                strategy=strategy,
+                apply_air=False,
+                depth_db=music_expander_depth_db(strategy),
             )
+            # After the expander, so it cannot take the fill back out (enable_pause_floor).
+            return pause_floor.apply_when_needed(in_wav, polished, out_dir, strategy=strategy)
 
         processing._process_single_track_pipeline(
             work_dir,

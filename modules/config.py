@@ -26,7 +26,7 @@ VALID_PROCESS_MODES = {
     "cathar",
     "cathar_vhs",
 }
-DEFAULT_PROCESS_MODE = "auto_pure_linear"
+DEFAULT_PROCESS_MODE = "auto"
 DEFAULT_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".mpg", ".mpeg", ".ts", ".m2ts"]
 
 # Single source of truth for mode-specific output naming. Both the processing
@@ -78,6 +78,8 @@ def _normalize_process_mode(raw_value):
 
 
 DEFAULT_DENOISE_MODEL = "UVR-DeNoise-Lite.pth"
+# The neural model auto_pure_linear runs on speech (see apl_neural_model in load_config).
+DEFAULT_APL_NEURAL_MODEL = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 DEFAULT_VOCALS_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 DEFAULT_BACKGROUND_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
 MAX_ENHANCE_NFE = 128
@@ -105,28 +107,112 @@ _NUMERIC_CONFIG_FIELDS = (
     ("enhance_nfe", int, MAX_ENHANCE_NFE, 1, MAX_ENHANCE_NFE),
     ("enhance_tau", float, 0.3, 0.0),
     ("dtw_resolution", int, 40, 1),
+    # Files restored at once in a batch. cathar.exe is single-threaded on every stage
+    # (CPU time equals wall time; RAYON_NUM_THREADS changes nothing) and a file's
+    # stages run in sequence, so the only way onto the other cores is more files at a
+    # time, each in its own interpreter with its own work directory: every file's
+    # output is the same bytes as when it runs alone. Neural modes hold their models on
+    # the GPU per job, so raise this with the GPU memory in mind.
+    ("batch_jobs", int, 1, 1, 16),
+    # The mux's EBU R128 loudness range target. ffmpeg's loudnorm runs in linear mode only while
+    # the measured LRA is at or under the target; a denoised interview whose pauses fell silent
+    # measures well above 11 LU, so the filter falls back to dynamic mode and rides the gain
+    # between words -- pauses lifted, pumping added -- after every engine has finished. A higher
+    # target keeps the mux linear (one gain) on such material; 11 is the broadcast default.
+    # 20 is the listener round's plateau (2026-09-25): all four self-driving loops (both
+    # engines, the Tata tapes and the 12 music clips) accepted it and none moved it back.
+    ("loudnorm_target_lra", float, 20.0, 1.0, 50.0),
+    # The polish expander's depth under its knee and where the knee sits above the scanner's
+    # noise floor (modules/filters.py). 7 dB / +4 dB were the curve v1.3.2 shipped; the
+    # listener heard the pauses "switch off" under it on the APL outputs. The listener round
+    # kept 7 dB for cathar on speech, put the knee 8 dB over the floor for every engine and
+    # material, and gave the two other cases their own depth: auto_pure_linear 12 dB
+    # (apl_expander_depth_db, the Tata loop: hard failures 7 -> 4 over six rounds) and cathar
+    # on music 4 dB (cathar_music_expander_depth_db, 9 of 12 clips, hard failures 31 -> 27).
+    ("expander_depth_db", float, 7.0, 0.0, 30.0),
+    ("apl_expander_depth_db", float, 12.0, 0.0, 30.0),
+    ("cathar_music_expander_depth_db", float, 4.0, 0.0, 30.0),
+    ("expander_knee_offset_db", float, 8.0, -20.0, 20.0),
+    # Q of the CRT line-whistle notch in the pre-conditioning graph: 30 is the shipped width;
+    # cathar's music profile narrows it to 60 (cathar_music_crt_notch_q, the music loop's
+    # round 1: the wide notch took programme beside the line on 8 of 12 clips).
+    ("crt_notch_q", float, 30.0, 5.0, 200.0),
+    ("cathar_music_crt_notch_q", float, 60.0, 5.0, 200.0),
+    # The pause floor keeper (modules/pause_floor.py): in the frames the source calls quiet, an
+    # attenuated copy of the source is put back under the restored audio so a pause keeps its
+    # own, quieter texture instead of collapsing to dead air (the listener's "silent in pauses").
+    # The fill sits this many dB under the source's own pause level; frames above the quiet
+    # percentile are never touched.
+    ("pause_floor_fill_db", float, 12.0, 0.0, 60.0),
+    ("pause_floor_quiet_percentile", float, 15.0, 1.0, 100.0),
+    # cathar's split-band subtraction (modules/split_band.py): above the crossover the denoise
+    # runs a second time at cathar_alpha_high (cathar_music_alpha_high on music), so the hiss
+    # in the highs and the speech band get their own factor. 0 keeps the single pass.
+    ("cathar_split_band_hz", int, 0, 0, 20000),
+    ("cathar_alpha_high", float, 2.0, 0.0),
+    ("cathar_music_alpha_high", float, 0.5, 0.0),
+    # auto_pure_linear's stem path on music (modules/apl_stems.py): the chain runs on the vocal
+    # stem only and the background passes through the notches and a bounded suppressor.
+    ("apl_music_persistence_min", float, 0.05, 0.0, 1.0),
+    ("apl_music_bg_floor_db", float, -10.0, -60.0, 0.0),
+    # auto_pure_linear's sibilant guard (modules/sibilant_guard.py): on the fricative frames of
+    # the pre-neural audio, this share of the high band is put back so the 's' keeps its shape.
+    # 0.8 is the Tata loop's plateau (the listener's "thin s"); Vaccin still reads thin at it.
+    ("apl_sibilant_mix", float, 0.8, 0.0, 1.0),
+    ("apl_sibilant_guard_hz", int, 4000, 1000, 12000),
     ("afftdn_nr", float, 10.0, 0.0),
     ("afftdn_nf", float, -55.0, None),
     ("highpass_freq", int, 80, 0),
     ("notch_freq", float, 50.0, 0.0),
     ("arnndn_highpass_freq", int, 80, 0),
-    ("cathar_alpha", float, 2.5, 0.0),
-    ("cathar_beta", float, 0.01, 0.0),
+    # 1.0 is the listener round's plateau on the four Tata tapes (2026-09-25, cathar 0.7.6):
+    # the v1 loop took the shipped 2.0 to 1.5 and the v2 loop, judging with the listener
+    # readings (gap air, pause depth, sibilance), to 1.0, each time ahead on at least three of
+    # the four tapes. The 2.0 that v1.3.2 shipped was chosen by ear on the same tapes against
+    # 2.5 and 3.5 before the harness could read the pauses.
+    ("cathar_alpha", float, 1.0, 0.0),
+    # cathar's music profile. The speech settings shave music: a print learned from music
+    # is programme, and subtracting it at the speech factor takes 8-16 kHz down 14 dB and
+    # removes no noise. The self-driving loop on 11 Internet Archive music clips and the
+    # first minute of Gaudeamus (docs/validation.md) settled, over five rounds, on
+    # subtraction at 0.5 with no learned print, the coherent path off and the deplosive off:
+    # 22 hard-gate failures against 28 at the speech settings, ahead on 6-10 of 12 clips in
+    # every accepted round; the 0.7.6 build, on by env in the loop, was not a knob. The profile
+    # applies when the scanner's tonal persistence (median share of held spectral peaks
+    # over 15 s windows, `modules/tonal_persistence.py`) reads at least
+    # cathar_music_persistence_min: the music clips read 0.064-0.225, speech over a bed
+    # 0.007-0.033, dry dialogue under 0.003; 0.05 sits in the gap.
+    ("cathar_music_persistence_min", float, 0.05, 0.0, 1.0),
+    ("cathar_music_alpha", float, 0.5, 0.0),
+    # The listener round's plateau (see cathar_alpha): floor 0.02, repair strength 2.
+    ("cathar_beta", float, 0.02, 0.0),
     ("cathar_dewind_cutoff", int, 80, 0),
     ("cathar_declick_threshold", float, 8.0, 0.0),
     ("cathar_decrackle_sensitivity", int, 6, 0),
     ("cathar_declip_threshold", float, 0.95, 0.0, 1.0),
     ("cathar_azimuth_max_ms", float, 5.0, 0.0),
-    ("cathar_repair_strength", int, 4, 0),
+    ("cathar_repair_strength", int, 2, 0),
     ("cathar_inpaint_max_gap_ms", int, 50, 0),
     ("cathar_inpaint_iterations", int, 3, 1),
-    ("cathar_noiseprint_duration_s", float, 0.75, 0.0),
+    # Total length of quiet tape cathar learns its noise print from on a tape of 120 s or
+    # more: stitched from that many 0.75 s pauses spread over the quietest fifth of the
+    # windows (see modules/cathar.py). A single 4 s window on a dialogue tape carries speech
+    # and the print learns sibilance: 11.4 dB removed but 6 dB more off speech at 8-12 kHz
+    # than the 0.75 s print; eight stitched pauses removed 6.7 dB at the 0.75 s print's
+    # speech highs and 5-6 dB less hiss left in the pauses. Shorter material keeps the
+    # single 0.75 s window cathar shipped with, so corpus clips and 60 s excerpts are
+    # unchanged. 4.5 s (six stitched pauses, from 90 s of material) is the listener round's
+    # plateau; 6 s was the shipped length.
+    ("cathar_noiseprint_duration_s", float, 4.5, 0.0),
     ("cathar_dehum_harmonics", int, 8, 1),
     ("cathar_mono_below_hz", int, 100, 0),
     ("cathar_deplosive_strength", int, 4, 0),
     ("cathar_deesser_bands", int, 3, 1),
     ("cathar_deesser_freq", int, 4000, 1),
-    ("cathar_deesser_threshold", float, -24.0, None),
+    # 12 dB over each band's running average is the listener round's plateau on speech (from
+    # cathar's suggested 6: the de-esser then only catches the loud 's'); the music profile
+    # switches the stage off (cathar_music_enable_deesser).
+    ("cathar_deesser_threshold", float, 12.0, None),
     ("cathar_dereverb_strength", float, 2.0, 0.0),
     ("linear_air_gain_db", float, 2.0, None),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
@@ -159,6 +245,17 @@ _NUMERIC_CONFIG_FIELDS = (
     # suspect and is cleared: without it the tonal deviation is worse, 0.56.
     ("apl_spectral_alpha_tonal", float, 2.0, 0.0),
     ("apl_tonal_flatness_max", float, 0.035, 0.0),
+    # Where `auto` prefers cathar's fidelity: sustained tonal programme with no silence for
+    # auto_pure_linear's 4 s noise probe to learn from. The tape reads as tonal under this
+    # flatness, and the quietest 4 s carries the programme -- its speech-band spectrum
+    # correlates with the loud frames' above auto_cathar_probe_similarity -- with no
+    # sustained beat. Measured on 136 corpus clips and 81 excerpts of 21 local tapes, that
+    # is the one condition under which cathar deviates less on most clips (10 of 14 and 9
+    # of 15; 0.21 dB against 0.54 and 0.15 against 0.19), always for 2-3 dB less noise
+    # removed; every other reading leaves cathar behind on both halves. A fidelity
+    # preference, not a win: auto_cathar_tonal false keeps auto_pure_linear everywhere.
+    ("auto_cathar_flatness_max", float, 0.04, 0.0, 1.0),
+    ("auto_cathar_probe_similarity", float, 0.9, 0.0, 1.0),
     # Seconds of the quietest stretch used to learn the noise profile on tonal material.
     # Music has no true silence: its quietest stretch carries sustained partials, and a
     # profile learned over more of it is more programme. Measured against the general probe
@@ -211,8 +308,8 @@ _NUMERIC_CONFIG_FIELDS = (
     # deviation, past cathar, which is the one property worth keeping -- so alpha stays at
     # 3.0 and the probe carries the removal.
     #
-    # cathar's own cathar_noiseprint_duration_s stays at 0.75: it shipped in v1.2.0 and the
-    # setting is shared, so this mode passes its own value explicitly instead.
+    # cathar's own cathar_noiseprint_duration_s only applies from twenty times its length of material (see
+    # modules/cathar.py), so this mode passes its own value explicitly instead.
     ("apl_noiseprint_duration_s", float, 4.0, 0.0),
     # Depth and length that mark a span as a dropout rather than a pause, for the physical
     # repair stage. A dropout is loss of head contact, so the audio falls away entirely for
@@ -276,7 +373,13 @@ _BOOL_CONFIG_FIELDS = (
     ("enable_loudnorm", True),
     ("enable_dynamic_expander", True),
     ("enable_linear_air", True),
-    ("apl_enable_spectral_denoise", True),
+    # Off since the listener round (2026-09-25): on the four Tata tapes the loop judged the
+    # chain better without the subtraction stage (the neural stage alone, on the named
+    # model) on the pause and sibilance readings, and the music loop kept it off. With the
+    # stage off, the subtraction's own settings (factor, probe, tonal factor, native
+    # suppressor, blend) do nothing; they keep their measured values for a config that
+    # switches it back on.
+    ("apl_enable_spectral_denoise", False),
     ("apl_enable_tonal_cleanup", False),
     # Mains hum removal for this mode, separate from the rumble stage it used to share a
     # switch with. Available, and off: measured end to end it does not earn a default.
@@ -327,6 +430,7 @@ _BOOL_CONFIG_FIELDS = (
     # 2.07 to cathar's 6, the low band moved 0.48 dB to cathar's 0.55; on the most tonal 45
     # clips deviation reads 0.30 against 0.32 ungated.
     ("apl_enable_hum_cancel", True),
+    ("auto_cathar_tonal", True),
     # Skip the neural denoiser on tonal material. UVR-DeNoise earns its place in aggregate
     # (without it the mode removes 1.05 dB less noise on real tape); on the most tonal
     # third, where the mode loses to cathar on fidelity, its share of that loss was never
@@ -437,7 +541,8 @@ _BOOL_CONFIG_FIELDS = (
     ("apl_enable_learned_blend", True),
     ("preserve_original_audio_track", False),
     ("debug_logging", False),
-    ("cathar_enable_coherent", True),
+    # Off on speech since the listener round; the music profile switches it on.
+    ("cathar_enable_coherent", False),
     ("cathar_enable_dewind", True),
     ("cathar_enable_azimuth", True),
     ("cathar_enable_declick", True),
@@ -448,10 +553,24 @@ _BOOL_CONFIG_FIELDS = (
     ("cathar_dehum_adaptive", True),
     ("cathar_enable_repair", True),
     ("cathar_enable_dewow", False),
-    ("cathar_enable_enhance", True),
+    # Off since the listener round: the replicated highs read as hiss in the gaps.
+    ("cathar_enable_enhance", False),
     ("cathar_enable_noiseprint", True),
     ("cathar_enable_mono_below", True),
     ("cathar_enable_deplosive", True),
+    # The music profile (see cathar_music_alpha): switched as a whole, then its four stage
+    # switches. Off, every tape gets the speech settings. The coherent path on and the
+    # de-esser off are the music loop's plateau (2026-09-25, four rounds on 12 clips).
+    ("cathar_music_profile", True),
+    ("cathar_music_enable_noiseprint", False),
+    ("cathar_music_enable_coherent", True),
+    ("cathar_music_enable_deplosive", False),
+    ("cathar_music_enable_deesser", False),
+    # The listener-round stages: the pause floor and the sibilant guard were accepted by the
+    # loops (see the numeric keys); the stem path was not and stays off.
+    ("enable_pause_floor", True),
+    ("apl_music_stem_path", False),
+    ("apl_enable_sibilant_guard", True),
     ("cathar_enable_deesser", True),
     ("cathar_enable_dereverb", False),
     ("cathar_dereverb_wpe", True),
@@ -629,10 +748,14 @@ def load_config():
         "cathar_denoise_method": "spectral",
         "cathar_azimuth_method": "gcc-phat",
         "cathar_enhance_method": "replicate",
-        # The neural model auto_pure_linear runs after subtraction, by file name, when set;
-        # empty follows the chain's own choice (the light UVR model, upgraded to the deep
-        # one once subtraction has run). A setting, so a candidate can be swept.
-        "apl_neural_model": "",
+        # The neural model auto_pure_linear runs, by file name, when set; empty follows the
+        # chain's own choice (the light UVR model, upgraded to the deep one once subtraction
+        # has run). The Mel-RoFormer denoiser is the listener round's plateau on speech (the
+        # Tata loop, from the v1 round on); on music (apl_music_neural_model) the same loop
+        # took it back off in its first round (hard failures 35 -> 30 on 12 clips), so music
+        # follows the chain's choice.
+        "apl_neural_model": DEFAULT_APL_NEURAL_MODEL,
+        "apl_music_neural_model": "",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -660,6 +783,7 @@ LOG_FILE = Path("session_log.txt")
 
 EXTS = set(CONFIG["extensions"])
 KEEP_INPUT_FILES = os.environ.get("AI_RESTORE_TEST_MODE") == "1"
+BATCH_JOBS = int(CONFIG.get("batch_jobs", 1))
 
 # Audio mix levels
 VOCAL_MIX_VOL = float(CONFIG["vocal_mix_volume"])
@@ -724,9 +848,9 @@ ARNNDN_ENABLE_ADECLICK = bool(CONFIG.get("arnndn_enable_adeclick", True))
 
 # Cathar Restoration Settings
 CATHAR_DENOISE_METHOD = str(CONFIG.get("cathar_denoise_method", "spectral"))
-CATHAR_ALPHA = float(CONFIG.get("cathar_alpha", 2.5))
-CATHAR_BETA = float(CONFIG.get("cathar_beta", 0.01))
-CATHAR_ENABLE_COHERENT = bool(CONFIG.get("cathar_enable_coherent", True))
+CATHAR_ALPHA = float(CONFIG.get("cathar_alpha", 1.0))
+CATHAR_BETA = float(CONFIG.get("cathar_beta", 0.02))
+CATHAR_ENABLE_COHERENT = bool(CONFIG.get("cathar_enable_coherent", False))
 CATHAR_ENABLE_DEWIND = bool(CONFIG.get("cathar_enable_dewind", True))
 CATHAR_DEWIND_CUTOFF = int(CONFIG.get("cathar_dewind_cutoff", 80))
 CATHAR_ENABLE_AZIMUTH = bool(CONFIG.get("cathar_enable_azimuth", True))
@@ -745,12 +869,12 @@ CATHAR_ENABLE_DEHUM = bool(CONFIG.get("cathar_enable_dehum", True))
 CATHAR_DEHUM_ADAPTIVE = bool(CONFIG.get("cathar_dehum_adaptive", True))
 CATHAR_DEHUM_HARMONICS = int(CONFIG.get("cathar_dehum_harmonics", 8))
 CATHAR_ENABLE_REPAIR = bool(CONFIG.get("cathar_enable_repair", True))
-CATHAR_REPAIR_STRENGTH = int(CONFIG.get("cathar_repair_strength", 4))
+CATHAR_REPAIR_STRENGTH = int(CONFIG.get("cathar_repair_strength", 2))
 CATHAR_ENABLE_DEWOW = bool(CONFIG.get("cathar_enable_dewow", False))
-CATHAR_ENABLE_ENHANCE = bool(CONFIG.get("cathar_enable_enhance", True))
+CATHAR_ENABLE_ENHANCE = bool(CONFIG.get("cathar_enable_enhance", False))
 CATHAR_ENHANCE_METHOD = str(CONFIG.get("cathar_enhance_method", "replicate"))
 CATHAR_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_enable_noiseprint", True))
-CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 0.75))
+CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 4.5))
 CATHAR_ENABLE_MONO_BELOW = bool(CONFIG.get("cathar_enable_mono_below", True))
 CATHAR_MONO_BELOW_HZ = int(CONFIG.get("cathar_mono_below_hz", 100))
 CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))
@@ -758,20 +882,45 @@ CATHAR_DEPLOSIVE_STRENGTH = int(CONFIG.get("cathar_deplosive_strength", 4))
 CATHAR_ENABLE_DEESSER = bool(CONFIG.get("cathar_enable_deesser", True))
 CATHAR_DEESSER_BANDS = int(CONFIG.get("cathar_deesser_bands", 3))
 CATHAR_DEESSER_FREQ = int(CONFIG.get("cathar_deesser_freq", 4000))
-CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", -24.0))
+CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", 12.0))
 CATHAR_ENABLE_DEREVERB = bool(CONFIG.get("cathar_enable_dereverb", False))
 CATHAR_DEREVERB_WPE = bool(CONFIG.get("cathar_dereverb_wpe", True))
 CATHAR_DEREVERB_STRENGTH = float(CONFIG.get("cathar_dereverb_strength", 2.0))
+CATHAR_MUSIC_PROFILE = bool(CONFIG.get("cathar_music_profile", True))
+CATHAR_MUSIC_PERSISTENCE_MIN = float(CONFIG.get("cathar_music_persistence_min", 0.05))
+CATHAR_MUSIC_ALPHA = float(CONFIG.get("cathar_music_alpha", 0.5))
+CATHAR_MUSIC_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_music_enable_noiseprint", False))
+CATHAR_MUSIC_ENABLE_COHERENT = bool(CONFIG.get("cathar_music_enable_coherent", True))
+CATHAR_MUSIC_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_music_enable_deplosive", False))
 
 # Advanced Audio Polish & Archival Configs
 ENABLE_DEESSER = bool(CONFIG.get("enable_deesser", True))
 ENABLE_LOUDNORM = bool(CONFIG.get("enable_loudnorm", True))
 ENABLE_DYNAMIC_EXPANDER = bool(CONFIG.get("enable_dynamic_expander", True))
 ENABLE_LINEAR_AIR = bool(CONFIG.get("enable_linear_air", True))
-APL_ENABLE_SPECTRAL_DENOISE = bool(CONFIG.get("apl_enable_spectral_denoise", True))
+LOUDNORM_TARGET_LRA = float(CONFIG.get("loudnorm_target_lra", 20.0))
+EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
+EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
+CRT_NOTCH_Q = float(CONFIG.get("crt_notch_q", 30.0))
+ENABLE_PAUSE_FLOOR = bool(CONFIG.get("enable_pause_floor", True))
+PAUSE_FLOOR_FILL_DB = float(CONFIG.get("pause_floor_fill_db", 12.0))
+PAUSE_FLOOR_QUIET_PERCENTILE = float(CONFIG.get("pause_floor_quiet_percentile", 15.0))
+CATHAR_SPLIT_BAND_HZ = int(CONFIG.get("cathar_split_band_hz", 0))
+CATHAR_ALPHA_HIGH = float(CONFIG.get("cathar_alpha_high", 2.0))
+CATHAR_MUSIC_ALPHA_HIGH = float(CONFIG.get("cathar_music_alpha_high", 0.5))
+APL_MUSIC_STEM_PATH = bool(CONFIG.get("apl_music_stem_path", False))
+APL_MUSIC_PERSISTENCE_MIN = float(CONFIG.get("apl_music_persistence_min", 0.05))
+APL_MUSIC_BG_FLOOR_DB = float(CONFIG.get("apl_music_bg_floor_db", -10.0))
+APL_ENABLE_SIBILANT_GUARD = bool(CONFIG.get("apl_enable_sibilant_guard", True))
+APL_SIBILANT_MIX = float(CONFIG.get("apl_sibilant_mix", 0.8))
+APL_SIBILANT_GUARD_HZ = int(CONFIG.get("apl_sibilant_guard_hz", 4000))
+APL_ENABLE_SPECTRAL_DENOISE = bool(CONFIG.get("apl_enable_spectral_denoise", False))
 APL_SPECTRAL_ALPHA = float(CONFIG["apl_spectral_alpha"])
 APL_SPECTRAL_ALPHA_TONAL = float(CONFIG.get("apl_spectral_alpha_tonal", 2.0))
 APL_TONAL_FLATNESS_MAX = float(CONFIG.get("apl_tonal_flatness_max", 0.035))
+AUTO_CATHAR_FLATNESS_MAX = float(CONFIG.get("auto_cathar_flatness_max", 0.04))
+AUTO_CATHAR_PROBE_SIMILARITY = float(CONFIG.get("auto_cathar_probe_similarity", 0.9))
+AUTO_CATHAR_TONAL = bool(CONFIG.get("auto_cathar_tonal", True))
 APL_NOISEPRINT_TONAL_S = float(CONFIG.get("apl_noiseprint_tonal_s", 4.0))
 APL_TONAL_SKIP_NEURAL = bool(CONFIG.get("apl_tonal_skip_neural", False))
 APL_SPECTRAL_MARGIN_DB = float(CONFIG["apl_spectral_margin_db"])
@@ -800,5 +949,10 @@ APL_PLOSIVE_EXCESS_DB = float(CONFIG.get("apl_plosive_excess_db", 12.0))
 APL_ENABLE_TONE_CANCEL = bool(CONFIG.get("apl_enable_tone_cancel", False))
 APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))
 APL_NEURAL_MODEL = _model_filename("apl_neural_model", CONFIG.get("apl_neural_model"))
+APL_MUSIC_NEURAL_MODEL = _model_filename("apl_music_neural_model", CONFIG.get("apl_music_neural_model"))
+APL_EXPANDER_DEPTH_DB = float(CONFIG.get("apl_expander_depth_db", 12.0))
+CATHAR_MUSIC_EXPANDER_DEPTH_DB = float(CONFIG.get("cathar_music_expander_depth_db", 4.0))
+CATHAR_MUSIC_CRT_NOTCH_Q = float(CONFIG.get("cathar_music_crt_notch_q", 60.0))
+CATHAR_MUSIC_ENABLE_DEESSER = bool(CONFIG.get("cathar_music_enable_deesser", False))
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 2.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

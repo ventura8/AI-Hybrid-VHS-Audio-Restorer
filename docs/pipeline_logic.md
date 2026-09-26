@@ -49,14 +49,18 @@ compatibility aliases.
 1. **Pass 6 (Noise-Profile Subtraction)**: A noise profile learned from 4 s of
    the quietest audio is subtracted, then blended back toward the original per
    frequency bin by a fitted model, which repairs over-subtraction rather than
-   trading fidelity against it.
+   trading fidelity against it. Off by default since the listener round
+   (`apl_enable_spectral_denoise`): on the Tata tapes the loop judged the chain
+   better with the neural stage alone.
 1. **Pass 7 (Full-Mix UVR Denoise)**: Single-pass UVR-DeNoise applied directly to
    the full mix without stem separation or generative speech synthesis,
    preserving original musical acoustics, vocal transients, and room ambience.
    This is the default; with `apl_use_deepfilternet` on, DeepFilterNet3 runs
    in its place where it is installed, streamed in overlapping chunks, and
    falls back to UVR-DeNoise when it is absent or fails; `apl_neural_model`
-   names another UVR model outright, and `apl_use_resemble_denoise` puts
+   names a UVR model outright (the Mel-RoFormer denoiser on speech since the
+   listener round; `apl_music_neural_model`, empty, lets the chain choose on
+   music), and `apl_use_resemble_denoise` puts
    Resemble-Enhance's denoiser (a masking model) in its place the same way.
 1. **Pass 8 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
    EBU R128 loudness normalization (-16 LUFS / -1.0 dBTP true-peak limiter), and
