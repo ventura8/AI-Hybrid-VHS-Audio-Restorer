@@ -281,6 +281,21 @@ def _harvest(slug, cids, log, proc, out_dir):
     for cid in cids:
         flat = tune.runner.aggregates_for_tuning(report, cid)
         _score_path(out_dir, cid, slug).write_text(json.dumps(flat, indent=1), encoding="utf-8")
+        _drop_cache_entries(out_dir, cid, slug)
+
+
+def _drop_cache_entries(out_dir, cid, slug):
+    """The scorer's cache entries for a scored output (its resampled arrays, its DC-free copy), which nothing reads again.
+
+    A candidate output is scored once; its entries (three rates, ~1 GB per hour of tape) only
+    fill the disk afterwards: two loops on full tapes grew 250 GB of them in three days and
+    ran the machine out of space. The source side of the cache stays, every round reuses it.
+    """
+    wav = out_dir / "cands" / cid / f"{slug}.wav"
+    if not wav.exists():
+        return
+    for entry in (out_dir / "cache").glob(f"{audio_io.file_key(wav)}_*"):
+        entry.unlink()
 
 
 def _score_path(out_dir, cid, slug):

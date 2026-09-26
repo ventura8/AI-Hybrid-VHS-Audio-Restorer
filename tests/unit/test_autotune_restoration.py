@@ -109,3 +109,19 @@ def test_score_round_launches_at_most_parallel_scorers_at_once(tmp_path):
     assert launched == ["a", "b", "c"]
     assert max(peak) <= 2
     assert scores["c1"]["c"] == {"x": 1.0}
+
+
+def test_drop_cache_entries_removes_the_scored_outputs_entries_and_keeps_the_sources(tmp_path):
+    from scripts.restoration_quality import audio_io
+
+    wav = tmp_path / "cands" / "abc" / "soti.wav"
+    wav.parent.mkdir(parents=True)
+    wav.write_bytes(b"RIFF")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    output_key, source_key = audio_io.file_key(wav), "0123456789abcdef"
+    for name in (f"{output_key}_219_16000.npy", f"{output_key}_dcfree.wav", f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"):
+        (cache / name).write_bytes(b"x")
+    at._drop_cache_entries(tmp_path, "abc", "soti")
+    at._drop_cache_entries(tmp_path, "missing", "soti")
+    assert sorted(p.name for p in cache.iterdir()) == [f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"]

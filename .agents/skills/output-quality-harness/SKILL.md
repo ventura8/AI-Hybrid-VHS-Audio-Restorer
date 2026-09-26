@@ -179,6 +179,20 @@ before spending another round. A scorer holds about 4 GB of RAM; `--parallel`
 (default 2) caps the tape scorers per engine, and two engines plus the corpus
 scorers exhausted a 62 GB machine.
 
+Disk is the other budget. The scorer keeps every resampled array under
+`<out>/cache` (three rates, about 1 GB per hour of tape per output) and the
+loop keeps every candidate's audio under `<out>/cands`; two engines on full
+tapes grew 250 GB of cache and 130 GB of candidates in three days and filled
+the drive, which killed one loop mid-render (the app could not write its
+WAV; the other loop survived). The driver now deletes an output's cache
+entries the moment its `<slug>.score.json` is written (the source side is
+reused every round and stays). Candidate audio of past rounds is only worth
+keeping until the listening set is built from the finals
+(`experiments/tata_listen/build_listen_v2.py` copies them); delete
+`cands/*/*.wav` of a finished loop after that. When a loop dies this way,
+remove the half-written candidate directory and the `.temp_work_*` folder
+beside the source before relaunching, or the resume trips over them.
+
 Only when both engines have plateaued: produce the listening set, send the
 scoreboard, ask the user. Feed a winner back into `config.yaml` and
 `modules/config.py` with the measured-effect comment, then re-base the cathar
