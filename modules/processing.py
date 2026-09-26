@@ -1214,7 +1214,7 @@ def _neural_stage(apl_chain, model_to_use, surgical_wav, strategy=None):
     return named or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
 
 
-POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor"})
+POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db"})
 
 
 def _denoise_and_polish_full_audio_step(
@@ -1230,19 +1230,19 @@ def _denoise_and_polish_full_audio_step(
     plosive_tamer=False,
     tone_cancel=False,
     resemble_denoise=False,
-    expander_depth_db=None,
     **stages,
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish.
 
-    `stages` holds the post-neural switches (`apply_air`, `sibilant_guard`, `pause_floor`),
-    all False unless named; any other name is a TypeError like a misspelt keyword would be.
-    `expander_depth_db` is the polish expander's depth for this caller (auto_pure_linear
-    passes its own); None keeps the shared `expander_depth_db`.
+    `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard` and
+    `pause_floor`, all False unless named, and `expander_depth_db`, the polish expander's
+    depth for this caller (auto_pure_linear passes its own; None keeps the shared
+    `expander_depth_db`). Any other name is a TypeError like a misspelt keyword would be.
     """
     unknown = set(stages) - POST_NEURAL_STAGES
     if unknown:
         raise TypeError(f"unknown post-neural stage(s): {sorted(unknown)}")
+    expander_depth_db = stages.get("expander_depth_db")
     stages = {name: bool(stages.get(name, False)) for name in ("sibilant_guard", "pause_floor", "apply_air")}
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(
