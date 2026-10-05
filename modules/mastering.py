@@ -25,7 +25,7 @@ def _get_config_val(name):
 PIPELINE_SAMPLE_RATE = 44100
 LOUDNORM_TARGET_I = -16.0
 LOUDNORM_TARGET_TP = -1.0
-LOUDNORM_TARGET_LRA = 11.0
+LOUDNORM_TARGET_LRA = config.LOUDNORM_TARGET_LRA
 LOUDNORM_ANALYSIS_TIMEOUT = 900
 
 LOUDNORM_TRUE_PEAK_LIMITER = "alimiter=limit=0.891:level=disabled"
@@ -93,8 +93,14 @@ def _loudnorm_analysis_timeout(total_duration):
 
 
 def _loudnorm_target_args():
-    """Loudness target shared by the measurement pass and the applied pass."""
-    return f"I={LOUDNORM_TARGET_I}:TP={LOUDNORM_TARGET_TP}:LRA={LOUDNORM_TARGET_LRA}"
+    """Loudness target shared by the measurement pass and the applied pass.
+
+    The LRA target comes from the config (`loudnorm_target_lra`): loudnorm holds its linear
+    mode only while the measured range is at or under it, and a denoised interview with
+    silent pauses measures well above the broadcast 11 LU, so the mux would otherwise ride
+    the gain between words.
+    """
+    return f"I={LOUDNORM_TARGET_I}:TP={LOUDNORM_TARGET_TP}:LRA={float(_get_config_val('LOUDNORM_TARGET_LRA'))}"
 
 
 def _is_valid_loudnorm_number(value):
@@ -187,7 +193,18 @@ def _resolve_measured_loudnorm(input_paths, analysis_expression, total_duration=
     if measurements is None:
         log_msg("    [Warning] Loudness measurement unavailable; using single-pass normalisation.", is_error=True)
         return None
+    _log_loudness_range(measurements)
     return _measured_loudnorm_args(measurements)
+
+
+def _log_loudness_range(measurements):
+    """Says whether loudnorm can hold its linear mode: it cannot once the measured LRA exceeds the target."""
+    target = float(_get_config_val("LOUDNORM_TARGET_LRA"))
+    measured = measurements.get("input_lra")
+    holds = _is_valid_loudnorm_number(measured) and float(measured) <= target
+    mode = "linear" if holds else "dynamic (measured LRA above the target)"
+    readings = f"I={measurements.get('input_i')} LRA={measured} TP={measurements.get('input_tp')}"
+    log_msg(f"    [Mastering] Measured {readings}; target LRA {target:g} -> {mode}")
 
 
 def _build_single_audio_filter_expression(loudnorm_args=None):

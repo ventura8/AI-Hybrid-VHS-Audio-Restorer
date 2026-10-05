@@ -3,6 +3,7 @@
 ![AI Hybrid VHS Audio Restorer Logo](assets/logo.svg)
 
 ![Python](assets/python.svg) ![Coverage](assets/coverage.svg)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ventura8_AI-Hybrid-VHS-Audio-Restorer&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ventura8_AI-Hybrid-VHS-Audio-Restorer)
 [![Downloads][downloads-badge]][releases]
 
 ## Documentation
@@ -74,7 +75,7 @@ A specialized audio restoration pipeline designed to remaster VHS recordings.
 
 The pipeline supports multiple execution modes controlled by `process_mode`:
 
-1. **`auto_pure_linear` (linear full-mix pure denoising - default)**
+1. **`auto_pure_linear` (linear full-mix pure denoising)**
 
 - Reuses `auto_pure` profiling, analog pre-conditioning, sync, mastering, and
   remuxing, but skips stem separation and treats the full mix.
@@ -102,14 +103,24 @@ The pipeline supports multiple execution modes controlled by `process_mode`:
 - Pass 4: Sub-sample DTW/shift synchronization and 32-bit float intermediate mix.
 - Output suffix: `*_Pure_Cleaned.<ext>`.
 
-1. **`auto` (AI auto-detection & restoration engine)**
+1. **`auto` (AI auto-detection & restoration engine - default)**
 
 - Extract audio.
 - Perform deep AI acoustic profiling (speech formants, environmental textures
-  like birds/cars, musical harmonics, noise floor, mains hum, and rumble).
-- Automatically select the optimal restoration engine (`hybrid`,
-  `denoise_only`, or `auto_ffmpeg_native`) and dynamically choose the best AI
-  models (`BS-Roformer`, `UVR-DeNoise`).
+  like birds/cars, musical harmonics, rhythm, spectral flatness, noise floor,
+  mains hum, and rumble) and name the material: dialogue, rhythmic music,
+  non-vocal music or ambience, or tape noise.
+- Run the engine the real-tape corpus says is best for it: `auto_pure_linear` on
+  every class (10.10 dB of noise removed for 0.31 dB of programme deviation over
+  136 clips against `cathar`'s 6.02/0.44, and against 0.35/0.16 for
+  `denoise_only` and 0.72/0.06 for `auto_ffmpeg_native`, the engines earlier
+  releases ran for music and tape noise); `cathar`, the deterministic DSP
+  engine, on sustained tonal programme with no silence for the noise probe to
+  learn from (where it deviates less on two clips in three, for 2-3 dB less
+  removal) and when the neural denoiser is not installed (when cathar is
+  installed; with neither engine available the `auto_ffmpeg_native` chain is the
+  last resort). The pre-conditioning filters and the models (`UVR-DeNoise`,
+  `UVR-DeNoise-Lite`) follow the scan.
 - Sync and remux into output video (codecs depend on selected container: AAC
   for `.mp4`/`.m4v`, MP2 for `.mpg`/`.mpeg`, and `pcm_f32le` only for
   configured PCM-capable containers).
@@ -240,7 +251,7 @@ classDef output fill:#E1E2E6,stroke:#44474E,stroke-width:1.5px,color:#1A1C1E,rx:
 A(["📼 Input Video/Audio"]):::input --> B(["Extract Audio<br/>(32-bit Float)"]):::processing
 B --> MODE{"process_mode"}:::model
 
-MODE -->|"auto_pure_linear (default)"| LP1["Acoustic Scan +<br/>Analog Pre-Conditioning"]:::processing
+MODE -->|"auto_pure_linear"| LP1["Acoustic Scan +<br/>Analog Pre-Conditioning"]:::processing
 LP1 --> LPR["Gated Damage Repair<br/>(crackle, dropout, clip, azimuth)"]:::processing
 LPR --> LPH["Hum Cancellation +<br/>Plosive Control"]:::processing
 LPH --> LPS["Noise-Profile Subtraction +<br/>Learned Per-Bin Blend"]:::processing
@@ -259,11 +270,23 @@ PBD --> PSY
 PSY --> PMIX["Final Mix<br/>+ 2-pass EBU R128 + Limiter"]:::processing
 PMIX --> POUT(["💾 Output: Pure_Cleaned"]):::output
 
-MODE -->|"auto / multipass_auto"| AP1["Dual-Resolution Acoustic Scan"]:::processing
+MODE -->|"auto (default)"| AU1["Acoustic Scan:<br/>material, tonality, hum, drift"]:::processing
+AU1 --> AU2{"Neural denoiser<br/>installed?"}:::model
+AU2 -->|"yes"| AU5{"Tonal, no silence<br/>for the noise probe,<br/>and cathar installed?"}:::model
+AU5 -->|"no"| AU3["auto_pure_linear chain"]:::model
+AU5 -->|"yes"| AU4["cathar chain"]:::processing
+AU2 -->|"no"| AU6{"cathar<br/>installed?"}:::model
+AU6 -->|"yes"| AU4
+AU6 -->|"no"| AU7["auto_ffmpeg_native chain"]:::processing
+AU3 --> AUOUT(["💾 Output: Auto_Cleaned"]):::output
+AU4 --> AUOUT
+AU7 --> AUOUT
+
+MODE -->|"multipass_auto"| AP1["Dual-Resolution Acoustic Scan"]:::processing
 AP1 --> AP2["Analog Pre-Conditioning"]:::processing
 AP2 --> AP3["BS-Roformer + Resemble-Enhance / Denoise"]:::model
 AP3 --> AP4["Sync Stems + Dynamic Mix"]:::processing
-AP4 --> APOUT(["💾 Output: Auto_Cleaned / MultiPass_Cleaned"]):::output
+AP4 --> APOUT(["💾 Output: MultiPass_Cleaned"]):::output
 
 MODE -->|"hybrid"| RO["BS-Roformer Separation"]:::model
 RO --> V["Vocals"]
@@ -392,7 +415,7 @@ sync_method: "shift"     # 'shift' (default) or 'dtw' (correction for wow/flutte
 dtw_resolution: 40       # Analysis resolution in Hz (lower = faster)
 
 # Processing Mode
-process_mode: "auto_pure_linear"   # linear full-mix restoration (default); "cathar" for the pure-Rust cascade
+process_mode: "auto"   # profile the tape and pick the engine (default); "auto_pure_linear" or "cathar" to force one
 ```
 
 ## Requirements & Compatibility
@@ -478,6 +501,12 @@ python restore_audio_hybrid.py "C:\Path\To\Video.mp4"
 Pass `--help` (or `-h`) to `start.sh`, `start.bat`, or
 `restore_audio_hybrid.py` to print usage and exit without processing.
 
+A folder of tapes goes faster with `batch_jobs` in `config.yaml`: that many
+files restore at once, each in its own interpreter with its own log under
+`logs/`, and every file's output is the same bytes as when it runs alone. The
+cathar engine is single-threaded, so this is the only way it uses more cores;
+neural modes hold their models on the GPU once per job.
+
 ## Development & Testing
 
 ### Code Structure
@@ -520,6 +549,20 @@ isort, Ruff, Flake8, Taplo, Pylint, Bandit, pip-audit, Radon reports/gates,
 Markdown format check and lint, tests with coverage) and overwrites
 `assets/coverage.svg` at the end. It also enforces strict per-file coverage
 using `tests/tooling/quality_gate.py` against `coverage.json`.
+
+### Validating an output by ear-like metrics
+
+`scripts/validate_restoration.py` scores a restored file against its
+source (words, timbre, highs, musical noise, hiss, hum, background) and
+renders a listening set of the worst windows; `scripts/tune_restoration.py`
+sweeps engine settings on excerpts of your own tapes with it. See
+`docs/validation.md`, "Output validation harness".
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_quality_models.py
+.\.venv\Scripts\python.exe scripts\validate_restoration.py tape.mov `
+    cathar=tape_Cathar_Cleaned.mov --markdown report.md --listen-dir listen
+```
 
 ### Coverage Goal
 

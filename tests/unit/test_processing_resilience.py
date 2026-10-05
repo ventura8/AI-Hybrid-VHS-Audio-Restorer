@@ -439,7 +439,9 @@ def test_denoise_and_polish_full_audio_step_cascades(tmp_path):
         assert neural_dir.name.startswith("neural_denoised_") and neural_dir != out_dir / "neural_denoised"
         mock_den.assert_called_once_with(tmp_path / "surg.wav", neural_dir, total_duration=10.0, denoise_model="UVR-DeNoise-Lite.pth")
         mock_clean.assert_called_once_with(tmp_path / "den.wav", out_dir, total_duration=10.0, strategy=strategy)
-        mock_pol.assert_called_once_with(tmp_path / "clean.wav", out_dir, total_duration=10.0, strategy=strategy, apply_air=True)
+        mock_pol.assert_called_once_with(
+            tmp_path / "clean.wav", out_dir, total_duration=10.0, strategy=strategy, apply_air=True, depth_db=None
+        )
 
 
 def test_the_optional_neural_stage_writes_apart_from_the_fallback_and_stale_output_is_cleared(tmp_path):

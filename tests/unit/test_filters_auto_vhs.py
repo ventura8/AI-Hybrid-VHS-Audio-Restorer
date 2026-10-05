@@ -562,7 +562,7 @@ def test_cathar_noiseprint_step_regenerates_corrupt_json(tmp_path):
     in_wav = tmp_path / "corrupt_test.wav"
     out_dir = tmp_path / "work"
     out_dir.mkdir()
-    corrupt_json = out_dir / "noise_corrupt_test.np.json"
+    corrupt_json = out_dir / f"noise_corrupt_test_single_{cathar.CATHAR_NOISEPRINT_DURATION_S:g}s.np.json"
     corrupt_json.write_text("{invalid json content")
 
     def fake_execute(slice_wav, output_json):

@@ -38,6 +38,9 @@ code `0`:
 1. **Markdown Quality**:
    - `mdformat` runs in check mode and passes.
    - `pymarkdown scan` passes MD013 ($\\le 80$ char wraps) and syntax rules.
+1. **SonarQube Cloud (CI only)**: not part of the local runner; after the
+   push, the CI check's "SonarQube Cloud Scan" step must pass its quality
+   gate (`.agent/workflows/sonarqube_findings.md` when it does not).
 1. **Pytest**: All unit, integration, and tooling tests pass.
 1. **Coverage Floor**: Strict $\\ge 90.00%$ per-file coverage met on all source
    files.

@@ -1,0 +1,131 @@
+{
+  "tele7abc": {
+    "source": "experiments/quality_calibration/known/tele_source.wav",
+    "variants": {
+      "deesser_bug": "experiments/quality_calibration/known/tele_deesser_bug.wav",
+      "cathar075": "experiments/quality_calibration/known/tele_cathar075.wav",
+      "single4s": "experiments/quality_calibration/known/tele_single4s.wav",
+      "stitched": "experiments/quality_calibration/known/tele_stitched.wav",
+      "apl": "experiments/quality_calibration/known/tele_apl.wav"
+    },
+    "by_ear_rank": {
+      "apl": 1,
+      "stitched": 2,
+      "cathar075": 2,
+      "single4s": 4,
+      "deesser_bug": 5
+    }
+  },
+  "soti": {
+    "source": "experiments/quality_calibration/known/soti_source.wav",
+    "variants": {
+      "deesser_bug": "experiments/quality_calibration/known/soti_deesser_bug.wav",
+      "cathar075": "experiments/quality_calibration/known/soti_cathar075.wav",
+      "single4s": "experiments/quality_calibration/known/soti_single4s.wav",
+      "stitched": "experiments/quality_calibration/known/soti_stitched.wav"
+    },
+    "by_ear_rank": {
+      "stitched": 1,
+      "single4s": 1,
+      "cathar075": 3,
+      "deesser_bug": 4
+    }
+  },
+  "vaccin": {
+    "source": "experiments/quality_calibration/known/vaccin_source.wav",
+    "variants": {
+      "deesser_bug": "experiments/quality_calibration/known/vaccin_deesser_bug.wav",
+      "cathar075": "experiments/quality_calibration/known/vaccin_cathar075.wav",
+      "single4s": "experiments/quality_calibration/known/vaccin_single4s.wav",
+      "stitched": "experiments/quality_calibration/known/vaccin_stitched.wav"
+    },
+    "by_ear_rank": {
+      "stitched": 1,
+      "single4s": 1,
+      "cathar075": 3,
+      "deesser_bug": 4
+    }
+  },
+  "tele7abc_listen": {
+    "source": "D:\\Tata\\New folder\\Interviu Tele7abc Dr. Alexandrescu Cristian Feb 1997_stab_starlight_mini.mov",
+    "variants": {
+      "apl__baseline": "D:\\Tata\\New folder\\variants\\tele7abc__apl__baseline.mov",
+      "apl__no_air": "D:\\Tata\\New folder\\variants\\tele7abc__apl__no_air.mov",
+      "apl__no_expander": "D:\\Tata\\New folder\\variants\\tele7abc__apl__no_expander.mov",
+      "apl__no_expander_no_air": "D:\\Tata\\New folder\\variants\\tele7abc__apl__no_expander_no_air.mov",
+      "apl__roformer": "D:\\Tata\\New folder\\variants\\tele7abc__apl__roformer.mov",
+      "apl__roformer_no_expander_no_air": "D:\\Tata\\New folder\\variants\\tele7abc__apl__roformer_no_expander_no_air.mov",
+      "cathar075__alpha_2_0": "D:\\Tata\\New folder\\variants\\tele7abc__cathar075__alpha_2_0.mov",
+      "cathar__alpha_2_0": "D:\\Tata\\New folder\\variants\\tele7abc__cathar__alpha_2_0.mov",
+      "cathar__alpha_2_0_beta_0_005": "D:\\Tata\\New folder\\variants\\tele7abc__cathar__alpha_2_0_beta_0_005.mov",
+      "cathar__alpha_2_25": "D:\\Tata\\New folder\\variants\\tele7abc__cathar__alpha_2_25.mov",
+      "cathar__baseline": "D:\\Tata\\New folder\\variants\\tele7abc__cathar__baseline.mov",
+      "final_apl": "D:\\Tata\\New folder\\variants\\tele7abc__final_apl.mov",
+      "final_cathar": "D:\\Tata\\New folder\\variants\\tele7abc__final_cathar.mov"
+    },
+    "by_ear_rank": {
+      "cathar075__alpha_2_0": 1,
+      "cathar__baseline": 2,
+      "cathar__alpha_2_0": 3,
+      "apl__no_expander": 4,
+      "apl__no_expander_no_air": 4,
+      "cathar__alpha_2_25": 4,
+      "cathar__alpha_2_0_beta_0_005": 4,
+      "apl__baseline": 5,
+      "apl__no_air": 5,
+      "apl__roformer": 6,
+      "apl__roformer_no_expander_no_air": 6
+    },
+    "flags": {
+      "listener.dead_air": [
+        "apl__baseline",
+        "apl__no_air",
+        "apl__no_expander",
+        "apl__no_expander_no_air"
+      ],
+      "listener.pause_collapse": [
+        "apl__roformer",
+        "apl__roformer_no_expander_no_air"
+      ],
+      "listener.hiss": [
+        "cathar__alpha_2_0",
+        "cathar__alpha_2_0_beta_0_005"
+      ],
+      "listener.sibilance_thin": [
+        "apl__baseline",
+        "apl__no_air",
+        "apl__roformer"
+      ],
+      "listener.sibilance_dull": []
+    },
+    "clean": {
+      "listener.dead_air": [
+        "cathar075__alpha_2_0",
+        "cathar__baseline",
+        "cathar__alpha_2_0"
+      ],
+      "listener.pause_collapse": [
+        "cathar075__alpha_2_0",
+        "cathar__baseline"
+      ],
+      "listener.hiss": [
+        "cathar075__alpha_2_0",
+        "cathar__baseline",
+        "apl__baseline"
+      ],
+      "listener.sibilance_thin": [
+        "cathar075__alpha_2_0",
+        "cathar__baseline",
+        "cathar__alpha_2_0"
+      ],
+      "listener.sibilance_dull": [
+        "cathar075__alpha_2_0",
+        "cathar__baseline",
+        "cathar__alpha_2_0",
+        "apl__baseline",
+        "apl__no_air",
+        "apl__roformer"
+      ]
+    }
+  }
+}

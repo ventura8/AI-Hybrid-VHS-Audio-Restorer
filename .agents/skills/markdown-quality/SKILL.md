@@ -44,3 +44,20 @@ poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
   - Fenced code blocks and lists must be surrounded by blank lines.
 - **Links & Images**:
   - Always verify that relative file links point to existing repository files.
+
+## Gate Quirks on a Windows Checkout
+
+- `core.autocrlf=true` gives CRLF working copies and `mdformat --check` fails
+  on them whatever their content; `git checkout -- file` restores CRLF too.
+  Normalise the touched files to LF (`sed -i 's/\r$//'`) before the check;
+  git stores LF either way. `Path.write_text` on Windows writes CRLF unless
+  it is given `newline="\n"`. (A Bash heredoc turned both escapes into
+  spaces the first time this was written: put backslashes in files with the
+  editor, not through a heredoc.)
+- `mdformat` runs with `wrap = keep`: it joins a code span that was broken
+  across lines but never reflows a paragraph, so a sentence inserted into
+  a wrapped paragraph must be wrapped by hand to 80 columns, and a code span
+  must stay on one line (move it to the start of a line if it is long).
+- The CI Markdown job scans every tracked `.md`, including generated ones
+  such as `models/*/README.md`; MD034 rejects a bare URL there, so a
+  generator writes `<https://...>`.

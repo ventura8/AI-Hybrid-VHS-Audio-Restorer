@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "ai-hybrid-vhs-audio-restorer"
-version = "1.3.2"
+version = "1.3.3"
 description = "Hybrid AI VHS audio restoration pipeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -51,9 +51,16 @@ audio-separator = [
   ], markers = "platform_system != 'Darwin'" },
   { version = "^0.47.0", markers = "platform_system == 'Darwin'" },
 ]
-onnxruntime-gpu = { version = "~1.29.0", markers = "platform_system != 'Darwin'" }
-onnxruntime = { version = "^1.29.0", markers = "platform_system == 'Darwin'" }
+onnxruntime-gpu = { version = "~1.30.0", markers = "platform_system != 'Darwin'" }
+onnxruntime = { version = "^1.30.0", markers = "platform_system == 'Darwin'" }
 librosa = "^1.0.0"
+# Output-quality harness (scripts/restoration_quality): ASR consistency and the Audiobox
+# Aesthetics predictor. Weights are fetched by scripts/download_quality_models.py.
+jiwer = "^4.0.0"
+audiobox-aesthetics = "^0.0.4"
+# MERT-v1-95M's remote code imports nnAudio only for its CQT front end, which the pinned
+# checkpoint has off, so nnAudio is not a dependency. Zimtohrli is deliberately not pinned:
+# see scripts/restoration_quality/judges.py.
 # Declared explicitly because audio-separator imports it without declaring it, and
 # librosa 1.0 dropped the transitive dependency that used to supply it. Without this the
 # next lock regeneration silently removes audioread and every UVR-based mode dies on

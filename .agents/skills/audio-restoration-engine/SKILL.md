@@ -125,3 +125,96 @@ audio alignment, or FFmpeg multiplexing.
   launching compute-heavy inference steps.
 - **Video Stream Copy**: Never re-encode the video stream (`-c:v copy`) during
   audio extraction or remuxing.
+- **cathar bit-identity**: after any change under `modules/`, restore the five
+  reference clips (`experiments/cathar_ab.py <tag>`) and require 5/5 decoded
+  PCM hashes equal to `experiments/cathar_ab_head.json`. A deliberate default
+  change (the user's call, made by ear) is followed by a re-base: copy the
+  run into `experiments/cathar_ab_head`, rewrite the JSON, keep the previous
+  reference as `cathar_ab_head_before_<tag>`. `--old-deesser` reinstates the
+  pre-fix de-esser so the rest of the chain can be checked alone.
+- **cathar de-esser semantics**: `deesser --threshold` changes meaning with
+  `--bands`: single-band is an HF/broadband ratio (default -24), multiband is
+  dB above each band's running average (use 6). A negative multiband
+  threshold engages the stage on every frame and removes everything above
+  the crossover ("under water" speech). `_cathar_deesser_step` guards it.
+- **cathar noise print**: one contiguous window on dialogue lands on speech and
+  the print learns sibilance; the shipped print is stitched from eight 0.75 s
+  windows spread by level over the quietest 20 % (10 ms crossfades), only
+  from 20 x `cathar_noiseprint_duration_s` of material.
+- **cathar alpha 2.0 -> 1.0**: 2.0 was chosen by ear and by the harness on
+  five real tapes (colouration +0.125 against +0.062, discontinuity tail
+  -0.34 against -0.42, CER 0.058 against 0.093) for 1.6 dB less removal;
+  3.5 and Wiener lose every listener-side reading. The listener round
+  (2026-09-25, `docs/validation.md`, "The listener round's plateaus") took
+  it to 1.0 with beta 0.02, repair strength 2, the coherent path and the
+  enhance off, the 4.5 s stitched print and de-esser threshold 12, on cathar
+  0.7.6; the identity reference was re-based on those defaults.
+- **cathar music profile**: the speech settings shave music (a print learned
+  from music is programme; subtracting it at the speech factor takes 8-16 kHz
+  down 14 dB and removes no noise), so `filter_cathar_vhs_pipeline` reads the
+  material from the strategy: `profile.tonal_persistence` at or above
+  `cathar_music_persistence_min` (0.05) switches the denoise to
+  `cathar_music_alpha` and the `cathar_music_enable_*` switches
+  (`_material_settings`). The scanner's band ratios cannot make the call
+  (speech ratio 1.0 on every archive music clip); the persistence reading
+  lives in `modules/tonal_persistence.py`, shared with the harness router, and
+  is a whole-file median over 15 s windows above -50 dBFS. Measured: music
+  clips 0.064-0.225, speech over a bed 0.007-0.033 (three identity clips
+  included), dry dialogue under 0.003; no identity clip crosses the floor, so
+  the profile keeps 5/5 bit-identity. Values come from the music autotune
+  (`experiments/autotune_music`); re-read them from its `final.json` before
+  touching the defaults.
+- **Listener-round stages (2026-09-23)**: every new behaviour is a
+  config-gated stage the tuning loop switches, shipped off until a loop
+  accepts it (the pause floor and the sibilant guard are on since
+  2026-09-25; the stem path and the split band stay off). A shared key the
+  two materials disagree on gets a music-profile key rather than a
+  compromise (`cathar_music_enable_deesser`, `cathar_music_expander_depth_db`,
+  `cathar_music_crt_notch_q`, `apl_music_neural_model`; `apl_expander_depth_db`
+  where the engines disagree). What the listener heard and where the lever
+  is:
+  "silent in pauses" is the polish expander (`_build_full_audio_expander_filter`
+  pushes what sits under its knee a further 7-10 dB down and maps -90 dBFS
+  to -100; `expander_depth_db`, `expander_knee_offset_db`) plus the mask
+  denoiser leaving near-silence, so `modules/pause_floor.py` puts the
+  source's own pause texture back (`pause_floor_fill_db` under the source's
+  pause level, quiet = within 10 dB of the p15 level, only the deficit,
+  never above the source) after the expander in both engines; the mux then
+  runs `loudnorm ... linear=true`, which ffmpeg silently turns dynamic when
+  the measured LRA exceeds the target (`loudnorm_target_lra`, the run log
+  states which mode held). "distortion of spoken 's'" is the neural stage
+  emptying the 1-4 kHz body under fricatives (`dsp.sib_centroid_hz`
+  +370..+620 Hz): `modules/sibilant_guard.py` puts a share of the pre-neural
+  high band back inside the fricative events only. cathar's hiss and its
+  shaved highs get one factor each side of a crossover
+  (`modules/split_band.py`, `cathar_split_band_hz`, `cathar_alpha_high`).
+  Music loses its stem under a full-mix chain: `modules/apl_stems.py` runs
+  the chain on the vocal stem and passes the background through the notches
+  and a bounded MMSE floor (`apl_music_bg_floor_db`), keyed like cathar's
+  profile on `profile.tonal_persistence`. New stages copy
+  `modules/plosive_tamer.py`'s shape (streamed blocks, `atomic_target`,
+  gain curves snapped to exactly 0/1 so untouched samples stay bit-exact,
+  `STAGE_FAILURES` -> log and return the input).
+- **Knob table hygiene**: a key the app overrides per material must be in
+  the loop's `KNOBS` or its rounds are inert there (the music loop's rounds
+  4-5 moved `cathar_alpha` while the music profile overrode it: three
+  candidates rendered byte-identical audio); when several candidates score
+  exactly alike, hash their audio before spending another round.
+- **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
+  (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
+  is measured before it replaces `.venv/Scripts/cathar.exe`; 0.7.6 replaced
+  0.7.3 on 2026-09-26 after the listener round tuned both engines on it
+  (both installers pin the version and the archive checksums). Stages our
+  chain calls were bit-identical between 0.7.5 and 0.7.6; the upstream
+  `cathar vhs` chain is not a candidate (single quietest-4 s probe, alpha 3:
+  colouration -0.43, discontinuity tail -1.61 on Tele7abc; vbasky/cathar#26).
+- **Two engines at once**: the work directory is `.temp_work_<stem>` beside the
+  source, so two runs on the same file collide. Run engines in parallel only
+  on different paths (NTFS hardlinks of the tapes for the second engine).
+- **cathar speed**: every cathar.exe stage is single-threaded (CPU time equals
+  wall time; `RAYON_NUM_THREADS` changes nothing; measured 2026-09-21 on a
+  134 s tape: SBR enhance 12 s, spike repair 3 s, dehum 2 s, denoise 0.3 s)
+  and a file's stages run in sequence; on four full tapes the enhance stage
+  was 39 % of the chain, spike repair 25 %, ffmpeg's two-pass loudness 17 %.
+  Nothing in a stage can be split without changing bits, so the lever is
+  `batch_jobs`: files at once, each in a child interpreter, outputs unchanged.

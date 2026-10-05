@@ -25,6 +25,13 @@ def _quiet_wav(tmp_path):
     return wav
 
 
+@pytest.fixture(autouse=True)
+def _stage_switched_on():
+    """The stage is off by default since the listener round; these tests pin what it does when on."""
+    with patch.object(spectral_denoise, "APL_ENABLE_SPECTRAL_DENOISE", True):
+        yield
+
+
 def test_disabled_by_configuration_skips_the_stage(quiet_wav):
     """The stage can be switched off wholesale without touching the chain."""
     with patch.object(spectral_denoise, "APL_ENABLE_SPECTRAL_DENOISE", False):
@@ -95,9 +102,9 @@ def test_the_noise_probe_is_this_modes_own_and_leaves_cathar_alone(quiet_wav, tm
     A 0.75 s probe was the largest single thing holding this mode back: 2.5 s removes
     3.39 dB more noise for 0.12 dB more programme deviation on 25 real captures, which is
     what puts the mode ahead of cathar on both halves of the trade, and 4 s removes 1.26 dB
-    more again on the full corpus at the same median deviation. cathar shipped in
-    v1.2.0 on 0.75 s and the setting is shared, so passing it explicitly is the only way to
-    take the gain without moving a released mode.
+    more again on the full corpus at the same median deviation. cathar bounds its own
+    probe by the material length, so passing this mode's value explicitly is what keeps
+    the two apart.
     """
     produced = tmp_path / "denoised.wav"
     with (
@@ -109,7 +116,7 @@ def test_the_noise_probe_is_this_modes_own_and_leaves_cathar_alone(quiet_wav, tm
         spectral_denoise.apply_when_needed(quiet_wav, tmp_path)
     assert mock_noiseprint.call_args.kwargs["duration_s"] == spectral_denoise.APL_NOISEPRINT_DURATION_S
     assert spectral_denoise.APL_NOISEPRINT_DURATION_S == 4.0
-    assert config.CATHAR_NOISEPRINT_DURATION_S == 0.75
+    assert config.CATHAR_NOISEPRINT_DURATION_S == 4.5
 
 
 def test_a_failed_subtraction_leaves_the_audio_usable(quiet_wav, tmp_path):

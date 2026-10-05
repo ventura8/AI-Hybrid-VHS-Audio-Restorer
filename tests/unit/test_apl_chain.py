@@ -61,6 +61,8 @@ def test_each_stage_receives_the_previous_stage_output(tmp_path):
 def _chain_patches(tmp_path, models, subtraction):
     """Patches every stage around the runner so only the chain's own decisions are exercised."""
     return (
+        # The chain's own model choice is under test; the named speech model (the shipped default) would mask it.
+        patch("modules.processing.APL_NEURAL_MODEL", ""),
         patch("modules.processing._pre_denoise_surgical_step", return_value=tmp_path / "surg.wav"),
         patch("modules.apl_chain._physical_repair.apply_when_needed", return_value=tmp_path / "repaired.wav"),
         patch("modules.apl_chain._spectral_denoise.apply_tonal_cleanup", side_effect=lambda wav, *_a, **_k: wav),

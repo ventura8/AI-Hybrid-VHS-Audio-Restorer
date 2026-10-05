@@ -4,12 +4,12 @@
   (`vocal_mix_volume`, `background_mix_volume`), sync behavior, process mode,
   native filter parameters, and file extensions.
 - **Defaults**: If `config.yaml` is missing, the script defaults to neutral mix
-  levels (1.0), `process_mode: auto_pure_linear`, and standard video extensions
+  levels (1.0), `process_mode: auto`, and standard video extensions
   (`.mp4`, `.mkv`, `.avi`, `.mov`, `.mpg`, `.mpeg`, `.ts`, `.m2ts`).
 
 ## Process Modes
 
-- `auto_pure_linear` (default): - Full-mix pure-denoising mode for natural
+- `auto_pure_linear`: - Full-mix pure-denoising mode for natural
   archival fidelity. - Uses dual-resolution analysis and analog
   pre-conditioning, then subtracts a learned noise profile, blends the
   result back toward the original per frequency bin, and denoises once with
@@ -20,8 +20,11 @@
   modes. See `docs/cathar_vs_auto_pure_linear_1000_benchmark.md`. -
   Parameters, all specific to this mode so that `cathar` cannot be affected
   by tuning them: - `apl_noiseprint_duration_s` (seconds of the quietest
-  stretch used to learn the noise profile, default 4.0). The shared
-  `cathar_noiseprint_duration_s` stays at 0.75 and is not used here. This is
+  stretch used to learn the noise profile, default 4.0). `cathar` has its own
+  `cathar_noiseprint_duration_s`, 6 s stitched from eight 0.75 s pauses on
+  a tape of 120 s or more (twenty times the print) and one 0.75 s window on
+  anything shorter (so
+  corpus clips are unchanged); it is not used here. This is
   the single most consequential setting in the mode: at 0.75 s it removes
   3.39 dB less noise than at 2.5, and on the full corpus 4 s removes 9.99 dB
   against 2.5 s's 8.73 at the same 0.32 dB of median deviation, with the
@@ -34,8 +37,13 @@
   measures worse overall. - `apl_spectral_margin_db` (skip subtraction above
   this programme-above-noise margin, default 60.0). Effectively off for real
   tape, and deliberately so -- it guards only already-pristine audio. -
-  `apl_enable_spectral_denoise` (default true), `apl_enable_learned_blend`
-  (default true). - `apl_enable_physical_repair` (default true). Repairs
+  `apl_enable_spectral_denoise` (default **false** since the listener round of
+  2026-09-25: on the four Tata tapes the self-driving loop judged the chain
+  better without the subtraction stage on the pause and sibilance readings,
+  and the music loop kept it off; with the stage off, the subtraction's own
+  settings on this page do nothing until it is switched back on),
+  `apl_enable_learned_blend` (default true). - `apl_enable_physical_repair`
+  (default true). Repairs
   crackle, dropouts, saturation and azimuth skew, each gated on its own
   defect being detected. Four cathar stages earned a place against paired
   fixtures and three were rejected: `repair` and `deplosive` make undamaged
@@ -136,11 +144,17 @@
   10.02 at 0.22 (on the tonal 45, 3.06/0.22 against 7.96/0.28). A per-bin
   estimator keeps the low-level programme the quiet frames hold, which the
   trade metric reads as noise left behind. Selectable, with the cathar path
-  as its fallback. - `apl_neural_model` (default empty) names the UVR model
-  to run after subtraction outright; empty follows the chain's own choice.
-  The Mel-Roformer denoiser
-  (`denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt`) measured 9.39/0.22
-  against UVR-DeNoise's 10.02/0.23 on 50 captures and is not the default.
+  as its fallback. - `apl_neural_model` names the UVR model to run outright;
+  empty follows the chain's own choice. The default is the Mel-RoFormer
+  denoiser (`denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt`) since the
+  listener round: on the corpus trade metric it measured 9.39/0.22 against
+  UVR-DeNoise's 10.02/0.23 on 50 captures, and the listener harness on the
+  Tata tapes preferred it in every round. `apl_music_neural_model` (default
+  empty) is the model on music (held partials at or above
+  `apl_music_persistence_min`): the music loop took the Mel-RoFormer back off
+  there in its first round (hard-gate failures 35 to 30 on 12 clips), so music
+  follows the chain's choice. - `apl_expander_depth_db` (default 12.0) is this
+  mode's polish expander depth (see the listener-round settings below).
   `apl_use_resemble_denoise` (default **false**) puts Resemble-Enhance's
   denoiser -- a masking model; its enhancer is generative and is not a
   candidate -- in UVR-DeNoise's place, falling back to UVR on absence or
@@ -163,8 +177,22 @@
   Hz below the threshold, the most tonal third of the corpus -- subtraction
   runs at the gentler factor. At 3.0 that material deviated 0.49 dB against
   cathar's 0.32; at 2.0 it is 0.33 with noise removal still ahead. The gate
-  fires on none of the noisier material. - `apl_use_deepfilternet` (default
-  **false**). DeepFilterNet3 in place of UVR-DeNoise as the neural stage,
+  fires on none of the noisier material. - `auto_cathar_tonal` (default
+  **true**), `auto_cathar_flatness_max` (default 0.04) and
+  `auto_cathar_probe_similarity` (default 0.9). Where `auto` prefers
+  `cathar`'s fidelity: sustained tonal programme with no silence for
+  `auto_pure_linear`'s 4 s noise probe to learn from. The tape reads as
+  tonal under the flatness ceiling, the quietest 4 s carries the programme
+  (its speech-band spectrum correlates with the loud frames' above the
+  similarity), and there is no sustained beat. Measured on 136 corpus clips
+  and 81 excerpts of 21 local tapes, that is the one condition under which
+  `cathar` deviates less on most clips (10 of 14 and 9 of 15; 0.21 dB
+  against 0.54 and 0.15 against 0.19), always for 2-3 dB less noise
+  removed; wins on both halves are a wash, and every other reading leaves
+  `cathar` behind on both. A fidelity preference rather than a win: set
+  `auto_cathar_tonal` to false to keep `auto_pure_linear` there. -
+  `apl_use_deepfilternet` (default **false**). DeepFilterNet3 in place of
+  UVR-DeNoise as the neural stage,
   where it is installed. It wins on synthetic fixtures and loses on real
   tape -- programme deviation 0.22 to 0.66 dB across 50 captures -- so it is
   opt-in. It is a from-source dependency (Rust core built under MSVC,
@@ -181,42 +209,107 @@
   de-hum, surgical CRT whistle notch filter, spectral noise print
   subtraction, de-click/de-crackle, and azimuth phase alignment. -
   `cathar_vhs` is an alias for `cathar`. - Output suffix:
-  `*_Cathar_Cleaned`. - `auto`: - Intelligent acoustic profile scan
-  dynamically selects the optimal restoration engine and model parameters
-  based on measured noise, clicks, and hum. - Suffix: `*_Auto_Cleaned`. -
-  `multipass_auto` / `multipass`: - Maximum-quality 4-pass cascaded
-  restoration. - Dual-resolution acoustic scan -> analog pre-conditioning ->
-  stem separation & Resemble-Enhance -> residual polish -> DTW Sync -> final
-  master mix. - `multipass` is an alias for `multipass_auto`. - Suffix:
-  `*_MultiPass_Cleaned`. - `auto_pure` / `pure`: - Pure speech & ambient
-  restoration without generative vocoder synthesis. - Dual-resolution
-  acoustic scan -> analog pre-conditioning -> AI stem separation ->
-  dedicated speech/background UVR-DeNoise + de-esser -> DTW/shift sync ->
-  32-bit float mix with EBU R128 loudness normalization. - `pure` is an
-  alias for `auto_pure`. - Output suffix: `*_Pure_Cleaned`. - `hybrid`: -
-  Separation + vocal enhancement + background denoise + sync + final mix. -
-  Output suffix: `*_Hybrid_Cleaned`. - `denoise_only`: - Full-audio denoise
-  \+ sync + final remux. - No separation or vocal enhancement. - Output
-  suffix: `*_Denoised_Cleaned`. - `auto_ffmpeg_native` / `auto_vhs_native`:
-  \- Intelligent adaptive FFmpeg DSP restoration with acoustic profile
-  scanning. - Automatically analyzes tape hiss noise floor, mains hum /
-  head-switching buzz frequencies, motor rumble power, and impulsive click
-  density to auto-tune FFmpeg native DSP parameters. - `auto_vhs_native` is
-  an alias for `auto_ffmpeg_native`. - Output suffix:
-  `*_AutoFFmpeg_Cleaned`. - `ffmpeg_native` / `vhs_native`: - Ultra-fast
-  native FFmpeg DSP restoration (`highpass` + `adeclick` + `afftdn` +
-  optional `bandreject` notch). - Best for continuous tape hiss, mechanical
-  rumble, and impulsive electrical clicks without GPU. - `vhs_native` is an
-  alias for `ffmpeg_native`. - Parameters: `afftdn_nr` (dB reduction,
-  default 10.0), `afftdn_nf` (dB noise floor, default -55.0), `afftdn_tn`
-  (adaptive noise tracking), `highpass_freq` (rumble cutoff, default 80 Hz),
-  `enable_adeclick` (click removal), `notch_freq` (mains hum, default 50.0
-  Hz; set 60.0 Hz for NTSC). - Output suffix: `*_FFmpeg_Cleaned`. -
-  `arnndn_speech`: - FFmpeg Recurrent Neural Network (RNNoise)
-  speech/dialogue denoiser. - Best for dialogue-heavy VHS recordings. -
-  Parameters: `arnndn_model` (default `"cb.rnnn"` in `models/arnndn/`),
-  `arnndn_highpass_freq`, `arnndn_enable_adeclick`. - Output suffix:
-  `*_Speech_Cleaned`.
+  `*_Cathar_Cleaned`. - The binary is the one beside the interpreter (the
+  venv), then `~/.cargo/bin`; `AI_RESTORE_CATHAR_BIN` in the environment
+  names another build, so an upgrade can be measured on the tuning excerpts
+  before it replaces the validated binary; the installers provision 0.7.6,
+  the build the listener round tuned on. - Speech settings since the listener
+  round of 2026-09-25 (the self-driving loop on the four full Tata tapes,
+  judging on the listener readings; `docs/validation.md`): `cathar_alpha` 1.0
+  (from 2.0), `cathar_beta` 0.02, `cathar_repair_strength` 2,
+  `cathar_enable_coherent` and `cathar_enable_enhance` off,
+  `cathar_noiseprint_duration_s` 4.5 (six stitched pauses, from 90 s of
+  material) and `cathar_deesser_threshold` 12 (only the loud 's' is caught).
+  - Music profile: a tape whose
+    tonal persistence (the scanner's median share of held spectral peaks over
+    15 s windows; music 0.064-0.225, speech over a bed 0.007-0.033, dry
+    dialogue under 0.003) reaches `cathar_music_persistence_min` (0.05) is
+    denoised at `cathar_music_alpha` (0.5) with `cathar_music_enable_noiseprint`
+    (false), `cathar_music_enable_coherent` (true) and
+    `cathar_music_enable_deplosive` (false) in place of the speech settings,
+    because a print learned from music is programme and subtracting it at the
+    speech factor shaves 8-16 kHz by 14 dB while removing no noise. The music
+    loop of the listener round (four rounds on 12 clips, hard-gate failures 31
+    to 27) also switches the de-esser off (`cathar_music_enable_deesser`,
+    false), sets the polish expander to 4 dB (`cathar_music_expander_depth_db`)
+    and narrows the CRT notch to Q 60 (`cathar_music_crt_notch_q`);
+    `cathar_music_profile` false keeps the speech settings everywhere. - `auto`
+    (default): - Intelligent
+    acoustic profile scan
+    (speech, music, rhythm, tonality, noise floor, hum, clicks) that names the
+    material, tunes the pre-conditioning and the models, and runs
+    `auto_pure_linear`, the engine that leads `cathar` on every class
+    measured on real tape; runs `cathar` on sustained tonal programme with no
+    silence for the noise probe (`auto_cathar_tonal`) and when the neural
+    denoiser is not installed (when cathar is installed; with neither engine
+    available the `auto_ffmpeg_native` chain is the last resort). - Suffix:
+    `*_Auto_Cleaned`. -
+    `multipass_auto` / `multipass`: - Maximum-quality 4-pass cascaded
+    restoration. - Dual-resolution acoustic scan -> analog pre-conditioning ->
+    stem separation & Resemble-Enhance -> residual polish -> DTW Sync -> final
+    master mix. - `multipass` is an alias for `multipass_auto`. - Suffix:
+    `*_MultiPass_Cleaned`. - `auto_pure` / `pure`: - Pure speech & ambient
+    restoration without generative vocoder synthesis. - Dual-resolution
+    acoustic scan -> analog pre-conditioning -> AI stem separation ->
+    dedicated speech/background UVR-DeNoise + de-esser -> DTW/shift sync ->
+    32-bit float mix with EBU R128 loudness normalization. - `pure` is an
+    alias for `auto_pure`. - Output suffix: `*_Pure_Cleaned`. - `hybrid`: -
+    Separation + vocal enhancement + background denoise + sync + final mix. -
+    Output suffix: `*_Hybrid_Cleaned`. - `denoise_only`: - Full-audio denoise
+    \+ sync + final remux. - No separation or vocal enhancement. - Output
+    suffix: `*_Denoised_Cleaned`. - `auto_ffmpeg_native` / `auto_vhs_native`:
+    \- Intelligent adaptive FFmpeg DSP restoration with acoustic profile
+    scanning. - Automatically analyzes tape hiss noise floor, mains hum /
+    head-switching buzz frequencies, motor rumble power, and impulsive click
+    density to auto-tune FFmpeg native DSP parameters. - `auto_vhs_native` is
+    an alias for `auto_ffmpeg_native`. - Output suffix:
+    `*_AutoFFmpeg_Cleaned`. - `ffmpeg_native` / `vhs_native`: - Ultra-fast
+    native FFmpeg DSP restoration (`highpass` + `adeclick` + `afftdn` +
+    optional `bandreject` notch). - Best for continuous tape hiss, mechanical
+    rumble, and impulsive electrical clicks without GPU. - `vhs_native` is an
+    alias for `ffmpeg_native`. - Parameters: `afftdn_nr` (dB reduction,
+    default 10.0), `afftdn_nf` (dB noise floor, default -55.0), `afftdn_tn`
+    (adaptive noise tracking), `highpass_freq` (rumble cutoff, default 80 Hz),
+    `enable_adeclick` (click removal), `notch_freq` (mains hum, default 50.0
+    Hz; set 60.0 Hz for NTSC). - Output suffix: `*_FFmpeg_Cleaned`. -
+    `arnndn_speech`: - FFmpeg Recurrent Neural Network (RNNoise)
+    speech/dialogue denoiser. - Best for dialogue-heavy VHS recordings. -
+    Parameters: `arnndn_model` (default `"cb.rnnn"` in `models/arnndn/`),
+    `arnndn_highpass_freq`, `arnndn_enable_adeclick`. - Output suffix:
+    `*_Speech_Cleaned`.
+
+## Listener-Round Settings
+
+Keys both engines share, set by the self-driving loops of the listener round
+(2026-09-25: both engines on the four full Tata tapes and on 12 music clips,
+judged by the harness's listener readings; the listening set that confirms or
+overrides them is `D:\Tata\New folder\variants\v2`):
+
+- `expander_depth_db` (7.0) and `expander_knee_offset_db` (8.0, from 4.0):
+  the polish expander's depth under its knee and the knee's offset above the
+  scanner's noise floor. Every loop moved the knee to +8 dB; the depth is
+  7 dB for `cathar` on speech, `apl_expander_depth_db` (12.0) for
+  `auto_pure_linear` and `cathar_music_expander_depth_db` (4.0) for `cathar`
+  on music.
+- `enable_pause_floor` (true, from false), `pause_floor_fill_db` (12.0) and
+  `pause_floor_quiet_percentile` (15.0): in the frames the source calls
+  quiet, an attenuated copy of the source is put back under the restored
+  audio so a pause keeps its own texture, the fill 12 dB under the source's
+  pause level. All four loops accepted it and none moved the fill.
+- `loudnorm_target_lra` (20.0, from 11.0): the mux's loudness-range target;
+  above it ffmpeg's loudnorm turns dynamic and rides the gain between words.
+  All four loops accepted 20.
+- `crt_notch_q` (30.0): the CRT line-whistle notch's Q in the pre-conditioning
+  graph; `cathar_music_crt_notch_q` (60.0) on music.
+- `apl_enable_sibilant_guard` (true, from false) and `apl_sibilant_mix` (0.8,
+  from 0.5): on the fricative frames of the pre-neural audio this share of
+  the high band is put back, so the 's' keeps the body the neural stage
+  empties. The Tata loop's answer to the listener's "thin s"; Vaccin still
+  reads thin at it.
+
+A tuning result that carries a knob an accepted switch made inert (the
+subtraction's factor, probe and native suppressor once
+`apl_enable_spectral_denoise` is off) leaves that knob at its shipped value.
 
 ## Model Files
 
@@ -229,6 +322,31 @@ or a leading dot, is ignored with a warning on stderr and the setting falls
 back to its default. A model file that fails to
 load is deleted from `models/` so it can be re-downloaded, and only a file
 inside that directory is ever deleted.
+
+The output-quality harness keeps its own weights beside them, in
+`models/sigmos/`, `models/whisper-large-v3-turbo/`,
+`models/wavlm-base-plus-sv/`, `models/audiobox-aesthetics/`,
+`models/utmos/`, `models/scoreq/` (the NeurIPS 2024 no-reference MOS, ONNX
+weights from Zenodo, CC-BY-4.0) and `models/mert-v1-95m/` (the music
+embedding whose distance reads the non-vocal stem, CC-BY-NC-4.0, research
+use), fetched by `scripts/download_quality_models.py` from pinned upstream
+revisions; each directory carries a README with the licence and a
+`MANIFEST.json` with the sha256 of every file. No `config.yaml` key names
+them. See `docs/validation.md`, "Output validation harness".
+
+## Batches
+
+`batch_jobs` (default 1) is how many files restore at the same time when a
+folder or several files are given. Each file runs in a child interpreter on
+its own, with its own work directory and a log under `logs/<name>.log`, so
+its output is bit-identical to a solo run and a failure in one file leaves the
+others alone; the parent prints start, finish and the failed files. cathar is
+single-threaded on every stage (measured on a 134 s tape: the SBR enhance
+stage uses 12 s of CPU for 12 s of wall, `RAYON_NUM_THREADS` changes nothing)
+and its stages run one after another, so parallel files are the only way it
+uses more cores: four jobs restore a folder of four tapes in the time of the
+longest one. Neural modes load their models once per job; count about 6 GB of
+GPU memory per `auto_pure_linear` job.
 
 ## Long Captures
 

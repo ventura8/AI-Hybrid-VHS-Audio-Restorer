@@ -24,6 +24,9 @@ Keep the repository in a releasable state by passing all local and CI quality ga
 1. Bandit security gate (`-ll -ii`) on Python production/entry scripts.
 1. pip-audit vulnerability scan.
 1. Radon CC/MI/RAW/Halstead reports and CC/MI pass gates.
+1. SonarQube Cloud (CI only): `SonarSource/sonarqube-scan-action` after the
+   tests, configured by `sonar-project.properties`, waiting on the quality
+   gate; see `.agents/skills/sonarqube-quality-gate/SKILL.md`.
 1. Markdown auto-delint via `mdformat` on docs and agent guidance files.
 1. Markdown lint via `pymarkdown scan` on the same Markdown targets.
 1. Pytest with coverage threshold >= 90%.

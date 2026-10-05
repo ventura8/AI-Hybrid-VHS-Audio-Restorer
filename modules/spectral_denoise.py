@@ -201,21 +201,26 @@ TONALITY_BAND_HZ = (100.0, 5000.0)
 TONALITY_FRAME = 4096
 
 
-def estimate_tonality(wav_path):
-    """Median per-frame spectral flatness in the speech band, or None when unreadable.
+def tonality_of_signal(mono_signal, sample_rate):
+    """Median per-frame spectral flatness of a mono signal in the speech band.
 
     Flatness is the geometric mean of the power spectrum over its arithmetic mean: near 1
     for noise, near 0 for a signal made of sustained peaks. Music sits low, and it is the
     material on which subtraction at the speech-tuned factor takes programme with the noise.
     """
-    mono_signal, sample_rate = _scannable_mono(wav_path)
-    if sample_rate is None:
-        return None
     freqs, _times, spectrum = scipy.signal.stft(mono_signal, sample_rate, nperseg=TONALITY_FRAME)
     band = (freqs >= TONALITY_BAND_HZ[0]) & (freqs <= TONALITY_BAND_HZ[1])
     power = np.abs(spectrum[band]) ** 2 + 1e-20
     flatness = np.exp(np.mean(np.log(power), axis=0)) / np.mean(power, axis=0)
     return float(np.median(flatness))
+
+
+def estimate_tonality(wav_path):
+    """Median per-frame spectral flatness in the speech band, or None when unreadable."""
+    mono_signal, sample_rate = _scannable_mono(wav_path)
+    if sample_rate is None:
+        return None
+    return tonality_of_signal(mono_signal, sample_rate)
 
 
 def is_tonal(source_wav):

@@ -9,7 +9,9 @@ lower-spec configurations.
 
 - `input/`: Source video files (MP4, MKV, etc.).
 - Restored videos are written next to their source with a mode-specific
-  `*_Cleaned` suffix; the launch directory only receives `session_log.txt`.
+  `*_Cleaned` suffix; `session_log.txt` is written beside the application
+  (never in the launch directory, where a planted symlink could redirect it),
+  one line per message.
 - `.temp_work_<video>/`: Hidden work directory created next to each source
   video, holding every intermediate track, sidecar and library scratch file for
   that restoration. It is removed once the output is valid, also when a rerun

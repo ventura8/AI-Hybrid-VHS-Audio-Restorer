@@ -29,6 +29,7 @@ except ImportError:
     torch = None
 
 from . import apl_chain as _apl_chain
+from . import apl_stems as _apl_stems
 from . import deepfilter_denoise as _deepfilter
 from . import denoise_cache as _denoise_cache
 from . import denoise_chunking as _denoise_chunking
@@ -38,6 +39,7 @@ from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
 from . import utils as _utils
 from .config import (
+    APL_MUSIC_NEURAL_MODEL,
     APL_NEURAL_MODEL,
     DENOISE_MODEL,
     ENABLE_DEESSER,
@@ -982,11 +984,27 @@ def _resolve_preconditioned_audio(work_dir, original_wav, video_dur, mode, strat
         from .auto_scanner import scan_and_decide_restoration_strategy
 
         strategy = scan_and_decide_restoration_strategy(original_wav, executed_mode=mode)
-    precond_cfg = strategy.get("precondition_filters", {})
+    precond_cfg = _precondition_config_for(mode, strategy)
     fingerprint = hashlib.sha256(json.dumps(precond_cfg, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     precond_wav = work_dir / f"preconditioned_{fingerprint}_audio.wav"
     clean_wav = _filter_precondition_step(original_wav, precond_wav, precond_cfg, total_duration=video_dur)
     return clean_wav, strategy
+
+
+def _precondition_config_for(mode, strategy):
+    """The scanned pre-conditioning settings, plus the CRT notch width cathar's music profile asks for.
+
+    The width goes into the config the graph is built from, so it is part of the cached
+    file's fingerprint and a music tape never reuses a speech tape's pre-conditioning.
+    """
+    precond_cfg = dict(strategy.get("precondition_filters", {}))
+    if mode in ("cathar", "cathar_vhs"):
+        from . import cathar as _cathar
+
+        notch_q = _cathar.music_crt_notch_q(strategy)
+        if notch_q is not None:
+            precond_cfg["crt_notch_q"] = notch_q
+    return precond_cfg
 
 
 def _process_denoise_only_mode(work_dir, original_wav, video_path, final_output_video, video_dur, strategy=None):
@@ -1125,11 +1143,14 @@ def _expand_background_step(background_wav, denoised_bg_dir, total_duration=None
     return _run_dsp_filter_file(background_wav, output_wav, exp_filter, "Expanding Background", total_duration)
 
 
-def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strategy=None, apply_air=False):
-    """Applies optional high-frequency air shelf and adaptive downward dynamic expansion."""
+def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strategy=None, apply_air=False, depth_db=None):
+    """Applies optional high-frequency air shelf and adaptive downward dynamic expansion.
+
+    `depth_db` is the expander depth this engine and material take; None is the shared default.
+    """
     if not is_valid_audio(denoised_wav):
         return denoised_wav
-    polish_filter = build_full_audio_polish_filter(strategy=strategy, apply_air=apply_air)
+    polish_filter = build_full_audio_polish_filter(strategy=strategy, apply_air=apply_air, depth_db=depth_db)
     if not polish_filter:
         return denoised_wav
     fingerprint = hashlib.sha256(polish_filter.encode("utf-8")).hexdigest()[:12]
@@ -1179,15 +1200,21 @@ _neural_denoise_dir = _denoise_cache.neural_denoise_dir
 _without_stale_neural_output = _denoise_cache.without_stale_neural_output
 
 
-def _neural_stage(apl_chain, model_to_use, surgical_wav):
+def _neural_stage(apl_chain, model_to_use, surgical_wav, strategy=None):
     """The neural model to run and whether to run it at all.
 
     The named model and the tonal skip are the mode's own settings: a caller that did not
-    opt into the chain (denoise_only) keeps the model it chose and always runs it.
+    opt into the chain (denoise_only) keeps the model it chose and always runs it. Music
+    (held partials at or above `apl_music_persistence_min`) takes `apl_music_neural_model`,
+    speech `apl_neural_model`; either empty follows the chain's own choice.
     """
     if not apl_chain:
         return model_to_use, True
-    return APL_NEURAL_MODEL or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
+    named = APL_MUSIC_NEURAL_MODEL if _apl_stems.music_material(strategy) else APL_NEURAL_MODEL
+    return named or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
+
+
+POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db"})
 
 
 def _denoise_and_polish_full_audio_step(
@@ -1196,7 +1223,6 @@ def _denoise_and_polish_full_audio_step(
     total_duration=None,
     denoise_model=None,
     strategy=None,
-    apply_air=False,
     spectral_denoise=False,
     physical_repair=False,
     deepfilternet=False,
@@ -1204,8 +1230,20 @@ def _denoise_and_polish_full_audio_step(
     plosive_tamer=False,
     tone_cancel=False,
     resemble_denoise=False,
+    **stages,
 ):
-    """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish."""
+    """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish.
+
+    `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard` and
+    `pause_floor`, all False unless named, and `expander_depth_db`, the polish expander's
+    depth for this caller (auto_pure_linear passes its own; None keeps the shared
+    `expander_depth_db`). Any other name is a TypeError like a misspelt keyword would be.
+    """
+    unknown = set(stages) - POST_NEURAL_STAGES
+    if unknown:
+        raise TypeError(f"unknown post-neural stage(s): {sorted(unknown)}")
+    expander_depth_db = stages.get("expander_depth_db")
+    stages = {name: bool(stages.get(name, False)) for name in ("sibilant_guard", "pause_floor", "apply_air")}
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(
         original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=hum_cancel
@@ -1223,7 +1261,7 @@ def _denoise_and_polish_full_audio_step(
     surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
     if "spectral_denoise" in applied:
         model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
-    model_to_use, neural_wanted = _neural_stage(spectral_denoise, model_to_use, surgical_wav)
+    model_to_use, neural_wanted = _neural_stage(spectral_denoise, model_to_use, surgical_wav, strategy)
     denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
     denoised_wav = surgical_wav
     if neural_wanted:
@@ -1240,7 +1278,33 @@ def _denoise_and_polish_full_audio_step(
             ),
         )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
-    return _polish_full_audio_step(cleaned_wav, audio_dir, total_duration=total_duration, strategy=strategy, apply_air=apply_air)
+    return _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, expander_depth_db)
+
+
+def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, depth_db=None):
+    """After the neural stage: the sibilant guard (against the pre-neural audio), the polish, then the pause floor.
+
+    The guard runs before the polish so the expander sees the restored fricatives; the pause
+    floor runs after it so the expander cannot take the fill back out. Its reference is the
+    pre-conditioned audio the chain started from.
+    """
+    if stages.get("sibilant_guard"):
+        from . import sibilant_guard as _sibilant_guard
+
+        cleaned_wav = _sibilant_guard.apply_when_needed(surgical_wav, cleaned_wav, audio_dir, strategy=strategy)
+    polished = _polish_full_audio_step(
+        cleaned_wav,
+        audio_dir,
+        total_duration=total_duration,
+        strategy=strategy,
+        apply_air=stages.get("apply_air", False),
+        depth_db=depth_db,
+    )
+    if stages.get("pause_floor"):
+        from . import pause_floor as _pause_floor
+
+        polished = _pause_floor.apply_when_needed(original_wav, polished, audio_dir, strategy=strategy)
+    return polished
 
 
 def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None):
@@ -1420,7 +1484,11 @@ def _dispatch_mode_pipeline(target_mode, work_dir, original_wav, video_path, fin
 
 
 def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, video_dur):
-    """AI auto-detects scene acoustic characteristics and dispatches best restoration pipeline.
+    """Profiles the tape and runs the engine the scanner picks for it.
+
+    The scanner chooses between the two full restoration chains, auto_pure_linear and
+    cathar, on the evidence recorded beside its rule; the strategy it returns carries the
+    pre-conditioning filters, the models and the sync method the chosen chain reads.
 
     Args:
         work_dir (pathlib.Path): Working directory path.
@@ -1430,14 +1498,9 @@ def _process_auto_mode(work_dir, original_wav, video_path, final_output_video, v
         video_dur (float): Video duration in seconds.
     """
     from .auto_scanner import scan_and_decide_restoration_strategy
-    from .config import ENABLE_MULTIPASS
 
     strategy = scan_and_decide_restoration_strategy(original_wav)
-    target_mode = strategy["mode"]
-    if ENABLE_MULTIPASS and target_mode == "hybrid":
-        _dispatch_mode_pipeline("multipass_auto", work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
-        return
-    _dispatch_mode_pipeline(target_mode, work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
+    _dispatch_mode_pipeline(strategy["mode"], work_dir, original_wav, video_path, final_output_video, video_dur, strategy=strategy)
 
 
 def _cleanup_work_dir(work_dir, final_output_video):

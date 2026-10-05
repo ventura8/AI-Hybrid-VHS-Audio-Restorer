@@ -63,6 +63,10 @@ The local pipeline executes the following stages sequentially:
      90.00%$).
    - Strict per-file coverage enforcement via `coverage.json`.
    - Regenerates the visual coverage badge at `assets/coverage.svg`.
+1. **SonarQube Cloud (CI only, not in the local runner)**:
+   - `SonarSource/sonarqube-scan-action` uploads `coverage.xml` and
+     `junit.xml` per `sonar-project.properties` and waits for the quality
+     gate, which blocks the CI check; findings are read on sonarcloud.io.
 
 ## Troubleshooting & Remediation
 

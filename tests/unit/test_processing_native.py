@@ -293,9 +293,10 @@ def test_process_auto_ffmpeg_native_mode(mock_filter, mock_align, mock_mux, tmp_
 
 @patch("modules.auto_scanner.scan_and_decide_restoration_strategy")
 @patch("modules.modes.registry.get_mode_instance")
-def test_process_auto_mode_dispatches_selected_strategy(mock_instance, mock_scan, tmp_path):
-    """Verify _process_auto_mode scans audio and runs the chosen pipeline without duplicate scanning."""
-    strategy = {"mode": "hybrid", "reason": "Test", "enhance_nfe": 256}
+@pytest.mark.parametrize("selected_mode", ["auto_pure_linear", "cathar"])
+def test_process_auto_mode_dispatches_selected_strategy(mock_instance, mock_scan, tmp_path, selected_mode):
+    """The chosen engine runs once with the scanner's strategy, and the audio is scanned once."""
+    strategy = {"mode": selected_mode, "reason": "Test", "enhance_nfe": 256}
     mock_scan.return_value = strategy
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -305,19 +306,9 @@ def test_process_auto_mode_dispatches_selected_strategy(mock_instance, mock_scan
     handler = MagicMock()
     mock_instance.return_value.execute = handler
 
-    with patch("modules.config.ENABLE_MULTIPASS", False):
-        modules.processing._process_auto_mode(work_dir, orig, video, final_out, 10.0)
+    modules.processing._process_auto_mode(work_dir, orig, video, final_out, 10.0)
     mock_scan.assert_called_once_with(orig)
-    mock_instance.assert_called_once_with("hybrid")
-    handler.assert_called_once()
-
-    mock_scan.reset_mock()
-    mock_instance.reset_mock()
-    handler.reset_mock()
-    with patch("modules.config.ENABLE_MULTIPASS", True):
-        modules.processing._process_auto_mode(work_dir, orig, video, final_out, 10.0)
-    mock_scan.assert_called_once_with(orig)
-    mock_instance.assert_called_once_with("multipass_auto")
+    mock_instance.assert_called_once_with(selected_mode)
     handler.assert_called_once_with(work_dir, orig, video, final_out, 10.0, strategy=strategy)
 
 

@@ -436,7 +436,301 @@ recording reads above 4 -- which is what a tape corpus looks like to a model
 trained on suppressor outputs, and the reason the figure is read paired,
 clip by clip, rather than as an absolute.
 
+## Output validation harness
+
+The trade metric reads noise removed and programme deviation in 300-3400 Hz,
+and nothing else. This week two failures a listener heard at once scored well
+on it: the multiband de-esser bug (a 4 kHz brick wall, speech "under water")
+and a single 4 s noise probe on dialogue (the print learned sibilance, 8-12 kHz
+down 14 dB). `scripts/validate_restoration.py` scores an output against its
+own source the way a listener would, in four families, and vetoes with hard
+gates:
+
+- `dsp` (native rate, no model): presence and air band on the loud frames
+  (muffling), a log-kurtosis ratio in the quiet frames (musical noise), click
+  density (an impulse must stand 12x over its 50 ms floor and clear -60 dBFS,
+  so dither-scale residue in a pause a denoiser gated to -85 dBFS is not a
+  click), holes in the programme, the 15.6 kHz line, mains-harmonic excess,
+  LUFS / loudness range, the trade metric itself, and two readings on the
+  pauses (the source's quiet 20 ms frames): pumping, the spread of the floor's
+  level (a denoiser's mask opening and closing between words; a source pause
+  moves 4 dB, every denoiser measured 11-23 dB), and tilt, the low band's
+  residual minus the high band's (rumble kept and air taken reads positive,
+  hiss left reads negative, a uniform reduction reads 0). Both sides are
+  read with their DC offset removed: three Internet Archive music clips sat
+  at +0.49 with the programme 23-27 dB below, and against such a source the
+  app's 2 Hz blocker read as destruction of the music. A window with more
+  than 90 % of its power below 80 Hz (the same captures: 5 Hz harmonics under
+  the offset) is routed as silence, not as the held tones the persistence
+  reading would take it for.
+- `stems`: the app's own BS-RoFormer splits source and output; on the
+  non-vocal stem SI-SDR, log-spectral distance, the worst octave (from
+  125 Hz: both engines run an 80 Hz rumble high-pass, so the 63-125 Hz octave
+  of a bass-heavy source always reads as lost) and the envelope correlation
+  say whether music and ambience survived. SI-SDR is shown, never ranked: a
+  filter's phase shift turns it negative while the ear hears nothing. Read only
+  where the source's stem carries a background (above -45 dBFS and within
+  20 dB of the mix); an interview without music skips it.
+- `speech` (16 kHz): Whisper large-v3-turbo transcribes source and output
+  with the language forced (`--language ro`) and the character error rate
+  between the two reads words changed, with the confidence delta beside it;
+  WavLM-base-plus-SV cosine reads timbre against the tape's own intra-speaker
+  floor; UTMOS reads naturalness.
+- `mos`: SIGMOS (ITU-T P.804: coloration, discontinuity, noise, reverb,
+  loudness, signal, overall) at 48 kHz, DNSMOS P.835 / P.808, and Audiobox
+  Aesthetics (production quality, production complexity, enjoyment,
+  usefulness) on music as well as speech. Both sides are brought to -23 LUFS
+  with one gain first.
+
+Every reading is a paired delta, output minus source, over 15 s windows every
+7.5 s, aggregated as a median and a tail (p10 or p90, always the bad end).
+Windows are routed by the scanner's band ratios and by tonal persistence
+(`modules/tonal_persistence.py`, the share of prominent spectral peaks held
+for eight 93 ms frames; the band ratios alone read every archive music clip as
+dialogue): speech metrics run on speech and mixed windows, stems and Audiobox
+on every window that is not silent. The same reading, as a whole-file median,
+is what the scanner reports as `tonal_persistence` and what cathar's music
+profile keys on. Learned predictors are guardrails, never objectives: in the URGENT
+2024 challenge the systems that topped DNSMOS and NISQA ranked at the bottom
+with listeners, and single-scalar MOS models cannot tell an over-suppressed
+voice from a noisy one. Only SIGMOS's coloration and discontinuity axes make
+that split, which is why they carry gates.
+
+The gates live as data in `scripts/restoration_quality/gates.py` and a
+`gates.json` from the calibration below overrides them. Weights are fetched by
+`scripts/download_quality_models.py` into `models/<name>/` (SIGMOS, Whisper,
+WavLM, UTMOS: MIT; Audiobox: CC-BY-4.0), pinned to upstream revisions with
+the sha256 of every file recorded on first fetch and refused on mismatch.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_quality_models.py
+.\.venv\Scripts\python.exe scripts\validate_restoration.py source.mov `
+    cathar=source_Cathar_Cleaned.mov apl=source_PureLinear_Cleaned.mov `
+    --report out.json --markdown out.md --listen-dir listen
+```
+
+`--listen-dir` renders the windows each metric found worst, cut from the
+source and from every output, with an `index.md`: the user is the judge, the
+harness only points at where to listen. `--metrics dsp` needs no model.
+
+### The listener readings
+
+The first listening round (2026-09-20) said three things the readings above
+did not: two `auto_pure_linear` outputs were "silent in pauses", a cathar
+output "has hiss", and `auto_pure_linear` "creates distortion of spoken
+'s'". The pause readings could not tell the first two apart (the median
+level of the quiet frames was lower on the hissy output), and nothing read
+the 's'. Every restoration drives the deepest pauses to -96..-104 dBFS, so a
+mean over them is noise; the ear reacts elsewhere. Three readings, all
+native-rate DSP on the source's own frame classes, reproduce the verdicts
+(`scripts/restoration_quality/pause_metrics.py`, `sibilance.py`,
+`transient_metrics.py`):
+
+- `dsp.gap_air_db`: the 3-10 kHz power in the inter-word gaps (source
+  frames between the p15 and p40 levels) over the loud frames. Source -6 dB
+  on Tele7abc; the "silent" outputs -27, the "hissy" one -18.5, the accepted
+  cathar 0.7.5 output -22.6. `listener.hiss` flags at or above -20,
+  `listener.dead_air` at or below -25.
+- `dsp.pause_depth_db`: the loud frames' median level minus the deep frames'
+  (under p15), output minus source. The roformer variant +41 (the long
+  pauses collapse), APL baseline +36, cathar +28..+32; `listener.pause_collapse`
+  flags above +34.
+- `dsp.sib_centroid_hz`: on the fricative frames of the source (at least
+  12 dB above the pause floor, 4-12 kHz power 10 dB above the gaps' hiss,
+  centroid above 3.5 kHz, more than 40 % of the power in 4-12 kHz), the
+  output's spectral centroid minus the source's, net of the same shift on the
+  non-fricative loud frames. `auto_pure_linear` +370..+620 Hz (its neural
+  stage empties the 1-4 kHz body under the 's'), cathar -100..-380 (its
+  de-esser lowers the top; the listener did not object). `listener.sibilance_thin`
+  flags above +300, `listener.sibilance_dull` below -600. `dsp.sib_body_db`
+  and `dsp.sib_level_db` show what moved.
+- `dsp.attack_db`, `dsp.onset_corr`, `dsp.percussive_share_db` (music and
+  mixed windows): the attacks' rise on the source's onsets (median-filter
+  HPSS, level-normalised) and how the onset curve survived; both engines
+  soften Gaudeamus's attacks (cathar -4.5 dB tail, APL -2.0).
+  `listener.attack` flags a tail under -4 dB.
+- `dsp.output_silent`: a window with programme whose output routes as
+  silence (the output is routed too); a hard gate.
+
+These gates carry the severity `flag`: the tuning loop counts them (a
+candidate may not add flags) but they do not veto until a second listening
+round confirms their thresholds. Re-scored with them, the Tele7abc
+listening set flags exactly what the listener flagged and nothing they
+accepted (`experiments/tata_listen/check_verdicts.py`;
+`score_listen.py <slug> --dsp-rescore` re-reads the dsp family into a
+stored report, keeping the MOS, ASR and stem results).
+
+Three learned readings were added beside them as guardrails: `mos.scoreq_nr`
+(SCOREQ, NeurIPS 2024, the no-reference MOS that with UTMOS correlated best
+with listeners in URGENT 2024; the "natural" model's ONNX export, vendored
+from Zenodo, 16 kHz), `mos.dnsmos_gap` (P.835 SIG minus BAK: the voice
+paying for the quiet), `speech.ssl_dist` (the cosine distance between the
+WavLM encoder's mean-pooled layer-6 states of source and output, an
+over-suppression reading that needs no transcript), and `stems.mert_dist`
+(MERT-v1-95M embedding distance on the full mix, the most balanced correlate
+with listeners in a 2025 separation test). `dsp.zimtohrli_loud` (Google's
+48 kHz psychoacoustic distance on the loud frames) has its loader but no
+binding: the PyPI wheel is published by a third party, not by the project,
+so it is not installed. An audio-LLM A/B judge was deliberately left out:
+the published evidence is system-level, open models collapse to one score,
+positional bias needs both orders, and nothing was validated on Romanian or
+tape; it would only ever break ties between near-equal winners at the end,
+never score inside the loop.
+
+### Calibrating the output-quality metrics
+
+None of the models saw VHS degradation or Romanian, so before the harness
+ranks anything `scripts/calibrate_quality_metrics.py` proves each metric
+moves the right way. It applies the single-factor failures in
+`scripts/quality_degradations.py` at three levels to realistic-v2 fixtures
+(hiss from the fixture's own recorded noise, mains hum, an 8th-order lowpass
+for the underwater voice, over-subtraction for musical noise, Griffin-Lim
+resynthesis for the robotic voice, muted and spliced words, a music bed
+attenuated, crackle, dropouts, the line whistle, gain and compression) and
+asks, per metric and failure: does the delta point the expected way at the
+severest level, is it monotonic across the levels, and does the mildest level
+clear three times the benign floor (identity, 16-bit requantisation, a
+resample round trip, 5-60 ms shifts)? A second set is the user's own tapes
+with this week's outputs judged by ear: the de-esser bug must be flagged
+muffled, the single 4 s probe must lose to the stitched one on coloration and
+highs while reading at least as quiet, and APL must not read as altered.
+Thresholds are then derived per gate: the midpoint between the worst
+known-good and the best known-bad reading when that gap clears the floor,
+else three floors past the benign centre. The report and `gates.json` land
+in `experiments/quality_calibration/`.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\calibrate_quality_metrics.py `
+    --fixtures artifacts\realistic-v2 --languages en `
+    --known-ordering assets\quality_calibration\known_ordering_v2.json
+```
+
+Opt-in model tests: `AI_RESTORE_QUALITY_MODELS=1 pytest tests/quality`.
+
+What the first calibration (2026-09-20, English fixtures, Tele7abc / SOTI /
+Vaccin) found:
+
+- Every DSP guardrail passes direction, monotonicity and effect on its
+  failure: residual noise on hiss, hum excess, both high bands on the lowpass,
+  the kurtosis ratio on over-subtraction, clicks, holes on muted words and on
+  dropouts, the 15.6 kHz line, LUFS on gain. The benign floor of the DSP
+  readings is essentially zero.
+- The learned predictors are far less sensitive on 15 s Piper fixtures than
+  on real tape: SIGMOS coloration reads the 4 kHz lowpass (-0.64) but not
+  6 or 8 kHz, and reads Griffin-Lim resynthesis as *better*; UTMOS moves by
+  hundredths; Whisper's CER barely moves for 0.3 s mutes (it infers the
+  words) and not at all for a 0.5-2 s splice. Audiobox reads the lowpass
+  (-1.0 at 4 kHz) and a stripped music bed (PC -0.9 / -2.6 / -3.7 at -6 /
+  -12 / -24 dB) clearly. SI-SDR on the stem is blind to a uniform
+  attenuation by construction; the loudness range of a 15 s fixture is too
+  small for the compressor to move. Those pairs are reported as blind.
+- On the real tapes the same predictors separate what the ear separated:
+  SIGMOS coloration +0.01 on the single 4 s probe against +0.48 for the
+  stitched print and APL, discontinuity -0.60 against -0.16..+0.37, UTMOS
+  -0.59 against -0.14..-0.29, Audiobox PQ -1.29 against about 0, CER median
+  0.10 against 0.02-0.04; speaker cosine 0.97-0.99 everywhere. With the
+  derived gates every ordering rule holds on all three tapes: the de-esser
+  bug is flagged muffled and ranks in the bottom two, the 4 s probe is
+  duller than the stitched one, APL is not altered, and the outputs the
+  user accepted rank on top.
+- Derived gates: the high bands come from the good/bad gap (-5.3 dB at
+  4-8 kHz, -7.4 dB at 8-16 kHz); most other thresholds are bounded by the
+  worst accepted output plus three floors, because the known-bad outputs
+  fail on other readings (every denoiser raises the kurtosis ratio and
+  Audiobox's production complexity, so the hand-set 0.3 and -0.5 would have
+  vetoed the accepted outputs). Whisper's worst-decile CER is 0.3-0.7 on
+  every restoration of hissy tape, so that gate is soft.
+
+### Fine-tuning on real tapes
+
+`scripts/tune_restoration.py` runs both engines over a grid of settings on
+excerpts of the user's tapes and ranks the variants with the harness. Excerpts
+are 125 s: cathar's stitched noise probe engages only when the material is at
+least twenty times `cathar_noiseprint_duration_s` (6 s, so 120 s), and a cut
+of 125 s probes at 125.0 s. Each variant runs in a fresh interpreter with its
+own `config.yaml` in the launch directory, which is how the app resolves
+configuration; the driver validates every override against the app's own
+typed settings and re-reads the resolved configuration from a child before
+spending a run. Outputs are scored against their source excerpt, hard gates
+veto a variant that fails on more excerpts than the grid allows and than its
+own engine's baseline does (the gates were calibrated on three tapes; a long
+tape's lead-in fails them for every variant, defaults included; per tape the
+tolerance is zero), every variant is ranked by the mean rank over the grid's
+`ranking` metrics and the recommendation takes the best survivor; the trade
+metric is shown, never ranked. The
+scoreboard names the best variant per engine and the best engine per tape,
+and prints the confirmation commands for the full tapes: an excerpt's noise
+probe is not the full tape's. An engine in the grid may carry `env`, extra
+environment for the app's child processes; `tata_v1.yaml` runs the cathar
+chain a second time as `cathar075` with `AI_RESTORE_CATHAR_BIN` pointing at
+the 0.7.5 build, so a cathar upgrade is scored beside the validated binary
+before anything is replaced.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_restoration.py all --name tata_v1 `
+    --tapes-dir "D:\Tata\New folder" --grid scripts\tune_grids\tata_v1.yaml
+```
+
+Corpus clips are taken whole instead of cut, with
+`scripts/tune_grids/ia_v1.yaml`, whose variants leave the stitched
+probe alone (at 15 s cathar keeps its single 0.75 s window) and tune the
+subtraction factor and floor, Wiener, the de-esser, enhance, the coherent
+mask, repair and deplosive, and for APL the factor, probe, blend, model, air
+shelf and expander:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_restoration.py all --name ia_v1 `
+    --tapes-dir experiments\ia_corpus_1000 --whole --limit 40 --language en `
+    --catalog experiments\ia_corpus_1000\catalog_1000.json `
+    --grid scripts\tune_grids\ia_v1.yaml
+```
+
+Never run it beside another restoration. A cathar default that changes as a
+result alters the five reference clips' outputs (`experiments/cathar_ab_head.json`)
+unless it is gated by material length as the noise probe is, and the
+`auto_cathar_*` routing was calibrated with cathar on its shipped settings;
+both are the user's call.
+
+### The listener round's plateaus
+
+The self-driving loop (`scripts/autotune_restoration.py`, the harness's
+listener readings as the judge) ran both engines on the four full Tata tapes
+and on the 12 music clips between 2026-09-23 and 2026-09-26, from the v1
+plateaus, with cathar 0.7.6. Each loop stopped when no candidate qualified:
+
+- cathar on the tapes (four rounds): alpha 1.0, de-esser threshold 12, knee
+  +8 dB, pause floor on, loudness range 20. Its v1 plateau had already set
+  beta 0.02, repair strength 2, the coherent path and the enhance off, and
+  the 4.5 s stitched print.
+- `auto_pure_linear` on the tapes (six rounds, hard failures 7 to 4): the
+  dynamic expander at 12 dB under a +8 dB knee, pause floor on, the sibilant
+  guard at 0.8, loudness range 20; from v1 the Mel-RoFormer denoiser and the
+  subtraction stage off. The hiss flag on every tape and the thin-'s' flag
+  on Vaccin never moved.
+- cathar on music (four rounds, hard failures 31 to 27): de-esser off, the
+  coherent path on, CRT notch Q 60, expander depth 4 dB.
+- `auto_pure_linear` on music (two rounds, hard failures 35 to 30): the
+  Mel-RoFormer back off, the chain's own model.
+
+The plateaus were fed back on 2026-09-26 (`config.yaml`, `modules/config.py`,
+this page's siblings): where speech and music disagreed on a shared key the
+music profile got its own key (`cathar_music_enable_deesser`,
+`cathar_music_expander_depth_db`, `cathar_music_crt_notch_q`,
+`apl_music_neural_model`; `apl_expander_depth_db` for the engine split), and
+knobs the accepted switches made inert stayed at their shipped values. The
+cathar identity reference was re-based on the new defaults and 0.7.6 (the
+previous reference is `experiments/cathar_ab_head_before_feedback_2026_09_26`).
+The listening set `D:\Tata\New folder\variants\v2` (every plateau beside its
+source, with `index.md`) is what confirms or overrides them by ear.
+
 ## CI Parity
 
 CI workflow mirrors local validation ordering and tooling to avoid environment
-drift.
+drift. One gate runs in CI only: after the test step, the SonarQube Cloud scan
+(`sonar-project.properties`, `SonarSource/sonarqube-scan-action`) uploads the
+same `coverage.xml` plus pytest's `junit.xml` to sonarcloud.io and waits for
+the project's quality gate, which fails the check on a new bug, vulnerability,
+unreviewed security hotspot, duplication or coverage shortfall in the new
+code. The token is the repository secret `SONAR_TOKEN`; pull requests from
+forks skip the step because they cannot read it, and the project's Automatic
+Analysis stays off on sonarcloud.io so the CI-based analysis is the only one.

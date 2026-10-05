@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  POETRY_VERSION: "2.4.3"
+  POETRY_VERSION: "2.5.1"
 
 jobs:
   validation:
@@ -26,6 +26,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          # SonarQube Cloud reads the full history for blame and new-code detection.
+          fetch-depth: 0
       - name: Set up Python
         # actions/setup-python@v7.0.0
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -161,11 +163,25 @@ jobs:
       - name: Run Tests with Coverage
         run: |
           poetry run pytest -o addopts= --cov=restore_audio_hybrid --cov=modules --cov-branch \
-            --cov-report=xml --cov-report=json --cov-report=term \
+            --cov-report=xml --cov-report=json --cov-report=term --junitxml=junit.xml \
             --cov-fail-under=${{ steps.coverage.outputs.threshold }} tests/
       - name: Enforce Strict Per-File Coverage
         run: |
           poetry run python tests/tooling/quality_gate.py coverage.json --threshold ${{ steps.coverage.outputs.threshold }}
+      # SonarQube Cloud: sonar-project.properties names the project; the quality gate blocks
+      # this check (sonar.qualitygate.wait). Skipped on forks, which cannot read the secret.
+      - name: Resolve Project Version For SonarQube
+        id: sonar_version
+        run: echo "version=$(poetry version -s)" >> "$GITHUB_OUTPUT"
+      - name: SonarQube Cloud Scan
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        # SonarSource/sonarqube-scan-action@v8.2.2
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4
+        with:
+          # The project's new-code definition is "previous version": the version is the app's.
+          args: -Dsonar.projectVersion=${{ steps.sonar_version.outputs.version }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - name: Upload Coverage Artifacts
         if: always()
         # actions/upload-artifact@v7.0.1
@@ -175,6 +191,7 @@ jobs:
           path: |
             coverage.xml
             coverage.json
+            junit.xml
             .coverage
             radon-report.txt
             radon-cc-report.json
