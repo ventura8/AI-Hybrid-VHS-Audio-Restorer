@@ -130,7 +130,7 @@ def test_drop_cache_entries_removes_the_scored_outputs_entries_and_keeps_the_sou
 def test_knobs_a_switch_makes_inert_are_not_proposed():
     """With the subtraction stage and the stem path off, their settings are not moved; the switches still are."""
     knobs = {knob for knob, _ in at.neighbour_moves("apl", {"apl_enable_spectral_denoise": False})}
-    assert "apl_enable_spectral_denoise" in knobs and "apl_music_stem_path" in knobs
+    assert {"apl_enable_spectral_denoise", "apl_music_stem_path"} <= knobs
     assert not knobs & {"apl_spectral_alpha_tonal", "apl_use_native_suppress", "apl_music_bg_floor_db", "expander_depth_db"}
     assert {"apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_expander_depth_db"} <= knobs
 
