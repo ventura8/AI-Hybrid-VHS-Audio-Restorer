@@ -125,3 +125,18 @@ def test_drop_cache_entries_removes_the_scored_outputs_entries_and_keeps_the_sou
     at._drop_cache_entries(tmp_path, "abc", "soti")
     at._drop_cache_entries(tmp_path, "missing", "soti")
     assert sorted(p.name for p in cache.iterdir()) == [f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"]
+
+
+def test_knobs_a_switch_makes_inert_are_not_proposed():
+    """With the subtraction stage and the stem path off, their settings are not moved; the switches still are."""
+    knobs = {knob for knob, _ in at.neighbour_moves("apl", {"apl_enable_spectral_denoise": False})}
+    assert "apl_enable_spectral_denoise" in knobs and "apl_music_stem_path" in knobs
+    assert not knobs & {"apl_spectral_alpha_tonal", "apl_use_native_suppress", "apl_music_bg_floor_db", "expander_depth_db"}
+    assert {"apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_expander_depth_db"} <= knobs
+
+
+def test_turning_a_stage_on_brings_its_knobs_back():
+    knobs = {knob for knob, _ in at.neighbour_moves("apl", {"apl_enable_spectral_denoise": True, "apl_music_stem_path": True})}
+    assert {"apl_spectral_alpha_tonal", "apl_music_bg_floor_db"} <= knobs
+    assert "cathar_alpha_high" in at.inert_knobs("cathar", {})
+    assert "cathar_alpha_high" not in at.inert_knobs("cathar", {"cathar_split_band_hz": 4000})

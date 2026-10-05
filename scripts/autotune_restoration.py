@@ -115,6 +115,8 @@ KNOBS = {
         "apl_enable_sibilant_guard": [False, True],
         "apl_sibilant_mix": [0.3, 0.5, 0.8, 0.9, 1.0],
         "apl_sibilant_guard_hz": [2000, 2500, 3000, 4000, 5000],
+        # This mode's own expander depth (the shared expander_depth_db is cathar's on speech).
+        "apl_expander_depth_db": [7.0, 12.0, 18.0],
         # The stem path on music (modules/apl_stems.py); 0.005 admits Gaudeamus (held partials 0.009).
         "apl_music_stem_path": [False, True],
         "apl_music_persistence_min": [0.005, 0.02, 0.05],
@@ -179,10 +181,65 @@ def _matching_value(seen, values):
     return None
 
 
+# Knobs that cannot change the audio while a switch holds the value given here: candidates
+# moving them render byte-identical output and only cost a render and a scoring pass each. The
+# switch itself stays a knob, so the loop can still turn the stage back on and then move them.
+# Values absent from the incumbent read as the app's defaults (the subtraction stage and the stem
+# path are off since the listener round; the split band is 0).
+_SUBTRACTION_KNOBS = (
+    "apl_spectral_alpha_tonal",
+    "apl_noiseprint_tonal_s",
+    "apl_tonal_flatness_max",
+    "apl_enable_learned_blend",
+    "apl_use_native_suppress",
+    "apl_suppress_gain_floor_db",
+)
+INERT_WHEN = {
+    "apl": (
+        ("apl_enable_spectral_denoise", False, _SUBTRACTION_KNOBS),
+        ("apl_music_stem_path", False, ("apl_music_persistence_min", "apl_music_bg_floor_db")),
+        ("apl_enable_sibilant_guard", False, ("apl_sibilant_mix", "apl_sibilant_guard_hz")),
+        ("enable_pause_floor", False, ("pause_floor_fill_db",)),
+        ("enable_dynamic_expander", False, ("apl_expander_depth_db", "expander_knee_offset_db")),
+    ),
+    "cathar": (
+        ("cathar_split_band_hz", 0, ("cathar_alpha_high", "cathar_music_alpha_high")),
+        ("enable_pause_floor", False, ("pause_floor_fill_db",)),
+        ("enable_dynamic_expander", False, ("expander_depth_db", "expander_knee_offset_db")),
+    ),
+}
+# Knobs an engine never reads: auto_pure_linear takes apl_expander_depth_db, not the shared depth.
+NEVER_READ = {"apl": ("expander_depth_db",), "cathar": ()}
+_SWITCH_DEFAULTS = {
+    "apl_enable_spectral_denoise": False,
+    "apl_music_stem_path": False,
+    "apl_enable_sibilant_guard": True,
+    "enable_pause_floor": True,
+    "enable_dynamic_expander": True,
+    "cathar_split_band_hz": 0,
+}
+
+
+def inert_knobs(engine, incumbent):
+    """The knobs that cannot move this engine's audio under the incumbent's switches."""
+    inert = set(NEVER_READ.get(engine, ()))
+    for switch, off, knobs in INERT_WHEN.get(engine, ()):
+        value = incumbent.get(switch)
+        if (_SWITCH_DEFAULTS[switch] if value is None else value) == off:
+            inert.update(knobs)
+    return inert
+
+
 def neighbour_moves(engine, incumbent):
-    """`[(knob, value)]`: the values adjacent to each knob's current value (or every value when unset)."""
+    """`[(knob, value)]`: the values adjacent to each knob's current value (or every value when unset).
+
+    Knobs the incumbent's switches make inert are left out (see INERT_WHEN).
+    """
     moves = []
+    inert = inert_knobs(engine, incumbent)
     for knob, values in KNOBS[engine].items():
+        if knob in inert:
+            continue
         current = incumbent.get(knob, None)
         if current not in values:
             moves += [(knob, v) for v in values if v != current]
