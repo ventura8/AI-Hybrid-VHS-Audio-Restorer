@@ -115,6 +115,28 @@ here and in `docs/validation.md` ("CI Parity") in the same change.
   same-shaped callables (the degradations, the model loaders): drop the
   parameter and adapt the call site or the lambda in the registry; a leading
   underscore is not exempt.
+- Pull-request scans judge new code only; main's first analysis (the v1.3.3
+  merge, 2026-10-05) judged the whole repository as new code and failed the
+  gate on 196 issues the PR scans never showed (33 "LLM-supplied CLI
+  argument" vulnerabilities in `scripts/`, 48 composite assertions in tests,
+  27 `[` tests in shell scripts). Read main's list with
+  `api/issues/search?componentKeys=<project>&branch=main&resolved=false&ps=500`
+  before declaring the project green, not only the PR's.
+- Script arguments go through `scripts/cli_paths.py` (`existing_path_arg`
+  for inputs, `path_arg` for outputs, `language_arg`, `checked_path` outside
+  argparse). Every argument Sonar traced to a file write or a subprocess
+  (S8705/S8707) uses one, as does the fixture generator
+  (`scripts/audio_matrix/cli.py`); about 18 analysis and tuning scripts still
+  take `type=Path` for arguments Sonar did not trace to a sink, and
+  `autotune_restoration.py` / `validate_restoration.py` check theirs with their
+  own validators. A new path argument uses a `cli_paths` type. Defaults stay
+  `Path` objects; argparse does not run a type on a non-string default.
+- Shell scripts with a bash shebang use `[[ ... ]]` (`shelldre:S7688`) and a
+  `*)` branch in every `case` (`S131`).
+- Parallel fix agents share one checkout: an agent that runs `git stash` (or
+  any index-changing git command) takes every other agent's edits with it.
+  Brief fix agents with "read-only git only", and recover with
+  `git checkout --` on line-ending-only files, then `git stash pop`.
 - `S107` (over 13 parameters) on `_denoise_and_polish_full_audio_step`: the
   post-neural switches arrive as `**stages`, validated against
   `POST_NEURAL_STAGES` and normalised to booleans, so a misspelt switch is

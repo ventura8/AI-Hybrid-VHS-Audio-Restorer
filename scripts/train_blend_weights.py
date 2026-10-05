@@ -114,7 +114,7 @@ def _evaluate(weight, magnitudes, floor):
 
 def _reference_scores(magnitudes, ideal, floor):
     """Scores for the strategies the model has to beat."""
-    original, denoised, _clean = magnitudes
+    original = magnitudes[0]
     return {
         "keep original (no denoise)": _evaluate(np.zeros_like(original), magnitudes, floor),
         "always denoised (current chain)": _evaluate(np.ones_like(original), magnitudes, floor),
@@ -139,7 +139,7 @@ def _baseline_score(model_path, features, magnitudes, floor):
 def _train(model, tensors, epochs, batch, learning_rate, device, floor):
     """Runs the optimisation loop and returns the trained model."""
     features, original, denoised, clean = tensors
-    optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimiser = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=0.0)
     count = len(features)
     for epoch in range(epochs):
         permutation = torch.randperm(count, device=device)

@@ -74,7 +74,7 @@ def _extract_video_pcm(video_path, temp_wav):
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=60)
         if res.returncode == 0 and is_valid_audio(temp_wav):
             return temp_wav
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError):
         pass
     if temp_wav.exists():
         temp_wav.unlink()
@@ -91,7 +91,7 @@ def _resolve_evaluation_wav(file_path, work_dir):
 
 def _print_benchmark_table(results):
     """Outputs structured benchmark table for analyzed files."""
-    header = f"\n{'Label':<15} | {'Noise Floor':<12} | {'SNR':<8} | " f"{'CRT Whistle':<12} | {'Rumble %':<10} | {'Stereo Imbal':<12}"
+    header = f"\n{'Label':<15} | {'Noise Floor':<12} | {'SNR':<8} | {'CRT Whistle':<12} | {'Rumble %':<10} | {'Stereo Imbal':<12}"
     print(header)
     print("-" * 80)
     for r in results:

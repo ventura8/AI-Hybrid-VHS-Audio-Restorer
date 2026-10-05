@@ -259,21 +259,27 @@ def test_a_model_that_refuses_mid_way_leaves_no_partial_output(pair, tmp_path):
 
 def test_without_its_libraries_the_module_imports_and_the_blend_is_skipped(monkeypatch, pair, tmp_path):
     """The optional imports are guarded: without scipy or soundfile the blend is unavailable, not an error."""
+    original, denoised = pair
+    for name in ("scipy.signal", "soundfile"):
+        _check_blend_skipped_without(monkeypatch, name, original, denoised, tmp_path)
+    assert blend_weights.sf is not None
+    assert blend_weights.scipy is not None
+
+
+def _check_blend_skipped_without(monkeypatch, name, original, denoised, tmp_path):
+    """Reload the module with one library hidden, check the blend is skipped, then restore it."""
     import importlib
     import sys
 
-    original, denoised = pair
-    for name in ("scipy.signal", "soundfile"):
-        library = sys.modules[name]
-        monkeypatch.setitem(sys.modules, name, None)
-        reloaded = importlib.reload(blend_weights)
-        try:
-            assert reloaded._unavailable(reloaded.load_model()) is True
-            assert reloaded.apply_blend(original, denoised, tmp_path / "out.wav") == denoised
-        finally:
-            monkeypatch.setitem(sys.modules, name, library)
-            importlib.reload(blend_weights)
-    assert blend_weights.sf is not None and blend_weights.scipy is not None
+    library = sys.modules[name]
+    monkeypatch.setitem(sys.modules, name, None)
+    reloaded = importlib.reload(blend_weights)
+    try:
+        assert reloaded._unavailable(reloaded.load_model()) is True
+        assert reloaded.apply_blend(original, denoised, tmp_path / "out.wav") == denoised
+    finally:
+        monkeypatch.setitem(sys.modules, name, library)
+        importlib.reload(blend_weights)
 
 
 def _complete_model():

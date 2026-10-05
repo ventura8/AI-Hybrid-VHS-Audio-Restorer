@@ -20,6 +20,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFMPEG_BIN, is_valid_audio
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.ia_benchmark_common import (
     _aggregate_by_genre,
     _aggregate_by_region,
@@ -144,9 +145,9 @@ def aggregate_results(results: List[Dict[str, Any]], modes: List[str]) -> Dict[s
 def _parse_arguments():
     """Parse command-line arguments for the batch benchmark."""
     parser = argparse.ArgumentParser(description="Massive parallel benchmark runner for VHS corpora")
-    parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
-    parser.add_argument("--catalog", type=Path, default=Path("experiments/ia_corpus_1000/catalog_1000.json"))
-    parser.add_argument("--output-dir", type=Path, default=Path("experiments/benchmark_1000_results"))
+    parser.add_argument("--corpus-dir", type=existing_path_arg, default=Path("experiments/ia_corpus_1000"))
+    parser.add_argument("--catalog", type=existing_path_arg, default=Path("experiments/ia_corpus_1000/catalog_1000.json"))
+    parser.add_argument("--output-dir", type=path_arg, default=Path("experiments/benchmark_1000_results"))
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
     parser.add_argument("--gpu", default="CPU")
     parser.add_argument("--limit", type=int, default=None)

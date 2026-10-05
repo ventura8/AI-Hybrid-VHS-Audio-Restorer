@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
 from scripts.score_reference import _align
 
@@ -173,19 +174,41 @@ def _summarise(rows, label):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
-    parser.add_argument("--catalog", type=Path, default=None)
+    parser.add_argument("--corpus-dir", type=existing_path_arg, default=Path("experiments/ia_corpus_1000"))
+    parser.add_argument("--catalog", type=existing_path_arg, default=None)
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
     parser.add_argument("--label", default="auto_pure_linear", help="Name for the configuration under test")
     parser.add_argument("--limit", type=int, default=40)
-    parser.add_argument("--work-dir", type=Path, default=Path("experiments/tradeoff_work"))
-    parser.add_argument("--report", type=Path, default=Path("experiments/tradeoff.json"))
+    parser.add_argument("--work-dir", type=path_arg, default=Path("experiments/tradeoff_work"))
+    parser.add_argument("--report", type=path_arg, default=Path("experiments/tradeoff.json"))
     parser.add_argument(
         "--rescore",
         action="store_true",
         help="Measure restored outputs already in --work-dir instead of restoring; a metric change re-reads the same audio",
     )
     return parser.parse_args()
+
+
+def _present_clips(catalog, corpus_dir, limit):
+    """The first `limit` catalog records whose clip exists, with the clip path."""
+    seen = 0
+    for record in catalog:
+        if seen >= limit:
+            return
+        clip = corpus_dir / record["file"]
+        if clip.exists():
+            seen += 1
+            yield record, clip
+
+
+def _measure_clip_modes(clip, record, args, labels, results, context):
+    """Restores and measures one clip in every requested mode, appending the rows."""
+    gpu_name, temp_dir = context
+    for mode in args.modes:
+        row = _restore_and_measure(clip, mode, args.work_dir, gpu_name, temp_dir, rescore=args.rescore)
+        if row:
+            row["identifier"] = record["identifier"]
+            results[labels[mode]].append(row)
 
 
 def main():
@@ -203,19 +226,8 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="tradeoff_") as temp:
         temp_dir = Path(temp)
-        seen = 0
-        for record in catalog:
-            if seen >= args.limit:
-                break
-            clip = args.corpus_dir / record["file"]
-            if not clip.exists():
-                continue
-            seen += 1
-            for mode in args.modes:
-                row = _restore_and_measure(clip, mode, args.work_dir, gpu_name, temp_dir, rescore=args.rescore)
-                if row:
-                    row["identifier"] = record["identifier"]
-                    results[labels[mode]].append(row)
+        for seen, (record, clip) in enumerate(_present_clips(catalog, args.corpus_dir, args.limit), start=1):
+            _measure_clip_modes(clip, record, args, labels, results, (gpu_name, temp_dir))
             sys.stdout.write(f"  [{seen}/{args.limit}] {record['identifier'][:44]}\n")
             sys.stdout.flush()
 

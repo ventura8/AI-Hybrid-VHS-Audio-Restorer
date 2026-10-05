@@ -57,13 +57,14 @@ EPS = 1e-10
 # 256-frame block is six seconds at 44.1 kHz and under 200 MB of features and activations.
 BLOCK_FRAMES = 256
 CONTEXT_FRAMES = 8
+FIRST_LAYER_WEIGHT = "stack.0.weight"
 # The arrays a weights file has to carry, and the shapes they have to agree on, for the
 # network below to run at all. A file missing any of them, or fitted to another width,
 # skips the blend rather than raising out of the arithmetic.
 REQUIRED_KEYS = (
     "feature_mean",
     "feature_std",
-    "stack.0.weight",
+    FIRST_LAYER_WEIGHT,
     "stack.0.bias",
     "stack.2.weight",
     "stack.2.bias",
@@ -284,13 +285,13 @@ def predict_weights(features, model):
     whole restoration down rather than skipping a refinement.
     """
     problem = schema_error(model)
-    if problem is None and features.shape[-1] != model["stack.0.weight"].shape[1]:
+    if problem is None and features.shape[-1] != model[FIRST_LAYER_WEIGHT].shape[1]:
         problem = "weights do not match the current feature set"
     if problem is not None:
         log_msg(f"    [Blend] Skipped, {problem}.")
         return None
     scaled = (features - model["feature_mean"]) / model["feature_std"]
-    hidden = np.maximum(scaled @ model["stack.0.weight"].T + model["stack.0.bias"], 0.0)
+    hidden = np.maximum(scaled @ model[FIRST_LAYER_WEIGHT].T + model["stack.0.bias"], 0.0)
     hidden = np.maximum(hidden @ model["stack.2.weight"].T + model["stack.2.bias"], 0.0)
     logits = hidden @ model["stack.4.weight"].T + model["stack.4.bias"]
     return 1.0 / (1.0 + np.exp(-logits[..., 0]))

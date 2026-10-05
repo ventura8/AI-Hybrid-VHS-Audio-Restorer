@@ -39,6 +39,7 @@ from modules import cathar as cathar_mod
 from modules import filters as filters_mod
 from modules import processing as processing_mod
 from modules.utils import CATHAR_BIN, FFMPEG_BIN
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _compute_noise_floor_db, _split_channels
 from scripts.score_reference import _fixture_variant, score_pair
 
@@ -439,7 +440,7 @@ def _print_summary(summary, chains):
         print(f"{'chain':<26}{'LSD dB':>11}{'defect dB':>11}{'hum dB':>9}{'resid dB':>11}")
         ranked = sorted(
             (c for c in chains if entry.get(c)),
-            key=lambda c: (entry[c]["lsd_db"] if entry[c]["lsd_db"] is not None else 1e9),
+            key=lambda c, entry=entry: (entry[c]["lsd_db"] if entry[c]["lsd_db"] is not None else 1e9),
         )
         for chain_name in ranked:
             values = entry[chain_name]
@@ -455,12 +456,12 @@ def _print_summary(summary, chains):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/reference-fixtures"))
+    parser.add_argument("--fixtures-dir", type=existing_path_arg, default=Path("artifacts/reference-fixtures"))
     parser.add_argument("--variants", nargs="+", default=["quiet_hiss", "quiet_combo", "hum_only", "rumble_only", "hiss_only"])
     parser.add_argument("--chains", nargs="+", default=list(CHAINS), choices=list(CHAINS))
     parser.add_argument("--limit", type=int, default=2, help="Fixtures per defect family")
-    parser.add_argument("--work-dir", type=Path, default=Path("experiments/ablation_work"))
-    parser.add_argument("--report", type=Path, default=Path("experiments/apl_ablation.json"))
+    parser.add_argument("--work-dir", type=path_arg, default=Path("experiments/ablation_work"))
+    parser.add_argument("--report", type=path_arg, default=Path("experiments/apl_ablation.json"))
     return parser.parse_args()
 
 

@@ -27,6 +27,7 @@ VALID_PROCESS_MODES = {
     "cathar_vhs",
 }
 DEFAULT_PROCESS_MODE = "auto"
+CONFIG_FILE_NAME = "config.yaml"
 DEFAULT_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".mpg", ".mpeg", ".ts", ".m2ts"]
 
 # Single source of truth for mode-specific output naming. Both the processing
@@ -58,9 +59,9 @@ CLEANED_OUTPUT_SUFFIXES = tuple(dict.fromkeys(OUTPUT_SUFFIX_BY_MODE.values())) +
 
 def _config_paths():
     """Returns launch-directory and bundled configuration paths in priority order."""
-    launch_config = Path.cwd() / "config.yaml"
+    launch_config = Path.cwd() / CONFIG_FILE_NAME
     bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-    bundled_config = bundle_root / "config.yaml"
+    bundled_config = bundle_root / CONFIG_FILE_NAME
     return (launch_config, bundled_config)
 
 
@@ -580,7 +581,7 @@ _BOOL_CONFIG_FIELDS = (
 def _typed_config_defaults():
     """Returns the canonical numeric and Boolean defaults for configuration loading."""
     numeric = {field[0]: field[2] for field in _NUMERIC_CONFIG_FIELDS}
-    boolean = {name: default for name, default in _BOOL_CONFIG_FIELDS}
+    boolean = dict(_BOOL_CONFIG_FIELDS)
     return {**numeric, **boolean}
 
 
@@ -772,7 +773,7 @@ def load_config():
 
     if not _apply_user_config(defaults, user_config):
         return defaults, "Defaults (invalid config.yaml)"
-    return defaults, "config.yaml"
+    return defaults, CONFIG_FILE_NAME
 
 
 CONFIG, CONFIG_SOURCE = load_config()

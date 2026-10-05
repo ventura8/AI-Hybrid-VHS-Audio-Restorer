@@ -436,8 +436,9 @@ def test_denoise_and_polish_full_audio_step_cascades(tmp_path):
         assert res == tmp_path / "pol.wav"
         mock_surg.assert_called_once_with(orig, out_dir, total_duration=10.0, strategy=strategy, hum_cancel=False)
         neural_dir = modules.processing._neural_denoise_dir(out_dir, tmp_path / "surg.wav", "UVR-DeNoise-Lite.pth")
-        assert neural_dir.name.startswith("neural_denoised_") and neural_dir != out_dir / "neural_denoised"
-        mock_den.assert_called_once_with(tmp_path / "surg.wav", neural_dir, total_duration=10.0, denoise_model="UVR-DeNoise-Lite.pth")
+        assert neural_dir.name.startswith("neural_denoised_")
+        assert neural_dir != out_dir / "neural_denoised"
+        mock_den.assert_called_once_with(tmp_path / "surg.wav", neural_dir, denoise_model="UVR-DeNoise-Lite.pth")
         mock_clean.assert_called_once_with(tmp_path / "den.wav", out_dir, total_duration=10.0, strategy=strategy)
         mock_pol.assert_called_once_with(
             tmp_path / "clean.wav", out_dir, total_duration=10.0, strategy=strategy, apply_air=True, depth_db=None
@@ -490,8 +491,8 @@ def test_the_neural_cache_is_keyed_by_input_and_model(tmp_path):
     assert first != modules.processing._neural_denoise_dir(tmp_path, surgical, "UVR-DeNoise.pth")
 
 
-def test_a_stale_neural_file_that_cannot_be_removed_sends_the_fallback_to_a_clean_directory(tmp_path):
-    """An undeletable DeepFilterNet file must not be reachable by the UVR step's own-result scan."""
+def _locked_stale_neural_file(tmp_path):
+    """A neural directory holding a stale file whose removal fails, and what the cache chose."""
     from modules import denoise_cache
 
     neural_dir = tmp_path / "neural_denoised_abc"
@@ -500,8 +501,22 @@ def test_a_stale_neural_file_that_cannot_be_removed_sends_the_fallback_to_a_clea
     stale.write_text("partial")
     with patch.object(type(stale), "unlink", side_effect=PermissionError("locked")):
         chosen = denoise_cache.without_stale_neural_output(neural_dir)
-    assert chosen == tmp_path / "neural_denoised_abc_clean" and chosen.is_dir()
+    return neural_dir, stale, chosen
+
+
+def test_a_stale_neural_file_that_cannot_be_removed_sends_the_fallback_to_a_clean_directory(tmp_path):
+    """An undeletable DeepFilterNet file must not be reachable by the UVR step's own-result scan."""
+    _neural_dir, stale, chosen = _locked_stale_neural_file(tmp_path)
+    assert chosen == tmp_path / "neural_denoised_abc_clean"
+    assert chosen.is_dir()
     assert stale.exists()
+
+
+def test_a_stale_neural_file_removed_on_the_next_pass_frees_the_directory(tmp_path):
+    """Once the stale file can be removed, the original directory is used again."""
+    from modules import denoise_cache
+
+    neural_dir, stale, _chosen = _locked_stale_neural_file(tmp_path)
     assert denoise_cache.without_stale_neural_output(neural_dir) == neural_dir
     assert not stale.exists()
 

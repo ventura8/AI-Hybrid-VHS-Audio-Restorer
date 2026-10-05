@@ -28,6 +28,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from scripts.cli_paths import existing_path_arg
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 if hasattr(sys.stderr, "reconfigure"):
@@ -38,24 +42,32 @@ CONFIG_YAML = Path("config.yaml")
 SPECTRAL_PY = Path("modules/spectral_denoise.py")
 PROCESSING_PY = Path("modules/processing.py")
 
+CATHAR_PROBE_RE = r"^cathar_noiseprint_duration_s: [0-9.]+$"
+CATHAR_PROBE_2S5 = "cathar_noiseprint_duration_s: 2.5"
+APL_ALPHA_RE = r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)'
+APL_PROBE_RE = r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)'
+APL_TONAL_PROBE_RE = r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)'
+NATIVE_SUPPRESS_OFF_RE = r'^(\s*)\("apl_use_native_suppress", False\),$'
+NATIVE_SUPPRESS_ON = r'\1("apl_use_native_suppress", True),'
+
 # name -> [(file, pattern, replacement), ...]. YAML patterns are multiline-anchored so a
 # commented-out example of the same key cannot absorb the substitution.
 VARIANTS = {
     "wiener": [(CONFIG_YAML, r'^cathar_denoise_method: "spectral"$', 'cathar_denoise_method: "wiener"')],
-    "noiseprint_2s5": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5")],
+    "noiseprint_2s5": [(CONFIG_YAML, CATHAR_PROBE_RE, CATHAR_PROBE_2S5)],
     "beta_008": [(CONFIG_YAML, r"^cathar_beta: [0-9.]+$", "cathar_beta: 0.08")],
     "no_coherent": [(CONFIG_YAML, r"^cathar_enable_coherent: true$", "cathar_enable_coherent: false")],
     "lite_model": [(SPECTRAL_PY, r'^DEEP_DENOISE_MODEL = "UVR-DeNoise\.pth"$', 'DEEP_DENOISE_MODEL = "UVR-DeNoise-Lite.pth"')],
-    "alpha_4": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 4.0, 0.0)')],
-    "alpha_2_5": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 2.5, 0.0)')],
+    "alpha_4": [(CONFIG_PY, APL_ALPHA_RE, '("apl_spectral_alpha", float, 4.0, 0.0)')],
+    "alpha_2_5": [(CONFIG_PY, APL_ALPHA_RE, '("apl_spectral_alpha", float, 2.5, 0.0)')],
     # A 2.5 s noise probe bought +3.39 dB of removal for +0.12 dB of deviation, the largest
     # single gain measured on this branch. These bracket it to find where it stops paying:
     # the probe takes the quietest stretch of the capture, so a long enough one must
     # eventually reach into programme and start subtracting content.
-    "np_1s5": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 1.5")],
-    "np_2s5_repeat": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5")],
-    "np_4s": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 4.0")],
-    "np_6s": [(CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 6.0")],
+    "np_1s5": [(CONFIG_YAML, CATHAR_PROBE_RE, "cathar_noiseprint_duration_s: 1.5")],
+    "np_2s5_repeat": [(CONFIG_YAML, CATHAR_PROBE_RE, CATHAR_PROBE_2S5)],
+    "np_4s": [(CONFIG_YAML, CATHAR_PROBE_RE, "cathar_noiseprint_duration_s: 4.0")],
+    "np_6s": [(CONFIG_YAML, CATHAR_PROBE_RE, "cathar_noiseprint_duration_s: 6.0")],
     # Does the neural separator still earn its place now that a 2.5 s profile is subtracted
     # before it? Choosing between the deep and the lite model moved both metrics by 0.01,
     # which says the choice does not matter but not that the stage does nothing. Skipping it
@@ -75,23 +87,21 @@ VARIANTS = {
     # against cathar's 0.32, where on the noisiest third it is 0.32 against 0.56. These test
     # the candidate mechanisms -- subtraction too strong for sustained tones, a probe that
     # learns a held note as noise, the blend reading stationarity as noise.
-    "alpha_2": [(CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 2.0, 0.0)')],
+    "alpha_2": [(CONFIG_PY, APL_ALPHA_RE, '("apl_spectral_alpha", float, 2.0, 0.0)')],
     "no_subtraction": [(CONFIG_PY, r'^(\s*)\("apl_enable_spectral_denoise", True\),$', r'\1("apl_enable_spectral_denoise", False),')],
-    "apl_probe_0s75": [
-        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 0.75, 0.0)')
-    ],
+    "apl_probe_0s75": [(CONFIG_PY, APL_PROBE_RE, '("apl_noiseprint_duration_s", float, 0.75, 0.0)')],
     "no_repair": [(CONFIG_PY, r'^(\s*)\("apl_enable_physical_repair", True\),$', r'\1("apl_enable_physical_repair", False),')],
     "deepfilternet": [(CONFIG_PY, r'^(\s*)\("apl_use_deepfilternet", False\),$', r'\1("apl_use_deepfilternet", True),')],
     # Fixture-realism checks: the factor real tape rejected, and the tonal gate switched off
     # (a flatness ceiling of 0 fires on nothing) so alpha can be compared without it.
     "alpha_1_8": [
-        (CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 1.8, 0.0)'),
+        (CONFIG_PY, APL_ALPHA_RE, '("apl_spectral_alpha", float, 1.8, 0.0)'),
         (CONFIG_PY, r'\("apl_tonal_flatness_max", float, [0-9.]+, 0\.0\)', '("apl_tonal_flatness_max", float, 0.0, 0.0)'),
     ],
     "no_tonal_gate": [(CONFIG_PY, r'\("apl_tonal_flatness_max", float, [0-9.]+, 0\.0\)', '("apl_tonal_flatness_max", float, 0.0, 0.0)')],
     "np_2s5_alpha4": [
-        (CONFIG_YAML, r"^cathar_noiseprint_duration_s: [0-9.]+$", "cathar_noiseprint_duration_s: 2.5"),
-        (CONFIG_PY, r'\("apl_spectral_alpha", float, [0-9.]+, 0\.0\)', '("apl_spectral_alpha", float, 4.0, 0.0)'),
+        (CONFIG_YAML, CATHAR_PROBE_RE, CATHAR_PROBE_2S5),
+        (CONFIG_PY, APL_ALPHA_RE, '("apl_spectral_alpha", float, 4.0, 0.0)'),
     ],
     # The mode's own harmonic hum canceller, ahead of the noise probe: switched off, and its
     # two settings moved -- the envelope bandwidth at the fundamental and how far up the
@@ -107,11 +117,11 @@ VARIANTS = {
         (CONFIG_PY, r'^(\s*)\("apl_hum_skip_notched", False\),$', r'\1("apl_hum_skip_notched", True),'),
     ],
     # Tonal material: a probe length of its own and the neural stage left out.
-    "tonal_probe_1s": [(CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 1.0, 0.0)')],
-    "tonal_probe_2s5": [(CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 2.5, 0.0)')],
+    "tonal_probe_1s": [(CONFIG_PY, APL_TONAL_PROBE_RE, '("apl_noiseprint_tonal_s", float, 1.0, 0.0)')],
+    "tonal_probe_2s5": [(CONFIG_PY, APL_TONAL_PROBE_RE, '("apl_noiseprint_tonal_s", float, 2.5, 0.0)')],
     "tonal_no_neural": [(CONFIG_PY, r'^(\s*)\("apl_tonal_skip_neural", False\),$', r'\1("apl_tonal_skip_neural", True),')],
     "tonal_probe_2s5_no_neural": [
-        (CONFIG_PY, r'\("apl_noiseprint_tonal_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_tonal_s", float, 2.5, 0.0)'),
+        (CONFIG_PY, APL_TONAL_PROBE_RE, '("apl_noiseprint_tonal_s", float, 2.5, 0.0)'),
         (CONFIG_PY, r'^(\s*)\("apl_tonal_skip_neural", False\),$', r'\1("apl_tonal_skip_neural", True),'),
     ],
     "no_hum_cancel": [(CONFIG_PY, r'^(\s*)\("apl_enable_hum_cancel", True\),$', r'\1("apl_enable_hum_cancel", False),')],
@@ -121,35 +131,27 @@ VARIANTS = {
     # The mode's own suppressor in cathar's subtraction slot, at the noise estimate as
     # measured and raised by half, at a deeper gain floor, at the textbook decision-directed
     # smoothing, and without the blend that was fitted on cathar's subtraction.
-    "native_suppress": [(CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),')],
+    "native_suppress": [(CONFIG_PY, NATIVE_SUPPRESS_OFF_RE, NATIVE_SUPPRESS_ON)],
     "native_suppress_b1_5": [
-        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, NATIVE_SUPPRESS_OFF_RE, NATIVE_SUPPRESS_ON),
         (CONFIG_PY, r'\("apl_suppress_noise_bias", float, [0-9.]+, 0\.0\)', '("apl_suppress_noise_bias", float, 1.5, 0.0)'),
     ],
     "native_suppress_floor30": [
-        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, NATIVE_SUPPRESS_OFF_RE, NATIVE_SUPPRESS_ON),
         (CONFIG_PY, r'\("apl_suppress_gain_floor_db", float, -[0-9.]+, None\)', '("apl_suppress_gain_floor_db", float, -30.0, None)'),
     ],
     "native_suppress_dd_0_98": [
-        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, NATIVE_SUPPRESS_OFF_RE, NATIVE_SUPPRESS_ON),
         (CONFIG_PY, r'\("apl_suppress_dd_alpha", float, [0-9.]+, 0\.0, 1\.0\)', '("apl_suppress_dd_alpha", float, 0.98, 0.0, 1.0)'),
     ],
     # The removal ceiling: this mode's own probe around the 4 s that ships (2.5 s shipped in
     # v1.2.1; on the full corpus 4 s removes 9.99 dB against 8.73 at the same 0.32 dB of
     # deviation). The np_* variants above move the shared cathar value, which this mode no
     # longer reads.
-    "apl_probe_2s5": [
-        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 2.5, 0.0)')
-    ],
-    "apl_probe_4s": [
-        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 4.0, 0.0)')
-    ],
-    "apl_probe_6s": [
-        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 6.0, 0.0)')
-    ],
-    "apl_probe_8s": [
-        (CONFIG_PY, r'\("apl_noiseprint_duration_s", float, [0-9.]+, 0\.0\)', '("apl_noiseprint_duration_s", float, 8.0, 0.0)')
-    ],
+    "apl_probe_2s5": [(CONFIG_PY, APL_PROBE_RE, '("apl_noiseprint_duration_s", float, 2.5, 0.0)')],
+    "apl_probe_4s": [(CONFIG_PY, APL_PROBE_RE, '("apl_noiseprint_duration_s", float, 4.0, 0.0)')],
+    "apl_probe_6s": [(CONFIG_PY, APL_PROBE_RE, '("apl_noiseprint_duration_s", float, 6.0, 0.0)')],
+    "apl_probe_8s": [(CONFIG_PY, APL_PROBE_RE, '("apl_noiseprint_duration_s", float, 8.0, 0.0)')],
     # The neural stage's candidates, faithful models only: the Mel-Roformer denoiser the
     # separator can load, and Resemble-Enhance's denoiser with its enhancer left off.
     "roformer": [(CONFIG_PY, r'"apl_neural_model": "",', '"apl_neural_model": "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",')],
@@ -160,7 +162,7 @@ VARIANTS = {
     "no_plosive_tamer": [(CONFIG_PY, r'^(\s*)\("apl_enable_plosive_tamer", True\),$', r'\1("apl_enable_plosive_tamer", False),')],
     "plosive_tamer_9db": [(CONFIG_PY, r'\("apl_plosive_excess_db", float, [0-9.]+, 0\.0\)', '("apl_plosive_excess_db", float, 9.0, 0.0)')],
     "native_suppress_no_blend": [
-        (CONFIG_PY, r'^(\s*)\("apl_use_native_suppress", False\),$', r'\1("apl_use_native_suppress", True),'),
+        (CONFIG_PY, NATIVE_SUPPRESS_OFF_RE, NATIVE_SUPPRESS_ON),
         (CONFIG_PY, r'^(\s*)\("apl_enable_learned_blend", True\),$', r'\1("apl_enable_learned_blend", False),'),
     ],
 }
@@ -320,7 +322,7 @@ def main():
     # difference between the samples, not the settings -- which briefly made two unrelated
     # variants look identically and dramatically better.
     parser.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
-    parser.add_argument("--catalog", type=Path, default=None, help="Sweep a clip subset instead of the whole corpus")
+    parser.add_argument("--catalog", type=existing_path_arg, default=None, help="Sweep a clip subset instead of the whole corpus")
     parser.add_argument("--keep-work", action="store_true", help="Keep each variant's restored outputs for measure_hum.py to read")
     args = parser.parse_args()
 

@@ -102,13 +102,23 @@ def test_interpolation_refuses_a_span_at_the_very_edge():
     assert impulse_repair._repair_span(samples[:40], 20, 24) is False
 
 
-def test_the_wav_stage_repairs_every_channel(tmp_path):
+def _depopped_stereo(tmp_path):
+    """A stereo capture with one pop per channel, the clean voice and the stage's output."""
     audio = _voiced()
     stereo = np.column_stack((_with_pops(audio, [RATE // 2]), _with_pops(audio, [RATE // 4])))
     source = tmp_path / "in.wav"
     sf.write(str(source), stereo, RATE, subtype="FLOAT")
-    produced = impulse_repair.depop(source, tmp_path / "out")
-    assert produced is not None and produced.name == "depopped_in.wav"
+    return stereo, audio, impulse_repair.depop(source, tmp_path / "out")
+
+
+def test_the_wav_stage_names_its_output(tmp_path):
+    _stereo, _audio, produced = _depopped_stereo(tmp_path)
+    assert produced is not None
+    assert produced.name == "depopped_in.wav"
+
+
+def test_the_wav_stage_repairs_every_channel(tmp_path):
+    stereo, audio, produced = _depopped_stereo(tmp_path)
     repaired, _rate = sf.read(str(produced), dtype="float32", always_2d=True)
     assert repaired.shape == stereo.shape
     for channel, position in ((0, RATE // 2), (1, RATE // 4)):
@@ -130,7 +140,8 @@ def test_an_unreadable_file_yields_nothing(tmp_path):
 def test_audio_too_short_for_a_model_is_left_alone(seconds):
     audio = _voiced(seconds)
     repaired, count = impulse_repair.remove_pops(audio)
-    assert count == 0 and np.allclose(repaired, audio)
+    assert count == 0
+    assert np.allclose(repaired, audio)
 
 
 def test_the_stage_is_wired_in_ahead_of_decrackle():
@@ -154,11 +165,17 @@ def test_an_empty_file_yields_an_empty_repair(tmp_path):
     """A zero-frame WAV is valid audio with nothing in it; the stage must not index into it."""
     assert impulse_repair._spans(np.zeros(0, dtype=bool)) == []
     repaired, count = impulse_repair.remove_pops(np.zeros(0, dtype=np.float32))
-    assert count == 0 and repaired.shape == (0,)
+    assert count == 0
+    assert repaired.shape == (0,)
+
+
+def test_an_empty_file_yields_an_empty_wav(tmp_path):
+    """A zero-frame WAV through the stage comes back as a zero-frame WAV."""
     source = tmp_path / "empty.wav"
     sf.write(str(source), np.zeros((0, 1), dtype=np.float32), RATE, subtype="FLOAT")
     produced = impulse_repair.depop(source, tmp_path / "out")
-    assert produced is not None and sf.info(str(produced)).frames == 0
+    assert produced is not None
+    assert sf.info(str(produced)).frames == 0
 
 
 def test_without_soundfile_the_module_imports_and_the_stage_yields_nothing(monkeypatch, tmp_path):

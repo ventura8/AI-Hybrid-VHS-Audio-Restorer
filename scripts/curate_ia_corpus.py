@@ -18,11 +18,12 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
+from scripts.cli_paths import path_arg
 
 
 def _sanitize_slug(name: str) -> str:
     """Creates a filesystem-safe slug from a title or filename."""
-    cleaned = re.sub(r"[^\w\-_.]", "_", name)
+    cleaned = re.sub(r"[^\w\-.]", "_", name)
     cleaned = re.sub(r"_+", "_", cleaned)
     return cleaned.strip("_")
 
@@ -265,13 +266,13 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--catalog",
-        type=Path,
+        type=path_arg,
         default=Path("experiments/ia_corpus_catalog.json"),
         help="Path to JSON corpus catalog",
     )
     parser.add_argument(
         "--output-dir",
-        type=Path,
+        type=path_arg,
         default=Path("experiments/ia_corpus"),
         help="Destination directory for curated video clips",
     )

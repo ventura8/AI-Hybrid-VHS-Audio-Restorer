@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN, is_valid_audio, is_valid_video
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.curate_ia_corpus import _sanitize_slug as _plain_slug
 from scripts.curate_massive_ia_corpus import _sanitize_slug as _massive_slug
 from scripts.ia_benchmark_common import (
@@ -210,7 +211,7 @@ def _format_regional_table(summary: Dict[str, Any], modes: List[str]) -> List[st
             crt = r.get("crt_attenuation_ratio", 0.0)
             mains = r.get("mains_attenuation_ratio", 0.0)
             rum = r.get("rumble_reduction_pct", 0.0)
-            lines.append(f"| `{mode}` | {label} | {nr:+.2f} dB | " f"{snr:+.2f} dB | {crt}x | " f"{mains}x | {rum:+.2f}% |")
+            lines.append(f"| `{mode}` | {label} | {nr:+.2f} dB | {snr:+.2f} dB | {crt}x | {mains}x | {rum:+.2f}% |")
     return lines
 
 
@@ -232,7 +233,7 @@ def _format_genre_table(summary: Dict[str, Any], modes: List[str]) -> List[str]:
             crt = g.get("crt_attenuation_ratio", 0.0)
             mains = g.get("mains_attenuation_ratio", 0.0)
             rum = g.get("rumble_reduction_pct", 0.0)
-            lines.append(f"| `{mode}` | {gen.capitalize()} | {nr:+.2f} dB | " f"{snr:+.2f} dB | {crt}x | " f"{mains}x | {rum:+.2f}% |")
+            lines.append(f"| `{mode}` | {gen.capitalize()} | {nr:+.2f} dB | {snr:+.2f} dB | {crt}x | {mains}x | {rum:+.2f}% |")
     return lines
 
 
@@ -441,12 +442,12 @@ def benchmark_corpus(
 def _parse_args() -> argparse.Namespace:
     """Parses command line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus"))
-    parser.add_argument("--catalog", type=Path, default=Path("experiments/ia_corpus_catalog.json"))
-    parser.add_argument("--output-dir", type=Path, default=Path("experiments/benchmark_run"))
+    parser.add_argument("--corpus-dir", type=existing_path_arg, default=Path("experiments/ia_corpus"))
+    parser.add_argument("--catalog", type=existing_path_arg, default=Path("experiments/ia_corpus_catalog.json"))
+    parser.add_argument("--output-dir", type=path_arg, default=Path("experiments/benchmark_run"))
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
-    parser.add_argument("--report-json", type=Path, default=Path("experiments/benchmark_ia_corpus_report.json"))
-    parser.add_argument("--report-md", type=Path, default=Path("experiments/benchmark_ia_corpus_report.md"))
+    parser.add_argument("--report-json", type=path_arg, default=Path("experiments/benchmark_ia_corpus_report.json"))
+    parser.add_argument("--report-md", type=path_arg, default=Path("experiments/benchmark_ia_corpus_report.md"))
     parser.add_argument("--limit", type=int, default=None, help="Max clips per region")
     return parser.parse_args()
 

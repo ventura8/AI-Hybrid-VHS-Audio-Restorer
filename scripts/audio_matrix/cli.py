@@ -14,6 +14,7 @@ from scripts.audio_matrix.longform import repeat_to_duration
 from scripts.audio_matrix.manifest import load_languages, load_manifest
 from scripts.audio_matrix.piper import ensure_voice, synthesize
 from scripts.audio_matrix.vhs_defects import apply_vhs_defects
+from scripts.cli_paths import existing_path_arg, path_arg
 
 FIXTURE_SAMPLE_RATE = 44100
 
@@ -90,19 +91,28 @@ def select_languages(languages, requested):
     return {key: languages[key] for key in requested}
 
 
+def _profile_names(profile, manifest):
+    """The manifest entries a profile selects: core is short and mid, all is every entry."""
+    if profile == "core":
+        return ["short", "mid"]
+    if profile == "all":
+        return list(manifest)
+    return [profile]
+
+
 def main(argv=None):
     """Run the matrix generator."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", choices=("short", "mid", "longform", "core", "all"))
-    parser.add_argument("--piper-python", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=Path("artifacts/audio-matrix"))
-    parser.add_argument("--voices-dir", type=Path, default=Path("artifacts/piper-voices"))
+    parser.add_argument("--piper-python", type=existing_path_arg, default=None)
+    parser.add_argument("--output-dir", type=path_arg, default=Path("artifacts/audio-matrix"))
+    parser.add_argument("--voices-dir", type=path_arg, default=Path("artifacts/piper-voices"))
     parser.add_argument("--language", action="append", dest="languages", default=[])
     args = parser.parse_args(argv)
     manifest = load_manifest()
     languages = load_languages()
     selected = select_languages(languages, args.languages)
-    names = ("short", "mid") if args.profile == "core" else tuple(manifest) if args.profile == "all" else (args.profile,)
+    names = _profile_names(args.profile, manifest)
     for language in selected.values():
         clean_samples = _synthesize_clean_voice(language, args.output_dir, args.piper_python, args.voices_dir)
         for name in names:

@@ -342,7 +342,7 @@ def _saturate(mono):
     return (np.tanh(mono / peak * SATURATION_DRIVE) / np.tanh(SATURATION_DRIVE) * peak).astype(np.float32)
 
 
-def _with_gaps(mono, rate, rng):
+def _with_gaps(mono, rate):
     """Interleaves the speech with silent gaps that the ambience bed will fill."""
     if GAP_SHARE <= 0.0:
         return mono
@@ -389,7 +389,7 @@ def _background_voice(other, length, rate, rng):
     rolled = np.roll(other, int(rng.integers(len(other))))[:length]
     if len(rolled) < length:
         rolled = np.pad(rolled, (0, length - len(rolled)))
-    return _in_a_room(_with_gaps(rolled, rate, rng), rate, rng, BACKGROUND_DIRECT_TO_REVERB_DB)
+    return _in_a_room(_with_gaps(rolled, rate), rate, rng, BACKGROUND_DIRECT_TO_REVERB_DB)
 
 
 def _ambience(length, rate, rng):
@@ -467,7 +467,7 @@ def condition_programme(mono, rate, rng, music, other=None):
     is the programme wanted back -- the voice in its room and the music, without the room
     tone and the voice across the room.
     """
-    voice = _saturate(_in_a_room(_with_breaths(_with_gaps(_voiced_for_tape(mono, rate), rate, rng), rate, rng), rate, rng))
+    voice = _saturate(_in_a_room(_with_breaths(_with_gaps(_voiced_for_tape(mono, rate), rate), rate, rng), rate, rng))
     out = voice
     if other is not None:
         out = out + _scale_to(_background_voice(other, len(out), rate, rng), out, BACKGROUND_DB)
@@ -483,7 +483,7 @@ def condition_programme(mono, rate, rng, music, other=None):
 def condition_music_led(mono, rate, rng, with_speech):
     """Music-led programme: music at full level, with speech well under it or absent."""
     music = _music_programme(len(mono), rate, rng) * 0.5
-    voice = _with_gaps(_saturate(_voiced_for_tape(mono, rate)), rate, rng)
+    voice = _with_gaps(_saturate(_voiced_for_tape(mono, rate)), rate)
     target = music + (_scale_to(voice, music, MUSIC_LED_SPEECH_DB) if with_speech else 0.0)
     out = target + _scale_to(_ambience(len(target), rate, rng), target, AMBIENCE_DB)
     return _normalised(out, target)
@@ -591,18 +591,22 @@ def _clean_segments(clean_paths, segment_frames, max_segments):
 def _build_speech_led(clean_paths, out_dir, segment_frames, max_segments, noise_bank, others, rng):
     """The speech-led classes: speech, and speech over a sustained bed, at every margin."""
     records = []
+    combinations = [(music, margin, hum) for music in (False, True) for margin in MARGIN_DB for hum in (False, True)]
     for stem, index, segment in _clean_segments(clean_paths, segment_frames, max_segments):
-        for music in (False, True):
-            for margin in MARGIN_DB:
-                for hum in (False, True):
-                    other = others[int(rng.integers(len(others)))] if others else None
-                    programme = condition_programme(segment, FIXTURE_SAMPLE_RATE, rng, music, other)
-                    noise = noise_bank[int(rng.integers(len(noise_bank)))]
-                    signals = degrade(programme, FIXTURE_SAMPLE_RATE, noise, margin, hum, rng)
-                    name = f"{stem}{index:02d}_{'music' if music else 'speech'}_m{int(margin):02d}{'_hum' if hum else ''}"
-                    defects = ["tape_noise"] + (["hum"] if hum else [])
-                    records.append(_write_pair(out_dir, name, signals, defects, music, margin))
+        for music, margin, hum in combinations:
+            other = others[int(rng.integers(len(others)))] if others else None
+            programme = condition_programme(segment, FIXTURE_SAMPLE_RATE, rng, music, other)
+            noise = noise_bank[int(rng.integers(len(noise_bank)))]
+            signals = degrade(programme, FIXTURE_SAMPLE_RATE, noise, margin, hum, rng)
+            name = f"{stem}{index:02d}_{_speech_led_suffix(music, margin, hum)}"
+            defects = ["tape_noise"] + (["hum"] if hum else [])
+            records.append(_write_pair(out_dir, name, signals, defects, music, margin))
     return records
+
+
+def _speech_led_suffix(music, margin, hum):
+    """The class, margin and hum part of a speech-led fixture name."""
+    return f"{'music' if music else 'speech'}_m{int(margin):02d}{'_hum' if hum else ''}"
 
 
 def _build_music_led(clean_paths, out_dir, segment_frames, max_segments, noise_bank, rng):

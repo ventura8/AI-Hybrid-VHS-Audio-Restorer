@@ -35,19 +35,28 @@ def test_partial_path_keeps_the_directory_and_extension():
 def test_atomic_target_publishes_a_complete_write(tmp_path):
     target = tmp_path / "out.wav"
     with hygiene.atomic_target(target) as partial:
-        assert partial.parent == tmp_path and partial != target
+        assert partial.parent == tmp_path
+        assert partial != target
         partial.write_text("done")
     assert target.read_text() == "done"
     assert not partial.exists()
 
 
+def _write_half_then_fail(target, seen):
+    """A stage that writes part of its output into the partial and then fails."""
+    with hygiene.atomic_target(target) as partial:
+        seen.append(partial)
+        partial.write_text("half")
+        raise RuntimeError("cut off")
+
+
 def test_atomic_target_removes_the_partial_when_the_stage_fails(tmp_path):
     target = tmp_path / "out.wav"
+    seen = []
     with pytest.raises(RuntimeError):
-        with hygiene.atomic_target(target) as partial:
-            partial.write_text("half")
-            raise RuntimeError("cut off")
-    assert not partial.exists() and not target.exists()
+        _write_half_then_fail(target, seen)
+    assert not seen[0].exists()
+    assert not target.exists()
 
 
 def test_atomic_target_publishes_nothing_when_nothing_was_written(tmp_path):
@@ -64,7 +73,8 @@ def test_publish_flushes_the_file_and_on_posix_its_directory(tmp_path):
     with patch("modules.hygiene._fsync") as fsync, patch("modules.hygiene.SYNC_DIRECTORIES", True):
         hygiene.publish(partial, target)
     assert [call.args[0] for call in fsync.call_args_list] == [partial, tmp_path]
-    assert target.read_text() == "done" and not partial.exists()
+    assert target.read_text() == "done"
+    assert not partial.exists()
 
 
 def test_publish_skips_the_directory_sync_where_it_is_unsupported(tmp_path):
@@ -125,14 +135,21 @@ def test_sweep_partials_reports_a_file_it_cannot_remove(tmp_path, capsys):
 def test_scoped_temp_dir_redirects_python_and_child_temp(tmp_path, monkeypatch):
     monkeypatch.setenv("TEMP", "C:/somewhere")
     with hygiene.scoped_temp_dir(tmp_path) as scratch:
-        assert scratch == tmp_path / "tmp" and scratch.is_dir()
-        assert tempfile.gettempdir() == str(scratch)
-        assert os.environ["TEMP"] == str(scratch) and os.environ["TMPDIR"] == str(scratch)
+        assert scratch == tmp_path / "tmp"
+        assert scratch.is_dir()
         descriptor, temp_path = tempfile.mkstemp()
         try:
             assert Path(temp_path).parent == scratch
         finally:
             os.close(descriptor)
+
+
+def test_scoped_temp_dir_points_the_temp_variables_at_the_scratch(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEMP", "C:/somewhere")
+    with hygiene.scoped_temp_dir(tmp_path) as scratch:
+        assert tempfile.gettempdir() == str(scratch)
+        assert os.environ["TEMP"] == str(scratch)
+        assert os.environ["TMPDIR"] == str(scratch)
 
 
 def test_scoped_temp_dir_restores_python_and_child_temp(tmp_path, monkeypatch):
@@ -142,17 +159,29 @@ def test_scoped_temp_dir_restores_python_and_child_temp(tmp_path, monkeypatch):
     with hygiene.scoped_temp_dir(tmp_path):
         pass
     assert tempfile.gettempdir() == before
-    assert os.environ["TEMP"] == "C:/somewhere" and "TMPDIR" not in os.environ
+    assert os.environ["TEMP"] == "C:/somewhere"
+    assert "TMPDIR" not in os.environ
 
 
 # --------------------------------------------------------------------------- session log
 
 
-def test_log_rotates_once_past_the_cap_and_keeps_one_generation(tmp_path):
+def _rotated_once(tmp_path):
+    """A session log rotated once past a two-byte cap."""
     log = tmp_path / "session_log.txt"
     log.write_text("old")
     assert utils._rotate_log_file(log, limit=2) is True
-    assert not log.exists() and (log.with_name("session_log.txt.1")).read_text() == "old"
+    return log
+
+
+def test_log_rotates_once_past_the_cap(tmp_path):
+    log = _rotated_once(tmp_path)
+    assert not log.exists()
+    assert (log.with_name("session_log.txt.1")).read_text() == "old"
+
+
+def test_log_rotation_keeps_one_generation(tmp_path):
+    log = _rotated_once(tmp_path)
     log.write_text("newer")
     assert utils._rotate_log_file(log, limit=2) is True
     assert (log.with_name("session_log.txt.1")).read_text() == "newer"
@@ -162,7 +191,8 @@ def test_log_below_the_cap_or_missing_is_left_alone(tmp_path):
     log = tmp_path / "session_log.txt"
     assert utils._rotate_log_file(log) is False
     log.write_text("small")
-    assert utils._rotate_log_file(log) is False and log.read_text() == "small"
+    assert utils._rotate_log_file(log) is False
+    assert log.read_text() == "small"
 
 
 def test_append_log_file_rotates_before_writing(tmp_path):
@@ -170,7 +200,8 @@ def test_append_log_file_rotates_before_writing(tmp_path):
     log.write_text("x" * 10)
     with patch("modules.utils.LOG_FILE", log), patch("modules.utils.LOG_ROTATE_BYTES", 5):
         utils._append_log_file("INFO", "hello")
-    assert "hello" in log.read_text() and log.with_name("session_log.txt.1").read_text() == "x" * 10
+    assert "hello" in log.read_text()
+    assert log.with_name("session_log.txt.1").read_text() == "x" * 10
 
 
 # --------------------------------------------------------------------------- remove_tree
@@ -189,7 +220,8 @@ def test_remove_tree_retries_then_reports_failure_without_raising(tmp_path):
     work.mkdir()
     with patch("modules.hygiene.shutil.rmtree", side_effect=OSError("busy")) as rmtree, patch("modules.hygiene.time.sleep") as sleep:
         assert hygiene.remove_tree(work, attempts=3, delay_s=0.0) is False
-    assert rmtree.call_count == 3 and sleep.call_count == 2
+    assert rmtree.call_count == 3
+    assert sleep.call_count == 2
 
 
 # --------------------------------------------------------------------------- streaming stage writers
@@ -213,7 +245,8 @@ def test_hum_subtract_publishes_a_complete_file(tmp_path):
     target = tmp_path / "humcancel_in.wav"
     envelope = np.zeros((4, 2, 1), dtype=np.complex128)
     assert hum_cancel.subtract(source, target, envelope, [50.0]) == target
-    assert sf.info(str(target)).frames == RATE and _only_files(tmp_path) == ["humcancel_in.wav", "in.wav"]
+    assert sf.info(str(target)).frames == RATE
+    assert _only_files(tmp_path) == ["humcancel_in.wav", "in.wav"]
 
 
 def test_plosive_tame_interrupted_mid_stream_leaves_nothing(tmp_path):

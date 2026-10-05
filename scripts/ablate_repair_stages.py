@@ -31,6 +31,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules import cathar
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.score_defect_repair import score_repair
 from scripts.score_reference import _fixture_variant
 
@@ -103,8 +104,8 @@ def _summarise(rows, variants, label):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/repair-fixtures"))
-    parser.add_argument("--report", type=Path, default=Path("experiments/repair_stages.json"))
+    parser.add_argument("--fixtures-dir", type=existing_path_arg, default=Path("artifacts/repair-fixtures"))
+    parser.add_argument("--report", type=path_arg, default=Path("experiments/repair_stages.json"))
     parser.add_argument("--stages", nargs="+", default=list(STAGES), choices=list(STAGES))
     parser.add_argument("--damage-variants", nargs="+", default=list(DAMAGE_VARIANTS), help="Fixture families carrying the damage")
     parser.add_argument("--control-variants", nargs="+", default=list(CONTROL_VARIANTS), help="Fixture families carrying none")

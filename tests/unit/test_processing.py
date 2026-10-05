@@ -642,7 +642,7 @@ def test_final_mux_single_audio_step(mock_valid_video, mock_retry, tmp_path):
     mock_retry.side_effect = create_tmp
 
     result = modules.processing._final_mux_single_audio_step(video, processed_audio, output)
-    assert result is True
+    assert result is None
     assert output.exists()
     assert output.read_text() == "fake video"
     mock_retry.assert_called_once()

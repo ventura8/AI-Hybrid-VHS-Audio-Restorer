@@ -27,6 +27,9 @@ except ImportError:
 from .config import DEBUG_LOGGING, LOG_FILE, PROCESS_MODE
 from .hardware import get_nvidia_paths, prepare_runtime_library_paths
 
+VENV_DIR_NAME = ".venv"
+DEFAULT_PROGRESS_DESCRIPTION = "Running..."
+
 # === AUTO-CONFIGURE PATH ===
 project_dir = Path(__file__).parent.parent.resolve()  # modules/..
 
@@ -46,9 +49,9 @@ def _get_scripts_dirs(base_dir):
     """
     candidates = [
         Path(sys.executable).resolve().parent,
-        base_dir / ".venv" / "bin",
+        base_dir / VENV_DIR_NAME / "bin",
         base_dir / "venv" / "bin",
-        base_dir / ".venv" / "Scripts",
+        base_dir / VENV_DIR_NAME / "Scripts",
         base_dir / "venv" / "Scripts",
     ]
     found = []
@@ -83,7 +86,7 @@ def _resolve_binary(binary_name, candidate_dirs, extra_dirs=None):
 
 
 scripts_dirs = _get_scripts_dirs(project_dir)
-primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / ".venv" / "bin")
+primary_scripts_dir = scripts_dirs[0] if scripts_dirs else (project_dir / VENV_DIR_NAME / "bin")
 
 # 1. Base Binary Paths
 FFMPEG_BIN = _resolve_binary("ffmpeg", scripts_dirs)
@@ -739,7 +742,7 @@ def _finish_command(process, cmd, description, start_time, duration, output_buff
     raise subprocess.CalledProcessError(process.returncode, cmd)
 
 
-def run_command_with_progress(cmd, env=None, description="Running...", total_duration=None):
+def run_command_with_progress(cmd, env=None, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
     """
     Runs a subprocess and parses progress from its output.
     Supports FFmpeg and TQDM-style output.
@@ -768,7 +771,7 @@ def _clear_cuda_retry_state():
     gc.collect()
 
 
-def attempt_run_with_retry(command_builder_func, initial_batch_size, description="Running...", total_duration=None):
+def attempt_run_with_retry(command_builder_func, initial_batch_size, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
     """
     Retries a command with reduced GPU batch sizes on OOM.
     command_builder_func: Accepts 'batch_size' (int), returns [cmd, args...].
@@ -805,7 +808,7 @@ def _replace_with_valid_audio(temp_path, final_path):
     return True
 
 
-def attempt_cpu_run_with_retry(command_builder_func, initial_threads, description="Running...", total_duration=None):
+def attempt_cpu_run_with_retry(command_builder_func, initial_threads, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
     """
     Retries a CPU-bound command with reduced threads on RAM OOM.
     command_builder_func: Accepts 'threads' (int), returns [cmd, args...].
@@ -892,7 +895,7 @@ def check_dependencies(process_mode=None):
             result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=10)
             if result.returncode != 0:
                 missing.append(name)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError):
             missing.append(name)
 
     # FFmpeg and FFprobe are universally required across all modes

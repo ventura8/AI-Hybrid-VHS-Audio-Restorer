@@ -62,7 +62,7 @@ def main():
 
 def _run_restoration():
     # 1. Initialization Sequence
-    cpu_name, gpu_name = run_init_sequence()
+    _, gpu_name = run_init_sequence()
 
     if not check_dependencies():
         print("\n[Init] Critical Error: Dependencies Missing.")
@@ -81,7 +81,7 @@ def _run_restoration():
     print(" 2. Or paste the file path below.")
 
     # 3. Get Inputs
-    files, use_source_as_output = _get_input_files()
+    files, _ = _get_input_files()
 
     if not files:
         print(">> No valid video files found.")

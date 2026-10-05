@@ -14,7 +14,7 @@ TAG="${1:-}"
 OUTPUT_DIR="${2:-release-assets}"
 ARCH="${3:-arm64}"
 
-if [ -z "$TAG" ]; then
+if [[ -z "$TAG" ]]; then
     echo "Usage: $0 <tag> [output_dir] [arch]" >&2
     exit 1
 fi

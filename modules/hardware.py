@@ -16,6 +16,7 @@ except ImportError:
 
 
 NVIDIA_NAME_TOKENS = ("NVIDIA", "RTX", "GTX", "QUADRO")
+PRIMARY_CUDA_DEVICE = "cuda:0"
 
 
 def _uses_nvidia_name(name):
@@ -64,7 +65,7 @@ def _populate_cuda_settings(settings, device_id, is_nvidia_device):
     settings["device_index"] = device_id
     settings["is_nvidia"] = settings["is_nvidia"] or is_nvidia_device
     settings["cuda_device"] = f"cuda:{device_id}"
-    settings["cuda_child_device"] = "cuda:0" if settings["is_nvidia"] else settings["cuda_device"]
+    settings["cuda_child_device"] = PRIMARY_CUDA_DEVICE if settings["is_nvidia"] else settings["cuda_device"]
     settings["cuda_env"] = {
         "CUDA_VISIBLE_DEVICES": str(settings["device_index"]),
         "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
@@ -134,8 +135,8 @@ def _apply_cuda_env(settings):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(settings["device_index"])
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["ORT_TENSORRT_FP16_ENABLE"] = "1"
-    settings.setdefault("cuda_device", "cuda:0")
-    settings["cuda_child_device"] = settings.get("cuda_child_device") or "cuda:0"
+    settings.setdefault("cuda_device", PRIMARY_CUDA_DEVICE)
+    settings["cuda_child_device"] = settings.get("cuda_child_device") or PRIMARY_CUDA_DEVICE
     settings["cuda_env"] = settings.get("cuda_env") or {
         "CUDA_VISIBLE_DEVICES": str(settings["device_index"]),
         "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
@@ -180,7 +181,7 @@ def get_optimal_settings():
     settings = {
         "cpu_threads": os.cpu_count() or 16,
         "gpu_batch_size": 1,
-        "cuda_device": "cuda:0",
+        "cuda_device": PRIMARY_CUDA_DEVICE,
         "gpu_vram_gb": 0,
         "profile_name": "Low (Entry Config)",
         "is_nvidia": False,

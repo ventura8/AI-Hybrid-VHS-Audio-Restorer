@@ -46,7 +46,8 @@ def test_chunk_join_without_an_overlap_concatenates():
     tail = np.zeros((3, 1), dtype=np.float32)
     assert np.array_equal(deepfilter_denoise._join_two(head, tail, 0), np.concatenate([head, tail]))
     joined = deepfilter_denoise._join_two(head, tail, 500)
-    assert joined.shape == (100, 1) and joined[-1, 0] == 0.0
+    assert joined.shape == (100, 1)
+    assert joined[-1, 0] == 0.0
 
 
 def test_stream_chunks_reads_overlapping_blocks(tmp_path):
@@ -204,7 +205,8 @@ def test_denoise_runs_the_model_over_chunks_and_writes_the_result(tmp_path):
         patch.object(deepfilter_denoise, "OVERLAP_SECONDS", 0.25),
     ):
         produced = deepfilter_denoise.denoise(path, tmp_path / "out")
-    assert produced is not None and produced.is_file()
+    assert produced is not None
+    assert produced.is_file()
     result, _rate = sf.read(str(produced), dtype="float32", always_2d=True)
     assert result.shape == audio.shape
     assert np.allclose(result, audio, atol=1e-6)
@@ -244,7 +246,8 @@ def test_denoise_or_prefers_the_model_when_it_produces_output(tmp_path):
     path, _audio = _wav(tmp_path, seconds=1.0, rate=rate)
     with patch.dict(deepfilter_denoise._MODEL, {"model": _fake_loaded(rate)}, clear=True):
         produced = deepfilter_denoise.denoise_or(path, tmp_path / "out", True, lambda: "fallback")
-    assert produced != "fallback" and produced.is_file()
+    assert produced != "fallback"
+    assert produced.is_file()
 
 
 def test_load_succeeds_with_a_fake_package(monkeypatch):
@@ -264,7 +267,8 @@ def test_load_succeeds_with_a_fake_package(monkeypatch):
     monkeypatch.setitem(sys.modules, "df.enhance", fake_enhance)
     with patch.dict(deepfilter_denoise._MODEL, {}, clear=True):
         loaded = deepfilter_denoise._load()
-        assert loaded is not None and loaded[1].sr() == 48000
+        assert loaded is not None
+        assert loaded[1].sr() == 48000
         assert deepfilter_denoise.available() is True
 
 

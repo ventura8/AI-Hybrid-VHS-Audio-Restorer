@@ -429,8 +429,9 @@ def test_collect_dtw_results_cancels_outstanding_futures_on_failure():
         patch("modules.sync.log_msg") as mock_log,
         patch("modules.sync._update_dtw_progress") as mock_progress,
     ):
+        worker, total = MagicMock(), len(chunks)
         with pytest.raises(RuntimeError, match="boom"):
-            modules.sync._collect_dtw_results(executor, MagicMock(), chunks, len(chunks), 0.0)
+            modules.sync._collect_dtw_results(executor, worker, chunks, total, 0.0)
 
     outstanding_future_1.cancel.assert_called_once()
     outstanding_future_2.cancel.assert_called_once()

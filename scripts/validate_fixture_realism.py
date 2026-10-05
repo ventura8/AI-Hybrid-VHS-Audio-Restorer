@@ -70,6 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules import physical_repair
 from modules.auto_scanner import scan_and_decide_restoration_strategy
 from scripts import sweep_denoise_settings as sweep
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.measure_tradeoff import measure
 
 REMOVAL_DOMINATES = "removal dominates"
@@ -385,7 +386,7 @@ def _coverage_matrix(fixtures_dir, variants):
             name = _class_of(record["name"]) + ("_hum" if family.endswith("_hum") else "")
             found = _detections(fixtures_dir / language / record["degraded"])
             counts[name] = counts.get(name, 0) + 1
-            hits.setdefault(name, {d: 0 for d in DETECTORS})
+            hits.setdefault(name, dict.fromkeys(DETECTORS, 0))
             for detector, seen in found.items():
                 hits[name][detector] += int(seen)
     return hits, counts
@@ -494,12 +495,12 @@ def _report_stage_checks(args, results, variants):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/realistic-v2"))
+    parser.add_argument("--fixtures-dir", type=existing_path_arg, default=Path("artifacts/realistic-v2"))
     parser.add_argument("--variants", nargs="+", default=list(DEFAULT_VARIANTS))
     parser.add_argument("--defect-variants", nargs="+", default=list(DEFECT_VARIANTS))
     parser.add_argument("--skip-defects", action="store_true", help="Only the four programme comparisons")
     parser.add_argument("--limit", type=int, default=1, help="Fixtures per variant per language")
-    parser.add_argument("--work-dir", type=Path, default=Path("experiments/fixture_realism"))
+    parser.add_argument("--work-dir", type=path_arg, default=Path("experiments/fixture_realism"))
     return parser.parse_args()
 
 

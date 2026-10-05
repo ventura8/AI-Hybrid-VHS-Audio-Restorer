@@ -171,7 +171,8 @@ def test_the_probe_is_the_quietest_stretch_on_cathars_grid(tmp_path):
     start, count = spectral_suppress.quietest_probe(source, 2.5)
     assert count == int(2.5 * RATE)
     grid = set(np.linspace(0, len(t) - count, spectral_suppress.PROBE_POSITIONS, dtype=int).tolist())
-    assert start in grid and int(cathar._find_quiet_window(source, 2.5) * RATE) in grid
+    assert start in grid
+    assert int(cathar._find_quiet_window(source, 2.5) * RATE) in grid
     assert 2.0 * RATE <= start <= 2.5 * RATE
 
 
@@ -275,4 +276,5 @@ def test_no_engine_leaves_the_neural_stage_to_work_alone(tmp_path):
     ):
         assert spectral_denoise.apply_when_needed(source, tmp_path) == source
     assert "No engine could run" in log.call_args[0][0]
-    assert isinstance(Path(source), Path) and FRAME > HOP
+    assert isinstance(Path(source), Path)
+    assert FRAME > HOP

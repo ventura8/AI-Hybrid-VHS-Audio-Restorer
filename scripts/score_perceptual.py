@@ -30,6 +30,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.download_dnsmos import MODELS, TARGET_DIR
 from scripts.measure_hum import _restored_path
 from scripts.measure_tradeoff import _extract
@@ -157,12 +158,14 @@ def _report(results):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
-    parser.add_argument("--catalog", type=Path, default=None)
-    parser.add_argument("--work-dirs", nargs="+", type=Path, required=True, help="Benchmark work dirs holding restored outputs")
+    parser.add_argument("--corpus-dir", type=existing_path_arg, default=Path("experiments/ia_corpus_1000"))
+    parser.add_argument("--catalog", type=existing_path_arg, default=None)
+    parser.add_argument(
+        "--work-dirs", nargs="+", type=existing_path_arg, required=True, help="Benchmark work dirs holding restored outputs"
+    )
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
     parser.add_argument("--limit", type=int, default=0, help="Clips to score; 0 takes the whole catalog")
-    parser.add_argument("--report", type=Path, default=Path("experiments/perceptual.json"))
+    parser.add_argument("--report", type=path_arg, default=Path("experiments/perceptual.json"))
     return parser.parse_args()
 
 

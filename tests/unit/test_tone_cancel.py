@@ -48,7 +48,8 @@ def test_a_steady_whine_is_detected_and_cancelled(tmp_path):
     source = _write(tmp_path / "whine.wav", [voice + whine, _voice(seed=3) + whine])
     mono = (voice + whine).astype(np.float64)
     lines = tone_cancel.detect_lines(mono, RATE)
-    assert len(lines) == 1 and abs(lines[0][0] - 5100.0) < 1.0
+    assert len(lines) == 1
+    assert abs(lines[0][0] - 5100.0) < 1.0
     restored = sf.read(str(tone_cancel.cancel_tones(source, tmp_path / "out.wav", lines)), dtype="float32")[0]
     assert _level_at(voice + whine, 5100.0) - _level_at(restored[:, 0], 5100.0) > 15.0
 
@@ -59,7 +60,8 @@ def test_a_flutter_wandering_whine_above_8_khz_is_cancelled(tmp_path):
     whine = _tone(15734.0 - 400.0, level=0.006, wander_hz=16.0, wander_rate=3.0)
     source = _write(tmp_path / "flutter.wav", [voice + whine, _voice(seed=3) + whine])
     lines = tone_cancel.detect_lines((voice + whine).astype(np.float64), RATE)
-    assert len(lines) == 1 and abs(lines[0][0] - 15334.0) < 5.0
+    assert len(lines) == 1
+    assert abs(lines[0][0] - 15334.0) < 5.0
     assert tone_cancel.bandwidths_for([hz for hz, _floor in lines]) == [tone_cancel.HIGH_BANDWIDTH_HZ]
     restored = sf.read(str(tone_cancel.cancel_tones(source, tmp_path / "out.wav", lines)), dtype="float32")[0]
     assert _level_at(voice + whine, 15334.0, width=30.0) - _level_at(restored[:, 0], 15334.0, width=30.0) > 12.0

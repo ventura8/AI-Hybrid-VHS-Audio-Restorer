@@ -19,11 +19,16 @@ def test_estimate_noise_floor_and_reduction():
 
     clean_sig = _rng().normal(0, 0.0001, 10000).astype(np.float32)
     nf_clean, nr_clean = modules.filters._estimate_noise_floor_and_reduction(clean_sig)
-    assert nf_clean < -60.0 and nr_clean == 8.0
+    assert nf_clean < -60.0
+    assert nr_clean == 8.0
 
+
+def test_estimate_noise_floor_and_reduction_on_a_loud_signal():
+    """A loud noise floor takes the strongest reduction tier."""
     loud_sig = _rng().normal(0, 0.1, 10000).astype(np.float32)
     nf_loud, nr_loud = modules.filters._estimate_noise_floor_and_reduction(loud_sig)
-    assert nf_loud > -35.0 and nr_loud == 16.0
+    assert nf_loud > -35.0
+    assert nr_loud == 16.0
 
 
 def test_detect_mains_buzz_notch():

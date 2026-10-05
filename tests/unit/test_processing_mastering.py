@@ -126,7 +126,8 @@ def test_single_track_mux_routes_through_the_mastering_graph():
     """The mastered label must be mapped, not the raw input stream."""
     expr = "[1:a]anull[mastered]"
     cmd = modules.processing._build_single_audio_mux_command("v.mp4", "a.wav", "o.mp4", ["-c:a", "aac"], 4, expr)
-    assert "-filter_complex" in cmd and expr in cmd
+    assert "-filter_complex" in cmd
+    assert expr in cmd
     assert "[mastered]" in cmd
     assert "1:a:0" not in cmd
 

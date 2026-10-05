@@ -58,7 +58,7 @@ WORK_NAME="ai-hybrid-vhs-audio-restorer"
 # Validated during parsing, not where each value is consumed: everything below is minutes
 # to hours of remote work, and a typo reported after the sync and the dependency install is
 # a typo reported half an hour late.
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--stage)
 		STAGE="${2:?--stage needs a value}"
@@ -140,14 +140,14 @@ die() {
 
 # Asked for rather than assumed: guessing the local username produces a "Permission denied"
 # that reads like broken key auth when it is only the wrong account.
-if [ -z "$REMOTE" ]; then
+if [[ -z "$REMOTE" ]]; then
 	read -r -p "Remote user@host: " REMOTE
 fi
 case "$REMOTE" in *@*) ;; *) die "expected user@host, got '$REMOTE'" ;; esac
 REMOTE_HOST="${REMOTE#*@}"
 WORK_DIR="~/${WORK_NAME}"
 
-[ ${#LANGUAGES[@]} -gt 0 ] || LANGUAGES=(en)
+[[ ${#LANGUAGES[@]} -gt 0 ]] || LANGUAGES=(en)
 
 # BatchMode turns a would-be password prompt into an immediate error rather than a session
 # that hangs forever with no output.
@@ -175,14 +175,14 @@ fetch_reports() {
 		"${REMOTE}:${WORK_NAME}/experiments/benchmark_ia_corpus_report.md" \
 		"$dest/" 2>/dev/null || true
 	for report in "$dest"/*.json "$dest"/*.md; do
-		[ -e "$report" ] && note "$report"
+		[[ -e "$report" ]] && note "$report"
 	done
 	return 0
 }
 
 hdr "Preflight: ${REMOTE}"
 
-if [ ! -f "$KEY" ]; then
+if [[ ! -f "$KEY" ]]; then
 	note "No identity at ${KEY} -- generating a dedicated one (revocable on its own)."
 	mkdir -p "$(dirname "$KEY")"
 	ssh-keygen -t ed25519 -N '' -C 'ai-hybrid-vhs-audio-restorer remote hardware validation' -f "$KEY" >/dev/null
@@ -250,7 +250,7 @@ REMOTE_PY="$(ssh_run 'if command -v python3.12 >/dev/null 2>&1; then command -v 
 	elif command -v uv >/dev/null 2>&1; then uv python find 3.12 2>/dev/null || true;
 	elif [ -x "$HOME/.local/bin/uv" ]; then "$HOME/.local/bin/uv" python find 3.12 2>/dev/null || true;
 	fi' | tr -d '\r' | tail -1)"
-if [ -z "$REMOTE_PY" ]; then
+if [[ -z "$REMOTE_PY" ]]; then
 	cat <<EOF
 
 Python 3.12 was not found on ${REMOTE_HOST}, and pyproject.toml pins >=3.12,<3.13.
@@ -281,7 +281,7 @@ if ssh_run 'command -v nvidia-smi >/dev/null'; then
 	note "gpu: $(ssh_run 'nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader' | tr -d '\r')"
 else
 	note "gpu: no nvidia-smi on this host"
-	case "$STAGE" in execute | tapes) die "--stage ${STAGE} requires NVIDIA CUDA, and ${REMOTE_HOST} has no nvidia-smi." ;; esac
+	case "$STAGE" in execute | tapes) die "--stage ${STAGE} requires NVIDIA CUDA, and ${REMOTE_HOST} has no nvidia-smi." ;; *) ;; esac
 fi
 note "disk: $(ssh_run 'df -BG --output=avail ~ | tail -1 | tr -d " "') free in \$HOME"
 
@@ -300,7 +300,7 @@ note "synced $(git -C "$REPO_ROOT" ls-files | wc -l | tr -d ' ') tracked files a
 # silently absent on the remote and the run dies on an ImportError naming a file that plainly
 # exists locally. Cheaper to say so here than to debug it there.
 UNTRACKED_SOURCE="$(git -C "$REPO_ROOT" ls-files --others --exclude-standard -- 'modules/*.py' 'tests/*.py' 'scripts/*.py' | tr '\n' ' ')"
-if [ -n "${UNTRACKED_SOURCE// /}" ]; then
+if [[ -n "${UNTRACKED_SOURCE// /}" ]]; then
 	note "WARNING: untracked source files were NOT synced (git add them first):"
 	for path in $UNTRACKED_SOURCE; do note "  $path"; done
 fi
@@ -313,7 +313,7 @@ ssh_run "find ${WORK_DIR} -name '*.sh' -type f -exec sed -i 's/\r\$//' {} +" ||
 	die "could not normalise line endings on ${REMOTE_HOST}"
 
 hdr "Environment"
-if [ "$INSTALL" = true ] || ! ssh_run "test -x ${WORK_DIR}/.venv/bin/python"; then
+if [[ "$INSTALL" = true ]] || ! ssh_run "test -x ${WORK_DIR}/.venv/bin/python"; then
 	note "running install_dependencies.sh (the first run pulls the CUDA wheels; this takes a while)"
 	# One worker, not the default pool. Poetry's parallel installer deadlocks when the index
 	# drops connections mid-download: every socket sits in CLOSE-WAIT, every worker thread
@@ -332,7 +332,7 @@ note "torch: $(venv_run "python -c 'import torch; print(torch.__version__, torch
 # install_dependencies.sh installs `--without dev`, which is right for a machine that only
 # restores audio -- but pytest is a dev dependency. Added only for the stages that run it,
 # so an audit-only run still provisions exactly what the product ships with.
-if [ "$STAGE" != "audit" ] && ! venv_run "python -c 'import pytest'" >/dev/null 2>&1; then
+if [[ "$STAGE" != "audit" ]] && ! venv_run "python -c 'import pytest'" >/dev/null 2>&1; then
 	note "installing the dev dependency group (pytest is not part of the runtime install)"
 	ssh_run "cd ${WORK_DIR} && .venv/bin/python -m poetry install --no-root --only dev --no-interaction" ||
 		die "could not install the dev dependency group on ${REMOTE_HOST}"
@@ -350,11 +350,11 @@ if ssh_run "grep -q '\"pytorch_cuda_ready\": true' ${WORK_DIR}/artifacts/hardwar
 	note "verdict: PyTorch is executing on CUDA"
 else
 	note "verdict: PyTorch fell back to the CPU on this host"
-	case "$STAGE" in execute | tapes) die "--stage ${STAGE} needs CUDA, and the audit reports a CPU fallback. A run would prove nothing." ;; esac
+	case "$STAGE" in execute | tapes) die "--stage ${STAGE} needs CUDA, and the audit reports a CPU fallback. A run would prove nothing." ;; *) ;; esac
 fi
 
-if [ "$STAGE" = "audit" ]; then
-	[ "$FETCH" = true ] && fetch_reports
+if [[ "$STAGE" = "audit" ]]; then
+	[[ "$FETCH" = true ]] && fetch_reports
 	cat <<EOF
 
 Audit complete. Re-run with a deeper stage to validate the restoration paths:
@@ -371,7 +371,7 @@ hdr "Hardware test suite"
 venv_run "env AI_RESTORE_HARDWARE_TESTS=1 python -m pytest tests/hardware -v --no-header -o addopts=" ||
 	SUITE_FAILED=true
 
-if [ "$STAGE" = "execute" ] || [ "$STAGE" = "tapes" ]; then
+if [[ "$STAGE" = "execute" ]] || [[ "$STAGE" = "tapes" ]]; then
 	FIXTURE_ARGS=""
 	for lang in "${LANGUAGES[@]}"; do FIXTURE_ARGS="${FIXTURE_ARGS} --language ${lang}"; done
 
@@ -380,7 +380,7 @@ if [ "$STAGE" = "execute" ] || [ "$STAGE" = "tapes" ]; then
 	# the host is reused unless --fixtures says otherwise. Generated on the remote rather than
 	# copied: the fixtures are large, and the alternative needs the Piper toolchain and the
 	# voice downloads on this machine anyway.
-	if [ "$FIXTURES" = true ] || ! ssh_run "test -d ${WORK_DIR}/artifacts/audio-matrix"; then
+	if [[ "$FIXTURES" = true ]] || ! ssh_run "test -d ${WORK_DIR}/artifacts/audio-matrix"; then
 		venv_run "python scripts/generate_audio_matrix.py ${PROFILE}${FIXTURE_ARGS}" ||
 			die "fixture generation failed on ${REMOTE_HOST}"
 	else
@@ -399,15 +399,15 @@ if [ "$STAGE" = "execute" ] || [ "$STAGE" = "tapes" ]; then
 	# exits 0, so a run where every mode failed would otherwise report "result: passed". The
 	# report is the result here, not the exit code.
 	FAILURES="$(ssh_run "grep -c '\"success\": false' ${WORK_DIR}/artifacts/hardware-validation.json || true" | tr -dc '0-9')"
-	if [ -n "$FAILURES" ] && [ "$FAILURES" -gt 0 ]; then
+	if [[ -n "$FAILURES" ]] && [[ "$FAILURES" -gt 0 ]]; then
 		note "${FAILURES} mode(s) FAILED on ${REMOTE_HOST} -- see the report for which"
 		SUITE_FAILED=true
 	fi
 fi
 
-if [ "$STAGE" = "tapes" ]; then
+if [[ "$STAGE" = "tapes" ]]; then
 	CORPUS_SRC="${REPO_ROOT}/${CORPUS_REL}"
-	[ -d "$CORPUS_SRC" ] ||
+	[[ -d "$CORPUS_SRC" ]] ||
 		die "no corpus at ${CORPUS_SRC}. Curate one first with scripts/curate_ia_corpus.py, or pass --corpus-dir."
 
 	hdr "Real tape corpus -> ${REMOTE_HOST}"
@@ -415,7 +415,7 @@ if [ "$STAGE" = "tapes" ]; then
 	# `git ls-files` sync above cannot carry it and the remote would run the benchmark against
 	# an empty directory. Sent separately, and only once: it is static material, so a corpus
 	# already on the host is reused unless --corpus-refresh says otherwise.
-	if [ "$CORPUS_REFRESH" = true ] || ! ssh_run "test -d ${WORK_DIR}/${CORPUS_REL}"; then
+	if [[ "$CORPUS_REFRESH" = true ]] || ! ssh_run "test -d ${WORK_DIR}/${CORPUS_REL}"; then
 		note "sending $(du -sh "$CORPUS_SRC" | cut -f1) of real tape material (this is the slow part)"
 		ssh_run "mkdir -p ${WORK_DIR}/$(dirname "$CORPUS_REL")"
 		tar -C "$REPO_ROOT" -czf - "$CORPUS_REL" | ssh_run "tar -C ${WORK_DIR} -xzf -" ||
@@ -425,7 +425,7 @@ if [ "$STAGE" = "tapes" ]; then
 		# PAL 50 Hz tape from an NTSC 60 Hz one, and every hum measurement is taken at the
 		# wrong frequency.
 		for catalog in "experiments/ia_corpus_catalog.json" "${CORPUS_REL}/catalog_1000.json"; do
-			[ -f "${REPO_ROOT}/${catalog}" ] || continue
+			[[ -f "${REPO_ROOT}/${catalog}" ]] || continue
 			tar -C "$REPO_ROOT" -czf - "$catalog" | ssh_run "tar -C ${WORK_DIR} -xzf -" || true
 		done
 	else
@@ -434,7 +434,7 @@ if [ "$STAGE" = "tapes" ]; then
 	note "clips on remote: $(ssh_run "find ${WORK_DIR}/${CORPUS_REL} -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' \) | wc -l" | tr -d '\r')"
 
 	BENCH_MODES=""
-	[ ${#MODES[@]} -gt 0 ] && BENCH_MODES="--modes ${MODES[*]}"
+	[[ ${#MODES[@]} -gt 0 ]] && BENCH_MODES="--modes ${MODES[*]}"
 
 	hdr "Real tape benchmark (${CORPUS_REL})"
 	note "measures noise reduction, SNR gain, and CRT/mains/rumble suppression per mode"
@@ -442,12 +442,12 @@ if [ "$STAGE" = "tapes" ]; then
 		SUITE_FAILED=true
 fi
 
-[ "$FETCH" = true ] && fetch_reports
+[[ "$FETCH" = true ]] && fetch_reports
 
 hdr "Done"
 note "host:  ${REMOTE_HOST}"
 note "stage: ${STAGE}"
-if [ "${SUITE_FAILED:-false}" = true ]; then
+if [[ "${SUITE_FAILED:-false}" = true ]]; then
 	note "result: FAILED (see the output above; the remote tree is left in place at ${WORK_DIR})"
 	exit 1
 fi
