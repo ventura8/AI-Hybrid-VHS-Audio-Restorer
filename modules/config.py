@@ -779,7 +779,12 @@ CONFIG, CONFIG_SOURCE = load_config()
 
 INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("output")
-LOG_FILE = Path("session_log.txt")
+# The session log lives beside the application, never in the launch directory: a folder of
+# tapes shipped with a planted session_log.txt symlink (to ~/.bashrc or authorized_keys)
+# would otherwise receive every logged line, filenames included. A frozen build keeps it
+# beside the executable (its bundle directory is a temporary extraction).
+APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+LOG_FILE = APP_DIR / "session_log.txt"
 
 EXTS = set(CONFIG["extensions"])
 KEEP_INPUT_FILES = os.environ.get("AI_RESTORE_TEST_MODE") == "1"

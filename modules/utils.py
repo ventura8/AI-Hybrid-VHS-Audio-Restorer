@@ -155,6 +155,10 @@ def _rotate_log_file(log_file=None, limit=None):
     """Moves the session log aside once it passes the size cap; the previous generation is replaced."""
     log_file = Path(LOG_FILE if log_file is None else log_file)
     limit = LOG_ROTATE_BYTES if limit is None else limit
+    return not log_file.is_symlink() and _rotate_if_over(log_file, limit)
+
+
+def _rotate_if_over(log_file, limit):
     try:
         if log_file.stat().st_size < limit:
             return False
@@ -164,11 +168,30 @@ def _rotate_log_file(log_file=None, limit=None):
         return False
 
 
+# Line breaks and other control characters in a message (a filename may carry them on Linux and
+# macOS) would let one call write several log lines; each collapses to a space.
+_LOG_CONTROL = str.maketrans({code: " " for code in [*range(0x00, 0x09), *range(0x0A, 0x20), 0x7F, 0x85, 0x2028, 0x2029]})
+
+
+def _one_line(message):
+    """`message` as a single log line: every line break and control character becomes a space."""
+    return str(message).translate(_LOG_CONTROL)
+
+
+def _open_log_for_append(log_file):
+    """The session log opened for appending, refusing a symlink (O_NOFOLLOW where the platform has it)."""
+    log_file = Path(log_file)
+    if log_file.is_symlink():
+        raise OSError(f"refusing to follow a symlinked session log: {log_file}")
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    return os.fdopen(os.open(str(log_file), flags, 0o600), "a", encoding="utf-8")
+
+
 def _append_log_file(effective_level, clean_msg):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _rotate_log_file()
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] [{effective_level:5}] {clean_msg}\n")
+    with _open_log_for_append(LOG_FILE) as f:
+        f.write(f"[{timestamp}] [{effective_level:5}] {_one_line(clean_msg)}\n")
 
 
 def log_msg(message, is_error=False, console=True, level="INFO"):
