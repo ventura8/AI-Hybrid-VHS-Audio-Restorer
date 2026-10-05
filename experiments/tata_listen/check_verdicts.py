@@ -6,6 +6,9 @@ The user's verdicts (2026-09-20): Tele7abc "roformer and baseline are silent in 
 "cathar alpha 2 has hiss", "apl creates distortion of spoken 's'"; SOTI and Vaccin "alpha 2
 sounds better" (than the APL baseline). `final_cathar` / `final_apl` and Gaudeamus were never
 judged by ear, so they are reported, not asserted.
+
+Second round (2026-10-05, on the v2 plateaus in variants/v2): APL better than cathar on speech,
+pauses natural on both, music fine on both, APL's 's' still thin.
 """
 
 import json

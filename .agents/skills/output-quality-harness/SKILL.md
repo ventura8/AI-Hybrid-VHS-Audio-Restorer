@@ -102,6 +102,17 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   not dead"). Split a flag when one direction is accepted by ear and the
   other is not (`sibilance_thin` above +300 Hz, `sibilance_dull` below
   -600: cathar's de-esser reads -100..-380 and nobody objected).
+- Second listening round (2026-10-05, the v2 plateaus in
+  `D:\Tata\New folder\variants\v2`): APL preferred over cathar on the Tata
+  speech tapes, the pauses natural on both (the pause floor confirmed), the
+  music clips fine on both, and APL's 's' still thin. The harness read
+  `sibilance_thin` only on Vaccin, so the flag is right in direction and may
+  under-call; the loop's sibilance grid stopped at its own top (mix 0.8) and
+  never moved the guard's 4 kHz crossover, below which the harness locates
+  the emptied body. `experiments/run_autotune_v3_apl_sibilance.cmd` reruns
+  APL from the shipped defaults with mix up to 1.0 and the crossover 2-5 kHz.
+  A plateau sitting on the edge of a knob's grid is not a plateau: widen the
+  grid before asking the user.
 - Re-scoring one family into a stored report:
   `validate_restoration.py ... --metrics dsp --merge-into report.json`
   (`score_listen.py <slug> --dsp-rescore`), then
