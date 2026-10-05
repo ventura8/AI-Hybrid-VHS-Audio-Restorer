@@ -109,8 +109,12 @@ KNOBS = {
         # The native suppressor's gain floor: what a pause keeps once the subtraction slot is on.
         "apl_suppress_gain_floor_db": [-30.0, -20.0, -12.0],
         # The sibilant guard (modules/sibilant_guard.py): the 's' keeps its body under the neural stage.
+        # The listener round stopped at mix 0.8, the top of its grid, and the user still heard APL's
+        # 's' thin (2026-10-05); the harness traces the thinning to the 1-4 kHz body, below the
+        # guard's 4 kHz crossover, so the crossover is a knob and the mix reaches 1.0.
         "apl_enable_sibilant_guard": [False, True],
-        "apl_sibilant_mix": [0.3, 0.5, 0.8],
+        "apl_sibilant_mix": [0.3, 0.5, 0.8, 0.9, 1.0],
+        "apl_sibilant_guard_hz": [2000, 2500, 3000, 4000, 5000],
         # The stem path on music (modules/apl_stems.py); 0.005 admits Gaudeamus (held partials 0.009).
         "apl_music_stem_path": [False, True],
         "apl_music_persistence_min": [0.005, 0.02, 0.05],
