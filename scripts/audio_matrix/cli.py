@@ -93,10 +93,10 @@ def select_languages(languages, requested):
 def _profile_names(profile, manifest):
     """The manifest entries a profile selects: core is short and mid, all is every entry."""
     if profile == "core":
-        return ("short", "mid")
+        return ["short", "mid"]
     if profile == "all":
-        return tuple(manifest)
-    return (profile,)
+        return list(manifest)
+    return [profile]
 
 
 def main(argv=None):
