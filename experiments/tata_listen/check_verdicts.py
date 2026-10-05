@@ -61,7 +61,9 @@ def check_ordering(slug):
     report = json.loads(path.read_text(encoding="utf-8"))
     hard = {label: len(variant["hard_failures"]) for label, variant in report["variants"].items()}
     if hard.get("cathar__alpha_2_0", 0) > hard.get("apl__baseline", 0):
-        return [f"{slug}: cathar__alpha_2_0 fails more hard gates ({hard['cathar__alpha_2_0']}) than apl__baseline ({hard['apl__baseline']})"]
+        return [
+            f"{slug}: cathar__alpha_2_0 fails more hard gates ({hard['cathar__alpha_2_0']}) than apl__baseline ({hard['apl__baseline']})"
+        ]
     return []
 
 
