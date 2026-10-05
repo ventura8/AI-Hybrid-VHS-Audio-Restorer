@@ -170,7 +170,7 @@ def _rotate_if_over(log_file, limit):
 
 # Line breaks and other control characters in a message (a filename may carry them on Linux and
 # macOS) would let one call write several log lines; each collapses to a space.
-_LOG_CONTROL = str.maketrans({code: " " for code in [*range(0x00, 0x09), *range(0x0A, 0x20), 0x7F, 0x85, 0x2028, 0x2029]})
+_LOG_CONTROL = str.maketrans(dict.fromkeys([*range(0x00, 0x09), *range(0x0A, 0x20), 0x7F, 0x85, 0x2028, 0x2029], " "))
 
 
 def _one_line(message):
