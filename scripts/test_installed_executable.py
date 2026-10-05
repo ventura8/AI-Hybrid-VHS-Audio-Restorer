@@ -19,6 +19,33 @@ import tempfile
 from pathlib import Path
 
 
+def _not_an_option(value):
+    """An argparse type: a command-line value that is not shaped like an option."""
+    text = str(value)
+    if not text or text.startswith("-"):
+        raise argparse.ArgumentTypeError(f"looks like an option, not a path or command: {text!r}")
+    return text
+
+
+def _existing_dir(value):
+    """An argparse type: an existing directory, resolved."""
+    resolved = Path(_not_an_option(value)).resolve()
+    if not resolved.is_dir():
+        raise argparse.ArgumentTypeError(f"not an existing directory: {resolved}")
+    return resolved
+
+
+def _launcher_command(launcher):
+    """The launcher as an argument list: an existing file, else the executable found on PATH."""
+    launcher_path = Path(launcher).resolve()
+    if launcher_path.exists():
+        return [str(launcher_path)]
+    found = shutil.which(launcher)
+    if found is None:
+        raise FileNotFoundError(f"Launcher executable not found: {launcher}")
+    return [found]
+
+
 def _run_cmd(cmd, cwd=None, stdin_data=None):
     """Executes a command and returns the completed process."""
     print(f"Running: {' '.join(str(c) for c in cmd)}")
@@ -143,15 +170,11 @@ def _configure_native_mode(config_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="End-to-end executable test suite")
-    parser.add_argument("launcher", help="Path to executable or launcher command")
-    parser.add_argument("--config-dir", help="Directory where config.yaml is located", default=None)
+    parser.add_argument("launcher", type=_not_an_option, help="Path to executable or launcher command")
+    parser.add_argument("--config-dir", type=_existing_dir, help="Directory where config.yaml is located", default=None)
     args = parser.parse_args()
 
-    launcher_path = Path(args.launcher).resolve()
-    if not launcher_path.exists() and shutil.which(args.launcher) is None:
-        raise FileNotFoundError(f"Launcher executable not found: {args.launcher}")
-
-    launcher_cmd = [str(launcher_path)] if launcher_path.exists() else [args.launcher]
+    launcher_cmd = _launcher_command(args.launcher)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="ai_vhs_e2e_"))
     try:

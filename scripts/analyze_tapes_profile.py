@@ -31,6 +31,7 @@ from modules.filters import (
     _estimate_noise_floor_and_reduction,
 )
 from modules.utils import FFMPEG_BIN
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _scan_directory_captures
 
 
@@ -168,8 +169,8 @@ def run_batch_scan(input_target, output_json, start_sec=30, duration_sec=90):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Input directory or specific video file to analyze")
-    parser.add_argument("--output", type=Path, default=Path("tapes_profile_analysis.json"), help="Output JSON profile destination")
+    parser.add_argument("--input", type=existing_path_arg, required=True, help="Input directory or specific video file to analyze")
+    parser.add_argument("--output", type=path_arg, default=Path("tapes_profile_analysis.json"), help="Output JSON profile destination")
     parser.add_argument("--duration", type=int, default=90, help="Sample duration in seconds")
     parser.add_argument("--start", type=int, default=30, help="Sample start offset in seconds")
     return parser.parse_args()

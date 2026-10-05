@@ -408,13 +408,13 @@ def _rescale(path, factor):
     The source is closed before the partial is published over it: Windows refuses to
     replace a file that is still open.
     """
-    with atomic_target(path) as partial:
-        with (
-            sf.SoundFile(str(path)) as source,
-            sf.SoundFile(str(partial), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
-        ):
-            for block in source.blocks(blocksize=BLOCK_FRAMES, dtype="float32", always_2d=True):
-                out.write(block * factor)
+    with (
+        atomic_target(path) as partial,
+        sf.SoundFile(str(path)) as source,
+        sf.SoundFile(str(partial), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
+    ):
+        for block in source.blocks(blocksize=BLOCK_FRAMES, dtype="float32", always_2d=True):
+            out.write(block * factor)
 
 
 def join(outputs, ranges, target, margins=None, gains=None):

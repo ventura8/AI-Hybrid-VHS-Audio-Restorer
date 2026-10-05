@@ -39,6 +39,7 @@ import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.score_reference import _align, _match_gain
 
 EPS = 1e-12
@@ -209,9 +210,9 @@ def score_repair(clean_path, degraded_path, restored_path, mask_path=None):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/reference-fixtures"))
-    parser.add_argument("--restored-dir", type=Path, required=True, help="Directory of restored WAVs named <fixture>_vhs.wav")
-    parser.add_argument("--report", type=Path, default=None)
+    parser.add_argument("--fixtures-dir", type=existing_path_arg, default=Path("artifacts/reference-fixtures"))
+    parser.add_argument("--restored-dir", type=existing_path_arg, required=True, help="Directory of restored WAVs named <fixture>_vhs.wav")
+    parser.add_argument("--report", type=path_arg, default=None)
     # The calibrated set injects plosives, enclosure resonance and handling noise into the
     # *reference* -- they were recorded, not added by the tape -- and writes that reference
     # as the clean file. Scored against it, a stage that removes them reads as collateral
@@ -220,23 +221,27 @@ def _parse_args():
     return parser.parse_args()
 
 
+def _score_record(args, language, record):
+    """Scores one fixture against its restored counterpart; None when there is none."""
+    restored = args.restored_dir / record["degraded"]
+    if not restored.is_file():
+        return None
+    language_dir = args.fixtures_dir / language
+    truth = record.get(args.reference) or record["clean"]
+    mask = language_dir / record["clean"] if args.reference == "target" else None
+    scored = score_repair(language_dir / truth, language_dir / record["degraded"], restored, mask_path=mask)
+    if scored:
+        scored.update({"name": record["name"], "language": language, "defects": record["defects"]})
+    return scored
+
+
 def main():
     """Scores every fixture that has a restored counterpart."""
     args = _parse_args()
     manifest = json.loads((args.fixtures_dir / "manifest.json").read_text(encoding="utf-8"))
     rows = []
     for language, records in manifest["languages"].items():
-        for record in records:
-            restored = args.restored_dir / record["degraded"]
-            if not restored.is_file():
-                continue
-            language_dir = args.fixtures_dir / language
-            truth = record.get(args.reference) or record["clean"]
-            mask = language_dir / record["clean"] if args.reference == "target" else None
-            scored = score_repair(language_dir / truth, language_dir / record["degraded"], restored, mask_path=mask)
-            if scored:
-                scored.update({"name": record["name"], "language": language, "defects": record["defects"]})
-                rows.append(scored)
+        rows.extend(row for record in records if (row := _score_record(args, language, record)))
 
     print(f"{'fixture':<26}{'repaired dB':>13}{'collateral dB':>15}{'skew':>7}")
     for row in sorted(rows, key=lambda r: r["name"]):

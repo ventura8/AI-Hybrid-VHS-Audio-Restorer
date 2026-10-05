@@ -34,6 +34,14 @@ def _remove_if_exists(path):
         path.unlink()
 
 
+def _finish_partial(partial, target, completed):
+    """Publishes a completed partial that was written; removes the partial of a failed stage."""
+    if not completed:
+        _remove_if_exists(partial)
+    elif partial.exists():
+        publish(partial, target)
+
+
 @contextlib.contextmanager
 def atomic_target(target):
     """Yields the partial to write; publishes it over `target` on success, removes it otherwise.
@@ -43,13 +51,12 @@ def atomic_target(target):
     target = Path(target)
     partial = partial_path(target)
     _remove_if_exists(partial)
+    completed = False
     try:
         yield partial
-    except BaseException:
-        _remove_if_exists(partial)
-        raise
-    if partial.exists():
-        publish(partial, target)
+        completed = True
+    finally:
+        _finish_partial(partial, target, completed)
 
 
 # Directory entries are made durable on POSIX by syncing the directory; Windows cannot open

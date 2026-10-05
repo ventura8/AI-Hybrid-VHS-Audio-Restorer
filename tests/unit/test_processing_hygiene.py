@@ -34,7 +34,8 @@ def test_dsp_filter_publishes_only_a_complete_render(tmp_path):
 
     with patch("modules.processing.run_command_with_progress", side_effect=render):
         assert processing._run_dsp_filter_file(source, output, "anull", "Test", 1.0) == output
-    assert utils.is_valid_audio(output) and not hygiene.partial_path(output).exists()
+    assert utils.is_valid_audio(output)
+    assert not hygiene.partial_path(output).exists()
 
 
 def test_dsp_filter_failure_leaves_no_partial_and_falls_back(tmp_path):
@@ -49,7 +50,8 @@ def test_dsp_filter_failure_leaves_no_partial_and_falls_back(tmp_path):
 
     with patch("modules.processing.run_command_with_progress", side_effect=cut_off):
         assert processing._run_dsp_filter_file(source, output, "anull", "Test", 1.0) == source
-    assert not output.exists() and not hygiene.partial_path(output).exists()
+    assert not output.exists()
+    assert not hygiene.partial_path(output).exists()
 
 
 def test_copy_result_to_final_dir_leaves_no_partial(tmp_path):
@@ -57,7 +59,8 @@ def test_copy_result_to_final_dir_leaves_no_partial(tmp_path):
     final_dir = tmp_path / "final"
     final_dir.mkdir()
     published = processing._copy_result_to_final_dir(result, final_dir)
-    assert published == final_dir / "joined.wav" and utils.is_valid_audio(published)
+    assert published == final_dir / "joined.wav"
+    assert utils.is_valid_audio(published)
     assert list(final_dir.iterdir()) == [published]
 
 
@@ -90,7 +93,8 @@ def test_publish_staged_output_stages_a_copy_when_a_rename_cannot_cross_volumes(
     final.write_text("old")
     with patch("modules.hygiene.os.replace", side_effect=_cross_device(staged)):
         processing._publish_staged_output(staged, final)
-    assert final.read_text() == "render" and not staged.exists()
+    assert final.read_text() == "render"
+    assert not staged.exists()
     assert list(tmp_path.glob("*.tmp.*")) == []
 
 
@@ -107,7 +111,9 @@ def test_publish_staged_output_raises_any_error_that_is_not_a_cross_device_renam
         pytest.raises(PermissionError),
     ):
         processing._publish_staged_output(staged, final)
-    assert copy.call_count == 0 and final.read_text() == "old" and staged.exists()
+    assert copy.call_count == 0
+    assert final.read_text() == "old"
+    assert staged.exists()
 
 
 def test_publish_staged_output_keeps_the_previous_output_when_the_copy_fails(tmp_path):

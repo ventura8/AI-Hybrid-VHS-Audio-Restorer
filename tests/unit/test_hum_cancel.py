@@ -345,7 +345,8 @@ def test_the_plan_reads_the_scanner_report_through_the_stage(humming, tmp_path):
     source, _hum = humming
     with patch("modules.hum_cancel.APL_HUM_SKIP_NOTCHED", True), patch("modules.hum_cancel.log_msg") as log:
         produced = hum_cancel.apply_when_needed(source, tmp_path, strategy={"profile": {"notch_hz": 50.0}})
-    assert produced != source and produced.is_file()
+    assert produced != source
+    assert produced.is_file()
     assert "Cancelled" in log.call_args[0][0]
 
 
@@ -371,7 +372,8 @@ def test_a_series_without_its_fundamental_is_not_hum(tmp_path):
     assert "no line at the fundamental" in log.call_args[0][0]
     with patch("modules.hum_cancel.log_msg") as log:
         produced = hum_cancel.apply_when_needed(source, tmp_path, strategy={"profile": {"notch_hz": 50.0}})
-    assert produced != source and "Cancelled" in log.call_args[0][0]
+    assert produced != source
+    assert "Cancelled" in log.call_args[0][0]
 
 
 def test_a_failure_while_planning_leaves_the_audio_usable(humming, tmp_path):

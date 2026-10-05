@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules.hardware import get_gpu_name
 from modules.processing import process_hybrid_audio
 from modules.utils import FFMPEG_BIN, is_valid_video
+from scripts.cli_paths import existing_path_arg, path_arg
 
 
 def _extract_sample_clip(input_video, sample_output, start_sec, duration_sec):
@@ -101,11 +102,11 @@ def run_experiment(tape_path, mode, duration_sec=90, start_sec=30, output_dir=No
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tape", type=Path, required=True, help="Path to input video/audio file")
+    parser.add_argument("--tape", type=existing_path_arg, required=True, help="Path to input video/audio file")
     parser.add_argument("--mode", type=str, default="cathar", help="Restoration mode to run")
     parser.add_argument("--duration", type=int, default=90, help="Clip duration in seconds")
     parser.add_argument("--start", type=int, default=30, help="Clip start offset in seconds")
-    parser.add_argument("--output-dir", type=Path, default=None, help="Output destination directory")
+    parser.add_argument("--output-dir", type=path_arg, default=None, help="Output destination directory")
     return parser.parse_args()
 
 

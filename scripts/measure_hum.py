@@ -37,6 +37,7 @@ import scipy.signal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.measure_tradeoff import LOUD_PERCENTILE, MIN_DYNAMIC_SPREAD_DB, QUIET_PERCENTILE, _extract, _frames, _mono
 from scripts.score_reference import _align
 
@@ -278,13 +279,17 @@ def _measure_clip(clip, source_wav, temp_dir, record, mains, args, results):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
-    parser.add_argument("--catalog", type=Path, default=None)
+    parser.add_argument("--corpus-dir", type=existing_path_arg, default=Path("experiments/ia_corpus_1000"))
+    parser.add_argument("--catalog", type=existing_path_arg, default=None)
     parser.add_argument(
-        "--work-dirs", nargs="+", type=Path, required=True, help="Benchmark work dirs holding restored outputs, searched in order"
+        "--work-dirs",
+        nargs="+",
+        type=existing_path_arg,
+        required=True,
+        help="Benchmark work dirs holding restored outputs, searched in order",
     )
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
-    parser.add_argument("--report", type=Path, default=Path("experiments/hum.json"))
+    parser.add_argument("--report", type=path_arg, default=Path("experiments/hum.json"))
     parser.add_argument(
         "--mains",
         choices=["region", "auto"],

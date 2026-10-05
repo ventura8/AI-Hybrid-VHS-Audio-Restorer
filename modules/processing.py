@@ -87,6 +87,7 @@ attempt_run_with_retry = _utils.attempt_run_with_retry
 # back down, so without an explicit resample the encoder inherits 96 kHz and the
 # output file roughly doubles in size for no quality gain.
 PIPELINE_SAMPLE_RATE = 44100
+WAV_GLOB = "*.wav"
 
 
 def _resolve_override(override, fallback):
@@ -183,7 +184,7 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
     else:
         if tmp_wav.exists():
             tmp_wav.unlink()
-        raise Exception("Extraction failed: Output audio is invalid, empty, or too small.")  # pragma: no cover
+        raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")  # pragma: no cover
 
 
 # audio-separator labels stems per model, not to one convention: BS-Roformer emits
@@ -202,7 +203,7 @@ def _matches_stem_token(path, tokens):
 
 def _collect_stem_candidates(separation_out_dir):
     """Scans directory for potential vocal and background stem outputs."""
-    all_wavs = list(separation_out_dir.glob("*.wav"))
+    all_wavs = list(separation_out_dir.glob(WAV_GLOB))
     vocals = [path for path in all_wavs if _matches_stem_token(path, FOREGROUND_STEM_TOKENS)]
     background = [path for path in all_wavs if _matches_stem_token(path, BACKGROUND_STEM_TOKENS)]
     return vocals, background, all_wavs
@@ -288,10 +289,10 @@ def _verify_separation_output(separation_out_dir, original_wav):
 
 def _build_separator(output_dir, normalization_threshold=_denoise_chunking.WHOLE_FILE_PEAK):
     """Configures audio-separator instance with dynamic batching parameters."""
-    Separator = _get_audio_separator_class()
+    separator_class = _get_audio_separator_class()
     model_dir = MODELS_DIR
     model_dir.mkdir(parents=True, exist_ok=True)
-    return Separator(
+    return separator_class(
         output_dir=str(output_dir),
         model_file_dir=str(model_dir),
         output_format="wav",
@@ -311,7 +312,7 @@ def _resolve_separation_result(separation_out_dir, original_wav, output_files):
 
     if hasattr(output_files, "__len__") and len(output_files) >= 2:
         log_msg(f"    [Debug] Separator returned: {output_files}", level="DEBUG")
-    raise Exception("Separation completed but output stems were not identified.")
+    raise RuntimeError("Separation completed but output stems were not identified.")
 
 
 def _purge_corrupted_model_file(model_name):
@@ -344,7 +345,7 @@ def _load_separator_model(separator, model_name):
         separator.load_model(model_filename=model_name)
 
 
-def _separate_stems_step(original_wav, separation_out_dir, total_duration=None, vocals_model=None):
+def _separate_stems_step(original_wav, separation_out_dir, vocals_model=None):
     """Step 2: Separate Stems (BS-Roformer) via Python API.
 
     Extracts isolated vocals and subtractive background tracks.
@@ -367,7 +368,7 @@ def _separate_stems_step(original_wav, separation_out_dir, total_duration=None, 
         output_files = separator.separate(str(original_wav))
 
         if output_files is None:
-            raise Exception("Separation completed but output stems were not identified.")
+            raise RuntimeError("Separation completed but output stems were not identified.")
 
         return _resolve_separation_result(separation_out_dir, original_wav, output_files)
 
@@ -452,7 +453,7 @@ def _cleanup_directory(path):
 def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_duration=None, enhance_nfe=None, enhance_tau=None):
     """Step 3: Enhance Vocals (Resemble-Enhance)."""
     enhanced_vocals_dir.mkdir(parents=True, exist_ok=True)
-    candidates_enhanced = list(enhanced_vocals_dir.glob("*.wav"))
+    candidates_enhanced = list(enhanced_vocals_dir.glob(WAV_GLOB))
     valid_enhanced = [f for f in candidates_enhanced if is_valid_audio(f)]
 
     if valid_enhanced:
@@ -523,7 +524,7 @@ def _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, 
     _load_separator_model(separator, model_name)
     log_msg("    [AI] Starting Inference (GPU Accelerated)...")
     separator.separate(str(input_wav))
-    candidates_denoised = sorted(denoised_output_dir.glob("*.wav"), key=lambda path: path.name.lower())
+    candidates_denoised = sorted(denoised_output_dir.glob(WAV_GLOB), key=lambda path: path.name.lower())
     return _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure)
 
 
@@ -624,7 +625,7 @@ def _select_preferred_denoised_output(valid_denoised):
 def _denoise_vocals_step(vocals_wav, denoised_vocals_dir, total_duration=None, denoise_model=None):
     """Step 2b: Denoise Speech Stem (UVR-DeNoise-Lite) via Python API."""
     del total_duration
-    candidates_denoised = list(denoised_vocals_dir.glob("*.wav"))
+    candidates_denoised = list(denoised_vocals_dir.glob(WAV_GLOB))
     valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
 
     if valid_denoised:
@@ -644,9 +645,9 @@ def _denoise_vocals_step(vocals_wav, denoised_vocals_dir, total_duration=None, d
     )
 
 
-def _denoise_background_step(background_wav, denoised_background_dir, total_duration=None, denoise_model=None):
+def _denoise_background_step(background_wav, denoised_background_dir, denoise_model=None):
     """Step 4: Denoise Background (UVR-DeNoise-Lite) via Python API."""
-    candidates_denoised = list(denoised_background_dir.glob("*.wav"))
+    candidates_denoised = list(denoised_background_dir.glob(WAV_GLOB))
     valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
 
     if valid_denoised:
@@ -666,9 +667,9 @@ def _denoise_background_step(background_wav, denoised_background_dir, total_dura
     )
 
 
-def _denoise_full_audio_step(original_wav, denoised_audio_dir, total_duration=None, denoise_model=None):
+def _denoise_full_audio_step(original_wav, denoised_audio_dir, denoise_model=None):
     """Denoises the full extracted audio track for denoise_only mode."""
-    candidates_denoised = list(denoised_audio_dir.glob("*.wav"))
+    candidates_denoised = list(denoised_audio_dir.glob(WAV_GLOB))
     valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
 
     if valid_denoised:
@@ -796,7 +797,7 @@ def _promote_valid_output(tmp_path, final_path, error_message):
 
     if tmp_path.exists():
         tmp_path.unlink()
-    raise Exception(error_message)
+    raise RuntimeError(error_message)
 
 
 def _final_mix_step(
@@ -805,7 +806,7 @@ def _final_mix_step(
     """Step 5: Final Mix (amix) - Lossless PCM Output."""
     if is_valid_video(final_output_video):
         log_msg(f"  [Step 5/5] Skipping Final Mix (exists: {final_output_video.name})")
-        return True
+        return
 
     log_msg("  [Step 5/5] Final Audio Mix (32-bit Float)...")
 
@@ -825,7 +826,6 @@ def _final_mix_step(
     attempt_cpu_run_with_retry(build_mix_cmd, CPU_THREADS, description="Final Mixing", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Mix Failed: Output video invalid/empty.")
     log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
-    return True
 
 
 def _single_audio_stream_args(filter_expr):
@@ -886,13 +886,10 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
         processed_audio_wav (pathlib.Path): Processed audio WAV track.
         final_output_video (pathlib.Path): Final destination video path.
         total_duration (float, optional): Total duration in seconds for progress bar.
-
-    Returns:
-        bool: True upon successful remux.
     """
     if is_valid_video(final_output_video):
         log_msg(f"  [Step 4/4] Skipping Final Remux (exists: {final_output_video.name})")
-        return True
+        return
 
     log_msg("  [Step 4/4] Final Remux (32-bit Float)...")
 
@@ -910,7 +907,6 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
     attempt_cpu_run_with_retry(build_mux_cmd, CPU_THREADS, description="Final Remux", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Remux Failed: Output video invalid/empty.")
     log_msg(f"  [System] Success! Saved to: {final_output_video.name}")
-    return True
 
 
 def _log_video_duration(video_path):
@@ -1273,7 +1269,7 @@ def _denoise_and_polish_full_audio_step(
                 surgical_wav,
                 audio_dir / "resemble_denoised",
                 resemble_denoise,
-                lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, total_duration=total_duration, denoise_model=model_to_use),
+                lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, denoise_model=model_to_use),
                 total_duration=total_duration,
             ),
         )
@@ -1355,7 +1351,7 @@ def _execute_hybrid_restoration(work_dir, input_wav, original_wav, video_path, f
     separation_out_dir.mkdir(exist_ok=True)
 
     vocals_wav, background_wav = _separate_stems_step(
-        input_wav, separation_out_dir, total_duration=video_dur, vocals_model=_strategy_value(strategy, "vocals_model", None)
+        input_wav, separation_out_dir, vocals_model=_strategy_value(strategy, "vocals_model", None)
     )
     enhanced_vocals_dir = work_dir / "enhanced_vocals"
     enhanced_vocals_wav = _enhance_vocals_step(
@@ -1373,7 +1369,7 @@ def _execute_hybrid_restoration(work_dir, input_wav, original_wav, video_path, f
 
     denoised_background_dir = work_dir / "denoised_background"
     denoised_background_wav = _denoise_background_step(
-        background_wav, denoised_background_dir, total_duration=video_dur, denoise_model=_strategy_value(strategy, "denoise_model", None)
+        background_wav, denoised_background_dir, denoise_model=_strategy_value(strategy, "denoise_model", None)
     )
     polished_background_wav = _expand_background_step(denoised_background_wav, denoised_background_dir, total_duration=video_dur)
 
@@ -1404,7 +1400,7 @@ def _execute_pure_restoration(work_dir, input_wav, original_wav, video_path, fin
     denoise_model = _strategy_value(strategy, "denoise_model", None)
 
     vocals_wav, background_wav = _separate_stems_step(
-        input_wav, separation_out_dir, total_duration=video_dur, vocals_model=_strategy_value(strategy, "vocals_model", None)
+        input_wav, separation_out_dir, vocals_model=_strategy_value(strategy, "vocals_model", None)
     )
 
     denoised_vocals_dir = work_dir / "denoised_vocals"
@@ -1415,9 +1411,7 @@ def _execute_pure_restoration(work_dir, input_wav, original_wav, video_path, fin
     polished_vocals_wav = _deess_vocals_step(denoised_vocals_wav, polished_vocals_dir, total_duration=video_dur)
 
     denoised_background_dir = work_dir / "denoised_background"
-    denoised_background_wav = _denoise_background_step(
-        background_wav, denoised_background_dir, total_duration=video_dur, denoise_model=denoise_model
-    )
+    denoised_background_wav = _denoise_background_step(background_wav, denoised_background_dir, denoise_model=denoise_model)
     polished_background_wav = _expand_background_step(denoised_background_wav, denoised_background_dir, total_duration=video_dur)
 
     _align_and_mix_stems(

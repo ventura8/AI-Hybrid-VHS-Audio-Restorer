@@ -90,6 +90,15 @@ def select_languages(languages, requested):
     return {key: languages[key] for key in requested}
 
 
+def _profile_names(profile, manifest):
+    """The manifest entries a profile selects: core is short and mid, all is every entry."""
+    if profile == "core":
+        return ("short", "mid")
+    if profile == "all":
+        return tuple(manifest)
+    return (profile,)
+
+
 def main(argv=None):
     """Run the matrix generator."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -102,7 +111,7 @@ def main(argv=None):
     manifest = load_manifest()
     languages = load_languages()
     selected = select_languages(languages, args.languages)
-    names = ("short", "mid") if args.profile == "core" else tuple(manifest) if args.profile == "all" else (args.profile,)
+    names = _profile_names(args.profile, manifest)
     for language in selected.values():
         clean_samples = _synthesize_clean_voice(language, args.output_dir, args.piper_python, args.voices_dir)
         for name in names:

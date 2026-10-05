@@ -222,7 +222,8 @@ def test_stereo_classes_come_out_stereo_and_the_rest_mono():
     programme = gen.condition_programme(_voice(), RATE, _rng(), music=False)
     _r, _t, stereo = gen.degrade_with(programme, RATE, _noise(), 15.0, ("azimuth",), _rng())
     _r, _t, mono = gen.degrade_with(programme, RATE, _noise(), 15.0, ("crackle",), _rng())
-    assert stereo.ndim == 2 and stereo.shape[1] == 2
+    assert stereo.ndim == 2
+    assert stereo.shape[1] == 2
     assert mono.ndim == 1
 
 
@@ -281,7 +282,8 @@ def test_a_blind_spot_is_printed_as_known_and_does_not_count_against_agreement(c
     agree = check._report_trade(results)
     out = capsys.readouterr().out
     assert agree == len(check.COMPARISONS)
-    assert "alpha 3.0 vs 1.8 (music-only)" in out and "known (" in out
+    assert "alpha 3.0 vs 1.8 (music-only)" in out
+    assert "known (" in out
     results["no_tonal_gate"]["trade"] = _trade_rows(12.0, 0.8, classes=("speech",))
     check._report_blind_spots(results)
     assert "unmeasured" in capsys.readouterr().out

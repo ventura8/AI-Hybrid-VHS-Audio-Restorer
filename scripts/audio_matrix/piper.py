@@ -10,8 +10,12 @@ PIPER_RUNTIME_ROOT = REPOSITORY_ROOT / "tools" / "piper-tts"
 
 def verify_checksum(model_path, expected_checksum):
     """Verify the upstream MD5 or SHA-256 checksum of a downloaded model."""
-    algorithm = hashlib.md5 if len(expected_checksum) == 32 else hashlib.sha256
-    digest = algorithm(Path(model_path).read_bytes()).hexdigest()
+    data = Path(model_path).read_bytes()
+    if len(expected_checksum) == 32:
+        # The upstream publishes MD5 for some voices; it only detects a corrupt download here.
+        digest = hashlib.md5(data, usedforsecurity=False).hexdigest()
+    else:
+        digest = hashlib.sha256(data).hexdigest()
     return digest.lower() == expected_checksum.lower()
 
 

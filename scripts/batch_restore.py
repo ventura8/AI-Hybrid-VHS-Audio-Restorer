@@ -39,7 +39,7 @@ def _scan_folder_videos(folder_path):
     found = []
     try:
         items = sorted(folder_path.iterdir(), key=lambda p: p.name.lower())
-    except (PermissionError, OSError) as exc:
+    except OSError as exc:
         log_msg(f">> [Warning] Directory not found or inaccessible: {folder_path} ({exc})", is_error=True)
         return []
 

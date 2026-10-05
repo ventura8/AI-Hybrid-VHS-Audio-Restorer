@@ -226,7 +226,7 @@ def patch_resemble_cli_args():
         content = resemble_main.read_text(encoding="utf-8")
 
         # Regex to match the enhance() call with arguments
-        pattern = r"(hwav,\s*sr\s*=\s*enhance\()([\s\S]*?)" r"(lambd=args.lambd,)([\s\S]*?)(\))"
+        pattern = r"(hwav,\s*sr\s*=\s*enhance\()([\s\S]*?)(lambd=args.lambd,)([\s\S]*?)(\))"
 
         match = re.search(pattern, content)
         if not match:
@@ -247,8 +247,8 @@ def patch_resemble_cli_args():
 
 
 def _upgrade_cli_patch(full_match):
-    chunk_seconds_pattern = r"(chunk_seconds\s*=\s*)\d+(?:\.\d+)?(?=\s*(?:,|\)))"
-    chunks_overlap_pattern = r"(chunks_overlap\s*=\s*)\d+(?:\.\d+)?(?=\s*(?:,|\)))"
+    chunk_seconds_pattern = r"(chunk_seconds\s*=\s*)\d+(?:\.\d+)?(?=\s*[,)])"
+    chunks_overlap_pattern = r"(chunks_overlap\s*=\s*)\d+(?:\.\d+)?(?=\s*[,)])"
 
     upgraded_call = re.sub(chunk_seconds_pattern, "chunk_seconds=25", full_match, count=1)
     if re.search(chunks_overlap_pattern, upgraded_call):
@@ -271,8 +271,8 @@ def _build_cli_patch(full_match):
 
 
 def _update_cli_patch_content(content, full_match):
-    chunk_seconds_ok = bool(re.search(r"chunk_seconds\s*=\s*25(?=\s*(?:,|\)))", full_match))
-    chunks_overlap_ok = bool(re.search(r"chunks_overlap\s*=\s*2(?=\s*(?:,|\)))", full_match))
+    chunk_seconds_ok = bool(re.search(r"chunk_seconds\s*=\s*25(?=\s*[,)])", full_match))
+    chunks_overlap_ok = bool(re.search(r"chunks_overlap\s*=\s*2(?=\s*[,)])", full_match))
 
     if chunk_seconds_ok and chunks_overlap_ok:
         return None, " -> CLI arguments already patched."

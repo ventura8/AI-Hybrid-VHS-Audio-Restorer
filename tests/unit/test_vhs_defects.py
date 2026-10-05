@@ -32,7 +32,8 @@ def test_output_is_stereo_float32():
     """Fixtures must be stereo float32 whatever the mono input was."""
     out = apply_vhs_defects(_speech_like(), SAMPLE_RATE, ["hiss"])
     assert out.dtype == np.float32
-    assert out.ndim == 2 and out.shape[1] == 2
+    assert out.ndim == 2
+    assert out.shape[1] == 2
 
 
 def test_dropouts_are_zero_spans_every_two_seconds_from_one_second_in():
@@ -85,11 +86,13 @@ def test_azimuth_offsets_the_channels():
 
 def test_unknown_defect_is_rejected():
     """An unsupported name fails loudly rather than silently producing a clean fixture."""
+    speech = _speech_like()
     with pytest.raises(ValueError, match="Unknown VHS defect"):
-        apply_vhs_defects(_speech_like(), SAMPLE_RATE, ["not_a_defect"])
+        apply_vhs_defects(speech, SAMPLE_RATE, ["not_a_defect"])
 
 
 def test_whistle_requires_a_sample_rate_that_can_represent_it():
     """15.625 kHz cannot be represented below a 31.25 kHz sample rate; that must raise."""
+    speech = _speech_like()
     with pytest.raises(ValueError, match="whistle defect requires"):
-        apply_vhs_defects(_speech_like(), 22050, ["whistle"])
+        apply_vhs_defects(speech, 22050, ["whistle"])

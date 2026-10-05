@@ -10,6 +10,9 @@ from importlib import import_module
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from scripts.cli_paths import existing_path_arg, language_arg, path_arg
+
 build_report = import_module("scripts.audit_hardware").build_report
 
 DEFAULT_MODES = (
@@ -188,12 +191,12 @@ def main(argv=None):
     """Create a hardware-validation report; execution requires --execute."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", choices=("short", "mid", "longform", "core"), default="core", nargs="?")
-    parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/audio-matrix"))
-    parser.add_argument("--language", action="append", dest="languages", default=[])
+    parser.add_argument("--fixtures-dir", type=existing_path_arg, default=Path("artifacts/audio-matrix"))
+    parser.add_argument("--language", action="append", dest="languages", type=language_arg, default=[])
     parser.add_argument("--mode", action="append", dest="modes")
-    parser.add_argument("--report", type=Path, default=Path("artifacts/hardware-validation.json"))
+    parser.add_argument("--report", type=path_arg, default=Path("artifacts/hardware-validation.json"))
     parser.add_argument("--execute", action="store_true", help="Run each selected mode through generated MKV fixtures.")
-    parser.add_argument("--work-dir", type=Path, default=Path("artifacts/hardware-work"))
+    parser.add_argument("--work-dir", type=path_arg, default=Path("artifacts/hardware-work"))
     args = parser.parse_args(argv)
     paths = collect_fixture_paths(args.fixtures_dir, args.profile, args.languages)
     report = build_dry_run_report(paths, args.modes or DEFAULT_MODES)

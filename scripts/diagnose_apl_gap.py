@@ -44,6 +44,7 @@ from modules.filters import (
     _read_audio_for_analysis,
 )
 from scripts.benchmark_ia_corpus_batch import _extract_audio_pcm
+from scripts.cli_paths import existing_path_arg, path_arg
 
 # The window the current detectors use, and the cap on how many such windows the
 # whole-file comparison walks. 120 windows of 32768 covers ~89 s at 44.1 kHz, well beyond
@@ -261,9 +262,9 @@ def _process_clip(clip, region, nominal_crt, work_dir, with_scan):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
-    parser.add_argument("--catalog", type=Path, default=None, help="Defaults to <corpus-dir>/catalog_1000.json")
-    parser.add_argument("--output", type=Path, default=Path("experiments/apl_gap_diagnosis.json"))
+    parser.add_argument("--corpus-dir", type=existing_path_arg, default=Path("experiments/ia_corpus_1000"))
+    parser.add_argument("--catalog", type=existing_path_arg, default=None, help="Defaults to <corpus-dir>/catalog_1000.json")
+    parser.add_argument("--output", type=path_arg, default=Path("experiments/apl_gap_diagnosis.json"))
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--no-scan", action="store_true", help="Skip the full scanner (faster, omits model choice)")
     return parser.parse_args()

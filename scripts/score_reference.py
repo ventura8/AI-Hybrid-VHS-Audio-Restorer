@@ -68,6 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
+from scripts.cli_paths import existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
 from scripts.run_hardware_validation import _make_video_fixture
 
@@ -387,12 +388,12 @@ def _print_summary(summary, modes):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixtures-dir", type=Path, default=Path("artifacts/reference-fixtures"))
+    parser.add_argument("--fixtures-dir", type=existing_path_arg, default=Path("artifacts/reference-fixtures"))
     parser.add_argument("--modes", nargs="+", default=["cathar", "auto_pure_linear"])
     parser.add_argument("--variants", nargs="+", default=None, help="Limit to these defect families")
     parser.add_argument("--limit", type=int, default=None, help="Score at most this many fixtures per variant")
-    parser.add_argument("--report", type=Path, default=Path("experiments/reference_scores.json"))
-    parser.add_argument("--work-dir", type=Path, default=None, help="Keep restored audio here instead of a temp dir")
+    parser.add_argument("--report", type=path_arg, default=Path("experiments/reference_scores.json"))
+    parser.add_argument("--work-dir", type=path_arg, default=None, help="Keep restored audio here instead of a temp dir")
     return parser.parse_args()
 
 

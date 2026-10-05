@@ -50,6 +50,8 @@ OVERLAP_SECONDS = 0.5
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, AttributeError, TypeError, MemoryError)
 
 _MODEL = {}
+_BACKEND_MODULE = "torchaudio.backend"
+_BACKEND_COMMON_MODULE = "torchaudio.backend.common"
 
 
 @dataclasses.dataclass
@@ -72,16 +74,16 @@ def _shim_torchaudio_backend():
     Only the missing child is added: a `torchaudio.backend` that torchaudio has already
     loaded keeps its own state and gains a `common`.
     """
-    if "torchaudio.backend.common" in sys.modules:
+    if _BACKEND_COMMON_MODULE in sys.modules:
         return
-    common = types.ModuleType("torchaudio.backend.common")
+    common = types.ModuleType(_BACKEND_COMMON_MODULE)
     common.AudioMetaData = _AudioMetaData
-    backend = sys.modules.get("torchaudio.backend")
+    backend = sys.modules.get(_BACKEND_MODULE)
     if backend is None:
-        backend = types.ModuleType("torchaudio.backend")
-        sys.modules["torchaudio.backend"] = backend
+        backend = types.ModuleType(_BACKEND_MODULE)
+        sys.modules[_BACKEND_MODULE] = backend
     backend.common = common
-    sys.modules["torchaudio.backend.common"] = common
+    sys.modules[_BACKEND_COMMON_MODULE] = common
 
 
 def _load():

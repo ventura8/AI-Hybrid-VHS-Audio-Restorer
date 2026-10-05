@@ -62,7 +62,7 @@ def execute(work_dir, clean_wav, original_wav, video_path, final_output_video, v
 
     log_msg(f"    [Stem Path] Music: held partials {strategy['profile']['tonal_persistence']:.4f}; the chain runs on the vocal stem.")
     try:
-        vocals, background = processing._separate_stems_step(clean_wav, work_dir / "separation", total_duration=video_dur)
+        vocals, background = processing._separate_stems_step(clean_wav, work_dir / "separation")
     except Exception as exc:  # the separator raises plain Exception
         log_msg(f"    [Stem Path] Separation failed ({exc}); falling back to the single-track path.", is_error=True)
         return False

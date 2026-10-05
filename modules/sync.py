@@ -72,10 +72,10 @@ def _run_gpu_dtw_chunk(args):
     Returns: path (list of [ref_idx, proc_idx])
     """
     if len(args) == 3:
-        ref_seg, proc_seg, radius = args
+        ref_seg, proc_seg, _ = args
         cancel_event = None
     else:
-        ref_seg, proc_seg, radius, cancel_event = args
+        ref_seg, proc_seg, _, cancel_event = args
     if cancel_event is not None and cancel_event.is_set():
         raise RuntimeError("DTW sync cancelled.")
 
@@ -132,22 +132,22 @@ def _apply_warp_gpu(audio_np, source_indices_np):
 
         # Normalize Indices to [-1, 1] for grid_sample
         # -1 = 0, +1 = MaxSample
-        W_in = audio_np.shape[0]
+        w_in = audio_np.shape[0]
         # Avoid division by zero
-        if W_in <= 1:
+        if w_in <= 1:
             return None
 
         indices_t = torch.from_numpy(source_indices_np).float().to(device)
-        grid_x = 2.0 * indices_t / (W_in - 1) - 1.0
+        grid_x = 2.0 * indices_t / (w_in - 1) - 1.0
 
         # Construct Grid: (N, H_out, W_out, 2)
         # Here H_out=1, W_out=LenIndices
-        W_out = len(source_indices_np)
+        w_out = len(source_indices_np)
 
         # Stack (x, y) coordinates
         # y is always 0 (center of 1-pixel height)
         # Shape: (1, 1, W_out, 2)
-        grid = torch.zeros(1, 1, W_out, 2, device=device)
+        grid = torch.zeros(1, 1, w_out, 2, device=device)
         grid[0, 0, :, 0] = grid_x
         grid[0, 0, :, 1] = 0
 
@@ -456,7 +456,7 @@ def _apply_shift_to_audio(processed_wav, output_wav, lag):
 
     # Atomic Write
     if not _save_audio_atomic(output_wav, shifted_audio, proc_sr, subtype="FLOAT"):
-        raise Exception(f"Alignment Failed: Could not save shifted audio to {output_wav}")
+        raise RuntimeError(f"Alignment Failed: Could not save shifted audio to {output_wav}")
 
 
 def _align_stems_shift(original_wav, processed_wav, output_wav):
@@ -489,11 +489,7 @@ def _align_stems_shift(original_wav, processed_wav, output_wav):
 
     except Exception as e:
         log_msg(f"    [Warning] Sync failed ({e}). Using unaligned.", is_error=True)
-        try:
-            return _copy_unaligned_audio(processed_wav, output_wav, "Sync: Skipped (Fallback)")
-        except Exception:
-            raise
-        return output_wav
+        return _copy_unaligned_audio(processed_wav, output_wav, "Sync: Skipped (Fallback)")
 
 
 def _align_stems_dtw(original_wav, processed_wav, output_wav):

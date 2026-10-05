@@ -13,7 +13,7 @@ cd "$REPO_ROOT"
 TAG="${1:-}"
 OUTPUT_DIR="${2:-release-assets}"
 
-if [ -z "$TAG" ]; then
+if [[ -z "$TAG" ]]; then
     echo "Usage: $0 <tag> [output_dir]" >&2
     exit 1
 fi
@@ -82,7 +82,7 @@ if command -v alien >/dev/null 2>&1; then
         cd "$BUILD_TMP"
         alien --to-rpm --scripts "$DEB_OUT"
         RPM_GENERATED="$(find . -maxdepth 1 -name '*.rpm' -print -quit)"
-        if [ -n "$RPM_GENERATED" ]; then
+        if [[ -n "$RPM_GENERATED" ]]; then
             mv "$RPM_GENERATED" "$REPO_ROOT/$OUTPUT_DIR/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.rpm"
             echo "Generated RPM package: $REPO_ROOT/$OUTPUT_DIR/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.rpm"
         fi
@@ -123,7 +123,7 @@ echo "AI Hybrid VHS Audio Restorer installed to /opt/ai-hybrid-vhs-audio-restore
 EOF
     rpmbuild --define "_topdir $RPM_TOP" -bb "$SPEC_FILE"
     RPM_GENERATED="$(find "$RPM_TOP/RPMS" -name '*.rpm' -print -quit)"
-    if [ -n "$RPM_GENERATED" ]; then
+    if [[ -n "$RPM_GENERATED" ]]; then
         mv "$RPM_GENERATED" "$REPO_ROOT/$OUTPUT_DIR/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.rpm"
         echo "Generated RPM package: $REPO_ROOT/$OUTPUT_DIR/AI-Hybrid-VHS-Audio-Restorer-${TAG}-linux.rpm"
     fi

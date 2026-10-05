@@ -125,82 +125,70 @@ def test_deps_fail_timeout(mock_run):
         assert call.kwargs["timeout"] == 10
 
 
-def test_draw_progress_bar_renders_progress(capsys):
+def test_draw_progress_bar_renders_progress(capsys, monkeypatch):
     """Progress bar rendering should include the percentage and label."""
-    modules.utils._last_bar_time = 0
+    monkeypatch.setattr(modules.utils, "_last_bar_time", 0)
     modules.utils.draw_progress_bar(50, "Testing...")
     captured = capsys.readouterr()
     assert "50.0%" in captured.out
     assert "Testing..." in captured.out
 
 
-def test_draw_progress_bar_clamps_low_values(capsys):
+def test_draw_progress_bar_clamps_low_values(capsys, monkeypatch):
     """Progress bar rendering should clamp negative values to zero."""
-    modules.utils._last_bar_time = 0
+    monkeypatch.setattr(modules.utils, "_last_bar_time", 0)
     modules.utils.draw_progress_bar(-10, "Under")
     captured = capsys.readouterr()
     assert "0.0%" in captured.out
 
 
-def test_draw_progress_bar_clamps_high_values(capsys):
+def test_draw_progress_bar_clamps_high_values(capsys, monkeypatch):
     """Progress bar rendering should clamp values above 100 percent."""
-    modules.utils._last_bar_time = 0
+    monkeypatch.setattr(modules.utils, "_last_bar_time", 0)
     modules.utils.draw_progress_bar(150, "Over")
     captured = capsys.readouterr()
     assert "100.0%" in captured.out
 
 
-def test_log_msg_writes_console_and_file(tmp_path, capsys):
+def test_log_msg_writes_console_and_file(tmp_path, capsys, monkeypatch):
     """log_msg should print messages and persist them to the log file."""
-    original_log = modules.utils.LOG_FILE
-    modules.utils.LOG_FILE = tmp_path / "test_log.txt"
+    monkeypatch.setattr(modules.utils, "LOG_FILE", tmp_path / "test_log.txt")
 
-    try:
-        modules.utils.log_msg("Test message", console=True)
-        captured = capsys.readouterr()
-        assert "Test message" in captured.out
+    modules.utils.log_msg("Test message", console=True)
+    captured = capsys.readouterr()
+    assert "Test message" in captured.out
 
-        modules.utils.log_msg("Error!", is_error=True)
-        captured = capsys.readouterr()
-        assert "Error!" in captured.out
+    modules.utils.log_msg("Error!", is_error=True)
+    captured = capsys.readouterr()
+    assert "Error!" in captured.out
 
-        log_content = modules.utils.LOG_FILE.read_text()
-        assert "Test message" in log_content
-        assert "ERROR" in log_content
-    finally:
-        modules.utils.LOG_FILE = original_log
+    log_content = modules.utils.LOG_FILE.read_text()
+    assert "Test message" in log_content
+    assert "ERROR" in log_content
 
 
-def test_log_msg_suppresses_debug_and_silent_output(tmp_path, capsys):
+def test_log_msg_suppresses_debug_and_silent_output(tmp_path, capsys, monkeypatch):
     """Debug and silent log messages should not reach the console."""
-    original_log = modules.utils.LOG_FILE
-    modules.utils.LOG_FILE = tmp_path / "test_log.txt"
+    monkeypatch.setattr(modules.utils, "LOG_FILE", tmp_path / "test_log.txt")
 
-    try:
-        modules.utils.log_msg("Debug info", level="DEBUG")
-        captured = capsys.readouterr()
-        assert "Debug info" not in captured.out
+    modules.utils.log_msg("Debug info", level="DEBUG")
+    captured = capsys.readouterr()
+    assert "Debug info" not in captured.out
 
-        modules.utils.log_msg("Silent", console=False)
-        captured = capsys.readouterr()
-        assert "Silent" not in captured.out
-    finally:
-        modules.utils.LOG_FILE = original_log
+    modules.utils.log_msg("Silent", console=False)
+    captured = capsys.readouterr()
+    assert "Silent" not in captured.out
 
 
 def test_log_msg_file_error(tmp_path, capsys, monkeypatch):
     """Test log_msg handles file write errors gracefully."""
     # Set LOG_FILE to an existing directory so file write fails deterministically.
-    original = modules.utils.LOG_FILE
-    modules.utils.LOG_FILE = tmp_path
+    monkeypatch.setattr(modules.utils, "LOG_FILE", tmp_path)
 
-    try:
-        # Should not raise, just silently fail file write
-        modules.utils.log_msg("Test message")
-        captured = capsys.readouterr()
-        assert "Test message" in captured.out
-    finally:
-        modules.utils.LOG_FILE = original
+    # Should not raise, just silently fail file write
+    modules.utils.log_msg("Test message")
+    captured = capsys.readouterr()
+    assert "Test message" in captured.out
 
 
 def test_parse_ffmpeg_time():
@@ -723,17 +711,17 @@ def test_draw_bar_line_truncates_when_terminal_small(mock_stdout):
 @patch("modules.utils._draw_bar_line")
 @patch("modules.utils._get_terminal_columns", return_value=80)
 @patch("modules.utils.time.time", side_effect=[1.0, 2.0])
-def test_draw_progress_bar_min_width(mock_time, mock_cols, mock_draw):
+def test_draw_progress_bar_min_width(mock_time, mock_cols, mock_draw, monkeypatch):
     """Test draw_progress_bar enforces minimum width of 2."""
-    modules.utils._last_bar_time = 0
-    modules.utils._last_bar_pc = -1.0
+    monkeypatch.setattr(modules.utils, "_last_bar_time", 0)
+    monkeypatch.setattr(modules.utils, "_last_bar_pc", -1.0)
     modules.utils.draw_progress_bar(percent=10.0, width=1)
     called_width, called_filled = mock_draw.call_args[0][0], mock_draw.call_args[0][1]
     assert called_width == 2
     assert called_filled == 0
 
-    modules.utils._last_bar_time = 0
-    modules.utils._last_bar_pc = -1.0
+    monkeypatch.setattr(modules.utils, "_last_bar_time", 0)
+    monkeypatch.setattr(modules.utils, "_last_bar_pc", -1.0)
     modules.utils.draw_progress_bar(percent=100.0, width=1)
     called_width, called_filled = mock_draw.call_args[0][0], mock_draw.call_args[0][1]
     assert called_width == 2
@@ -773,7 +761,8 @@ def test_run_command_with_progress_logs_error_buffer(mock_popen, mock_log):
         modules.utils.run_command_with_progress(["badcmd"], env={"A": "1"})
 
     logged_text = "\n".join(str(call.args[0]) for call in mock_log.call_args_list)
-    assert "first line" in logged_text and "second line" in logged_text
+    assert "first line" in logged_text
+    assert "second line" in logged_text
 
 
 def _configure_failed_command_mock(mock_popen):

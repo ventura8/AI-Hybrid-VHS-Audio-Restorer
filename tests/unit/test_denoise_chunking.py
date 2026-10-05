@@ -115,7 +115,8 @@ def test_plan_starts_every_chunk_on_the_patch_stride():
 def test_plan_at_the_real_rate_lands_the_three_hour_capture_on_the_models_grid():
     with patch("modules.denoise_chunking.PATCH_FRAMES", 192 * 15360):
         ranges = chunking.plan(487_267_200, 44100, chunk_seconds=7200)
-    assert len(ranges) == 2 and all(start % (192 * 15360) == 0 for start, _stop in ranges)
+    assert len(ranges) == 2
+    assert all(start % (192 * 15360) == 0 for start, _stop in ranges)
     assert all(stop - start <= 7200 * 44100 for start, stop in ranges)
 
 
@@ -221,7 +222,8 @@ def test_run_resumes_from_finished_chunks(tmp_path):
     first, second = [], []
     chunking.run(source, tmp_path / "out", _identity_denoiser(first), chunk_seconds=7)
     chunking.run(source, tmp_path / "out", _identity_denoiser(second), chunk_seconds=7)
-    assert len(first) == len(chunking.plan(30 * RATE, RATE, chunk_seconds=7)) and second == []
+    assert len(first) == len(chunking.plan(30 * RATE, RATE, chunk_seconds=7))
+    assert second == []
 
 
 def test_run_leaves_no_partial_and_keeps_chunks_under_the_output_directory(tmp_path):
@@ -261,8 +263,10 @@ def test_join_refuses_a_chunk_short_by_more_than_the_trim_or_longer_than_its_ran
     source = _wav(tmp_path / "in.wav", 30)
     ranges = chunking.plan(30 * RATE, RATE, chunk_seconds=7)
     paths, margins = chunking.split(source, tmp_path / "chunks", ranges)
+    resized = _with_chunk_resized(tmp_path, paths, 1, delta)
+    joined = tmp_path / "joined.wav"
     with pytest.raises(RuntimeError, match="chunk 1 came back with"):
-        chunking.join(_with_chunk_resized(tmp_path, paths, 1, delta), ranges, tmp_path / "joined.wav", margins)
+        chunking.join(resized, ranges, joined, margins)
     assert not (tmp_path / "joined.wav").exists()
 
 
@@ -315,7 +319,9 @@ def test_run_denoise_separator_takes_the_chunked_path_for_a_long_track(tmp_path)
         patch("modules.processing._build_separator") as build,
     ):
         result = processing._run_denoise_separator(tmp_path / "in.wav", tmp_path / "out", "Selected", "warn", "err")
-    assert result == joined and run.call_count == 1 and build.call_count == 0
+    assert result == joined
+    assert run.call_count == 1
+    assert build.call_count == 0
 
 
 def test_run_denoise_separator_takes_the_whole_path_for_a_short_track(tmp_path):
@@ -325,7 +331,8 @@ def test_run_denoise_separator_takes_the_whole_path_for_a_short_track(tmp_path):
         patch("modules.processing._denoise_whole", return_value=_wav(tmp_path / "clean.wav", 3)) as whole,
     ):
         processing._run_denoise_separator(tmp_path / "in.wav", tmp_path / "out", "Selected", "warn", "err")
-    assert whole.call_count == 1 and run.call_count == 0
+    assert whole.call_count == 1
+    assert run.call_count == 0
 
 
 def test_denoise_one_chunk_writes_at_full_scale_and_returns_the_clean_stem(tmp_path):
@@ -346,9 +353,11 @@ def test_denoise_one_chunk_writes_at_full_scale_and_returns_the_clean_stem(tmp_p
 
 
 def test_denoise_one_chunk_raises_when_the_separator_wrote_no_clean_stem(tmp_path):
+    chunk_step = processing._denoise_one_chunk("M.pth")
+    chunk_wav, out_dir = Path("chunk_0000.wav"), tmp_path / "out_0000"
     with (
         patch("modules.processing._build_separator", return_value=MagicMock()),
         patch("modules.processing._load_separator_model"),
         pytest.raises(RuntimeError, match="no clean stem"),
     ):
-        processing._denoise_one_chunk("M.pth")(Path("chunk_0000.wav"), tmp_path / "out_0000")
+        chunk_step(chunk_wav, out_dir)

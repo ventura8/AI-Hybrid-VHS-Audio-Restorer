@@ -16,6 +16,7 @@ from modules.hardware import get_gpu_name
 from modules.processing import _get_output_suffix, get_video_duration_sec, process_hybrid_audio
 from modules.ui import _is_cleaned_output
 from modules.utils import FFMPEG_BIN, is_valid_video
+from scripts.cli_paths import existing_path_arg, path_arg
 
 SEPARATED_MODE = "auto_pure"
 NO_STEM_MODE = "auto_pure_linear"
@@ -26,11 +27,11 @@ EXTS = {str(extension).lower() for extension in CONFIG["extensions"]}
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source_dir", type=Path, help="Directory containing original VHS captures.")
-    parser.add_argument("output_dir", type=Path, help="New directory for A/B outputs, clips, and review sheets.")
+    parser.add_argument("source_dir", type=existing_path_arg, help="Directory containing original VHS captures.")
+    parser.add_argument("output_dir", type=path_arg, help="New directory for A/B outputs, clips, and review sheets.")
     parser.add_argument(
         "--key-path",
-        type=Path,
+        type=path_arg,
         default=None,
         help="Where to write the A/B randomization key. Defaults to a sibling of --output-dir so listeners cannot read it.",
     )

@@ -147,8 +147,8 @@ def _recording_of(fixture_name):
         suffix = f"_{variant}"
         if stem.endswith(suffix):
             return stem[: -len(suffix)].rstrip("0123456789")
-    match = re.match(r"^(.*?[^0-9])[0-9]{2}(?:_|$)", stem)
-    return match.group(1) if match else stem.rstrip("0123456789")
+    match = re.search(r"(?<=\D)\d{2}(?=_|$)", stem, flags=re.ASCII)
+    return stem[: match.start()] if match else stem.rstrip("0123456789")
 
 
 def _moves_in_time(record):

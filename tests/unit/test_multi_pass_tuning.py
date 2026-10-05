@@ -77,9 +77,9 @@ def test_parse_args_rejects_an_invalid_duration_window(monkeypatch):
     assert error.value.code == 2
 
 
-def test_parse_args_uses_a_zero_to_sixty_minute_window_by_default(monkeypatch):
+def test_parse_args_uses_a_zero_to_sixty_minute_window_by_default(monkeypatch, tmp_path):
     """Keep short-tape tuning as the default selection window."""
-    monkeypatch.setattr("sys.argv", ["run_multi_pass_tuning.py", "--input-dir", "tapes"])
+    monkeypatch.setattr("sys.argv", ["run_multi_pass_tuning.py", "--input-dir", str(tmp_path)])
 
     args = run_multi_pass_tuning._parse_args()
 

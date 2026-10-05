@@ -28,13 +28,25 @@ def _fake_cli(target_name):
     return run
 
 
-def test_the_denoiser_is_invoked_denoise_only_and_its_output_returned(tmp_path):
+def _denoised(tmp_path):
+    """Run the denoiser over a short WAV through the fake CLI; return its result and the CLI mock."""
     source = _wav(tmp_path / "in.wav")
     with patch("modules.resemble_denoise.run_command_with_progress", side_effect=_fake_cli("ok")) as cli:
         produced = resemble_denoise.denoise(source, tmp_path / "work")
-    assert produced == tmp_path / "work" / "resemble_in.wav" and produced.is_file()
+    return produced, cli
+
+
+def test_the_denoiser_output_is_returned(tmp_path):
+    produced, _cli = _denoised(tmp_path)
+    assert produced == tmp_path / "work" / "resemble_in.wav"
+    assert produced.is_file()
+
+
+def test_the_denoiser_is_invoked_denoise_only_and_its_output_returned(tmp_path):
+    _produced, cli = _denoised(tmp_path)
     command = cli.call_args.args[0]
-    assert Path(command[0]).stem == "resemble-enhance" and command[1:3] == [
+    assert Path(command[0]).stem == "resemble-enhance"
+    assert command[1:3] == [
         str(tmp_path / "work" / "input"),
         str(tmp_path / "work" / "output"),
     ]
@@ -102,7 +114,8 @@ def test_the_resemble_stage_sits_between_deepfilternet_and_uvr(tmp_path):
         patch("modules.apl_chain.log_msg"),
     ):
         result = processing._denoise_and_polish_full_audio_step(tmp_path / "orig.wav", out_dir, resemble_denoise=True)
-    assert result == tmp_path / "res.wav" and seen == ["resemble"]
+    assert result == tmp_path / "res.wav"
+    assert seen == ["resemble"]
 
 
 def test_a_valid_output_is_reused_and_an_invalid_one_replaced(tmp_path):
@@ -118,4 +131,5 @@ def test_a_valid_output_is_reused_and_an_invalid_one_replaced(tmp_path):
     with patch("modules.resemble_denoise.run_command_with_progress", side_effect=_fake_cli("ok")) as cli:
         produced = resemble_denoise.denoise(source, work)
     cli.assert_called_once()
-    assert produced == existing and produced.stat().st_size > 0
+    assert produced == existing
+    assert produced.stat().st_size > 0

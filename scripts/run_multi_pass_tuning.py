@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules.hardware import get_gpu_name
 from modules.processing import process_hybrid_audio
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
+from scripts.cli_paths import existing_path_arg, path_arg
 
 _VIDEO_EXTS = {".mp4", ".mkv", ".mpg", ".mpeg", ".avi", ".mov", ".ts", ".m2ts"}
 
@@ -100,7 +101,7 @@ def _extract_sample(tape_path, out_path, start_sec, duration_sec):
     try:
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=60)
         return res.returncode == 0 and is_valid_video(out_path)
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -110,7 +111,7 @@ def _extract_eval_wav(video_path, wav_path):
     try:
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=60)
         return res.returncode == 0 and wav_path.exists() and wav_path.stat().st_size > 0
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -281,7 +282,7 @@ def _print_pass_result(mode, tape_name, pass_num, delta):
     crt = delta.get("crt_attenuation_x", 1)
     rumble = delta.get("rumble_reduction_pct", 0)
     bal = delta.get("balance_correction_db", 0)
-    print(f"  P{pass_num} {mode:<22} {tape_name:<40} " f"NF{nf:+.1f} SNR{snr:+.1f} CRT{crt:.1f}x Rum{rumble:.2f}% Bal{bal:.1f}")
+    print(f"  P{pass_num} {mode:<22} {tape_name:<40} NF{nf:+.1f} SNR{snr:+.1f} CRT{crt:.1f}x Rum{rumble:.2f}% Bal{bal:.1f}")
 
 
 def _print_aggregate_summary(aggregated, recommendations):
@@ -308,7 +309,7 @@ def _print_aggregate_summary(aggregated, recommendations):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", type=Path, required=True, help="Directory containing VHS tape files")
+    parser.add_argument("--input-dir", type=existing_path_arg, required=True, help="Directory containing VHS tape files")
     parser.add_argument(
         "--modes",
         nargs="+",
@@ -320,8 +321,8 @@ def _parse_args():
     parser.add_argument("--max-duration", type=float, default=60.0, help="Max tape duration in minutes, inclusive")
     parser.add_argument("--clip-duration", type=int, default=60, help="Clip length in seconds")
     parser.add_argument("--start", type=int, default=30, help="Clip start offset in seconds")
-    parser.add_argument("--output-dir", type=Path, default=None, help="Output directory for clips/restored files")
-    parser.add_argument("--report", type=Path, default=None, help="Path to save JSON tuning report")
+    parser.add_argument("--output-dir", type=path_arg, default=None, help="Output directory for clips/restored files")
+    parser.add_argument("--report", type=path_arg, default=None, help="Path to save JSON tuning report")
     parser.add_argument("--crt-hz", type=float, default=15625.0, help="CRT line whistle target frequency in Hz")
     args = parser.parse_args()
     if args.min_duration < 0 or args.max_duration < args.min_duration:

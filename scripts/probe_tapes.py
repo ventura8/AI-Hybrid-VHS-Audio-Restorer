@@ -16,6 +16,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFPROBE_BIN
+from scripts.cli_paths import existing_path_arg
 from scripts.ia_benchmark_common import _scan_directory_captures
 
 
@@ -120,7 +121,7 @@ def probe_directory(input_target, max_duration_min=80.0):
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Directory or video file of captures to probe")
+    parser.add_argument("--input", type=existing_path_arg, required=True, help="Directory or video file of captures to probe")
     parser.add_argument("--max-duration", type=float, default=80.0, help="Maximum eligible duration in minutes")
     return parser.parse_args()
 

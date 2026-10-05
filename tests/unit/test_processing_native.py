@@ -165,9 +165,9 @@ def test_filter_arnndn_step_skips_when_valid(mock_valid, tmp_path):
 
 # The light CI job runs an FFmpeg without arnndn. These tests cover _filter_arnndn_step's
 # own logic, not the codec build; the real-dependency jobs exercise the actual filter.
-@patch("modules.filters.ffmpeg_has_filter", new=lambda *_args, **_kwargs: True)
+@patch("modules.filters.ffmpeg_has_filter", return_value=True)
 @patch("modules.filters.is_valid_audio", return_value=False)
-def test_filter_arnndn_step_missing_model_raises(mock_valid, tmp_path):
+def test_filter_arnndn_step_missing_model_raises(mock_valid, mock_has_filter, tmp_path):
     """ARNNDN step raises FileNotFoundError if model is missing."""
     orig = tmp_path / "orig.wav"
     out_dir = tmp_path / "out_dir"
@@ -180,10 +180,10 @@ def test_filter_arnndn_step_missing_model_raises(mock_valid, tmp_path):
 
 # The light CI job runs an FFmpeg without arnndn. These tests cover _filter_arnndn_step's
 # own logic, not the codec build; the real-dependency jobs exercise the actual filter.
-@patch("modules.filters.ffmpeg_has_filter", new=lambda *_args, **_kwargs: True)
+@patch("modules.filters.ffmpeg_has_filter", return_value=True)
 @patch("modules.filters.attempt_cpu_run_with_retry")
 @patch("modules.filters.is_valid_audio")
-def test_filter_arnndn_step_success(mock_valid, mock_retry, tmp_path):
+def test_filter_arnndn_step_success(mock_valid, mock_retry, mock_has_filter, tmp_path):
     """ARNNDN step successfully filters audio and renames tmp output."""
     mock_valid.side_effect = [False, True]
     orig = tmp_path / "orig.wav"
@@ -211,10 +211,10 @@ def test_filter_arnndn_step_success(mock_valid, mock_retry, tmp_path):
 
 # The light CI job runs an FFmpeg without arnndn. These tests cover _filter_arnndn_step's
 # own logic, not the codec build; the real-dependency jobs exercise the actual filter.
-@patch("modules.filters.ffmpeg_has_filter", new=lambda *_args, **_kwargs: True)
+@patch("modules.filters.ffmpeg_has_filter", return_value=True)
 @patch("modules.filters.attempt_cpu_run_with_retry")
 @patch("modules.filters.is_valid_audio", return_value=False)
-def test_filter_arnndn_step_fails_on_invalid_output(mock_valid, mock_retry, tmp_path):
+def test_filter_arnndn_step_fails_on_invalid_output(mock_valid, mock_retry, mock_has_filter, tmp_path):
     """ARNNDN step raises RuntimeError and cleans tmp file when output is invalid."""
     orig = tmp_path / "orig.wav"
     out_dir = tmp_path / "out_dir"

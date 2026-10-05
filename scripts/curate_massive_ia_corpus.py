@@ -23,7 +23,9 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
+from scripts.cli_paths import path_arg
 
 EUROPE_SEARCH_QUERIES = [
     ('collection:(vhsvault OR home_movies) AND ("UK VHS" OR "PAL VHS" OR "Home Video UK" OR "camcorder")', "home", 50.0, 15625.0),
@@ -94,7 +96,7 @@ def _sanitize_slug(name: str) -> str:
     concurrently -- leaving one truncated or overwritten clip and a manifest entry pointing at
     the wrong source.
     """
-    cleaned = re.sub(r"[^\w\-_.]", "_", name)
+    cleaned = re.sub(r"[^\w\-.]", "_", name)
     cleaned = re.sub(r"_+", "_", cleaned).strip("_")
     digest = hashlib.md5(name.encode(), usedforsecurity=False).hexdigest()[:8]
     if len(cleaned) > 51:
@@ -298,7 +300,7 @@ def download_corpus(catalog: List[Dict[str, Any]], output_dir: Path, max_workers
 def main():
     parser = argparse.ArgumentParser(description="Curate massive 1,000-tape IA VHS benchmark corpus")
     parser.add_argument("--target-count", type=int, default=1000, help="Target clip count")
-    parser.add_argument("--output-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
+    parser.add_argument("--output-dir", type=path_arg, default=Path("experiments/ia_corpus_1000"))
     parser.add_argument("--workers", type=int, default=8, help="Parallel download workers")
     args = parser.parse_args()
 
