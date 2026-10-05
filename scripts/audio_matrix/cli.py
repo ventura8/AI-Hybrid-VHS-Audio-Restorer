@@ -14,6 +14,7 @@ from scripts.audio_matrix.longform import repeat_to_duration
 from scripts.audio_matrix.manifest import load_languages, load_manifest
 from scripts.audio_matrix.piper import ensure_voice, synthesize
 from scripts.audio_matrix.vhs_defects import apply_vhs_defects
+from scripts.cli_paths import existing_path_arg, path_arg
 
 FIXTURE_SAMPLE_RATE = 44100
 
@@ -103,9 +104,9 @@ def main(argv=None):
     """Run the matrix generator."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", choices=("short", "mid", "longform", "core", "all"))
-    parser.add_argument("--piper-python", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=Path("artifacts/audio-matrix"))
-    parser.add_argument("--voices-dir", type=Path, default=Path("artifacts/piper-voices"))
+    parser.add_argument("--piper-python", type=existing_path_arg, default=None)
+    parser.add_argument("--output-dir", type=path_arg, default=Path("artifacts/audio-matrix"))
+    parser.add_argument("--voices-dir", type=path_arg, default=Path("artifacts/piper-voices"))
     parser.add_argument("--language", action="append", dest="languages", default=[])
     args = parser.parse_args(argv)
     manifest = load_manifest()

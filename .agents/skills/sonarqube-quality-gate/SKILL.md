@@ -124,9 +124,13 @@ here and in `docs/validation.md` ("CI Parity") in the same change.
   before declaring the project green, not only the PR's.
 - Script arguments go through `scripts/cli_paths.py` (`existing_path_arg`
   for inputs, `path_arg` for outputs, `language_arg`, `checked_path` outside
-  argparse): every `type=Path` reaching a file or a subprocess uses one, so a
-  new script inherits the S8705/S8707 fix. Defaults stay `Path` objects;
-  argparse does not run a type on a non-string default.
+  argparse). Every argument Sonar traced to a file write or a subprocess
+  (S8705/S8707) uses one, as does the fixture generator
+  (`scripts/audio_matrix/cli.py`); about 18 analysis and tuning scripts still
+  take `type=Path` for arguments Sonar did not trace to a sink, and
+  `autotune_restoration.py` / `validate_restoration.py` check theirs with their
+  own validators. A new path argument uses a `cli_paths` type. Defaults stay
+  `Path` objects; argparse does not run a type on a non-string default.
 - Shell scripts with a bash shebang use `[[ ... ]]` (`shelldre:S7688`) and a
   `*)` branch in every `case` (`S131`).
 - Parallel fix agents share one checkout: an agent that runs `git stash` (or
