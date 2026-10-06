@@ -137,12 +137,13 @@ def _collect_video_files(input_path):
 
 def run_batch_scan(input_target, output_json, start_sec=30, duration_sec=90):
     """Scans video captures from input target and saves acoustic profile JSON."""
+    output_path = confined_path(output_json, "--output")
     candidates = _collect_video_files(input_target)
     if not candidates:
         print(f"No valid video files found at '{input_target}'", file=sys.stderr)
         return []
 
-    work_dir = output_json.parent / "scan_tmp"
+    work_dir = output_path.parent / "scan_tmp"
     work_dir.mkdir(parents=True, exist_ok=True)
     results = []
 
@@ -161,7 +162,6 @@ def run_batch_scan(input_target, output_json, start_sec=30, duration_sec=90):
         bal = res["stereo_balance_imbalance_db"]
         print(f"  NF: {nf} dB | SNR: {snr} dB | Rumble: {rumble} Hz | Mains: {mains} Hz | CRT: {crt} Hz | Bal: {bal} dB", flush=True)
 
-    output_path = confined_path(output_json, "--output")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"\nSaved acoustic profiles for {len(results)} files to {output_json}", flush=True)
