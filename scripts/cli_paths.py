@@ -13,6 +13,8 @@ import tempfile
 from pathlib import Path
 
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}$")
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_.]+$")
+URL_RE = re.compile(r"^https?://[^\s]+$")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Extra directories a script may read or write outside the repository (local tapes on another
 # drive, a corpus elsewhere), separated by os.pathsep. The repository and the temp directory
@@ -76,3 +78,39 @@ def confined_path(value, what, must_exist=False):
     if not any(resolved.is_relative_to(root) for root in roots):
         raise SystemExit(f"{what} must lie inside {', '.join(str(root) for root in roots)} (or a root in ${DATA_ROOTS_ENV}): {value}")
     return resolved
+
+
+def checked_number(value, what, minimum=0, maximum=None, kind=float):
+    """A number from the command line checked where it reaches a subprocess: converted and inside its range.
+
+    The value is rebuilt with `kind(...)`, so what reaches the command line is a number,
+    never the raw string; SystemExit names the offending value.
+    """
+    try:
+        number = kind(value)
+    except (TypeError, ValueError) as error:
+        raise SystemExit(f"{what} is not a number: {value!r}") from error
+    _require_range(number, what, minimum, maximum)
+    return number
+
+
+def _require_range(number, what, minimum, maximum):
+    upper = float("inf") if maximum is None else maximum
+    if not minimum <= number <= upper:
+        raise SystemExit(f"{what} must lie between {minimum} and {upper}: {number!r}")
+
+
+def checked_token(value, what):
+    """A name from the command line (a variant, a configuration) checked where it reaches a subprocess."""
+    text = str(value)
+    if not TOKEN_RE.match(text):
+        raise SystemExit(f"{what} must be letters, digits, '_' or '.': {text!r}")
+    return text
+
+
+def checked_url(value, what):
+    """A stream URL checked where it reaches a subprocess: http(s), no whitespace, never option-shaped."""
+    text = str(value)
+    if not URL_RE.match(text):
+        raise SystemExit(f"{what} must be an http(s) URL: {text!r}")
+    return text
