@@ -28,3 +28,21 @@ def test_a_path_outside_every_root_is_refused_until_its_root_is_listed(tmp_path,
 def test_the_temp_directory_is_always_allowed(tmp_path, monkeypatch):
     monkeypatch.delenv(cli_paths.DATA_ROOTS_ENV, raising=False)
     assert cli_paths.confined_path(tmp_path, "--x", must_exist=True) == tmp_path.resolve()
+
+
+def test_numbers_are_rebuilt_and_range_checked():
+    assert cli_paths.checked_number("30", "--start") == 30.0
+    assert cli_paths.checked_number(3, "--limit", 1, kind=int) == 3
+    with pytest.raises(SystemExit, match="not a number"):
+        cli_paths.checked_number("-ss", "--start")
+    with pytest.raises(SystemExit, match="must lie between"):
+        cli_paths.checked_number(0, "--limit", 1, kind=int)
+
+
+def test_tokens_and_urls_refuse_option_shaped_values():
+    assert cli_paths.checked_token("bandlimited_m15", "--variants") == "bandlimited_m15"
+    assert cli_paths.checked_url("https://archive.org/x.mp4", "url") == "https://archive.org/x.mp4"
+    with pytest.raises(SystemExit):
+        cli_paths.checked_token("-rf", "--variants")
+    with pytest.raises(SystemExit):
+        cli_paths.checked_url("-i /etc/passwd", "url")

@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules.hardware import get_gpu_name
 from modules.processing import process_hybrid_audio
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
-from scripts.cli_paths import confined_path, existing_path_arg, path_arg
+from scripts.cli_paths import checked_number, confined_path, existing_path_arg, path_arg
 
 _VIDEO_EXTS = {".mp4", ".mkv", ".mpg", ".mpeg", ".avi", ".mov", ".ts", ".m2ts"}
 
@@ -81,9 +81,9 @@ def _extract_sample(tape_path, out_path, start_sec, duration_sec):
         FFMPEG_BIN,
         "-y",
         "-ss",
-        str(start_sec),
+        str(checked_number(start_sec, "--start", kind=int)),
         "-t",
-        str(duration_sec),
+        str(checked_number(duration_sec, "--duration", 1, kind=int)),
         "-i",
         str(confined_path(tape_path, "tape", must_exist=True)),
         "-c:v",

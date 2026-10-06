@@ -137,6 +137,14 @@ here and in `docs/validation.md` ("CI Parity") in the same change.
   `release.yml` lists the install directory in `AI_RESTORE_DATA_ROOTS`. A new
   script's path argument gets a `cli_paths` type and a `confined_path` at its
   sink.
+- Numbers and names reach a subprocess the same way: a start offset, a
+  duration or a clip limit goes through `checked_number()` at the call
+  (rebuilt with `kind`, range-checked), a variant name through
+  `checked_token`, a stream URL through `checked_url`. The last six
+  S8705 findings on main (2026-10-06) were exactly these: an `int` argparse
+  type does not count, the conversion has to happen where the command is built.
+  Use the script's own type (`kind=int` for integer seconds), or the command
+  line changes (`30` becomes `30.0`).
 - Shell scripts with a bash shebang use `[[ ... ]]` (`shelldre:S7688`) and a
   `*)` branch in every `case` (`S131`).
 - Parallel fix agents share one checkout: an agent that runs `git stash` (or

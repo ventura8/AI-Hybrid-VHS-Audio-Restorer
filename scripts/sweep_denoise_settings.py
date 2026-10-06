@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.cli_paths import confined_path, existing_path_arg
+from scripts.cli_paths import checked_number, confined_path, existing_path_arg
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -260,7 +260,7 @@ def _run(name, limit, catalog=None, keep_work=False):
         *interpreter,
         "scripts/measure_tradeoff.py",
         "--limit",
-        str(limit),
+        str(checked_number(limit, "--limit", 1, kind=int)),
         "--modes",
         "auto_pure_linear",
         "--work-dir",

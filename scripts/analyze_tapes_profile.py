@@ -31,7 +31,7 @@ from modules.filters import (
     _estimate_noise_floor_and_reduction,
 )
 from modules.utils import FFMPEG_BIN
-from scripts.cli_paths import confined_path, existing_path_arg, path_arg
+from scripts.cli_paths import checked_number, confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _scan_directory_captures
 
 
@@ -41,9 +41,9 @@ def _extract_audio_sample(tape_path, temp_wav, start_sec, duration_sec):
         FFMPEG_BIN,
         "-y",
         "-ss",
-        str(start_sec),
+        str(checked_number(start_sec, "--start", kind=int)),
         "-t",
-        str(duration_sec),
+        str(checked_number(duration_sec, "--duration", 1, kind=int)),
         "-i",
         str(confined_path(tape_path, "tape", must_exist=True)),
         "-vn",

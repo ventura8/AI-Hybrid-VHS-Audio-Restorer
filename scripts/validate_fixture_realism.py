@@ -70,7 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules import physical_repair
 from modules.auto_scanner import scan_and_decide_restoration_strategy
 from scripts import sweep_denoise_settings as sweep
-from scripts.cli_paths import confined_path, existing_path_arg, path_arg
+from scripts.cli_paths import checked_number, checked_token, confined_path, existing_path_arg, path_arg
 from scripts.measure_tradeoff import measure
 
 REMOVAL_DOMINATES = "removal dominates"
@@ -204,9 +204,9 @@ def _score(config_name, fixtures_dir, variants, limit, work_root):
         "--modes",
         "auto_pure_linear",
         "--variants",
-        *variants,
+        *(checked_token(variant, "--variants") for variant in variants),
         "--limit",
-        str(limit),
+        str(checked_number(limit, "--limit", 1, kind=int)),
         "--report",
         str(report),
         "--work-dir",

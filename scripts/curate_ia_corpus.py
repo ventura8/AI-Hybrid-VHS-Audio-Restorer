@@ -18,7 +18,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
-from scripts.cli_paths import confined_path, path_arg
+from scripts.cli_paths import checked_number, checked_url, confined_path, path_arg
 
 
 def _sanitize_slug(name: str) -> str:
@@ -51,11 +51,11 @@ def _build_copy_cmd(stream_url: str, target_path: Path, offset_sec: int, duratio
         "-reconnect_delay_max",
         "2",
         "-ss",
-        str(offset_sec),
+        str(checked_number(offset_sec, "clip offset", kind=int)),
         "-i",
-        stream_url,
+        checked_url(stream_url, "stream URL"),
         "-t",
-        str(duration_sec),
+        str(checked_number(duration_sec, "clip duration", 1, kind=int)),
         "-c",
         "copy",
         str(target_path),
@@ -74,11 +74,11 @@ def _build_transcode_cmd(stream_url: str, target_path: Path, offset_sec: int, du
         "-reconnect_delay_max",
         "2",
         "-ss",
-        str(offset_sec),
+        str(checked_number(offset_sec, "clip offset", kind=int)),
         "-i",
-        stream_url,
+        checked_url(stream_url, "stream URL"),
         "-t",
-        str(duration_sec),
+        str(checked_number(duration_sec, "clip duration", 1, kind=int)),
         "-c:v",
         "libx264",
         "-preset",
