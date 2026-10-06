@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules.hardware import get_gpu_name
 from modules.processing import process_hybrid_audio
 from modules.utils import FFMPEG_BIN, is_valid_video
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 
 
 def _extract_sample_clip(input_video, sample_output, start_sec, duration_sec):
@@ -32,7 +32,7 @@ def _extract_sample_clip(input_video, sample_output, start_sec, duration_sec):
         "-t",
         str(duration_sec),
         "-i",
-        str(input_video),
+        str(confined_path(input_video, "tape", must_exist=True)),
         "-c:v",
         "libx264",
         "-preset",
@@ -43,7 +43,7 @@ def _extract_sample_clip(input_video, sample_output, start_sec, duration_sec):
         "pcm_f32le",
         "-ar",
         "44100",
-        str(sample_output),
+        str(confined_path(sample_output, "sample output")),
     ]
     try:
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=60)
@@ -56,7 +56,7 @@ def _setup_experiment_target(tape_path, output_dir, duration_sec):
     """Prepares destination directory and sample video path."""
     project_root = Path(__file__).resolve().parent.parent
     if output_dir:
-        target_out = Path(output_dir)
+        target_out = confined_path(output_dir, "--output-dir")
     else:
         target_out = project_root / "experiments" / "restoration_runs"
     target_out.mkdir(parents=True, exist_ok=True)

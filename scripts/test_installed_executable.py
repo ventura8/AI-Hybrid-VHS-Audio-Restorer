@@ -11,6 +11,7 @@ Tests all operational scenarios including:
 """
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -158,9 +159,36 @@ def _test_directory_input(launcher_cmd, test_dir):
     print("Directory input test passed.")
 
 
+# The directories the installed app's config may live under besides the temp dir: the release
+# workflow lists the install directory here (it lies outside the checkout), separated by os.pathsep.
+DATA_ROOTS_ENV = "AI_RESTORE_DATA_ROOTS"
+
+
+def _allowed_roots():
+    """The temp dir plus every directory listed in $AI_RESTORE_DATA_ROOTS."""
+    entries = os.environ.get(DATA_ROOTS_ENV, "").split(os.pathsep)
+    return (Path(tempfile.gettempdir()).resolve(), *(Path(entry).resolve() for entry in entries if entry.strip()))
+
+
+def _confined_config(config_dir):
+    """The installed config.yaml, refused unless it resolves under the temp dir or a root in $AI_RESTORE_DATA_ROOTS.
+
+    Runs standalone in the release workflow (no import of scripts.cli_paths), so the check
+    is local; the value comes from the command line and is checked where it is used.
+    """
+    text = str(config_dir)
+    if not text or text.startswith("-"):
+        raise SystemExit(f"--config-dir looks like an option, not a path: {text!r}")
+    config_file = (Path(text) / "config.yaml").resolve()
+    roots = _allowed_roots()
+    if not any(config_file.is_relative_to(root) for root in roots):
+        raise SystemExit(f"--config-dir must lie inside {', '.join(map(str, roots))} (list it in ${DATA_ROOTS_ENV}): {text}")
+    return config_file
+
+
 def _configure_native_mode(config_dir):
     """Sets the installed app's configuration to the deterministic native mode."""
-    config_file = Path(config_dir) / "config.yaml"
+    config_file = _confined_config(config_dir)
     if not config_file.exists():
         raise FileNotFoundError(f"Installed config file was not created: {config_file}")
     content = config_file.read_text(encoding="utf-8")

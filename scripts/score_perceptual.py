@@ -30,7 +30,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.download_dnsmos import MODELS, TARGET_DIR
 from scripts.measure_hum import _restored_path
 from scripts.measure_tradeoff import _extract
@@ -134,7 +134,7 @@ def _score_clip(clip, record, args, sessions, temp_dir, results):
     results["source"].append({"identifier": record["identifier"], **scored})
     for mode in args.modes:
         restored = next((p for root in args.work_dirs if (p := _restored_path(root, clip, mode))), None)
-        restored_wav = temp_dir / f"{clip.stem}_{mode}.wav"
+        restored_wav = confined_path(temp_dir / f"{clip.stem}_{mode}.wav", "restored WAV")
         if restored is None or _extracted(restored, restored_wav) is None:
             continue
         scored = score_file(restored_wav, sessions)
@@ -184,8 +184,9 @@ def main():
             if clip.exists():
                 _score_clip(clip, record, args, sessions, Path(temp), results)
     _report(results)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.report}")
 
 

@@ -37,7 +37,7 @@ import scipy.signal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.measure_tradeoff import LOUD_PERCENTILE, MIN_DYNAMIC_SPREAD_DB, QUIET_PERCENTILE, _extract, _frames, _mono
 from scripts.score_reference import _align
 
@@ -265,7 +265,7 @@ def _measure_clip(clip, source_wav, temp_dir, record, mains, args, results):
         restored = next((p for root in args.work_dirs if (p := _restored_path(root, clip, mode))), None)
         if restored is None:
             continue
-        restored_wav = temp_dir / f"{clip.stem}_{mode}.wav"
+        restored_wav = confined_path(temp_dir / f"{clip.stem}_{mode}.wav", "restored WAV")
         try:
             row = measure(source_wav, restored_wav, mains, args.band) if _extracted(restored, restored_wav) else None
         finally:
@@ -349,8 +349,9 @@ def main():
     if refused:
         print(f"\n{len(refused)} carrying sources refused: under {MIN_DYNAMIC_SPREAD_DB:.0f} dB of quiet-to-loud spread")
 
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({"sources": sources, "results": results, "refused": refused}, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps({"sources": sources, "results": results, "refused": refused}, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.report}")
 
 

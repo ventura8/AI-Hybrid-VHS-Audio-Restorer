@@ -238,7 +238,7 @@ jobs:
           sudo chown -R "$USER:$USER" /opt/ai-hybrid-vhs-audio-restorer
           cd /opt/ai-hybrid-vhs-audio-restorer
           ./install_dependencies.sh
-          python3 "$GITHUB_WORKSPACE/scripts/test_installed_executable.py" ai-hybrid-vhs-audio-restorer --config-dir /opt/ai-hybrid-vhs-audio-restorer
+          AI_RESTORE_DATA_ROOTS=/opt/ai-hybrid-vhs-audio-restorer python3 "$GITHUB_WORKSPACE/scripts/test_installed_executable.py" ai-hybrid-vhs-audio-restorer --config-dir /opt/ai-hybrid-vhs-audio-restorer
 
       - name: Install and smoke-test macOS .pkg installer
         if: startsWith(matrix.platform, 'macos-')
@@ -254,7 +254,7 @@ jobs:
           if [ "${{ matrix.platform }}" = "macos-arm64" ]; then
             ./.venv/bin/python -c 'import torch; assert torch.backends.mps.is_available(), "PyTorch MPS is unavailable"'
           fi
-          python3 "$GITHUB_WORKSPACE/scripts/test_installed_executable.py" ai-hybrid-vhs-audio-restorer --config-dir /Applications/AI-Hybrid-VHS-Audio-Restorer.app/Contents/Resources
+          AI_RESTORE_DATA_ROOTS=/Applications/AI-Hybrid-VHS-Audio-Restorer.app/Contents/Resources python3 "$GITHUB_WORKSPACE/scripts/test_installed_executable.py" ai-hybrid-vhs-audio-restorer --config-dir /Applications/AI-Hybrid-VHS-Audio-Restorer.app/Contents/Resources
 
       - name: Install and smoke-test Windows executable
         if: matrix.platform == 'windows'
@@ -266,6 +266,7 @@ jobs:
           }
           $appDir = "$env:USERPROFILE\AI-Hybrid-VHS-Audio-Restorer"
           if (Test-Path $appDir) { Remove-Item $appDir -Recurse -Force }
+          $env:AI_RESTORE_DATA_ROOTS = $appDir
           python "$env:GITHUB_WORKSPACE\scripts\test_installed_executable.py" $installer.FullName --config-dir $appDir
 
       - name: Upload platform release installer assets

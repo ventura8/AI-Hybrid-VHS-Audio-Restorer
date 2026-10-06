@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
 from scripts.score_reference import _align
 
@@ -236,8 +236,9 @@ def main():
     for label, rows in results.items():
         if rows:
             _summarise(rows, label)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.report}")
 
 

@@ -44,7 +44,7 @@ from modules.filters import (
     _read_audio_for_analysis,
 )
 from scripts.benchmark_ia_corpus_batch import _extract_audio_pcm
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 
 # The window the current detectors use, and the cap on how many such windows the
 # whole-file comparison walks. 120 windows of 32768 covers ~89 s at 44.1 kHz, well beyond
@@ -298,8 +298,9 @@ def main():
     for region in sorted({r["region"] for r in rows}):
         report["by_region"][region] = _summarise([r for r in rows if r["region"] == region])
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    output_path = confined_path(args.output, "--output")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     sys.stdout.write(f"\n{json.dumps(report['overall'], indent=2)}\n\nWrote {args.output}\n")
 
 

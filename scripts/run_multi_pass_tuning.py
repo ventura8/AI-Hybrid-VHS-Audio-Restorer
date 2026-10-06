@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules.hardware import get_gpu_name
 from modules.processing import process_hybrid_audio
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 
 _VIDEO_EXTS = {".mp4", ".mkv", ".mpg", ".mpeg", ".avi", ".mov", ".ts", ".m2ts"}
 
@@ -85,7 +85,7 @@ def _extract_sample(tape_path, out_path, start_sec, duration_sec):
         "-t",
         str(duration_sec),
         "-i",
-        str(tape_path),
+        str(confined_path(tape_path, "tape", must_exist=True)),
         "-c:v",
         "libx264",
         "-preset",
@@ -96,7 +96,7 @@ def _extract_sample(tape_path, out_path, start_sec, duration_sec):
         "pcm_f32le",
         "-ar",
         "44100",
-        str(out_path),
+        str(confined_path(out_path, "clip output")),
     ]
     try:
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=60)
