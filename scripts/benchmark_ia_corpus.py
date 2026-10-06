@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN, is_valid_audio, is_valid_video
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.curate_ia_corpus import _sanitize_slug as _plain_slug
 from scripts.curate_massive_ia_corpus import _sanitize_slug as _massive_slug
 from scripts.ia_benchmark_common import (
@@ -300,7 +300,7 @@ def _clip_stems(meta: Dict[str, Any], duration_sec: int = 20) -> List[str]:
 
 def _load_meta_index(catalog_path: Path) -> Dict[str, Dict[str, Any]]:
     """Loads catalog JSON and indexes entries by their canonical clip stem."""
-    with open(catalog_path, "r", encoding="utf-8") as handle:
+    with open(confined_path(catalog_path, "--catalog", must_exist=True), "r", encoding="utf-8") as handle:
         catalog = json.load(handle)
 
     # Two catalog shapes exist: curate_ia_corpus.py writes {region: [records]}, while
@@ -463,12 +463,14 @@ def main() -> None:
         limit_per_region=args.limit,
     )
 
-    args.report_json.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.report_json, "w", encoding="utf-8") as handle:
+    report_json = confined_path(args.report_json, "--report-json")
+    report_md = confined_path(args.report_md, "--report-md")
+    report_json.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_json, "w", encoding="utf-8") as handle:
         json.dump({"summary": summary, "results": results}, handle, indent=2)
 
     md_report = _format_markdown_report(summary, args.modes, len(results))
-    with open(args.report_md, "w", encoding="utf-8") as handle:
+    with open(report_md, "w", encoding="utf-8") as handle:
         handle.write(md_report)
 
     print("\n" + md_report)

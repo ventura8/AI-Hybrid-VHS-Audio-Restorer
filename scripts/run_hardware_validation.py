@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.cli_paths import existing_path_arg, language_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, language_arg, path_arg
 
 build_report = import_module("scripts.audit_hardware").build_report
 
@@ -204,8 +204,9 @@ def main(argv=None):
         require_nvidia_cuda()
         report["execution"] = execute_validation(paths, report["modes"], args.work_dir)
     report["created_at_epoch"] = round(time.time())
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(args.report)
     # A run where every mode failed used to exit 0, so any caller -- CI, a shell wrapper, an
     # operator reading $? -- recorded it as a pass while the report said otherwise. Observed on

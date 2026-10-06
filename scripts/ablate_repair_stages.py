@@ -31,7 +31,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules import cathar
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.score_defect_repair import score_repair
 from scripts.score_reference import _fixture_variant
 
@@ -149,8 +149,9 @@ def main():
         if any(r["stage"] == stage for r in rows):
             print(f"  {stage:<12}{cells}")
 
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.report}")
 
 

@@ -25,7 +25,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
-from scripts.cli_paths import path_arg
+from scripts.cli_paths import confined_path, path_arg
 
 EUROPE_SEARCH_QUERIES = [
     ('collection:(vhsvault OR home_movies) AND ("UK VHS" OR "PAL VHS" OR "Home Video UK" OR "camcorder")', "home", 50.0, 15625.0),
@@ -259,6 +259,7 @@ def curate_catalog(target_count: int = 1000) -> List[Dict[str, Any]]:
 
 def download_corpus(catalog: List[Dict[str, Any]], output_dir: Path, max_workers: int = 8) -> List[Dict[str, Any]]:
     """Downloads 15-second representative clips in parallel."""
+    output_dir = confined_path(output_dir, "--output-dir")
     output_dir.mkdir(parents=True, exist_ok=True)
     downloaded_catalog = []
 

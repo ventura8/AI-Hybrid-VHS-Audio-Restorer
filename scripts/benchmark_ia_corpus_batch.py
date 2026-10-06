@@ -20,7 +20,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFMPEG_BIN, is_valid_audio
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import (
     _aggregate_by_genre,
     _aggregate_by_region,
@@ -156,7 +156,7 @@ def _parse_arguments():
 
 def _load_catalog(catalog_path: Path, limit: Optional[int]) -> List[Dict[str, Any]]:
     """Load a catalog and discard entries that cannot identify a fixture."""
-    with open(catalog_path, "r", encoding="utf-8") as handle:
+    with open(confined_path(catalog_path, "--catalog", must_exist=True), "r", encoding="utf-8") as handle:
         catalog = json.load(handle)
     if limit is not None:
         catalog = catalog[:limit]

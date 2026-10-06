@@ -39,7 +39,7 @@ import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.score_reference import _align, _match_gain
 
 EPS = 1e-12
@@ -252,8 +252,9 @@ def main():
         collateral = np.median([r["collateral_db"] for r in rows])
         print(f"\nmedian repaired {repaired:.2f} dB, collateral {collateral:.2f} dB")
     if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+        report_path = confined_path(args.report, "--report")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {args.report}")
 
 

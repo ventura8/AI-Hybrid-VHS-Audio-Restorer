@@ -70,7 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from modules import physical_repair
 from modules.auto_scanner import scan_and_decide_restoration_strategy
 from scripts import sweep_denoise_settings as sweep
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.measure_tradeoff import measure
 
 REMOVAL_DOMINATES = "removal dominates"
@@ -192,13 +192,15 @@ REPAIR_FREE_DEVIATION_DB = 0.1
 
 def _score(config_name, fixtures_dir, variants, limit, work_root):
     """Runs auto_pure_linear over the fixture subset under one configuration and returns the rows."""
-    report = work_root / f"scores_{config_name}.json"
+    report = confined_path(work_root / f"scores_{config_name}.json", "scores report")
+    fixtures = confined_path(fixtures_dir, "--fixtures-dir", must_exist=True)
+    config_work = confined_path(work_root / config_name, "work dir")
     interpreter, env = sweep._fresh_interpreter()
     command = [
         *interpreter,
         "scripts/score_reference.py",
         "--fixtures-dir",
-        str(fixtures_dir),
+        str(fixtures),
         "--modes",
         "auto_pure_linear",
         "--variants",
@@ -208,7 +210,7 @@ def _score(config_name, fixtures_dir, variants, limit, work_root):
         "--report",
         str(report),
         "--work-dir",
-        str(work_root / config_name),
+        str(config_work),
     ]
     # The report of an earlier run is removed first, so a scorer that fails leaves nothing
     # that could be read as this configuration's result.

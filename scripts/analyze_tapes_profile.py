@@ -31,7 +31,7 @@ from modules.filters import (
     _estimate_noise_floor_and_reduction,
 )
 from modules.utils import FFMPEG_BIN
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _scan_directory_captures
 
 
@@ -45,7 +45,7 @@ def _extract_audio_sample(tape_path, temp_wav, start_sec, duration_sec):
         "-t",
         str(duration_sec),
         "-i",
-        str(tape_path),
+        str(confined_path(tape_path, "tape", must_exist=True)),
         "-vn",
         "-acodec",
         "pcm_f32le",
@@ -53,7 +53,7 @@ def _extract_audio_sample(tape_path, temp_wav, start_sec, duration_sec):
         "44100",
         "-ac",
         "2",
-        str(temp_wav),
+        str(confined_path(temp_wav, "sample WAV")),
     ]
     try:
         # Scaled to the sample being asked for. --duration is user-configurable, so a fixed
@@ -161,8 +161,9 @@ def run_batch_scan(input_target, output_json, start_sec=30, duration_sec=90):
         bal = res["stereo_balance_imbalance_db"]
         print(f"  NF: {nf} dB | SNR: {snr} dB | Rumble: {rumble} Hz | Mains: {mains} Hz | CRT: {crt} Hz | Bal: {bal} dB", flush=True)
 
-    output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    output_path = confined_path(output_json, "--output")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"\nSaved acoustic profiles for {len(results)} files to {output_json}", flush=True)
     return results
 

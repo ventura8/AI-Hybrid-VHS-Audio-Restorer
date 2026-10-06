@@ -16,7 +16,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFPROBE_BIN
-from scripts.cli_paths import existing_path_arg
+from scripts.cli_paths import confined_path, existing_path_arg
 from scripts.ia_benchmark_common import _scan_directory_captures
 
 
@@ -34,7 +34,7 @@ def probe_single_tape(tape_path):
                 "stream=codec_name,channels,channel_layout,sample_rate,bit_rate:format=duration",
                 "-of",
                 "json",
-                str(tape_path),
+                str(confined_path(tape_path, "tape", must_exist=True)),
             ],
             timeout=10,
         )

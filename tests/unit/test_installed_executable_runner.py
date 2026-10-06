@@ -136,3 +136,24 @@ def test_main_cli_dispatch(tmp_path):
         tie.main()
         cfg_text = (config_dir / "config.yaml").read_text(encoding="utf-8")
         assert 'process_mode: "vhs_native"' in cfg_text
+
+
+def test_configure_native_mode_rewrites_the_installed_config(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text('process_mode: "auto"\nother: 1\n', encoding="utf-8")
+    tie._configure_native_mode(tmp_path)
+    assert config.read_text(encoding="utf-8") == 'process_mode: "vhs_native"\nother: 1\n'
+
+
+def test_a_config_dir_outside_the_allowed_roots_is_refused(monkeypatch):
+    monkeypatch.delenv(tie.DATA_ROOTS_ENV, raising=False)
+    outside = tie.Path(tie.Path.cwd().anchor) / "not_an_install_dir_xyz"
+    with pytest.raises(SystemExit, match="must lie inside"):
+        tie._configure_native_mode(outside)
+    with pytest.raises(SystemExit, match="looks like an option"):
+        tie._configure_native_mode("-x")
+
+
+def test_a_listed_install_dir_is_allowed(tmp_path, monkeypatch):
+    monkeypatch.setenv(tie.DATA_ROOTS_ENV, str(tmp_path))
+    assert tie._confined_config(tmp_path) == (tmp_path / "config.yaml").resolve()

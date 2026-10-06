@@ -18,7 +18,7 @@ if hasattr(sys.stderr, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.utils import FFMPEG_BIN, FFPROBE_BIN, is_valid_video
-from scripts.cli_paths import path_arg
+from scripts.cli_paths import confined_path, path_arg
 
 
 def _sanitize_slug(name: str) -> str:
@@ -153,7 +153,7 @@ def _attempt_download_step(cmd: List[str], tmp_path: Path, target_path: Path, du
 
 def _try_download_at_offset(stream_url: str, target_path: Path, offset: int, duration_sec: int) -> bool:
     """Tries stream copy, then transcode at given offset to a temporary file."""
-    tmp_path = target_path.with_name(f"{target_path.stem}.tmp.mp4")
+    tmp_path = confined_path(target_path.with_name(f"{target_path.stem}.tmp.mp4"), "clip download")
     copy_cmd = _build_copy_cmd(stream_url, tmp_path, offset, duration_sec)
     if _attempt_download_step(copy_cmd, tmp_path, target_path, duration_sec):
         return True
@@ -242,7 +242,7 @@ def curate_corpus(
     force: bool = False,
 ) -> Dict[str, int]:
     """Curates clips for all regions in catalog."""
-    with open(catalog_path, "r", encoding="utf-8") as handle:
+    with open(confined_path(catalog_path, "--catalog", must_exist=True), "r", encoding="utf-8") as handle:
         catalog = json.load(handle)
 
     stats: Dict[str, int] = {}

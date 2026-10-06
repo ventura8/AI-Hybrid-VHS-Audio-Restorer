@@ -39,7 +39,7 @@ from modules import cathar as cathar_mod
 from modules import filters as filters_mod
 from modules import processing as processing_mod
 from modules.utils import CATHAR_BIN, FFMPEG_BIN
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _compute_noise_floor_db, _split_channels
 from scripts.score_reference import _fixture_variant, score_pair
 
@@ -490,8 +490,9 @@ def main():
         raise SystemExit("No fixture was scored.")
     summary = _summarise(rows, args.chains)
     _print_summary(summary, args.chains)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({"summary": summary, "fixtures": rows}, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps({"summary": summary, "fixtures": rows}, indent=2) + "\n", encoding="utf-8")
     print(f"\nWrote {args.report}")
 
 

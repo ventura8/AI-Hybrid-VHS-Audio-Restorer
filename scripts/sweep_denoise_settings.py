@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.cli_paths import existing_path_arg
+from scripts.cli_paths import confined_path, existing_path_arg
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -250,8 +250,8 @@ def _run(name, limit, catalog=None, keep_work=False):
     The work directory holds the restored outputs; it is removed afterwards unless kept,
     which the hum and rumble readings need, since they measure those outputs afterwards.
     """
-    work = Path(f"experiments/sweep_{name}")
-    report = Path(f"experiments/sweep_{name}.json")
+    work = confined_path(Path(f"experiments/sweep_{name}"), "sweep work dir")
+    report = confined_path(Path(f"experiments/sweep_{name}.json"), "sweep report")
     shutil.rmtree(work, ignore_errors=True)
     # An earlier run's report must not stand in for this one if the child fails.
     report.unlink(missing_ok=True)
@@ -269,7 +269,7 @@ def _run(name, limit, catalog=None, keep_work=False):
         str(report),
     ]
     if catalog is not None:
-        command += ["--catalog", str(catalog)]
+        command += ["--catalog", str(confined_path(catalog, "--catalog", must_exist=True))]
     subprocess.run(command, check=False, timeout=7200, env=env)
     if not keep_work:
         shutil.rmtree(work, ignore_errors=True)

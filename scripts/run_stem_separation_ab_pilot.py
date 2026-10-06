@@ -16,7 +16,7 @@ from modules.hardware import get_gpu_name
 from modules.processing import _get_output_suffix, get_video_duration_sec, process_hybrid_audio
 from modules.ui import _is_cleaned_output
 from modules.utils import FFMPEG_BIN, is_valid_video
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 
 SEPARATED_MODE = "auto_pure"
 NO_STEM_MODE = "auto_pure_linear"
@@ -99,7 +99,7 @@ def _extract_clip(source, destination, start):
 
 def _write_csv(path, headings, rows):
     """Writes a UTF-8 CSV file with a supplied header and rows."""
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    with confined_path(path, "CSV output").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(headings)
         writer.writerows(rows)

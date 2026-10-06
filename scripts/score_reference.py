@@ -68,7 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
-from scripts.cli_paths import existing_path_arg, path_arg
+from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
 from scripts.run_hardware_validation import _make_video_fixture
 
@@ -441,8 +441,9 @@ def main():
         raise SystemExit("No fixture could be scored.")
     summary = _summarise(rows, args.modes)
     _print_summary(summary, args.modes)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({"summary": summary, "fixtures": rows}, indent=2) + "\n", encoding="utf-8")
+    report_path = confined_path(args.report, "--report")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps({"summary": summary, "fixtures": rows}, indent=2) + "\n", encoding="utf-8")
     print(f"\nWrote {args.report}")
 
 
