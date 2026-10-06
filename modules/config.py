@@ -161,6 +161,11 @@ _NUMERIC_CONFIG_FIELDS = (
     # 0.8 is the Tata loop's plateau (the listener's "thin s"); Vaccin still reads thin at it.
     ("apl_sibilant_mix", float, 0.8, 0.0, 1.0),
     ("apl_sibilant_guard_hz", int, 4000, 1000, 12000),
+    # The share of a hop's energy above the guard frequency that marks it as a fricative. 0.5
+    # caught 3 events in five minutes of Vaccin against the harness's 30, 12.5% of its fricative
+    # frames: tape rolls the highs off, so a real 's' on VHS rarely puts half its energy above
+    # 4 kHz (median 0.45 on the harness's fricatives). 0.3 covers 82%; the loop tunes it.
+    ("apl_sibilant_hf_share_min", float, 0.5, 0.0, 1.0),
     ("afftdn_nr", float, 10.0, 0.0),
     ("afftdn_nf", float, -55.0, None),
     ("highpass_freq", int, 80, 0),
@@ -920,6 +925,7 @@ APL_MUSIC_BG_FLOOR_DB = float(CONFIG.get("apl_music_bg_floor_db", -10.0))
 APL_ENABLE_SIBILANT_GUARD = bool(CONFIG.get("apl_enable_sibilant_guard", True))
 APL_SIBILANT_MIX = float(CONFIG.get("apl_sibilant_mix", 0.8))
 APL_SIBILANT_GUARD_HZ = int(CONFIG.get("apl_sibilant_guard_hz", 4000))
+APL_SIBILANT_HF_SHARE_MIN = float(CONFIG.get("apl_sibilant_hf_share_min", 0.5))
 APL_ENABLE_SPECTRAL_DENOISE = bool(CONFIG.get("apl_enable_spectral_denoise", False))
 APL_SPECTRAL_ALPHA = float(CONFIG["apl_spectral_alpha"])
 APL_SPECTRAL_ALPHA_TONAL = float(CONFIG.get("apl_spectral_alpha_tonal", 2.0))

@@ -115,6 +115,9 @@ KNOBS = {
         "apl_enable_sibilant_guard": [False, True],
         "apl_sibilant_mix": [0.3, 0.5, 0.8, 0.9, 1.0],
         "apl_sibilant_guard_hz": [2000, 2500, 3000, 4000, 5000],
+        # The fricative detector's high-band share: at 0.5 the guard found 12.5% of the harness's
+        # fricatives on Vaccin, so mix and crossover moves barely touched the audio (-70..-100 dBFS).
+        "apl_sibilant_hf_share_min": [0.2, 0.3, 0.4, 0.5],
         # This mode's own expander depth (the shared expander_depth_db is cathar's on speech).
         "apl_expander_depth_db": [7.0, 12.0, 18.0],
         # The stem path on music (modules/apl_stems.py); 0.005 admits Gaudeamus (held partials 0.009).
@@ -198,7 +201,7 @@ INERT_WHEN = {
     "apl": (
         ("apl_enable_spectral_denoise", False, _SUBTRACTION_KNOBS),
         ("apl_music_stem_path", False, ("apl_music_persistence_min", "apl_music_bg_floor_db")),
-        ("apl_enable_sibilant_guard", False, ("apl_sibilant_mix", "apl_sibilant_guard_hz")),
+        ("apl_enable_sibilant_guard", False, ("apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_sibilant_hf_share_min")),
         ("enable_pause_floor", False, ("pause_floor_fill_db",)),
         ("enable_dynamic_expander", False, ("apl_expander_depth_db", "expander_knee_offset_db")),
     ),

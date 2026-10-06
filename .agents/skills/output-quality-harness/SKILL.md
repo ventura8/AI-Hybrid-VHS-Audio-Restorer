@@ -113,6 +113,17 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   APL from the shipped defaults with mix up to 1.0 and the crossover 2-5 kHz.
   A plateau sitting on the edge of a knob's grid is not a plateau: widen the
   grid before asking the user.
+- A plateau whose outputs barely differ is not a result. The v3 sibilance
+  loop (2026-10-06) accepted mix 0.9 then 1.0 and stopped, but its final
+  differed from the v2 plateau by -70..-100 dBFS on 0.5-32% of the samples:
+  the guard's fricative detector (`HF_SHARE_MIN` 0.5) found 3 events in five
+  minutes of Vaccin where the harness found 30 (12.5% of its fricative frames;
+  tape rolls the highs off, the harness's fricatives carry a median 0.45 of
+  their energy above 4 kHz). Before asking the user to listen, diff the final
+  against what they heard (samples changed, level of the difference); a stage
+  that only acts on detected events needs its detector checked against the
+  harness's own. `apl_sibilant_hf_share_min` is now a knob
+  (`experiments/run_autotune_v4_apl_sibilance.cmd`).
 - Re-scoring one family into a stored report:
   `validate_restoration.py ... --metrics dsp --merge-into report.json`
   (`score_listen.py <slug> --dsp-rescore`), then
