@@ -138,7 +138,8 @@ def _collect_video_files(input_path):
 def run_batch_scan(input_target, output_json, start_sec=30, duration_sec=90):
     """Scans video captures from input target and saves acoustic profile JSON."""
     output_path = confined_path(output_json, "--output")
-    candidates = _collect_video_files(input_target)
+    input_path = confined_path(input_target, "--input", must_exist=True)
+    candidates = _collect_video_files(input_path)
     if not candidates:
         print(f"No valid video files found at '{input_target}'", file=sys.stderr)
         return []
