@@ -7,4 +7,6 @@ set PYTHONIOENCODING=utf-8
 if not exist experiments\autotune_v3 mkdir experiments\autotune_v3
 del experiments\autotune_v3\apl_done.txt 2>nul
 .venv\Scripts\python.exe scripts\autotune_restoration.py --engine apl --tapes experiments\autotune\tapes_apl.json --out experiments\autotune_v3 --grid scripts\tune_grids\tata_v2.yaml --start-file experiments\autotune_v2\apl\final.json --rounds 20 --parallel 2 >> experiments\autotune_v3\apl_run.log 2>&1
+rem The marker means a finished loop: a failed run exits with its error and writes nothing.
+if errorlevel 1 exit /b %errorlevel%
 echo DONE > experiments\autotune_v3\apl_done.txt

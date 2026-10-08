@@ -19,7 +19,7 @@ import numpy as np
 import scipy.signal
 import soundfile as sf
 
-from .config import APL_ENABLE_SIBILANT_GUARD, APL_SIBILANT_GUARD_HZ, APL_SIBILANT_MIX
+from .config import APL_ENABLE_SIBILANT_GUARD, APL_SIBILANT_GUARD_HZ, APL_SIBILANT_HF_SHARE_MIN, APL_SIBILANT_MIX
 from .hygiene import atomic_target
 from .impulse_repair import _spans
 from .utils import is_valid_audio, log_msg
@@ -36,7 +36,7 @@ RAMP_MS = 5.0
 # and a zero-crossing rate a voiced sound never reaches.
 LEVEL_ABOVE_FLOOR_DB = 12.0
 FLOOR_PERCENTILE = 15.0
-HF_SHARE_MIN = 0.5
+HF_SHARE_MIN = APL_SIBILANT_HF_SHARE_MIN
 ZCR_MIN = 0.12
 # Blocks are read with this much either side so the zero-phase high-pass never lets its
 # transient reach the samples written out.
