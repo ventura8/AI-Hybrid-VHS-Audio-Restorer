@@ -157,3 +157,11 @@ def test_a_config_dir_outside_the_allowed_roots_is_refused(monkeypatch):
 def test_a_listed_install_dir_is_allowed(tmp_path, monkeypatch):
     monkeypatch.setenv(tie.DATA_ROOTS_ENV, str(tmp_path))
     assert tie._confined_config(tmp_path) == (tmp_path / "config.yaml").resolve()
+
+
+def test_the_install_dir_may_not_exist_yet_at_parse_time(tmp_path):
+    """The Windows installer creates the directory during the smoke test (v1.3.7 release failure)."""
+    missing = tmp_path / "AI-Hybrid-VHS-Audio-Restorer"
+    assert tie._install_dir(str(missing)) == missing.resolve()
+    with pytest.raises(tie.argparse.ArgumentTypeError):
+        tie._install_dir("-x")
