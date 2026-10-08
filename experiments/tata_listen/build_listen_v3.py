@@ -51,9 +51,13 @@ def main():
     for slug, source in tapes.items():
         for tag, root, cid in (("final3_apl", V3_DIR, cid3), ("final2_apl", v2.SETS["tata"]["dir"], cid2)):
             target, wav = OUT / f"{slug}__{tag}.wav", root / "apl" / "cands" / cid / f"{slug}.wav"
-            if not target.exists() and wav.exists():
+            score = root / "apl" / "cands" / cid / f"{slug}.score.json"
+            missing = [str(path) for path in (wav, score) if not path.exists()]
+            if missing:
+                raise SystemExit(f"{slug} {tag}: the listening set needs both artifacts, missing {', '.join(missing)}")
+            if not target.exists():
                 shutil.copy2(wav, target)
-            rows.append(_row(slug, tag, root / "apl" / "cands" / cid / f"{slug}.score.json"))
+            rows.append(_row(slug, tag, score))
         v2.OUT = OUT
         v2.ensure_source("tata", slug, Path(source))
     diff = v2.settings_diff("v3", "apl", final3)
