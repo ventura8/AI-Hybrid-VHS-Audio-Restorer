@@ -124,6 +124,15 @@ LFS pointer). SCOREQ was dropped: it pulls plain `onnxruntime` beside
   that only acts on detected events needs its detector checked against the
   harness's own. `apl_sibilant_hf_share_min` is now a knob
   (`experiments/run_autotune_v4_apl_sibilance.cmd`).
+- Third listening round (2026-10-08, `D:\Tata\New folder\variants\v4_air`):
+  the thin 's' on APL was the air shelf, not the neural stage. Measured on
+  Vaccin's fricatives the output moved no more than on its other loud frames
+  (under 1 dB per band), while the whole output sat ~+1.6 dB brighter above
+  4 kHz; the user chose `linear_air_gain_db` 1.0 over 2.0 and off. The
+  harness's `sibilance_thin` reads the centroid net of the plain frames, so a
+  tilt that lifts every frame's top does not register: a complaint about the
+  's' that the loops cannot move is tested by ear with an A/B of the
+  whole-spectrum stages (air, expander) before the detector-bound ones.
 - Re-scoring one family into a stored report:
   `validate_restoration.py ... --metrics dsp --merge-into report.json`
   (`score_listen.py <slug> --dsp-rescore`), then

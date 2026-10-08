@@ -466,7 +466,14 @@ cathar_dereverb_strength: 2.0
 #   - false: Disabled.
 #
 # enable_linear_air:
-#   - true:  Applies calibrated high-frequency presence air curve (+2.0 dB @ 7.5 kHz) to linear tracks (Default).
+#   - true:  Applies a high-frequency presence shelf at 7.5 kHz to auto_pure_linear (Default),
+#            linear_air_gain_db dB high (1.0; 2.0 until 2026-10-08).
+#            By ear (2026-10-08): the user heard APL's 's' as thin at +2 dB and picked +1 dB in an A/B
+#            against +2 dB and off on the four Tata tapes. The shelf is the only thing that brightens the
+#            's': on Vaccin's fricatives the APL output moves no more than on its other loud frames
+#            (under 1 dB in every band), while the whole output carried ~+1.6 dB above 4 kHz. At +1 dB
+#            8-12 kHz drops ~0.7 dB and 4-8 kHz ~0.3 dB; nothing below 4 kHz moves. The harness's
+#            loops kept +2 dB: it does not read the brighter top as a fault.
 #   - false: Disabled.
 #
 # expander_depth_db / expander_knee_offset_db:
@@ -511,7 +518,7 @@ pause_floor_quiet_percentile: 15.0
 loudnorm_target_lra: 20.0
 crt_notch_q: 30.0
 enable_linear_air: true
-linear_air_gain_db: 2.0
+linear_air_gain_db: 1.0
 preserve_original_audio_track: false
 
 # ------------------------------------------------------------------------------

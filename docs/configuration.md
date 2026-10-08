@@ -291,21 +291,33 @@ overrides them is `D:\Tata\New folder\variants\v2`):
   7 dB for `cathar` on speech, `apl_expander_depth_db` (12.0) for
   `auto_pure_linear` and `cathar_music_expander_depth_db` (4.0) for `cathar`
   on music.
+
 - `enable_pause_floor` (true, from false), `pause_floor_fill_db` (12.0) and
   `pause_floor_quiet_percentile` (15.0): in the frames the source calls
   quiet, an attenuated copy of the source is put back under the restored
   audio so a pause keeps its own texture, the fill 12 dB under the source's
   pause level. All four loops accepted it and none moved the fill.
+
 - `loudnorm_target_lra` (20.0, from 11.0): the mux's loudness-range target;
   above it ffmpeg's loudnorm turns dynamic and rides the gain between words.
   All four loops accepted 20.
+
 - `crt_notch_q` (30.0): the CRT line-whistle notch's Q in the pre-conditioning
   graph; `cathar_music_crt_notch_q` (60.0) on music.
+
 - `apl_enable_sibilant_guard` (true, from false) and `apl_sibilant_mix` (0.8,
   from 0.5): on the fricative frames of the pre-neural audio this share of
   the high band is put back, so the 's' keeps the body the neural stage
   empties. The Tata loop's answer to the listener's "thin s"; Vaccin still
   reads thin at it.
+
+- `linear_air_gain_db` (1.0, from 2.0): `auto_pure_linear`'s presence shelf
+  at 7.5 kHz (`enable_linear_air`). Set by ear on 2026-10-08: at +2 dB the
+  user heard the 's' as thin; in an A/B of +2 dB, +1 dB and off on the four
+  Tata tapes they chose +1 dB. The shelf is what brightens the 's' (the
+  denoiser leaves fricatives within 1 dB of the other speech in every band);
+  the harness's loops kept +2 dB because it does not read the brighter top as
+  a fault.
 
 A tuning result that carries a knob an accepted switch made inert (the
 subtraction's factor, probe and native suppressor once

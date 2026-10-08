@@ -97,3 +97,10 @@ def test_the_new_keys_coerce_and_are_bounded():
     assert conf["expander_depth_db"] == 12.5
     assert conf["expander_knee_offset_db"] == -3.0
     assert conf["crt_notch_q"] == 30.0
+
+
+def test_the_air_shelf_defaults_to_the_by_ear_choice():
+    """+1 dB at 7.5 kHz: the user's pick over +2 dB and off on the Tata tapes (2026-10-08)."""
+    assert cfg.LINEAR_AIR_GAIN_DB == 1.0
+    with patch("modules.filters.ENABLE_LINEAR_AIR", True):
+        assert filters._build_linear_air_filter() == "treble=g=1.0:f=7500"

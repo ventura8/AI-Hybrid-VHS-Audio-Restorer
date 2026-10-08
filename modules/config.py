@@ -220,7 +220,13 @@ _NUMERIC_CONFIG_FIELDS = (
     # switches the stage off (cathar_music_enable_deesser).
     ("cathar_deesser_threshold", float, 12.0, None),
     ("cathar_dereverb_strength", float, 2.0, 0.0),
-    ("linear_air_gain_db", float, 2.0, None),
+    # By ear (2026-10-08): the user heard APL's 's' as thin at +2 dB and picked +1 dB in an A/B
+    # against +2 dB and off on the four Tata tapes. The shelf is the only thing that brightens the
+    # 's': on Vaccin's fricatives the APL output moves no more than on its other loud frames
+    # (under 1 dB in every band), while the whole output carried ~+1.6 dB above 4 kHz. At +1 dB
+    # 8-12 kHz drops ~0.7 dB and 4-8 kHz ~0.3 dB; nothing below 4 kHz moves. The harness's
+    # loops kept +2 dB: it does not read the brighter top as a fault.
+    ("linear_air_gain_db", float, 1.0, None),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
     # The longest track the UVR denoiser is given in one pass; longer ones are cut into
     # equal overlapping chunks no longer than this. The separator needs about 30 GB of
@@ -966,5 +972,5 @@ APL_EXPANDER_DEPTH_DB = float(CONFIG.get("apl_expander_depth_db", 12.0))
 CATHAR_MUSIC_EXPANDER_DEPTH_DB = float(CONFIG.get("cathar_music_expander_depth_db", 4.0))
 CATHAR_MUSIC_CRT_NOTCH_Q = float(CONFIG.get("cathar_music_crt_notch_q", 60.0))
 CATHAR_MUSIC_ENABLE_DEESSER = bool(CONFIG.get("cathar_music_enable_deesser", False))
-LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 2.0))
+LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 1.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))
