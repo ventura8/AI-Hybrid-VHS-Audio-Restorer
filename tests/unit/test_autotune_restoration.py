@@ -140,3 +140,12 @@ def test_turning_a_stage_on_brings_its_knobs_back():
     assert {"apl_spectral_alpha_tonal", "apl_music_bg_floor_db"} <= knobs
     assert "cathar_alpha_high" in at.inert_knobs("cathar", {})
     assert "cathar_alpha_high" not in at.inert_knobs("cathar", {"cathar_split_band_hz": 4000})
+
+
+def test_the_scorer_environment_adds_the_tape_folder_to_the_data_roots(tmp_path, monkeypatch):
+    import os
+
+    corpus = str(tmp_path / "corpus")
+    monkeypatch.setenv("AI_RESTORE_DATA_ROOTS", corpus)
+    env = at._scorer_env(tmp_path / "tapes" / "tape.mov")
+    assert env["AI_RESTORE_DATA_ROOTS"].split(os.pathsep) == [corpus, str((tmp_path / "tapes").resolve())]
