@@ -22,6 +22,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.config import OUTPUT_SUFFIX_BY_MODE  # noqa: E402
+from scripts.cli_paths import confined_path  # noqa: E402
 from scripts.restoration_quality import gates as gates_mod  # noqa: E402
 from scripts.restoration_quality import listening, report, runner  # noqa: E402
 
@@ -52,6 +53,25 @@ def _parse_args(argv=None):
         help="an earlier --report JSON: the families scored now replace theirs in it (the rest is kept), verdicts re-read",
     )
     return parser.parse_args(argv)
+
+
+# The path arguments, each checked where it is used (scripts/cli_paths.py): inside the
+# repository, the temp directory or a root in AI_RESTORE_DATA_ROOTS; inputs must exist.
+_INPUT_PATHS = ("source", "outputs_dir", "gates", "merge_into")
+_OUTPUT_PATHS = ("report", "markdown", "listen_dir", "cache_dir")
+
+
+def _confined(args):
+    """`args` with every path argument confined; the LABEL=PATH outputs are confined and must exist."""
+    for name in _INPUT_PATHS + _OUTPUT_PATHS:
+        value = getattr(args, name)
+        if value is not None:
+            setattr(args, name, confined_path(value, f"--{name.replace('_', '-')}", must_exist=name in _INPUT_PATHS))
+    args.outputs = [
+        f"{label}={confined_path(path, f'output {label}', must_exist=True)}"
+        for label, _eq, path in (item.partition("=") for item in args.outputs)
+    ]
+    return args
 
 
 def _merged(result, args, gates):
@@ -93,7 +113,7 @@ def _families(spec):
 
 
 def main(argv=None):
-    args = _parse_args(argv)
+    args = _confined(_parse_args(argv))
     gates = gates_mod.load_gates(args.gates) if args.gates else gates_mod.GATES
     registry = runner.ModelRegistry(device=args.device)
     result, cards = runner.score_variants(

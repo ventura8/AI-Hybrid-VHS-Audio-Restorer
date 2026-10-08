@@ -397,10 +397,16 @@ def _scorer_arguments(slug, tape, cids, out_dir, families, gates, language):
     return args
 
 
+def _scorer_env(tape):
+    """The scorer's environment: the tape's folder joins AI_RESTORE_DATA_ROOTS, since the scorer confines its paths."""
+    roots = [entry for entry in os.environ.get("AI_RESTORE_DATA_ROOTS", "").split(os.pathsep) if entry]
+    return {**os.environ, "PYTHONIOENCODING": "utf-8", "AI_RESTORE_DATA_ROOTS": os.pathsep.join([*roots, str(Path(tape).resolve().parent)])}
+
+
 def _launch_scorer(slug, tape, cids, out_dir, families, gates, language):
     args = _scorer_arguments(slug, tape, cids, out_dir, families, gates, language)
     log = open(out_dir / "rounds" / f"score_{slug}.log", "a", encoding="utf-8")
-    proc = subprocess.Popen(args, cwd=str(REPO), stdout=log, stderr=subprocess.STDOUT, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    proc = subprocess.Popen(args, cwd=str(REPO), stdout=log, stderr=subprocess.STDOUT, env=_scorer_env(tape))
     return log, proc
 
 

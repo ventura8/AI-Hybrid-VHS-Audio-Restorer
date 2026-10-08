@@ -35,6 +35,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run_pipeline_locally.ps1
 - Every measured source file remains >= 90% coverage.
 - assets/coverage.svg is updated.
 
+## Paths Outside the Repository
+
+The scripts under `scripts/` check every path they take on the command line
+where they use it: a path must lie inside the repository, the temp directory,
+or a root listed in `AI_RESTORE_DATA_ROOTS` (separated by the platform's path
+separator), and a value shaped like an option is refused. To measure or tune
+on captures elsewhere, list their folder first:
+
+```powershell
+Set-Item Env:AI_RESTORE_DATA_ROOTS "D:\Tata"
+```
+
+```bash
+export AI_RESTORE_DATA_ROOTS=/media/tapes
+```
+
+The restorer itself does not read this variable. The tuning loop
+(`scripts/autotune_restoration.py`) adds each tape's folder to it for the
+scorer it launches, so a loop over tapes on another drive needs nothing set.
+
 ## Fast Spot Checks
 
 ```powershell
