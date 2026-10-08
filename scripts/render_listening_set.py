@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
+from scripts.cli_paths import checked_token, confined_path, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
 
 
@@ -23,7 +24,18 @@ def _extract(video, target):
     """Pulls the audio out of a container as 16-bit PCM for easy playback; None when ffmpeg fails or times out."""
     try:
         completed = subprocess.run(
-            [FFMPEG_BIN, "-y", "-i", str(video), "-vn", "-acodec", "pcm_s16le", "-ar", "44100", str(target)],
+            [
+                FFMPEG_BIN,
+                "-y",
+                "-i",
+                str(confined_path(video, "input video", must_exist=True)),
+                "-vn",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "44100",
+                str(confined_path(target, "listening WAV")),
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -42,10 +54,12 @@ def _extract(video, target):
 def main():
     """Renders one clip per acoustic situation for each requested mode."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("experiments/listen"))
+    parser.add_argument("--out", type=path_arg, default=Path("experiments/listen"))
     parser.add_argument("--tag", required=True, help="Label distinguishing this configuration")
     parser.add_argument("--skip-reference", action="store_true", help="Skip source and cathar renders")
     args = parser.parse_args()
+    args.out = confined_path(args.out, "--out")
+    args.tag = checked_token(args.tag, "--tag")
 
     picks = json.loads(Path("experiments/listen_picks.json").read_text(encoding="utf-8"))
     corpus = Path("experiments/ia_corpus_1000")

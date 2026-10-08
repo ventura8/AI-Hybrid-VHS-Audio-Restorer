@@ -28,12 +28,15 @@ def _not_an_option(value):
     return text
 
 
-def _existing_dir(value):
-    """An argparse type: an existing directory, resolved."""
-    resolved = Path(_not_an_option(value)).resolve()
-    if not resolved.is_dir():
-        raise argparse.ArgumentTypeError(f"not an existing directory: {resolved}")
-    return resolved
+def _install_dir(value):
+    """An argparse type: the install directory, resolved; it may not exist yet.
+
+    The Windows smoke step removes the install directory first and the installer creates
+    it during the test, so existence is checked where config.yaml is read
+    (`_confined_config` / `_configure_native_mode`), not at parse time (the v1.3.7 release
+    build failed here).
+    """
+    return Path(_not_an_option(value)).resolve()
 
 
 def _launcher_command(launcher):
@@ -199,7 +202,7 @@ def _configure_native_mode(config_dir):
 def main():
     parser = argparse.ArgumentParser(description="End-to-end executable test suite")
     parser.add_argument("launcher", type=_not_an_option, help="Path to executable or launcher command")
-    parser.add_argument("--config-dir", type=_existing_dir, help="Directory where config.yaml is located", default=None)
+    parser.add_argument("--config-dir", type=_install_dir, help="Directory where config.yaml is located", default=None)
     args = parser.parse_args()
 
     launcher_cmd = _launcher_command(args.launcher)
