@@ -650,7 +650,8 @@ and a reading is admitted by a monotonic response on the calibration
 degradations and a benign floor, with the user's verdicts as falsifiers.
 Every threshold and target is uncalibrated until Round 0 re-scores the
 stored listening files, derives them on Tele7abc and tests them on SOTI and
-Vaccin.
+Vaccin. Round 0 ran on 2026-10-09; its report, whose proposals are not
+adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
 
 #### The new readings
 
@@ -718,11 +719,11 @@ Vaccin.
   frame at or under p40 inside a non-speech run of at least 200 ms (a
   four-band DSP VAD averaged over 60 ms; `AI_RESTORE_PAUSE_VAD=silero` asks
   for silero-vad once it is installed). Hum leaves both sides first. On the
-  one Tele7abc pair where only the cathar binary differs, 0.7.6 (heard:
-  hiss) reads an HF excess of +3.11 dB and 0.7.5 (clean) +0.49; their
-  attenuation, 42.3 against 42.8 dB, does not separate them. No threshold
-  is set yet, and `listener.hiss` is display-only until Round 0 derives
-  R4's flags.
+  one Tele7abc pair where only the cathar binary differs, 0.7.3 (heard:
+  hiss; the ledger's 0.7.6 is an erratum) reads an HF excess of +3.11 dB
+  and 0.7.5 (clean) +0.49; their attenuation, 42.3 against 42.8 dB, does not
+  separate them. No threshold is set yet, and `listener.hiss` stays
+  display-only; Round 0 proposed R4's flags without adopting them.
 - **Gain riding (R7)**, `file_metrics.py`: `file.gain_ride_lu`, the p95 of
   the short-term loudness difference left once the static gain is removed,
   over windows standing 10 LU over the source's floor. The accepted v2

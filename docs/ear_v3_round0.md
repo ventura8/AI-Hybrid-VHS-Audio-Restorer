@@ -1,0 +1,181 @@
+# Ear v3 Round 0
+
+Round 0 (plan 1.6) re-scored every file the verdict ledger judged with the
+ear v3 readings on 2026-10-09. **Nothing here is adopted**: no gate, flag,
+grid entry or reversal changed. T, S, V and G are Tele7abc, SOTI, Vaccin and
+Gaudeamus5; A, B and C are round three's air shelf at +2 dB, +1 dB
+(shipped) and off.
+
+## What was scored and how
+
+`experiments/tata_listen/score_round0.py` (new; untracked, `experiments/` is
+gitignored) scores the ledger's files per set and tape with
+`scripts/validate_restoration.py` (dsp family, the v2 `gates.json`) into
+`experiments/tata_listen/scores_v3/<set>/<tape>.json`: `r1_known`, the
+known-ordering excerpts (13 outputs); `r1_listen`, the round-one full-tape
+variants (17); `r2`, the v2 plateaus on four speech tapes and 12 music
+clips; `r3`, `variants/v4_air` on T, S, V, G. `check_verdicts.py --scores`
+on each set, under the v2 flags, reproduces every checked verdict on
+`r1_known` (3 records), `r1_listen` (3) and `r3` (4, trivially: a
+preference check counts hard gates). On `r2` 9 checks fail (exit 1): v2
+`sibilance_thin` misses "APL's 's' still thin" on `final2_apl` of T, S and
+G, and v2 `dead_air`, `dull`, `attack` and `sibilance_thin` fire on six
+music outputs the user called fine.
+
+## Must-reproduce (plan 1.6)
+
+- **+2 dB air bright, +1 dB clean**: **no** on the shipped `listener.bright`
+  (R1 `balance_top_db` over +1.0; A reads -0.064 / +0.002 / +0.005 / -0.089
+  on T/S/V/G); **yes** on the paired `hf_8k16k` (delta minus B over +0.345)
+  as a shelf check: A-B +0.689 (T, derived) / +0.703 / +0.671 / +0.650, C-B
+  -0.695 / -0.690 / -0.668 / -0.698, so B over A and C holds.
+- **+2 dB thin_abs**: **partly** (R2 `sib_abs_level_db` minus B over
+  0.1398). T +0.280 (derived); V +0.307 fires by 0.167 on 5 windows; S
+  misses on the medians (+0.134, by 0.006), fires window-paired (+0.1405, by
+  0.0007); G is unread (0 of 40 windows).
+- **de-esser bug dull** (`balance_presence_db` at -1.5 or under): **yes**,
+  -4.67 / -9.71 / -6.35 (T/S/V), margins 3.17 / 8.21 / 4.85.
+- **single4s "underwater" on T only**: **yes on the speech-route statistic,
+  thin margin**: presence T -2.039 against V -1.810 (V all-route -2.108),
+  `balance_top_db` -2.039 / -1.860. An edge near -1.92 separates them by
+  0.115 / 0.114, keeps T known `cathar075` (-1.06) and S single4s (+0.34)
+  clean and fires on every de-esser bug; it rests on one record. At -1.5, V
+  single4s (ranked first) fires. R2 texture: +3.49 / +0.37 (V, 5 windows).
+- **alpha 2 hissy on 0.7.3, clean on 0.7.5** (T, R4 `gap_hf_excess_db`):
+  **yes, T only**: +3.11 / +0.49, window-paired +2.29 on 13 of 13 windows;
+  attenuation (42.31 / 42.84 dB) does not separate them.
+- **The hiss rule off T** (HF excess over +1.80 where `gap_atten_db` is at
+  least 32, speech route): **inconclusive**. S alpha 2 (+7.51, 16 of 18
+  gated windows) is preferred only by assumption: "alpha 2 sounds better"
+  names no binary (`context.assumed`) and may mean `cathar075__alpha_2_0`,
+  which has no R4 in any report. S known `cathar075` (+3.05) is a weak
+  clean, S `cathar__baseline` (+1.73) clean by 0.07, V clean. It misses T
+  single4s "light hiss" (-0.27).
+- **Round-one APL "silent in pauses"** (speech-route `pause_depth_db` delta
+  at least 35.0): **yes**: `apl__baseline` +37.22, roformer +40.31; T
+  cathar 29.01-32.98, S and V cathar 27.28-32.38, r2 and r3 3.48-13.80.
+- **v3 sibilance final equals v2**: **yes**, audible share 0..0.0015.
+  **"Distortion of spoken 's'"** (`sib_texture_db` at least 1.75): **yes,
+  T only**: flagged APL +2.18..+2.26, cleared cathar +0.83..+1.34.
+- **r2 "pauses natural", "'s' still thin", "music fine"** under the v2
+  flags: **no** (below). **r3 leaves the pauses alone**: **yes** (0.07 dB).
+
+## Proposed v3 flags
+
+Anchor: the same tape at the accepted setting through the same neural stage
+(today r3's B). One unblinded listener; r2's "thin" file is r3's A. Two are
+live candidates, five display-only until Session 0 or a second tape agrees.
+
+- `bright`, candidate, **2 verdict groups** (`r2-pauses-and-s`,
+  `r3-air-preference`): `hf_8k16k` delta minus the anchor's over +0.345
+  (half T's A-B); abstains without an anchor or when `gap_hf_excess_db`
+  moved over 1.0 dB; needs a paired gate. A fires on S / V / G by 0.358 /
+  0.326 / 0.305 (on G, A over B in 38 of 38 windows, two inside the dead
+  zone): a check of the shelf filter, not the percept or the edge.
+  `final2_cathar` abstains on all four (guard deltas 1.57 / 2.79 / 1.75 /
+  6.67 dB), so no second engine was scored; the guard was fitted on
+  held-out G (on T any value from 0.03 to 1.57 acts alike).
+- `dead_air`, candidate, **1 record**, replacing v2 `dead_air` and
+  `pause_collapse`: speech-route `pause_depth_db` delta at least 35.0,
+  midway between T `cathar__baseline` (32.98) and `apl__no_expander`
+  (36.89), whose flag the ledger inferred; on the files the user named the
+  gap is 32.98-37.22 (midpoint 35.10). In it: T single4s 33.42, S single4s
+  33.09 (ranked first, clean by 1.91), S `deesser_bug` 35.63 (fires, 0.63).
+- `thin_abs`, display, **2 verdict groups**, 3 tapes: `sib_abs_level_db`
+  delta minus the anchor's over +0.14, abstaining under 5 windows, where its
+  one held-out fire (V) sits. Pooled absolute fails (S A +0.273 under V B
+  +0.319); scaling per tape by (A-C)/2 pools by construction.
+- `dull`, display, **3 records, edge on 1**: `balance_presence_db` at -1.5
+  or under, midway between T `cathar075` (-1.06) and T single4s (-2.04). It
+  fires on V single4s; smallest unflagged margins 0.27 (V `apl__baseline`)
+  and 0.44 (T `cathar075`). Music: 20 of 24 outputs read -0.61..+0.41, 4 none.
+- `pause_gated`, display, **1 record**: `gap_atten_db` at least 54 (R4
+  floors at 60), shape readings None there. Untested off T; `r1_known`, r2
+  and r3 read 3.32-42.88 (43.11 speech-route).
+- `pause_hiss`, display, **1 record**: the hiss rule, speech route only (on
+  speech plus mixed, accepted music `x_vid-20230606` `final2_apl` fires on a
+  33.02 dB window); the deepest r2 speech-tape window is 29.51 dB, r3's 29.74.
+- `s_texture`, display, **1 record**: `sib_texture_db` at least 1.75; also
+  fires on T known `apl` (+2.257, ranked first), three APL renders with no
+  's' verdict (+2.12..+2.26) and T single4s (+3.49).
+
+## Grid target notes (`tata_v3.yaml`)
+
+These reverse a verdict or charge accepted files; do not adopt them:
+
+- `gap_atten_db` 14.5 / 11.3: dead APL (34.95-38.45) costs 9.2-12.7, the
+  cleared cathar (42.31-42.84) 16.5-17.0: it reverses the round-one
+  dead-air verdict, as today's 8.7 / 5.4 does (20.9-24.4 against 28.2-28.7).
+- `balance_air_db` +0.17 / 0.25 (one Vaccin file): V's preferred alpha 2
+  (-0.875) is out by 0.795, the less preferred `apl__baseline` (+0.963) by
+  0.543, reversing the round-one Vaccin preference.
+- `pause_depth_db` +5.0 / 9.0: T's renders cleared of dead air cost
+  15.0-19.0, preferred alpha 2 13.3 / 16.2 (S / V), the dead APL 22.9-26.3.
+- `gap_hf_excess_db` gated 0.49 / 1.31: its low side charges T and V known
+  `cathar075` (-2.355 / -5.165) and S `apl__baseline` (-6.09).
+- `gain_ride_lu` 2.1 leaves out V known single4s (ranked first, 2.257): it
+  needs at least 2.26. Presence 1.1, tilt 1.15 and body 1.4 admit accepted
+  files by 0.04, 0.028 and 0.007; V known single4s sits out of all three.
+- `sib_abs_level_db` +0.25 / 0.14 ties S's A with B; drop `sib_centroid_hz`
+  (ranks C over B on V). `rejected_below: 0.0` for `linear_air_gain_db`
+  rests on one unblinded verdict group: Session 0's B-against-C pair first.
+
+## v2 flags to retire or restrict
+
+- Retire `listener.hiss` (still `flag` in
+  `experiments/quality_calibration/gates.json`; all 8 accepted r2 speech
+  finals fire), `dead_air` (misses the roformer, fires on 4 accepted music
+  outputs), `sibilance_thin`, `sibilance_dull` and the shipped `bright`.
+- Restrict `pause_collapse` to speech-route windows inside the new
+  `dead_air` (mixed windows read V's alpha 2 +38.68, speech-route +30.18),
+  `dull` to presence, `attack` to speech: every music false fire came from
+  a 15 s window `route_window` called mixed.
+- Hard gates against verdicts: `dsp.hf_8k16k` under -12 fails G's preferred
+  B (-18.195; abstain under an 8 kHz band); `dsp.output_silent` fails G
+  `final2_cathar` and two music outputs.
+
+## R1 cannot see the shelf on linear-track tapes
+
+R1 is clipped to R0's programme band, and air needs a 5292 Hz band: T, S and
+G end at 4490 / 5040 / 5040 Hz, so between +2 / +1 / off presence moves
+0.03-0.05 dB and the tilt 0.02-0.10 dB/oct. The paired `hf_8k16k` detector
+and R2 `sib_abs_level_db` (clipped to the brickwall) carry the shelf.
+
+## Provenance erratum: the hiss pair is 0.7.3 against 0.7.5
+
+The round-one "has hiss" file `tele7abc__cathar__alpha_2_0.mov` was
+rendered 2026-09-20 19:11 with the venv's cathar 0.7.3, the validated
+binary then (`install_dependencies.ps1` pinned 0.7.3 until b54c217,
+2026-09-26). 0.7.6 arrived later that evening and is bit-identical to 0.7.5
+on the app's stages. The append-only ledger (`r1-tele7abc-listen-*`
+`context.note`) says 0.7.6 and stays as written: read it as 0.7.3.
+
+## The learned vetoes' floors are too tight
+
+`experiments/reward/noise_floor.json` (`python -m scripts.reward_noise_floor`
+on v4_air B and v2 `final2_cathar` of T/S/V/G, four families, two repeats,
+125 s) gives every v3 veto a floor. At 3x the floor the limits are CER
+0.0025, speaker cosine 2.9e-5, MERT 2.3e-4, UTMOS 0.0027, SCOREQ 0.0033 and
+SIGMOS 0.20-0.25: near-copies barely move Whisper or the embeddings, a real
+restoration change moves them more, so the vetoes would refuse moves on
+jitter. Proposed, not done: before the first v3 loop round, measure them on
+pairs the audibility check calls inaudible (v3 sibilance final against v2).
+
+## What Session 0 asks
+
+Blind, `python -m scripts.listen_ab` on 127.0.0.1, blocks of 16-20 trials,
+every new render through `scripts/audibility_check.py` first:
+
+1. Hiss, T: ABX 20 of `tele7abc__cathar__alpha_2_0.mov` (0.7.3) against
+   `tele7abc__cathar075__alpha_2_0.mov` (0.7.5) at 105 s, on the pauses (15
+   of 20 is p 0.021), then a pair with "same". Not heard: drop `pause_hiss`.
+1. Air, S: ABX 20 of `v4_air/soti__B_air_1dB.wav` against
+   `soti__A_as_heard.wav` at 165 s or 270 s (window-paired A-B +0.188 /
+   +0.187), then B against C with "same". Not heard: `MASKING_OFFSET_DB`
+   moves. Not G: its A and B differ beyond the shelf (NMR 22.9 dB).
+1. Pause depth, T: blend 20 of B against B rendered with
+   `enable_pause_floor: false`, if its speech-route depth reaches about
+   37 dB, to place `dead_air`'s edge in 32.98-37.22.
+1. If time remains: T and V `known/*_single4s.wav` against `*_stitched.wav`
+   (muffled or watery?); S pauses at 180 s, 0.7.3 against 0.7.5 alpha 2 and
+   baseline (settles SOTI); G baseline against 0.7.5 alpha 2: dead pauses?

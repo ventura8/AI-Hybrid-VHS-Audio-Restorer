@@ -19,7 +19,7 @@ a mono float signal and returns a float32 array of the same length.
   within 40 ms of it, then ramps to 1 over 10 ms. The residual is the source at -12 dB
   (`RESIDUAL_ATTEN_DB`), then: as is (`scaled_residual`, the comfort-noise hypothesis, which
   R4 must read as attenuation with an unchanged shape); tilted up above 2 kHz
-  (`hiss_residual`, what the user called hiss on cathar alpha 2 / 0.7.6: highs left over a
+  (`hiss_residual`, what the user called hiss on cathar alpha 2 / 0.7.3: highs left over a
   floor that lost its lows); low-passed (`dull_residual`, the APL "dead air" side); or broken
   into islands (`island_residual`: a 256-point STFT keeping a random share of its cells,
   each kept cell carrying the dropped cells' power, the spectral-subtraction texture without

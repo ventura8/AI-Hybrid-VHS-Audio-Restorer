@@ -43,11 +43,12 @@ skill holds the readings, their status and the measured facts behind them.
    `listener.hiss` today) is listed as not asserted and checked neither flagged
    nor clean, so a stored report that still carries it passes; a flag record
    that judges labels on display-only gates alone is counted on its own ("on
-   display-only gates alone"). On 2026-10-09 the run checks 3 records, leaves 4
-   not asserted (longer rankings, trials, empty flag records), 0 on display-only
-   gates alone and 26 waiting, and lists 6 `listener.hiss` flags as not asserted
-   (the Tele7abc known set and listening flags, the four round-two pause
-   records).
+   display-only gates alone"). With the default `scores/` the run on 2026-10-09
+   checks 3 records and leaves 26 waiting. Round 0 scored every judged file
+   (`experiments/tata_listen/score_round0.py`, one folder per round under
+   `scores_v3/`): pass `--scores experiments/tata_listen/scores_v3/<set>`.
+   r1_known, r1_listen and r3 reproduce every checked verdict; r2 fails 9 on the
+   v2 flags (see `docs/ear_v3_round0.md`).
 
 ## Step 2: Let the loop refine
 

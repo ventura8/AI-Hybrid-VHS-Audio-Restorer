@@ -221,8 +221,9 @@ Principles (plan Part 1), each closing one of those failures:
 
 Every threshold and target below is **uncalibrated** until Round 0
 (re-scoring the stored listening files) derives it on Tele7abc and tests it
-on SOTI and Vaccin. The readings pass their synthetic tests; their module
-docstrings hold the full measurements.
+on SOTI and Vaccin. Round 0 ran on 2026-10-09 and only proposed values (see
+"Round 0 (2026-10-09)"); none is adopted yet. The readings pass their
+synthetic tests; their module docstrings hold the full measurements.
 
 - **R0, the capture profile** (`source_profile.py`, `meta.*`, source side,
   displayed). Programme bandwidth (the highest 1/6-octave band where the
@@ -351,12 +352,13 @@ docstrings hold the full measurements.
   ran. Tones (hum) leave both sides first, and the output is held no lower
   than 60 dB under the source per cell. Speech and mixed windows only,
   clipped to R0's brickwall. On the must-separate pair (Tele7abc, cathar
-  alpha 2, only the binary differs) the HF excess reads +3.11 dB on 0.7.6
-  (heard: hiss) against +0.49 on 0.7.5 (clean); clipped to the programme
-  band both read -0.32. Attenuation (42.3 against 42.8 dB), modulation
-  distance and island kurtosis do not separate them. APL baseline (dead
-  air) reads -13.7 dB HF excess. No threshold is set: `listener.hiss` is
-  display-only until Round 0 derives R4's flags from the ledger. A gates
+  alpha 2, only the binary differs) the HF excess reads +3.11 dB on 0.7.3
+  (heard: hiss; the ledger's 0.7.6 is an erratum, see "Round 0") against
+  +0.49 on 0.7.5 (clean); clipped to the programme band both read -0.32.
+  Attenuation (42.3 against 42.8 dB), modulation distance and island
+  kurtosis do not separate them. APL baseline (dead air) reads -13.7 dB HF
+  excess. No threshold is set: `listener.hiss` is display-only, and Round 0's
+  R4 flags are proposals. A gates
   file sets its threshold but not its severity (`gates.DISPLAY_ONLY`): the
   v2 `gates.json` (the drivers' default `--gates`, and what
   `score_listen.py` passes) still lists it as a flag, and merged as it stood
@@ -480,7 +482,8 @@ verdict holds, 1 when one breaks, and 2 when nothing was checked. On 2026-10-09
 it checked 3 records, did not assert 4, found none on display-only gates alone,
 and 26 wait for the Round 0 re-score; it lists 6 `listener.hiss` flags as not
 asserted (the Tele7abc known set and listening flags, the four round-two pause
-records).
+records). That is the default `--scores` (`experiments/tata_listen/scores`);
+the Round 0 reports are checked per set (see "Round 0 (2026-10-09)").
 
 ```text
 python -m scripts.listen_ab {abx|pair|blend} --tape SLUG --stim LABEL=PATH ...
@@ -626,6 +629,64 @@ none of them. The calibration writes under its `--out`, while the drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`:
 a v3 round passes `--gates experiments/quality_calibration_v3/gates.json`.
 
+### Round 0 (2026-10-09)
+
+```text
+python experiments/tata_listen/score_round0.py [--sets r1_known,r1_listen,r2,r3]
+    [--metrics dsp] [--dry-run]
+```
+
+The driver (untracked: `experiments/` is gitignored) groups the ledger's
+records by source and runs `scripts/validate_restoration.py` once per set
+and tape (dsp family, `--language ro`, the v2 `gates.json`, the pair cache
+`score_listen.py` uses) into `experiments/tata_listen/scores_v3/<set>/`.
+`check_verdicts.py --scores experiments/tata_listen/scores_v3/<set>` then
+checks each round on the files it judged: `r1_known` (3 records),
+`r1_listen` (3) and `r3` (4, trivially: preference checks count hard gates)
+hold; `r2` fails 9 checks (exit 1), the v2 `sibilance_thin` missing "APL's
+'s' still thin" on Tele7abc, SOTI and Gaudeamus5 and the v2 `dead_air`,
+`dull`, `attack` and `sibilance_thin` firing on six accepted music outputs.
+The report, with every number, is `docs/ear_v3_round0.md`. Nothing is
+adopted into the gates or grids yet. The facts that will decide defaults:
+
+- R1, clipped to the programme band, cannot see the 7.5 kHz shelf on
+  linear-track tapes: between +2 / +1 dB / off presence moves 0.03-0.05 dB
+  and the tilt 0.02-0.10 dB/oct, so the shipped `listener.bright` reads +2 dB
+  at +0.005 at most. `hf_8k16k` minus the same tape's +1 dB render (+0.65 to
+  +0.70 on all four tapes) and R2 `sib_abs_level_db` carry the shelf. The
+  paired form checks the shelf, not the percept: an accepted
+  `final2_cathar` abstains under its 1 dB `gap_hf_excess_db` guard on every
+  tape.
+- R4 `gap_hf_excess_db` separates the hiss pair on Tele7abc only (+3.11 on
+  0.7.3, +0.49 on 0.7.5). Off Tele7abc it is inconclusive: SOTI's and
+  Vaccin's "alpha 2 sounds better" names no binary (`context.assumed`).
+- Speech-route `pause_depth_db` delta at 35.0 reproduces "silent in
+  pauses". Between the files the user named the gap is 32.98-37.22, and
+  three judged known excerpts fall inside 32.98-36.89.
+- `gap_atten_db` reverses the dead-air verdict: the dead APL renders
+  (34.95-38.45 dB) attenuate less than the cleared cathar (42.31-42.84), so
+  today's 8.7 / 5.4 already charges the round-one winner more.
+  `balance_air_db` at +0.17 reverses the round-one Vaccin preference, and
+  `gain_ride_lu` needs a dead zone of at least 2.26 LU.
+- Every music false fire came from a 15 s window `route_window` called
+  mixed: pause and timbre flags count on speech windows only.
+- The air verdicts are 2 verdict groups of one unblinded listener (round
+  two's "thin" file is round three's A); every other proposed flag rests on
+  one record. `thin_abs`, `dull`, `pause_gated`, `pause_hiss` and
+  `s_texture` stay display-only until Session 0 or a second tape agrees.
+- The noise-floor report of 2026-10-09 (8 pairs, four families, two
+  repeats) lets both v3 grids' vetoes parse, but at 3x the floor the learned
+  limits (CER 0.0025, speaker cosine 2.9e-5, UTMOS 0.0027, SCOREQ 0.0033,
+  SIGMOS 0.20-0.25, MERT 2.3e-4) would veto on jitter: measure them on pairs
+  the audibility check calls inaudible before the first v3 loop round.
+- Erratum: the round-one hissy `tele7abc__cathar__alpha_2_0.mov` was
+  rendered 2026-09-20 19:11 on cathar 0.7.3 (the installer pinned 0.7.3
+  until b54c217, 2026-09-26); 0.7.6 came later that evening and is
+  bit-identical to 0.7.5 on the app's stages. The ledger's
+  `r1-tele7abc-listen-*` records say 0.7.6: read 0.7.3, leave the
+  append-only ledger as written, and name Session 0's ABX 0.7.3 against
+  0.7.5.
+
 ### Not built yet
 
 - In the loop (plan 1.5): two-stage scoring (the learned families on the
@@ -634,13 +695,12 @@ a v3 round passes `--gates experiments/quality_calibration_v3/gates.json`.
 - The stage cache (`AI_RESTORE_STAGE_CACHE`), R3's harness coverage
   reading, `scripts/replay_post_neural.py`, the fidelity ladder,
   `known_ordering_v3.json`, and a gate on `file.gain_ride_lu`.
-- Before any v3 tuning round: Round 0 (re-score the stored files and
-  reproduce the plan's table), then Session 0 with the user (ABX of +1
-  against +2 dB air, ABX of alpha 2 on 0.7.6 against 0.7.5 on pauses, and
-  the pause-attenuation sweep from the shipped `pause_floor_fill_db`); the
-  calibration with a Vaccin excerpt (the R1 air assertion); and the
-  noise-floor report the v3 grids' vetoes are measured in (see "The
-  self-driving loop").
+- Before any v3 tuning round (Round 0 is done): Session 0 with the user (ABX
+  of +1 against +2 dB air, ABX of alpha 2 on 0.7.3 against 0.7.5 on pauses,
+  and the pause-depth continuum against the shipped pause floor); the
+  calibration with a Vaccin excerpt (the R1 air assertion); and learned
+  veto floors measured on inaudible pairs, since the noise-floor report
+  the v3 grids' vetoes read gives limits too tight (see "Round 0").
 
 ### The user's decisions (2026-10-08)
 
@@ -681,7 +741,8 @@ entries still work.
 Full-tape listening sets go to `D:\Tata\New folder\variants\<tape>__<variant>`
 through `experiments/tata_listen/run_listen_variants*.py` (the app writes
 beside its input, so outputs are moved away between variants) and are scored
-with `score_listen.py <slug>`.
+with `score_listen.py <slug>`. `score_round0.py` re-scores every file the
+ledger judged, one report per set and tape (see "Round 0 (2026-10-09)").
 
 ## The self-driving loop
 

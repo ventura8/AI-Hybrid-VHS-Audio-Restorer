@@ -16,7 +16,7 @@
 #   Tele7abc / SOTI / Vaccin;
 # - "v4_air": APL with the 7.5 kHz air shelf at +2 / +1 dB / off (round 3, 2026-10-08: +1 over
 #   +2 and off; +2 is what round 2 heard thin);
-# - "round 1": the Tele7abc listening cache (2026-09-20): cathar alpha 2 on 0.7.6 "has hiss",
+# - "round 1": the Tele7abc listening cache (2026-09-20): cathar alpha 2 on 0.7.3 "has hiss",
 #   the same on 0.7.5 clean and ranked first, APL baseline "silent in pauses" (dead air) and
 #   "distortion of spoken 's'".
 # `scale` is the reading's benign floor where one was measured (what hiss removal or a fresh

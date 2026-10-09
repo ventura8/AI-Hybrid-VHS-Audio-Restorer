@@ -66,7 +66,7 @@ Ear v3 wiring (the dsp family):
       and heard +2 thin, round 2): R2 abs level with the brickwall reads +0.53 / +0.25 /
       -0.04 (Tele7abc), +0.27 / +0.14 / -0.01 (SOTI), +0.63 / +0.32 / +0.03 (Vaccin, 5 of
       61 windows); clipped to the band +0.13 / +0.06 / -0.02 on Tele7abc: a quarter of it;
-    * the round-one Tele7abc cache: R4's HF excess reads cathar alpha 2 on 0.7.6 (heard:
+    * the round-one Tele7abc cache: R4's HF excess reads cathar alpha 2 on 0.7.3 (heard:
       hiss) +3.11 dB and on 0.7.5 (clean) +0.49 with the brickwall, -0.32 for both clipped
       to the band; R2's texture reads APL baseline / no_air / roformer ("distortion of
       spoken 's'") +2.18..+2.26 and the cathar renders +0.83..+1.34 with the brickwall,

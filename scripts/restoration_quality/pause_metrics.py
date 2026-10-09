@@ -114,13 +114,13 @@ reads slope +2.4 and HF excess +9.8, a 1 kHz low pass -11.3 and -47.7; a 1.8-2.2
 stop spread 7.4 and LSD 7.5 with slope -0.1; islands (5% of 256-point STFT cells kept) read
 modulation 12.5 and island kurtosis 1.00; bursts decaying into the pauses (80 ms) read
 11.7 dB attenuation with the VAD and 8.1 without it. On the Tele7abc cut (13 of 17 windows
-read, 0.8 s of mask each, medians): cathar alpha 2 on 0.7.6 (heard: hiss) HF excess
+read, 0.8 s of mask each, medians): cathar alpha 2 on 0.7.3 (heard: hiss) HF excess
 +3.1 dB, slope +1.9 dB/oct, island kurtosis 1.75; the same setting on 0.7.5 (clean, only
 the binary differs) +0.5, +1.1, 1.73; cathar baseline (clean) 0.0, +0.2, 0.96; APL
 baseline (dead air) -13.7, -4.4, 0.18; the roformer variant (pauses gated, dead) empties
 them to digital silence (the 60 dB floor). The attenuation does not order hiss and clean
 (42.3 against 42.8 dB), nor do the modulation (9.5 against 9.9) and the island kurtosis:
-both alpha 2 renders carry islands, and what the 0.7.6 one adds is highs. Before the tones
+both alpha 2 renders carry islands, and what the 0.7.3 one adds is highs. Before the tones
 left, APL baseline read -8.5 and -1.2 (hum in the 200-1000 Hz reference). No threshold is
 set: Round 0 decides which reading separates the verdicts and tests it on SOTI and Vaccin.
 """
