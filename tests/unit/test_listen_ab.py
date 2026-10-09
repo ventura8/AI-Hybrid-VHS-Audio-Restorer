@@ -202,3 +202,9 @@ def test_body_length_and_media_type_are_read_defensively():
     assert listen_ab.body_length({"Content-Length": "999999"}) == listen_ab.MAX_BODY
     assert listen_ab.media_type({"Content-Type": "Application/JSON ; charset=utf-8"}) == "application/json"
     assert listen_ab.media_type({}) == ""
+
+
+def test_local_url_builds_the_loopback_address_and_origin():
+    """The printed page address ends in a slash; an Origin is scheme and host only."""
+    assert listen_ab.local_url(HOST, "/") == "http://127.0.0.1:8765/"
+    assert listen_ab.local_url(f"localhost:{PORT}") == "http://localhost:8765"

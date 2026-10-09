@@ -42,6 +42,7 @@ import json
 import re
 import secrets
 import threading
+import urllib.parse
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -55,6 +56,8 @@ from scripts.restoration_quality import listen_cuts as cuts_mod
 from scripts.restoration_quality.listen_modes import AbxMode, BlendMode, PairMode
 
 HOST = "127.0.0.1"
+# The family tapes never leave the machine: the page is served on the loopback address only, so it needs no TLS.
+LOCAL_SCHEME = "http"
 DEFAULT_PORT = 8765
 CUT_SECONDS = (8.0, 12.0)
 DEFAULT_SECONDS = 10.0
@@ -167,7 +170,7 @@ class Session:
 
     def _own_json(self, headers):
         origin = headers.get("Origin")
-        return media_type(headers) == JSON_TYPE and (origin is None or origin in {f"http://{host}" for host in self.hosts})
+        return media_type(headers) == JSON_TYPE and (origin is None or origin in {local_url(host) for host in self.hosts})
 
     def page(self, _body):
         """The listening page."""
@@ -279,12 +282,17 @@ def handler_for(session):
     return Handler
 
 
+def local_url(netloc, path=""):
+    """The page's own address, or an Origin it sends: plain HTTP is right here, the server binds 127.0.0.1 only."""
+    return urllib.parse.urlunsplit((LOCAL_SCHEME, netloc, path, "", ""))
+
+
 def serve(session, port, open_browser=True):
     """Serves the page on 127.0.0.1:`port` until the block's last answer is sent back; returns the summary."""
     server = ThreadingHTTPServer((HOST, port), handler_for(session))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    url = f"http://{HOST}:{port}/"
+    url = local_url(f"{HOST}:{port}", "/")
     print(f"listening page: {url}")
     if open_browser:
         webbrowser.open(url)
