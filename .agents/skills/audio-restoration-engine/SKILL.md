@@ -402,11 +402,16 @@ audio alignment, or FFmpeg multiplexing.
   chain calls were bit-identical between 0.7.5 and 0.7.6; the upstream
   `cathar vhs` chain is not a candidate (single quietest-4 s probe, alpha 3:
   colouration -0.43, discontinuity tail -1.61 on Tele7abc; vbasky/cathar#26).
-  cathar 0.8.0 is approved for download (the user, 2026-10-08) into
-  `experiments/cathar-0.8.0/` with its checksum, not fetched yet: round C0
-  runs it behind `AI_RESTORE_CATHAR_BIN`, first through the identity check
-  against `experiments/cathar_ab_head.json` (identical means adopt; else the
-  ear and a user ABX). The installers stay at 0.7.6 until it is accepted.
+  cathar 0.8.0 (round C0, 2026-10-09): the Windows archive, checksum
+  `6c85b985...`, sits in `experiments/cathar-0.8.0/bin/`. Behind
+  `AI_RESTORE_CATHAR_BIN` it gave identical audio on the five
+  `cathar_ab_head.json` clips (`experiments/cathar_ab_cathar080_c0`) and on
+  three of them in `auto_pure_linear` (`experiments/apl_cathar_identity`,
+  the hashes the stage-cache proof read too), so it was adopted without a
+  listening session: both installers pin 0.8.0 and its four archive
+  checksums, and `.venv/Scripts/cathar.exe` is 0.8.0 (0.7.6 kept in
+  `experiments/cathar-0.7.6/`). The stage cache keys the binary's content,
+  so entries made under 0.7.6 miss once and are rebuilt.
 - **No generative engines** (the user, 2026-10-08): the enhancement rounds
   and the learned training add no generative stage (no flow, vocoder or
   GRPO-trained enhancer, nothing like Resemble-Enhance's enhancer) to

@@ -147,7 +147,8 @@ The engine supports 10 execution modes configured in `config.yaml`:
     sets the polish expander's depth (`cathar_music_expander_depth_db`) and
     narrows the CRT notch (`cathar_music_crt_notch_q`, carried into the
     pre-conditioning graph by `processing._precondition_config_for`). The
-    installers provision cathar 0.7.6, the build the round tuned on.
+    installers provision cathar 0.8.0 (round C0, 2026-10-09: bit-identical
+    to 0.7.6, the build the round tuned on, on every stage this app calls).
 - **`hybrid`** (`*_Hybrid_Cleaned.<ext>`):
   - Stages: BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$
     UVR-DeNoise $\\rightarrow$ DTW Sync $\\rightarrow$ amix.
@@ -315,6 +316,14 @@ ______________________________________________________________________
   - CI and local dev environments install runtime plus development dependencies
     (`poetry install --with dev`).
 - **CUDA Runtime Stack**: Preserve NVIDIA CUDA 13.2 runtime stack compatibility.
+- **Locking**: lock with the repository's Poetry
+  (`.venv/bin/python -m poetry lock`, 2.5.1 like CI and the installers); it
+  takes seconds. The torch, torchvision, torchaudio, audio-separator and
+  onnxruntime pairs keep exactly complementary `sys_platform` markers, and the
+  `nvidia-cublas` / `nvidia-cuda-nvrtc` pins follow torch's cuda-toolkit: a
+  gap between two markers, or `platform_system` beside upstream's
+  `sys_platform`, made the solve run for hours until v1.4.0 (the
+  poetry-runtime-and-ci skill, "Markers That Keep the Lock Fast").
 - **Agents Provision What a Task Needs**: A missing dependency, runtime, model,
   or fixture set is never a reason to skip or scale down a step. The agent
   installs it, the way the installer does, before reporting: the `ml` group
@@ -327,11 +336,11 @@ ______________________________________________________________________
   `scripts/download_dnsmos.py`. Everything installs into the repository's
   virtual environments and is declared in Poetry; nothing goes to the system
   interpreter. Report what was provisioned and what it cost (time, disk).
-- **Approved for ear v3 and the training plan (the user, 2026-10-08)**, not
-  provisioned as of 2026-10-09: the cathar 0.8.0 Windows archive (into
-  `experiments/cathar-0.8.0/` with its checksum, used through
-  `AI_RESTORE_CATHAR_BIN`; the installers stay at 0.7.6 until it passes the
-  identity check or a listening session), silero-vad (needs only torch),
+- **Approved for ear v3 and the training plan (the user, 2026-10-08)**: the
+  cathar 0.8.0 Windows archive (provisioned 2026-10-09 into
+  `experiments/cathar-0.8.0/`, checksum verified; it passed the identity
+  check, 5/5 on cathar and 3/3 on `auto_pure_linear`, and the installers
+  now provision it); not provisioned yet: silero-vad (needs only torch),
   zimtohrli (needs only numpy), optuna (dev group) and an isolated
   `tools/msst/` venv for the denoiser fine-tune, kept apart like
   `tools/piper-tts` so the CUDA torch set and `onnxruntime-gpu` stay

@@ -217,8 +217,9 @@
   `*_Cathar_Cleaned`. - The binary is the one beside the interpreter (the
   venv), then `~/.cargo/bin`; `AI_RESTORE_CATHAR_BIN` in the environment
   names another build, so an upgrade can be measured on the tuning excerpts
-  before it replaces the validated binary; the installers provision 0.7.6,
-  the build the listener round tuned on. - Speech settings since the listener
+  before it replaces the validated binary; the installers provision 0.8.0,
+  bit-identical to 0.7.6 (the build the listener round tuned on) on every
+  stage the app calls. - Speech settings since the listener
   round of 2026-09-25 (the self-driving loop on the four full Tata tapes,
   judging on the listener readings; `docs/validation.md`): `cathar_alpha` 1.0
   (from 2.0), `cathar_beta` 0.02, `cathar_repair_strength` 2,

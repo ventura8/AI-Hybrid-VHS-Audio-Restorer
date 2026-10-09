@@ -33,43 +33,71 @@ optional = true
 # That killed every mode invoking resemble-enhance (auto, multipass_auto, hybrid) on Linux.
 # Windows escaped it only because pip resolves torchaudio to a +cpu build there, whose CUDA
 # check is skipped. cu130 is the index that carries a matched set for all three.
+#
+# The markers keep `poetry lock` to seconds; it used to run for hours (six in CI) and never
+# finish. Poetry re-solves the whole graph once per branch of a dependency listed twice, and
+# reads `sys_platform` and `platform_system` as unrelated variables. So every split pair here
+# (torch, torchvision, torchaudio, audio-separator, onnxruntime) uses `sys_platform`, as
+# audio-separator, cuda-toolkit and pandas do, and its two markers are exact complements:
+# "linux or win32" for the cu130/GPU builds, "not linux and not win32" (macOS) for PyPI.
+# A gap between them (the old "and implementation_name == 'cpython'") adds a third
+# "torch not required" branch that resolves PyPI torch 2.14 and a second CUDA stack; a
+# `platform_system` marker lets the solver explore platforms no machine reports, such as
+# platform_system != "Darwin" with sys_platform == "darwin", where more dependencies split.
 torch = [
-  { version = "2.13.0+cu130", source = "pytorch-cu130", markers = "platform_system != 'Darwin' and python_version == '3.12' and implementation_name == 'cpython'" },
-  { version = "^2.13.0", markers = "platform_system == 'Darwin' and python_version == '3.12' and implementation_name == 'cpython'" },
+  { version = "2.14.1+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^2.14.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 torchvision = [
-  { version = "0.28.0+cu130", source = "pytorch-cu130", markers = "platform_system != 'Darwin' and python_version == '3.12' and implementation_name == 'cpython'" },
-  { version = "^0.28.0", markers = "platform_system == 'Darwin' and python_version == '3.12' and implementation_name == 'cpython'" },
+  { version = "0.29.1+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^0.29.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 torchaudio = [
-  { version = "2.11.0+cu130", source = "pytorch-cu130", markers = "platform_system != 'Darwin' and python_version == '3.12' and implementation_name == 'cpython'" },
-  { version = "^2.11.0", markers = "platform_system == 'Darwin' and python_version == '3.12' and implementation_name == 'cpython'" },
+  { version = "2.11.0+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^2.11.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 audio-separator = [
   { version = "^0.47.0", extras = [
     "gpu",
-  ], markers = "platform_system != 'Darwin'" },
-  { version = "^0.47.0", markers = "platform_system == 'Darwin'" },
+  ], markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^0.47.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
-onnxruntime-gpu = { version = "~1.30.0", markers = "platform_system != 'Darwin'" }
-onnxruntime = { version = "^1.30.0", markers = "platform_system == 'Darwin'" }
+onnxruntime-gpu = { version = "~1.31.0", markers = "sys_platform == 'linux' or sys_platform == 'win32'" }
+onnxruntime = { version = "^1.31.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" }
+# torch's cuda-toolkit pins these two behind its cublas/nvrtc extras only, while
+# nvidia-cudnn-cu13 and nvidia-cublas ask for them unpinned: left alone, the solver's
+# leftover branch takes the newest release and the lock carries two of each on Linux.
+# They repeat torch's cuda-toolkit pins (13.0.3 for torch 2.13.0+cu130) and change only
+# when that cuda-toolkit version does; a stale pin fails `poetry lock` in seconds with a
+# message naming the version cuda-toolkit wants. The marker is torch's own
+# (`platform_system == "Linux"`); a `sys_platform` marker here leaves never-installed
+# phantom entries in the lock.
+nvidia-cublas = { version = "13.1.1.3", markers = "platform_system == 'Linux'" }
+nvidia-cuda-nvrtc = { version = "13.0.88", markers = "platform_system == 'Linux'" }
 librosa = "^1.0.0"
 # Output-quality harness (scripts/restoration_quality): ASR consistency and the Audiobox
 # Aesthetics predictor. Weights are fetched by scripts/download_quality_models.py.
 jiwer = "^4.0.0"
 audiobox-aesthetics = "^0.0.4"
 # MERT-v1-95M's remote code imports nnAudio only for its CQT front end, which the pinned
-# checkpoint has off, so nnAudio is not a dependency. Zimtohrli is deliberately not pinned:
-# see scripts/restoration_quality/judges.py.
+# checkpoint has off, so nnAudio is not a dependency.
+# Zimtohrli (dsp.zimtohrli_loud), approved 2026-10-08: the PyPI wheel is built by a contributor's
+# fork of google/zimtohrli (PyPI attestation), so it is pinned exactly and the reading never
+# moves with a new upload; x86-64 only, the platforms with a wheel. Never install upstream's
+# pyohrli beside it: both ship the _pyohrli extension.
+zimtohrli = { version = "0.2.1.post1", markers = "platform_machine == 'x86_64' or platform_machine == 'AMD64'" }
+# silero-vad (the pause VAD, approved 2026-10-08): the base install needs only torch and
+# packaging. Never an extra: [all] and [onnx-cpu] pull plain onnxruntime beside onnxruntime-gpu.
+silero-vad = "^6.2.3"
 # Declared explicitly because audio-separator imports it without declaring it, and
 # librosa 1.0 dropped the transitive dependency that used to supply it. Without this the
 # next lock regeneration silently removes audioread and every UVR-based mode dies on
 # "audio-separator is required for stem separation/denoising".
 audioread = "^3.1.0"
 fastdtw = "^0.3.4"
-transformers = "^5.16.1"
+transformers = "^5.19.0"
 accelerate = "^1.15.0"
-omegaconf = "^2.3.1"
+omegaconf = "^2.4.0"
 rich = "^15.0.0"
 loguru = "^0.7.3"
 pandas = "^3.0.6"
@@ -80,11 +108,11 @@ tabulate = "^0.10.0"
 pytest = "^9.1.1"
 pytest-cov = "^7.1.0"
 coverage = "^7.16.2"
-flake8 = "^7.3.0"
+flake8 = "^7.4.1"
 ruff = "^0.16.10"
-pylint = "^4.0.8"
+pylint = "^4.1.2"
 radon = "^6.0.1"
-mypy = "^2.3.1"
+mypy = "^2.4.0"
 mdformat = "^1.0.0"
 pymarkdownlnt = "^0.9.40"
 isort = "^9.0.2"
@@ -95,6 +123,9 @@ pip-audit = "^2.10.1"
 genbadge = "^1.1.3"
 pip = ">=26.2.1"
 mdformat-frontmatter = "^2.1.2"
+# optuna: the ear v3 settings search baseline (approved 2026-10-08). Never an extra: [document] and
+# [optional] pull torch from PyPI beside the cu130 build.
+optuna = "^5.0.0"
 
 [[tool.poetry.source]]
 name = "pytorch-cu130"
