@@ -318,9 +318,10 @@ overrides them is `D:\Tata\New folder\variants\v2`):
   reads thin at it.
 
 - `linear_air_gain_db` (1.0, from 2.0): `auto_pure_linear`'s presence shelf
-  at 7.5 kHz (`enable_linear_air`). Set by ear on 2026-10-08: at +2 dB the
-  user heard the 's' as thin; in an A/B of +2 dB, +1 dB and off on the four
-  Tata tapes they chose +1 dB. The shelf is what brightens the 's' (the
+  at `linear_air_freq_hz` (7500 Hz by default; `enable_linear_air`). Set by
+  ear on 2026-10-08, every shelf at 7500 Hz: at +2 dB the user heard the 's'
+  as thin; in an A/B of +2 dB, +1 dB and off on the four Tata tapes they
+  chose +1 dB. The shelf is what brightens the 's' (the
   denoiser leaves fricatives within 1 dB of the other speech in every band;
   the +2 dB shelf lifts the whole output about 1.6 dB above 4 kHz). Each of
   the 16 rounds of the four APL loops scored a +1 dB candidate and none
@@ -328,6 +329,20 @@ overrides them is `D:\Tata\New folder\variants\v2`):
   another move in the 16th, under grids that rank
   `dsp.hf_4k8k.delta.median` up beside HF gates that only bound a loss.
   Ear v3 reads the tilt two-sided (`docs/validation.md`, "Ear v3").
+
+- `linear_air_freq_hz` (7500.0), `expander_attack_s` (0.04) and
+  `expander_decay_s` (0.18): added on 2026-10-09 for rounds A1 (brightness)
+  and A3 (pause texture), at the values `modules/filters.py` hard-coded
+  until then, so every output keeps its bytes (a unit test pins the default
+  polish graphs). The first is the air shelf's corner (`treble=f`,
+  1000-16000 Hz), `auto_pure_linear`'s alone: cathar's polish runs without
+  the shelf. The other two are the polish expander's `compand` attack and
+  decay in seconds (0.001-1.0 and 0.001-5.0), how fast its level follower
+  rises into a word and lets go after it; `cathar`, `auto_pure_linear` and
+  `denoise_only` share that expander. None is judged by ear yet. The tuning
+  loop judges a corner with its gain against round 3's +2 dB verdict, heard
+  at 7500 Hz: +1.5 dB at 6000 Hz lifts 4-8 kHz more than that shelf and is
+  refused (`scripts/autotune_guards.py`).
 
 A tuning result that carries a knob an accepted switch made inert (the
 subtraction's factor, probe and native suppressor once
@@ -434,12 +449,13 @@ it off, with a warning, because each candidate runs in its own working folder.
   `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
   `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
   own two and `AI_RESTORE_EVENT_LOG`.
-- The 19 keys left out of the key, each read only after the denoiser
+- The 22 keys left out of the key, each read only after the denoiser
   (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
   code by `tests/unit/test_stage_cache_allowlist.py` and
   `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
-  `linear_air_gain_db`, `enable_dynamic_expander`, `expander_depth_db`,
-  `expander_knee_offset_db`, `apl_expander_depth_db`,
+  `linear_air_gain_db`, `linear_air_freq_hz`, `enable_dynamic_expander`,
+  `expander_depth_db`, `expander_knee_offset_db`, `expander_attack_s`,
+  `expander_decay_s`, `apl_expander_depth_db`,
   `apl_enable_sibilant_guard`, `apl_sibilant_mix`, `apl_sibilant_guard_hz`,
   `apl_sibilant_hf_share_min`, `enable_pause_floor`, `pause_floor_fill_db`,
   `pause_floor_quiet_percentile`, `enable_loudnorm`, `loudnorm_target_lra`,

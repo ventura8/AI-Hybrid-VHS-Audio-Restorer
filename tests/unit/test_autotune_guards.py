@@ -97,6 +97,55 @@ def test_a_move_past_a_ledger_boundary_is_refused_and_a_move_back_is_not():
     assert not ag.refusals({"down": {AIR: 1.0}}, {AIR: 2.0}, rules)
 
 
+CORNER = "linear_air_freq_hz"
+SHIPPED_AIR = {AIR: 1.0, CORNER: 7500.0}
+AIR_RULES = ag.reward.parse_reversals([{"key": AIR, "rejected_above": 2.0, "verdict": "r3-air-preference"}])
+
+
+def test_at_the_ledgers_corner_the_gain_is_judged_as_it_is():
+    """Round 3 heard every shelf at 7500 Hz: there, and with no corner set, the settings pass through unchanged."""
+    for settings in (SHIPPED_AIR, {AIR: 1.5}, {AIR: 1.5, CORNER: None}, {CORNER: 6000.0}, {AIR: None, CORNER: 6000.0}):
+        assert ag.in_ledger_units(settings) is settings
+    assert ag.ledger_air_gain(2.0, 7500.0) == pytest.approx(2.0, abs=1e-9)
+
+
+def test_another_corner_is_restated_as_the_7500_hz_shelf_lifting_4_8_khz_as_much():
+    """A lower corner lifts the band more than its gain says, a higher one less; a gain past the search span reads at its end."""
+    restated = {(gain, corner): ag.ledger_air_gain(gain, corner) for gain, corner in ((1.5, 6000.0), (1.0, 6000.0), (1.5, 9000.0))}
+    assert restated == pytest.approx({(1.5, 6000.0): 2.57, (1.0, 6000.0): 1.72, (1.5, 9000.0): 0.78}, abs=0.01)
+    assert ag.ledger_air_gain(100.0, 6000.0) == pytest.approx(ag.AIR_GAIN_SPAN_DB)
+    assert ag.air_lift_db(0.0, 6000.0) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_lower_corner_cannot_carry_the_air_gain_past_the_ledger_boundary():
+    """+1.5 dB at 6000 Hz lifts 4-8 kHz more than the rejected +2 dB at 7500 Hz; the plan's other A1 corners pass."""
+    everything = {
+        "gain": {**SHIPPED_AIR, AIR: 1.5},
+        "corner": {**SHIPPED_AIR, CORNER: 6000.0},
+        "both": {AIR: 1.5, CORNER: 6000.0},
+        "high": {AIR: 1.5, CORNER: 9000.0},
+    }
+    refused = ag.refusals(everything, SHIPPED_AIR, AIR_RULES)
+    assert list(refused) == ["both"]
+    assert refused["both"][0].startswith("linear_air_gain_db 2.57 is at or above 2") and "+1.5 dB at 6000 Hz" in refused["both"][0]
+
+
+def test_the_combination_of_two_allowed_winners_is_refused_when_together_they_pass_the_boundary():
+    """The gain move 1.0 -> 1.5 and the corner move 7500 -> 6000 each pass; `combine` merges them and the guard refuses it."""
+    winners = [{**SHIPPED_AIR, AIR: 1.5}, {**SHIPPED_AIR, CORNER: 6000.0}]
+    assert not ag.refusals(dict(enumerate(winners)), SHIPPED_AIR, AIR_RULES)
+    combo = at.combine(SHIPPED_AIR, winners)
+    assert list(combo.values()) == [{AIR: 1.5, CORNER: 6000.0}]
+    assert list(ag.refusals(combo, SHIPPED_AIR, AIR_RULES)) == list(combo)
+
+
+def test_a_move_back_from_a_restated_shelf_is_never_refused():
+    """From +1.5 dB at 6000 Hz (restated +2.57), every move that lifts the band less is allowed, even one still past 2."""
+    incumbent = {AIR: 1.5, CORNER: 6000.0}
+    everything = {"down": {AIR: 1.0, CORNER: 6000.0}, "back": {AIR: 1.5, CORNER: 7500.0}, "less": {AIR: 1.45, CORNER: 6000.0}}
+    assert not ag.refusals(everything, incumbent, AIR_RULES)
+
+
 # ----------------------------------------------------------------------------- the learned median veto
 
 

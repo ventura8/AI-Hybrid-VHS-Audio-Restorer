@@ -927,7 +927,8 @@ where they came from and how many listening rounds agree; and turns a
 listener flag into a hard gate only once two rounds agree. `--excerpts`
 runs the degradations a real tape can carry on cuts of the Tata tapes,
 since on Piper fixtures the gap readings moved only 0.02-0.37 dB. Each new
-degradation (`scripts/degradations_v3.py`: the app's own air shelf, a
+degradation (`scripts/degradations_v3.py`: the app's own air shelf, the
+same shelf at round A1's 9000 / 7500 / 6000 Hz corners, a
 spectral tilt, four pause residuals, a Hi-Fi compander mistrack, a loudnorm
 ride, a phase-scrambled "robotic" voice, a band-limited source, treble
 dropouts, islands in the 's', a speed drift) declares which readings must
@@ -947,7 +948,7 @@ and that full phase scrambling reads as a -0.8 to -1.2 dB/oct tilt.
 Without `--grid` the ranking uses every two-sided dsp reading at "no
 change" with a dead zone of three benign floors. `--grid` reads the
 entries with a `target` under a `reward:` key, else under `ranking:` (the
-v3 tuning grids: `tata_v3.yaml` 15 entries, `music_v3.yaml` 10), else at
+v3 tuning grids: `tata_v3.yaml` 12 entries, `music_v3.yaml` 10), else at
 the top level, and refuses a file with none. The run reads and checks the
 grid before the synthetic suite, so a bad grid stops it in seconds instead
 of after hours of scoring.
@@ -1127,7 +1128,13 @@ them:
   (round 3: +1 dB over +2 dB and off, on every tape). A move that heads the
   rejected way and ends at the value or past it is refused before it is
   rendered; a move back towards the accepted side never is. A key no engine
-  tunes stops the loop as a typo.
+  tunes stops the loop as a typo. Round 3 heard every shelf at 7500 Hz, so
+  with `linear_air_freq_hz` a knob the air gain is judged as the 7500 Hz
+  shelf that lifts 4-8 kHz as much (`autotune_guards.ledger_air_gain`):
+  +1.5 dB at 6000 Hz reads as +2.57 dB and is refused, also when `combine`
+  builds it from two allowed winners; +1.0 dB at 6000 Hz reads as +1.72 dB
+  and passes, though on the en fixture it lifts R2's 's' level and
+  `hf_4k8k` as much as the rejected shelf, so the ear settles it.
 - `audibility: {offset_db: 24.0}`, the audibility tie. After the hash, each live
   candidate is compared with the incumbent per tape by `auditory.compare_files`,
   stopping at the first audible tape, and the verdict is kept in

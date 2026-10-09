@@ -36,11 +36,14 @@ def test_a_grid_file_reads_its_ranking_section(tmp_path):
     assert list(co.load_grid(path)) == ["dsp.lkr.delta.median"]
 
 
-@pytest.mark.parametrize(("name", "count"), [("tata_v3.yaml", 15), ("music_v3.yaml", 10)])
-def test_the_v3_tuning_grids_load_their_ranking(name, count):
+@pytest.mark.parametrize(
+    ("name", "count", "reading"),
+    [("tata_v3.yaml", 12, "dsp.pause_depth_db.delta.median"), ("music_v3.yaml", 10, "dsp.balance_air_db.output.median")],
+)
+def test_the_v3_tuning_grids_load_their_ranking(name, count, reading):
     """`--grid tata_v3.yaml` ranks on its own readings, not on the default grid."""
     grid = co.load_grid(REPO / "scripts" / "tune_grids" / name)
-    assert len(grid) == count and "dsp.balance_air_db.output.median" in grid
+    assert len(grid) == count and reading in grid
 
 
 def test_a_grid_file_without_entries_is_refused(tmp_path):

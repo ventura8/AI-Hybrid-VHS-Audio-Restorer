@@ -134,6 +134,13 @@ _NUMERIC_CONFIG_FIELDS = (
     ("apl_expander_depth_db", float, 12.0, 0.0, 30.0),
     ("cathar_music_expander_depth_db", float, 4.0, 0.0, 30.0),
     ("expander_knee_offset_db", float, 8.0, -20.0, 20.0),
+    # The polish expander's compand attack and decay, in seconds: how fast its level follower
+    # rises into a word and lets go after it, so how soon a pause is pushed down. 0.04 / 0.18
+    # are the times every release has shipped (hard-coded in modules/filters.py until
+    # 2026-10-09); both engines share them. Round A3 (pause texture) searches them; not yet
+    # judged by ear.
+    ("expander_attack_s", float, 0.04, 0.001, 1.0),
+    ("expander_decay_s", float, 0.18, 0.001, 5.0),
     # Q of the CRT line-whistle notch in the pre-conditioning graph: 30 is the shipped width;
     # cathar's music profile narrows it to 60 (cathar_music_crt_notch_q, the music loop's
     # round 1: the wide notch took programme beside the line on 8 of 12 clips).
@@ -227,6 +234,11 @@ _NUMERIC_CONFIG_FIELDS = (
     # 8-12 kHz drops ~0.7 dB and 4-8 kHz ~0.3 dB; nothing below 4 kHz moves. The harness's
     # loops kept +2 dB: it does not read the brighter top as a fault.
     ("linear_air_gain_db", float, 1.0, None),
+    # The air shelf's corner frequency (ffmpeg `treble=f`): 7500 Hz is the shelf every release
+    # has shipped (hard-coded in modules/filters.py until 2026-10-09). Round A1 (brightness)
+    # searches 6000 / 7500 / 9000 beside the gain; not yet judged by ear. Bounded under the
+    # 44.1 kHz pipeline's Nyquist.
+    ("linear_air_freq_hz", float, 7500.0, 1000.0, 16000.0),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
     # The longest track the UVR denoiser is given in one pass; longer ones are cut into
     # equal overlapping chunks no longer than this. The separator needs about 30 GB of
@@ -942,6 +954,8 @@ LOUDNORM_LINEAR_FALLBACK = str(CONFIG.get("loudnorm_linear_fallback", "ffmpeg"))
 AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
+EXPANDER_ATTACK_S = float(CONFIG.get("expander_attack_s", 0.04))
+EXPANDER_DECAY_S = float(CONFIG.get("expander_decay_s", 0.18))
 CRT_NOTCH_Q = float(CONFIG.get("crt_notch_q", 30.0))
 ENABLE_PAUSE_FLOOR = bool(CONFIG.get("enable_pause_floor", True))
 PAUSE_FLOOR_FILL_DB = float(CONFIG.get("pause_floor_fill_db", 12.0))
@@ -997,4 +1011,5 @@ CATHAR_MUSIC_EXPANDER_DEPTH_DB = float(CONFIG.get("cathar_music_expander_depth_d
 CATHAR_MUSIC_CRT_NOTCH_Q = float(CONFIG.get("cathar_music_crt_notch_q", 60.0))
 CATHAR_MUSIC_ENABLE_DEESSER = bool(CONFIG.get("cathar_music_enable_deesser", False))
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 1.0))
+LINEAR_AIR_FREQ_HZ = float(CONFIG.get("linear_air_freq_hz", 7500.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

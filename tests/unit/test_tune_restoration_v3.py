@@ -11,6 +11,24 @@ from scripts.restoration_quality.scorecard import METRICS, TWO_SIDED
 GRIDS = Path(tr.REPO) / "scripts" / "tune_grids"
 SPEC = {"target": 1.0, "dead_zone": 0.5, "scale": 0.25, "weight": 2.0, "family": "timbre"}
 LEARNED = ("speech.", "mos.", "stems.mert_dist")
+# Round 0 (docs/ear_v3_round0.md; experiments/tata_listen/scores_v3, the aggregate medians a grid reads): per entry,
+# readings of files the user accepted (inside the dead zone) and of flagged or dead-air files (charged).
+ROUND0 = [
+    ("tata_v3.yaml", "dsp.balance_tilt_db_oct.output.median", (-2.145, -1.648, 0.099), (-6.054, -13.25)),
+    ("tata_v3.yaml", "dsp.balance_presence_db.output.median", (-2.108, -2.039, 0.13), (-4.668, -9.709)),
+    ("tata_v3.yaml", "dsp.balance_body_db.output.median", (-2.16, 1.771, -2.234), ()),
+    ("tata_v3.yaml", "dsp.sib_abs_level_db.output.median", (-3.128, 3.612, 0.625, 0.14), (-17.279, -21.788)),
+    ("tata_v3.yaml", "dsp.sib_texture_db.output.median", (1.343, 0.334), (2.122, 2.257, 3.489)),
+    ("tata_v3.yaml", "dsp.pause_depth_db.delta.median", (3.99, 13.734, 32.975, 33.234), (0.0, 2.9, 36.888, 37.59, 40.306)),
+    ("tata_v3.yaml", "dsp.gap_slope_db_oct.output.median", (1.512, 1.086, -0.49, 1.913, 1.925), (2.146, 3.012, -3.768)),
+    ("tata_v3.yaml", "dsp.gap_island_kurt.output.median", (1.736, 0.617), ()),
+    ("tata_v3.yaml", "file.gain_ride_lu.output.median", (2.257, 2.423, 0.225), ()),
+    ("music_v3.yaml", "dsp.balance_presence_db.output.median", (-0.61, 0.41), ()),
+]
+# The one entry Round 0 kept at its starting value inside the rule's one-scale-unit margin (1.736 inside 1.8 by 0.064).
+UNMARGINED = ("dsp.gap_island_kurt.output.median",)
+# Round 0's grid notes: each of these reversed a verdict or charged accepted files; they are shown, not ranked.
+DROPPED = ("dsp.balance_air_db", "dsp.sib_centroid_hz", "dsp.gap_atten_db", "dsp.gap_hf_excess_db")
 
 
 def _summary(**medians):
@@ -96,6 +114,44 @@ def test_the_speech_grid_weighs_the_speech_side_one_and_a_half():
     ranking = _grid("tata_v3.yaml")["ranking"]
     weights = {entry["family"]: entry["weight"] for entry in ranking.values()}
     assert weights == {"timbre": 1.5, "sibilance": 1.5, "pauses": 1.0, "level": 1.0}
+
+
+@pytest.mark.parametrize(("name", "reading", "admitted", "charged"), ROUND0)
+def test_a_v3_grid_admits_what_the_user_accepted_and_charges_what_was_flagged(name, reading, admitted, charged):
+    """Every accepted file of Round 0 sits inside its dead zone; the de-esser bugs, the 's' distortion and dead air do not."""
+    spec = reward.parse_grid({reading: _grid(name)["ranking"][reading]})[reading]
+    assert [spec.distance(value) for value in admitted] == [0.0] * len(admitted)
+    assert all(spec.distance(value) > 0.0 for value in charged)
+
+
+@pytest.mark.parametrize(("name", "reading", "admitted", "_charged"), [row for row in ROUND0 if row[1] not in UNMARGINED])
+def test_a_re_derived_entry_admits_each_accepted_file_by_at_least_one_scale_unit(name, reading, admitted, _charged):
+    """The grid's stated rule: every accepted reading sits at least one `scale` inside the dead zone, not just inside it."""
+    entry = _grid(name)["ranking"][reading]
+    margins = [entry["dead_zone"] - abs(value - entry["target"]) for value in admitted]
+    assert min(margins) >= entry["scale"] - 1e-9
+
+
+def test_a_pass_through_no_longer_ties_every_accepted_file():
+    """An output identical to its source reads 0 on every speech entry; pause depth's low edge charges it 2.95."""
+    ranking = _grid("tata_v3.yaml")["ranking"]
+    found = reward.distances({reading: 0.0 for reading in ranking}, ranking)
+    assert {reading: value for reading, value in found.items() if value} == pytest.approx({"dsp.pause_depth_db.delta.median": 2.95})
+
+
+def test_the_speech_grid_ranks_none_of_the_readings_round_0_found_reversing_a_verdict():
+    """Air (unread on linear tapes), the centroid (C over B), pause attenuation and the HF excess are shown, not ranked."""
+    ranked = {_metric(key) for key in _grid("tata_v3.yaml")["ranking"]}
+    assert not ranked & set(DROPPED)
+    assert all(metric in METRICS for metric in DROPPED)
+
+
+def test_every_speech_grid_entry_is_a_band_either_side_of_its_target():
+    """Each entry states its target, dead zone and scale: a two-sided band, never a direction; pause depth spans 2.95..35 dB."""
+    ranking = _grid("tata_v3.yaml")["ranking"]
+    assert all({"target", "dead_zone", "scale", "weight", "family"} <= set(entry) and entry["dead_zone"] > 0 for entry in ranking.values())
+    depth = ranking["dsp.pause_depth_db.delta.median"]
+    assert (depth["target"] - depth["dead_zone"], depth["target"] + depth["dead_zone"]) == pytest.approx((2.95, 35.0))
 
 
 def test_the_listening_metrics_are_window_readings_and_include_the_new_ones():

@@ -223,9 +223,10 @@ Principles (plan Part 1), each closing one of those failures:
 
 Every threshold and target below is **uncalibrated** until Round 0
 (re-scoring the stored listening files) derives it on Tele7abc and tests it
-on SOTI and Vaccin. Round 0 ran on 2026-10-09 and only proposed values (see
-"Round 0 (2026-10-09)"); none is adopted yet. The readings pass their
-synthetic tests; their module docstrings hold the full measurements.
+on SOTI and Vaccin. Round 0 ran on 2026-10-09 and proposed values (see
+"Round 0 (2026-10-09)"); after Session 0 the v3 grids took its grid notes,
+while no gate or flag is adopted. The readings pass their synthetic tests;
+their module docstrings hold the full measurements.
 
 - **R0, the capture profile** (`source_profile.py`, `meta.*`, source side,
   displayed). Programme bandwidth (the highest 1/6-octave band where the
@@ -554,7 +555,7 @@ The v2 `gates.json` came from a dsp-only run, so the speech, mos and stems
 gates kept hand-set values, and the v2 `harness_ranking` composite read 0
 for every variant. It now ranks the known-ordering tapes by the v3 score
 (`--grid`; `calibration_ordering.load_grid` reads the entries with a
-`target` under `reward:`, else under the v3 grids' `ranking:` (tata_v3 15
+`target` under `reward:`, else under the v3 grids' `ranking:` (tata_v3 12
 entries, music_v3 10), else at the top level, and refuses a file with
 none; `main` reads it before the synthetic suite, so a wrong `--grid` stops
 the run in seconds, not after hours of scoring; without `--grid` it ranks
@@ -602,9 +603,17 @@ checks are unscored and names every one R0's band clipped; the exit code follows
 non-blind failures only.
 
 The new degradations (`scripts/degradations_v3.py`) declare what must move
-and what must not: `air_shelf_*`, `spectral_tilt_*`, `pause_residual_*`,
-`hifi_compander_mistrack`, `loudnorm_ride`, `phasey_resynth`,
-`linear_bandwidth`, `treble_dropouts`, `sibilant_islands`, `sync_drift`.
+and what must not: `air_shelf_*`, `air_corner`, `spectral_tilt_*`,
+`pause_residual_*`, `hifi_compander_mistrack`, `loudnorm_ride`,
+`phasey_resynth`, `linear_bandwidth`, `treble_dropouts`, `sibilant_islands`,
+`sync_drift`. `air_corner` (2026-10-09) is the shelf at +1.5 dB with its
+corner at round A1's 9000 / 7500 / 6000 Hz: the readings A1 is judged by
+were calibrated on the 7500 Hz shelf only. Read with the runner's dsp family
+on en / fr they follow the corner: R2's absolute 's' level +0.140 / +0.301 /
++0.603 (fr +0.607 / +0.906 / +1.189), `hf_4k8k` +0.129 / +0.280 / +0.570,
+`hf_8k16k` +0.936 / +1.182 / +1.358 (en), the net level under the absolute
+one, the texture under 0.01. The calibration run has to confirm it before
+A1 is judged.
 
 Measured while building them: FFmpeg 8.0.1's `treble=g:f=7500` is the RBJ
 shelf at Q 1/sqrt(2) (matched to 9e-8). Under that shelf the net sibilance
@@ -634,11 +643,21 @@ Tele7abc's "light hiss" on the single 4 s probe passes the v2 hiss flag, so
 
 `scripts/tune_grids/tata_v3.yaml` and `music_v3.yaml` rank readings by
 `{target, dead_zone, scale, weight, family}`; `tune_restoration.py` and
-`reward.py` read the same entries. Every value is uncalibrated and its
-comment says what it stands on. Speech-side readings weigh 1.5 (the P.835
-SIG/BAK prior, speculative). Not ranked: `hf_4k8k` and `hf_8k16k` (backstop
-gates), residual noise, `lkr` and the sync; learned judges sit under
-`vetoes:` only. Their `vetoes:`, `reversals:` and `audibility:` sections are
+`reward.py` read the same entries. `tata_v3` (12 entries) was re-derived
+on Round 0's reports after Session 0, `music_v3` on presence only; every
+value is still an unblinded hypothesis and its comment says what it stands
+on, which accepted files it still charges and which rankings tie or
+reverse. Speech-side readings weigh 1.5 (the P.835 SIG/BAK prior,
+speculative). Not ranked: `hf_4k8k` and `hf_8k16k` (backstop gates),
+residual noise, `lkr`, `balance_top_db`, `gap_pause_s` and the sync; on
+`tata_v3` also `balance_air_db` and `sib_centroid_hz` (dropped: unread on
+the linear tapes, and ranking C over B on Vaccin) and `gap_atten_db` and
+`gap_hf_excess_db` (shown only: the first orders round one backwards, the
+second rests on the hiss pair Session 0 did not hear); learned judges sit
+under `vetoes:` only. `tata_v3`'s pause depth band (2.95-35 dB) is the one
+entry that charges a pass-through (2.95): every other entry reads an output
+identical to its source as 0. Their `vetoes:`, `reversals:` and
+`audibility:` sections are
 the loop's guards ("The self-driving loop"); `tune_restoration.py` reads
 none of them. The calibration writes under its `--out`, while the drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`:
@@ -661,8 +680,9 @@ checks each round on the files it judged: `r1_known` (3 records),
 hold; `r2` fails 9 checks (exit 1), the v2 `sibilance_thin` missing "APL's
 's' still thin" on Tele7abc, SOTI and Gaudeamus5 and the v2 `dead_air`,
 `dull`, `attack` and `sibilance_thin` firing on six accepted music outputs.
-The report, with every number, is `docs/ear_v3_round0.md`. Nothing is
-adopted into the gates or grids yet. The facts that will decide defaults:
+The report, with every number, is `docs/ear_v3_round0.md`. No gate or flag
+is adopted; after Session 0 `tata_v3` and `music_v3` took the grid notes
+(the report's "What the grids took"). The facts that will decide defaults:
 
 - R1, clipped to the programme band, cannot see the 7.5 kHz shelf on
   linear-track tapes: between +2 / +1 dB / off presence moves 0.03-0.05 dB
@@ -844,6 +864,19 @@ the incumbent. The knob tables were re-read from the code paths on
   `[ROFORMER, ROFORMER_AGGR]`, seeded from the app; a saved state holding
   None for a knob whose list has no None is seeded too. A list must never
   hold None and the app's default value together.
+- Rounds A1 and A3 (2026-10-09): APL's `linear_air_gain_db` is
+  `[0.5, 1.0, 1.5]`, the plan's set (0 is `enable_linear_air` false; +2 dB,
+  which round 3 rejected, is left out so a v1 / v2 grid without the
+  reversal cannot step to it either) and its new
+  `linear_air_freq_hz` `[6000, 7500, 9000]`, both inert with the shelf off;
+  the new `expander_attack_s` `[0.02, 0.04, 0.08]` and `expander_decay_s`
+  `[0.12, 0.18, 0.3]` are shared knobs (cathar runs the same polish
+  expander), inert with the expander off. Seeded from the shipped 7500 Hz
+  and 0.04 / 0.18 s, each first proposes its two neighbours; all three new
+  keys are post-neural, so their APL moves replay the stage cache. The
+  grids' reversal `rejected_above: 2.0` (tata_v3 and music_v3 as of this
+  date) judges gain and corner as one shelf (below): of A1's nine shelves it
+  refuses +1.5 dB at 6000 Hz.
 
 `INERT_WHEN` entries are `(when, knobs)`: the knobs are dead when every
 switch in `when` holds its value (a switch the incumbent does not set reads
@@ -873,7 +906,21 @@ as before:
   `refused (verdict reversal)`; a move back is never refused. `tata_v3` and
   `music_v3` carry `linear_air_gain_db` `rejected_above: 2.0`
   (`r3-air-preference`: +1 dB over +2 dB and off on all four tapes). A key
-  no engine tunes stops the loop.
+  no engine tunes stops the loop. Every round-3 shelf sat at 7500 Hz, so
+  since `linear_air_freq_hz` is a knob the guard restates a candidate's air
+  gain, and the incumbent's, as the 7500 Hz shelf with the same power gain
+  over 4-8 kHz on a flat spectrum (`autotune_guards.in_ledger_units`,
+  `ledger_air_gain`; unchanged at 7500 Hz or with no corner set). +1.5 dB at
+  6000 Hz reads +2.57 and is refused, also when `combine` merges the two
+  allowed winners +1.5 dB at 7500 Hz and +1.0 dB at 6000 Hz; the gain-only
+  check let that through, and the grids' R1 readings cannot see above
+  4.5-5 kHz on the linear tapes to catch it. The limit: one band stands for
+  the percept. +1.0 dB at 6000 Hz reads +1.72 and passes, yet on the en
+  fixture it lifts R2's 's' level and `hf_4k8k` as much as the rejected
+  shelf (0.401 / 0.379 against 0.402 / 0.375), and over R2's 4-12 kHz band
+  +1.5 dB at 6000 Hz would restate to +1.92 and pass; A1's listening session
+  settles the lower corner, not the guard. Tests:
+  `tests/unit/test_autotune_guards.py`.
 - `audibility: {offset_db: 24.0}` (the tie): after the hash, each live candidate
   goes through `auditory.compare_files` against the incumbent per tape, stopping
   at the first audible tape (sidecar `cands/<cid>/<slug>.audibility.json`).
@@ -967,7 +1014,8 @@ Render time is the third budget. `--stage-cache <out>/stage_cache` (with
 candidate's render: an APL candidate whose knobs all act after the neural
 denoiser (air, the sibilant guard, the expanders, the pause floor,
 `apl_expander_depth_db`, `apl_music_bg_floor_db`, `loudnorm_target_lra`:
-14 of the 26 APL knobs on 2026-10-09) replays the incumbent's chain and
+17 of the 29 APL knobs on 2026-10-09, with the air corner and the expander
+timing) replays the incumbent's chain and
 model output instead of rendering them. It caches the neural stage's two
 intermediate WAVs only, never a final output (the 250 GB lesson above):
 about 2.5 GB per tape-hour per distinct pre-neural setting, least recently

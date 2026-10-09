@@ -13,8 +13,10 @@ An ear v3 grid (`tune_grids/tata_v3.yaml`, `music_v3.yaml`) adds three guards to
 (plan 1.5, `scripts/autotune_guards.py`); a v1 or v2 grid has none of these sections and is
 judged as before. `reversals:` refuses, before it is rendered, a move that heads past a ledger
 boundary the way the user rejected (`linear_air_gain_db` up to 2.0 or above: round 3 heard
-+1 dB over +2 dB). `audibility:` makes a candidate `auditory.compare_files` cannot tell from
-the incumbent on any tape a tie, never scored and never accepted. `vetoes:` keeps a candidate
++1 dB over +2 dB, all at 7500 Hz, so another `linear_air_freq_hz` is judged as the 7500 Hz shelf
+lifting 4-8 kHz as much, `autotune_guards.ledger_air_gain`). `audibility:` makes a candidate
+`auditory.compare_files` cannot tell from the incumbent on any tape a tie, never scored and
+never accepted. `vetoes:` keeps a candidate
 from winning when a learned judge's median moved past `floor_multiple` x its benign floor
 (`--noise-floors`, a `scripts/reward_noise_floor.py` report) on some tape; a veto without a
 floor stops the loop before the first render.
@@ -67,6 +69,12 @@ Knob-table facts the tables below rest on (2026-10-09, read from the code paths)
   holds None and the app's own default names one setting twice.
 - The cathar music profile's de-esser switch, expander depth and CRT notch width were not
   knobs, so the music rounds could not move them.
+- The air shelf's corner and the polish expander's attack and decay were hard-coded in
+  `modules/filters.py` (7500 Hz, 0.04 / 0.18 s); since 2026-10-09 they are
+  `linear_air_freq_hz`, `expander_attack_s` and `expander_decay_s`, whose defaults build the
+  same filter strings. The shelf is APL's alone (cathar's polish runs without air); the
+  expander timing is shared, since cathar's mode runs the same polish expander
+  (`modes/cathar.py` -> `processing._polish_full_audio_step`).
 
 `--stage-cache DIR` (plan 1.5) points every candidate's render at one neural-stage cache
 (`AI_RESTORE_STAGE_CACHE`, `modules/stage_cache.py`; `--stage-cache-gb` caps it, 50 GB by
@@ -141,6 +149,9 @@ SHARED_KNOBS = {
     "enable_dynamic_expander": [True, False],
     "expander_depth_db": [4.0, 7.0, 12.0],
     "expander_knee_offset_db": [0.0, 4.0, 8.0],
+    # The expander's compand timing (round A3, pause texture), hard-coded 0.04 / 0.18 s until 2026-10-09.
+    "expander_attack_s": [0.02, 0.04, 0.08],
+    "expander_decay_s": [0.12, 0.18, 0.3],
     "loudnorm_target_lra": [11.0, 20.0, 40.0],
     "crt_notch_q": [30.0, 60.0, 120.0],
     # The pause floor keeper (modules/pause_floor.py): the source's own pause texture put back
@@ -194,7 +205,12 @@ KNOBS = {
         "apl_noiseprint_tonal_s": [2.5, 4.0, 6.0],
         "apl_tonal_flatness_max": [0.01, 0.035],
         "enable_linear_air": [True, False],
-        "linear_air_gain_db": [1.0, 2.0],
+        # Round A1 (brightness, plan Part 2: 0 / 0.5 / 1.0 / 1.5 dB): the shelf's gain around the by-ear +1 dB
+        # (0 is the enable_linear_air False neighbour; +2 dB, which round 3 rejected, is not proposed, so a v1 / v2
+        # grid without the reversal cannot step to it) and its corner, hard-coded at 7500 Hz until 2026-10-09. The
+        # v3 grids' reversal judges the pair as one shelf (autotune_guards.ledger_air_gain): +1.5 dB at 6000 Hz is refused.
+        "linear_air_gain_db": [0.5, 1.0, 1.5],
+        "linear_air_freq_hz": [6000.0, 7500.0, 9000.0],
         # The app's default model is ROFORMER (seeded from the app), so the one move is the aggressive model.
         "apl_neural_model": [ROFORMER, ROFORMER_AGGR],
         # The model on music (empty, the default, follows the chain's own choice).
@@ -335,6 +351,8 @@ _CATHAR_MUSIC_KEYS = (
     "cathar_music_persistence_min",
     "cathar_music_alpha_high",
 )
+# The polish expander's knee and compand timing (filters._build_full_audio_expander_filter), shared by both engines.
+EXPANDER_SHAPE_KNOBS = ("expander_knee_offset_db", "expander_attack_s", "expander_decay_s")
 INERT_WHEN = {
     "apl": (
         ({"apl_enable_spectral_denoise": False}, SUBTRACTION_KNOBS),
@@ -348,9 +366,10 @@ INERT_WHEN = {
         ({"apl_music_stem_path": False}, ("apl_music_bg_floor_db",)),
         ({"apl_enable_sibilant_guard": False}, ("apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_sibilant_hf_share_min")),
         ({"enable_pause_floor": False}, ("pause_floor_fill_db",)),
-        ({"enable_dynamic_expander": False}, ("apl_expander_depth_db", "expander_knee_offset_db")),
-        # filters._build_linear_air_filter returns no shelf with the air off, whatever the gain.
-        ({"enable_linear_air": False}, ("linear_air_gain_db",)),
+        # filters._append_expander_stage builds no compand with the expander off: its depth, knee and timing are dead.
+        ({"enable_dynamic_expander": False}, ("apl_expander_depth_db",) + EXPANDER_SHAPE_KNOBS),
+        # filters._build_linear_air_filter returns no shelf with the air off, whatever the gain or corner.
+        ({"enable_linear_air": False}, ("linear_air_gain_db", "linear_air_freq_hz")),
     ),
     "cathar": (
         ({"cathar_split_band_hz": 0}, ("cathar_alpha_high", "cathar_music_alpha_high")),
@@ -364,7 +383,7 @@ INERT_WHEN = {
         ({"cathar_enable_noiseprint": False, "cathar_music_enable_noiseprint": False}, ("cathar_noiseprint_duration_s",)),
         ({"cathar_music_profile": False}, _CATHAR_MUSIC_KEYS),
         ({"enable_pause_floor": False}, ("pause_floor_fill_db",)),
-        ({"enable_dynamic_expander": False}, ("expander_depth_db", "expander_knee_offset_db", "cathar_music_expander_depth_db")),
+        ({"enable_dynamic_expander": False}, ("expander_depth_db", "cathar_music_expander_depth_db") + EXPANDER_SHAPE_KNOBS),
     ),
 }
 # Knobs an engine never reads: auto_pure_linear takes apl_expander_depth_db, not the shared depth.

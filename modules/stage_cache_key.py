@@ -75,9 +75,12 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         # The polish (processing._polish_full_audio_step -> filters.build_full_audio_polish_filter).
         "enable_linear_air",
         "linear_air_gain_db",
+        "linear_air_freq_hz",
         "enable_dynamic_expander",
         "expander_depth_db",
         "expander_knee_offset_db",
+        "expander_attack_s",
+        "expander_decay_s",
         # Passed by the mode as a post-neural stage setting, never to the cached stages.
         "apl_expander_depth_db",
         # The sibilant guard and the pause floor keeper (their whole modules run after it).

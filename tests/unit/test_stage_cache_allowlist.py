@@ -22,6 +22,7 @@ WHOLE = "*"
 READ_SITES = {
     "enable_linear_air": ("ENABLE_LINEAR_AIR", {"filters.py:_build_linear_air_filter"}),
     "linear_air_gain_db": ("LINEAR_AIR_GAIN_DB", {"filters.py:_build_linear_air_filter"}),
+    "linear_air_freq_hz": ("LINEAR_AIR_FREQ_HZ", {"filters.py:_build_linear_air_filter"}),
     # The polish expander; processing's background expander runs only in hybrid and auto_pure.
     "enable_dynamic_expander": ("ENABLE_DYNAMIC_EXPANDER", {"filters.py:_append_expander_stage", "processing.py:_expand_background_step"}),
     # The raw string is also the name of the post-neural stage setting the step takes (POST_NEURAL_STAGES).
@@ -34,6 +35,9 @@ READ_SITES = {
         },
     ),
     "expander_knee_offset_db": ("EXPANDER_KNEE_OFFSET_DB", {"filters.py:_build_full_audio_expander_filter"}),
+    # The polish expander's compand timing, read beside its depth and knee.
+    "expander_attack_s": ("EXPANDER_ATTACK_S", {"filters.py:_build_full_audio_expander_filter"}),
+    "expander_decay_s": ("EXPANDER_DECAY_S", {"filters.py:_build_full_audio_expander_filter"}),
     "apl_expander_depth_db": ("APL_EXPANDER_DEPTH_DB", {"modes/auto_pure_linear.py:AutoPureLinearMode.execute.denoise_step"}),
     "apl_enable_sibilant_guard": ("APL_ENABLE_SIBILANT_GUARD", {"sibilant_guard.py:*"}),
     "apl_sibilant_mix": ("APL_SIBILANT_MIX", {"sibilant_guard.py:*"}),

@@ -16,6 +16,19 @@
 # the music listening session (after A6) set them. Weights are all 1.0 (the speech-side 1.5
 # applies to speech).
 #
+# Round 0 (2026-10-09, experiments/tata_listen/scores_v3/r2) re-derived presence only, the one
+# music reading its `dull` flag read on all 24 v2 finals the user called "music fine". The other
+# two-sided entries still charge 16 of those 24 outputs (onset correlation and the stems
+# entries rank one way by design; the stems were not scored): tilt 9 of the 20 that read it
+# (worst x_vid-20230606-121054 APL -2.588), air 7 of 10 (same file, -5.118), body 4 of 14
+# (m_vid-20220730-091707 APL -1.549), the attack tail 8 of 24 (x_vid-20230606 APL -8.502) and
+# the gain ride 3 of 12 (m_vid-20220730 APL 1.304). Presence's rule (admit every accepted file
+# by one scale unit) would set tilt 2.70, air 5.40, body 1.65, attack tail 9.05 and gain ride
+# 1.55, widths one APL output each decides (x_vid-20230606 tilt, air and attack, m_vid-20220730
+# body and ride), so they keep their starting values until the music listening session: a
+# music loop run on this grid moves away from outputs the user accepted, unblinded, on those
+# readings.
+#
 # Not ranked: dsp.hf_4k8k / hf_8k16k (backstop gates), dsp.residual_noise_db (more noise
 # removed is shown, never ranked: nothing here rewards removal, so watch the loop for drift
 # toward less of it), dsp.lkr (hard gate), the sync (hard gates). The R11 low-end and R8
@@ -36,7 +49,11 @@ ranking:
   # 0.07-0.09 dB/oct, presence 0.09-0.12, air 0.18-0.24, body 0.07-0.10 dB; an RBJ +2 dB shelf
   # at 7.5 kHz reads air +1.27 (median). Body is readable on 6 of 150 windows.
   dsp.balance_tilt_db_oct.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.1, weight: 1.0, family: timbre}
-  dsp.balance_presence_db.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.12, weight: 1.0, family: timbre}
+  # Presence, Round 0 (docs/ear_v3_round0.md, `dull`): 20 of the 24 v2 finals the user called
+  # "music fine" read -0.610 (m_vid-20220925-115124 APL) to +0.410 (m_videoplayback-2021-07-11
+  # APL), 4 read none (experiments/tata_listen/scores_v3/r2); 0.3 charged five of them. 0.75
+  # admits all by 0.140 or more (one scale unit, rounded up to 0.05).
+  dsp.balance_presence_db.output.median: {target: 0.0, dead_zone: 0.75, scale: 0.12, weight: 1.0, family: timbre}
   dsp.balance_air_db.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.25, weight: 1.0, family: timbre}
   dsp.balance_body_db.output.median: {target: 0.0, dead_zone: 0.5, scale: 0.1, weight: 1.0, family: timbre}
 

@@ -80,8 +80,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     suppressor; not accepted, off). The same round switched the subtraction
     stage off (`apl_enable_spectral_denoise`) and named the Mel-RoFormer
     denoiser on speech (`apl_neural_model`; `apl_music_neural_model`, empty,
-    is the model on music). The polish expander's depth and knee
-    (`expander_depth_db`, `expander_knee_offset_db`), the mux's
+    is the model on music). The polish expander's depth, knee and timing
+    (`expander_depth_db`, `expander_knee_offset_db`, `expander_attack_s`,
+    `expander_decay_s`), the mux's
     `loudnorm_target_lra` (loudnorm turns dynamic above it, and past its
     true-peak rule; `loudnorm_linear_fallback`) and `crt_notch_q` are keys
     both engines share; this mode takes its own expander depth

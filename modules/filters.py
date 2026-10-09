@@ -43,9 +43,12 @@ from .config import (
     ENABLE_ADECLICK,
     ENABLE_DYNAMIC_EXPANDER,
     ENABLE_LINEAR_AIR,
+    EXPANDER_ATTACK_S,
+    EXPANDER_DECAY_S,
     EXPANDER_DEPTH_DB,
     EXPANDER_KNEE_OFFSET_DB,
     HIGHPASS_FREQ,
+    LINEAR_AIR_FREQ_HZ,
     LINEAR_AIR_GAIN_DB,
     NOTCH_FREQ,
 )
@@ -1171,23 +1174,30 @@ def _build_full_audio_expander_filter(noise_floor_db=None, depth_db=None, knee_o
     The curve pushes what sits under the knee (`noise_floor + knee_offset`, clamped to -60..-35
     dBFS) down by `depth_db` more, and maps -90 dBFS to -100: this is the stage that turns a
     denoised pause into dead air. `expander_depth_db` / `expander_knee_offset_db` in the config
-    move it (7 / +4 are the shipped curve); the tuning loop searches them.
+    move it (7 dB / +8 dB are the shipped curve, +4 dB was v1.3.2's knee); the tuning loop searches
+    them. `expander_attack_s` / `expander_decay_s` time its level follower (0.04 / 0.18 s, the
+    shipped `attacks=0.04:decays=0.18`).
     """
     depth = EXPANDER_DEPTH_DB if depth_db is None else float(depth_db)
     offset = EXPANDER_KNEE_OFFSET_DB if knee_offset_db is None else float(knee_offset_db)
+    timing = f"compand=attacks={float(EXPANDER_ATTACK_S):g}:decays={float(EXPANDER_DECAY_S):g}"
     if noise_floor_db is None:
-        return f"compand=attacks=0.04:decays=0.18:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
+        return f"{timing}:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
     knee = max(-60.0, min(-35.0, float(noise_floor_db) + offset))
     mid = round((knee - 90.0) / 2.0, 1)
-    return f"compand=attacks=0.04:decays=0.18:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
+    return f"{timing}:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
 
 
 def _build_linear_air_filter(gain_db=None):
-    """Constructs a gentle high-shelf presence curve compensating for tape head loss."""
+    """Constructs a gentle high-shelf presence curve compensating for tape head loss.
+
+    The shelf sits at `linear_air_freq_hz` (7500 Hz, the shipped `f=7500`), `gain_db` high
+    (`linear_air_gain_db` when None).
+    """
     gain_db = LINEAR_AIR_GAIN_DB if gain_db is None else gain_db
     if not ENABLE_LINEAR_AIR or gain_db <= 0.0:
         return None
-    return f"treble=g={gain_db:.1f}:f=7500"
+    return f"treble=g={gain_db:.1f}:f={float(LINEAR_AIR_FREQ_HZ):g}"
 
 
 def _append_linear_air_stage(stages, apply_air):

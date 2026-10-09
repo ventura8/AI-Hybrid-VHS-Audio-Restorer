@@ -1,10 +1,12 @@
 # Ear v3 Round 0
 
 Round 0 (plan 1.6) re-scored every file the verdict ledger judged with the
-ear v3 readings on 2026-10-09. **Nothing here is adopted**: no gate, flag,
-grid entry or reversal changed. T, S, V and G are Tele7abc, SOTI, Vaccin and
-Gaudeamus5; A, B and C are round three's air shelf at +2 dB, +1 dB
-(shipped) and off.
+ear v3 readings on 2026-10-09. When it ran nothing was adopted. After
+Session 0, the same day, the grid notes below went into `tata_v3.yaml` and
+`music_v3.yaml` (see "What the grids took"); no gate, flag or reversal
+changed, and the proposed flags stay proposals. T, S, V and G are Tele7abc,
+SOTI, Vaccin and Gaudeamus5; A, B and C are round three's air shelf at
++2 dB, +1 dB (shipped) and off.
 
 ## What was scored and how
 
@@ -119,6 +121,31 @@ These reverse a verdict or charge accepted files; do not adopt them:
 - `sib_abs_level_db` +0.25 / 0.14 ties S's A with B; drop `sib_centroid_hz`
   (ranks C over B on V). `rejected_below: 0.0` for `linear_air_gain_db`
   rests on one unblinded verdict group: Session 0's B-against-C pair first.
+
+## What the grids took (2026-10-09, after Session 0)
+
+Each grid comment carries the numbers. Every value is still an unblinded
+hypothesis (Session 0 told no two restorations apart).
+
+- `tata_v3.yaml`, 12 entries (from 15): `balance_air_db` and
+  `sib_centroid_hz` dropped, `gap_atten_db` and `gap_hf_excess_db` shown,
+  not ranked. Pause depth is ranked as a band of 2.95-35.0 dB: the high
+  edge is `dead_air`'s 35.0, the low edge one scale unit under the
+  shallowest accepted speech file (S r3 C, 3.990), so a pass-through scores
+  2.95 instead of tying every accepted file. Tilt 2.25, presence 2.25, body
+  2.35, `sib_abs_level_db` 3.7 and `gain_ride_lu` 2.65 admit every accepted
+  file by at least one scale unit; texture keeps 1.75. The slope's 2.1
+  honours Session 0's blind "same" on the 0.7.3 / 0.7.5 pair and still
+  charges V known single4s (ranked first) and S / V alpha 2 (preferred);
+  pause depth charges V's ranked-first files on its mixed-route aggregate.
+- Every round-two and round-three file scores 0, so their preferences tie
+  rather than reproduce; round one's are charged where the comments say,
+  and T known `apl` (ranked first) now scores above `cathar075` (second):
+  33.40 against 14.31.
+- `music_v3.yaml`: presence 0.75 (all 24 "music fine" outputs inside); its
+  other entries still charge 16 of the 24.
+- The sibilance family ties every A1 / A2 candidate (r3's A-to-C span sits
+  inside 3.7), so those rounds rest on the paired `thin_abs` check.
 
 ## v2 flags to retire or restrict
 

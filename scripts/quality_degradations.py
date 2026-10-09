@@ -32,6 +32,17 @@ live in `scripts/degradations_v3.py`; their measured effect on the realistic-v2 
   speech benign set's floor at 0.0001 dB: the check passes there. A failing assertion makes
   the run exit 1. (The user's own air shelf read +0.43 / +0.17 / -0.05 for +2 / +1 / off on
   Vaccin, `scripts/tune_grids/tata_v3.yaml`.)
+- `air_corner` (the same shelf at +1.5 dB, round A1's top gain, its corner at 9000 / 7500 /
+  6000 Hz, A1's corners; `linear_air_freq_hz` made the corner a knob on 2026-10-09, and the
+  `air_shelf_*` rows hold it at 7500 Hz): read with the runner's dsp family on the en / fr
+  fixtures, R2's absolute 's' level +0.140 / +0.301 / +0.603 (fr +0.607 / +0.906 / +1.189),
+  `dsp.hf_4k8k` +0.129 / +0.280 / +0.570 (fr +0.180 / +0.348 / +0.610) and `dsp.hf_8k16k`
+  +0.936 / +1.182 / +1.358 (fr +0.803 / +1.106 / +1.327), the net level under the absolute one
+  at every corner, the texture under 0.01, lkr 0, R1 air clipped as on `air_shelf_*`. The
+  rejected +2 dB at 7500 Hz reads R2 +0.402 / hf_4k8k +0.375 on en (fr +1.211 / +0.469): the
+  6000 Hz corner at +1.5 dB passes it on both readings, at +1.0 dB it equals it on en (+0.401 /
+  +0.379). So the loop's verdict-reversal guard judges the corner with the gain
+  (`autotune_guards.ledger_air_gain`): it refuses the first and leaves the second to the ear.
 - `spectral_tilt_*` (+-0.5 / 1 / 2 dB/oct above 1 kHz): R1's tilt reads 0.50 / 1.00 / 1.99
   on en speech (de 0.51 / 1.02 / 2.05), presence 0.53 / 1.07 / 2.13, R2's absolute level
   1.07 / 2.13 / 4.27 against the net 0.21 / 0.35 / 0.69.
@@ -536,6 +547,9 @@ SYNC_FLAT = Expectation("file.sync_drift_ms", "flat", tolerance=SYNC_TOLERANCE_M
 # A static filter makes no musical noise: the shelf reads lkr under 1e-4 on every speech and music fixture measured.
 NO_ISLANDS = Expectation("dsp.lkr", "flat", tolerance=UNTOUCHED_DB)
 AIR_LEVELS = (0.5, 1.0, 2.0)
+# Round A1's corners (linear_air_freq_hz), mild to severe: a lower corner lifts every band more. At A1's top gain.
+AIR_CORNERS_HZ = (9000.0, 7500.0, 6000.0)
+AIR_CORNER_GAIN_DB = 1.5
 TILT_LEVELS = (0.5, 1.0, 2.0)
 ORACLE_REMOVED_DB = -20.0
 
@@ -557,6 +571,24 @@ def _air_speech(direction):
         NO_ISLANDS,
         Expectation("dsp.balance_top_db", direction, True),
         Expectation("dsp.balance_air_db", direction),
+    )
+
+
+def _air_corner():
+    """The shelf's corner moved down at a fixed gain: R2's absolute level and both HF bands read it, as the gain's do.
+
+    The readings round A1 is judged by (R2, the paired `hf_8k16k` bright check) were calibrated on the 7500 Hz shelf
+    only; this row asks them to follow A1's corners too. R1's air asserts where R0's band carries it, as above.
+    """
+    return (
+        Expectation(SIB_ABS, "up"),
+        Expectation(SIB_NET, "flat", twin=SIB_ABS),
+        Expectation("dsp.sib_texture_db", "flat", tolerance=TEXTURE_TOLERANCE_DB),
+        NO_ISLANDS,
+        Expectation("dsp.hf_4k8k", "up"),
+        Expectation("dsp.hf_8k16k", "up"),
+        Expectation("dsp.balance_top_db", "up", True),
+        Expectation("dsp.balance_air_db", "up"),
     )
 
 
@@ -602,6 +634,7 @@ V3_DEGRADATIONS = {
     "air_shelf_cut": Degradation("speech", _negated(AIR_LEVELS), _air_speech("down")),
     "air_shelf_boost_music": Degradation("music", AIR_LEVELS, _air_music("up")),
     "air_shelf_cut_music": Degradation("music", _negated(AIR_LEVELS), _air_music("down")),
+    "air_corner": Degradation("speech", AIR_CORNERS_HZ, _air_corner()),
     "spectral_tilt_up": Degradation("speech", TILT_LEVELS, _tilt("up", "down")),
     "spectral_tilt_down": Degradation("speech", _negated(TILT_LEVELS), _tilt("down", "up")),
     "pause_residual_scaled": Degradation(
@@ -784,6 +817,11 @@ def _air(level, base, rate, _materials, _rng):
     return base, v3.air_shelf(base, rate, level)
 
 
+def _cornered(level, base, rate, _materials, _rng):
+    """The air shelf at round A1's top gain with its corner at `level` Hz."""
+    return base, v3.air_shelf(base, rate, AIR_CORNER_GAIN_DB, level)
+
+
 def _tilted(level, base, rate, _materials, _rng):
     return base, v3.spectral_tilt(base, rate, level)
 
@@ -836,6 +874,7 @@ def _drifting(level, base, _rate, _materials, _rng):
 # Builder per ear v3 family; a degradation's name starts with its family (`air_shelf_cut_music`).
 V3_BUILDERS = {
     "air_shelf": _air,
+    "air_corner": _cornered,
     "spectral_tilt": _tilted,
     "pause_residual_scaled": _scaled,
     "pause_residual_hiss": _hissy,

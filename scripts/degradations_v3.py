@@ -10,7 +10,9 @@ a mono float signal and returns a float32 array of the same length.
   on `treble_coefficients` matches FFmpeg's own output to 9e-8 on white noise at 0.1 RMS
   (44.1 and 48 kHz, g = +2 / -1 / +0.5; measured 2026-10-09). The literal reading of the
   defaults, Q = 0.5, misses by 0.014. At +2 dB the shelf gives +0.12 dB at 4 kHz, +1.0 at
-  7.5 kHz, +1.85 at 12 kHz and +1.98 at 16 kHz (48 kHz).
+  7.5 kHz, +1.85 at 12 kHz and +1.98 at 16 kHz (48 kHz). The corner defaults to the shipped
+  7500 Hz (`linear_air_freq_hz`'s default, a knob since 2026-10-09); `freq_hz` takes another,
+  and `quality_degradations`' `air_corner` row sweeps round A1's 9000 / 7500 / 6000 Hz.
 - `spectral_tilt`: a zero-phase FFT gain of `slope` dB per octave above 1 kHz, flat below.
 - The pause residuals: the source's own pauses replaced by a transformed copy of the source,
   speech left bit-identical. A residual the runner's least-squares gain match could absorb (a
@@ -62,6 +64,7 @@ import numpy as np
 import scipy.ndimage
 import scipy.signal
 
+# The shipped shelf corner (linear_air_freq_hz's default); air_shelf's freq_hz takes another.
 AIR_SHELF_HZ = 7500.0
 TREBLE_Q = 1.0 / np.sqrt(2.0)
 TILT_PIVOT_HZ = 1000.0

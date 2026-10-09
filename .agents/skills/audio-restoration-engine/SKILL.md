@@ -313,7 +313,8 @@ audio alignment, or FFmpeg multiplexing.
   is:
   "silent in pauses" is the polish expander (`_build_full_audio_expander_filter`
   pushes what sits under its knee a further 7-10 dB down and maps -90 dBFS
-  to -100; `expander_depth_db`, `expander_knee_offset_db`) plus the mask
+  to -100; `expander_depth_db`, `expander_knee_offset_db`, and its timing
+  `expander_attack_s` / `expander_decay_s`) plus the mask
   denoiser leaving near-silence, so `modules/pause_floor.py` puts the
   source's own pause texture back (`pause_floor_fill_db` under the source's
   pause level, quiet = within 10 dB of the p15 level, only the deficit,
@@ -377,6 +378,22 @@ audio alignment, or FFmpeg multiplexing.
   where loudnorm's dynamic mode held -1.8 to -1.9. The default stays
   `ffmpeg` (every output keeps its bytes) until the pause-texture round
   judges it by ear; with the event log on the record shows which mode ran.
+- **Air shelf corner and expander timing**: `_build_linear_air_filter`
+  reads `linear_air_freq_hz` (7500 Hz, the shelf's `treble=f`) and
+  `_build_full_audio_expander_filter` reads `expander_attack_s` and
+  `expander_decay_s` (0.04 / 0.18 s, the `compand` timing), all in
+  `modules/filters.py`. They were hard-coded until 2026-10-09 and their
+  defaults build the same strings: `tests/unit/test_polish_knobs.py` pins
+  the default graphs, and a probe of 2010 argument and switch combinations
+  matched HEAD 8d57030's builders byte for byte. Only APL runs the shelf.
+  The expander is one stage that `cathar` (its mode calls
+  `processing._polish_full_audio_step` with `apply_air=False`),
+  `auto_pure_linear` and `denoise_only` share, so its timing moves both
+  engines. All three keys are read after the neural stage (stage-cache
+  allowlist) and are loop knobs for rounds A1 and A3; none is judged by ear.
+  Round 3 heard every air shelf at 7500 Hz, so the loop judges a corner move
+  with the gain against its +2 dB boundary (+1.5 dB at 6000 Hz lifts 4-8 kHz
+  like +2.57 dB at 7500 Hz: `autotune_guards.ledger_air_gain`).
 - **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
   (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
   is measured before it replaces `.venv/Scripts/cathar.exe`; 0.7.6 replaced

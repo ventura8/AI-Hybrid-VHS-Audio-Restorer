@@ -62,7 +62,7 @@ def test_flat_and_match_expectations_carry_their_allowance():
 def test_the_net_sibilance_reading_is_held_against_its_absolute_twin_on_the_shelf_and_the_tilt():
     """The net sibilance reading is held against its absolute twin on the shelf and the tilt."""
     twins = {name: e.twin for name, e in _expectations("flat") if e.metric == deg.SIB_NET}
-    assert set(twins) == {"air_shelf_boost", "air_shelf_cut", "spectral_tilt_up", "spectral_tilt_down"}
+    assert set(twins) == {"air_shelf_boost", "air_shelf_cut", "air_corner", "spectral_tilt_up", "spectral_tilt_down"}
     assert set(twins.values()) == {deg.SIB_ABS}
 
 
@@ -142,5 +142,20 @@ def _asserted_on(metric):
 
 def test_both_air_shelf_entries_assert_r1_air():
     """Finding 12, option 1: R1's air is non-blind on speech and music; where R0's band leaves it no band it reports "clipped"."""
-    assert _asserted_on("dsp.balance_air_db") == {"air_shelf_boost", "air_shelf_cut", "air_shelf_boost_music", "air_shelf_cut_music"}
-    assert {"air_shelf_boost", "air_shelf_cut"} <= set(deg.on_tape())
+    shelves = {"air_shelf_boost", "air_shelf_cut", "air_shelf_boost_music", "air_shelf_cut_music", "air_corner"}
+    assert _asserted_on("dsp.balance_air_db") == shelves
+    assert {"air_shelf_boost", "air_shelf_cut", "air_corner"} <= set(deg.on_tape())
+
+
+def test_the_corner_row_sweeps_round_a1s_corners_at_its_top_gain():
+    """`linear_air_freq_hz` is a knob: the shelf at +1.5 dB with its corner at 9000 / 7500 / 6000 Hz, mild to severe."""
+    spec, materials = deg.DEGRADATIONS["air_corner"], _materials()
+    assert (spec.levels, deg.AIR_CORNER_GAIN_DB) == ((9000.0, 7500.0, 6000.0), 1.5)
+    built = [deg.apply("air_corner", corner, materials["speech"], RATE, materials, None)[1] for corner in spec.levels]
+    assert all(np.array_equal(out, v3.air_shelf(materials["speech"], RATE, 1.5, corner)) for out, corner in zip(built, spec.levels))
+
+
+def test_the_corner_row_asks_the_readings_round_a1_is_judged_by_to_follow_the_corner():
+    """R2's absolute level and both HF bands must rise as the corner drops; the net level stays under its twin."""
+    moving = {e.metric for e in deg.DEGRADATIONS["air_corner"].expects if e.direction == "up" and not e.blind}
+    assert moving == {deg.SIB_ABS, "dsp.hf_4k8k", "dsp.hf_8k16k", "dsp.balance_air_db"}

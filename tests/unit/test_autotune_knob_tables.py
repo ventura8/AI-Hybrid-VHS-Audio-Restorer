@@ -186,3 +186,61 @@ def test_a_saved_none_for_a_knob_without_a_default_entry_is_seeded(tmp_path, mon
     monkeypatch.setattr(at.tune, "resolved_config", lambda *_args: {"apl_neural_model": at.ROFORMER})
     assert "apl_neural_model" in at._unseeded("apl", {"apl_neural_model": None})
     assert at.seed_defaults("apl", {"apl_neural_model": None}, tmp_path)["apl_neural_model"] == at.ROFORMER
+
+
+# ----------------------------------------------------------------------------- rounds A1 (brightness) and A3 (pause texture)
+
+TIMING = ("expander_attack_s", "expander_decay_s")
+
+
+def test_the_brightness_and_pause_texture_knobs_hold_the_rounds_values():
+    """A1 moves APL's shelf gain (plan: 0 / 0.5 / 1.0 / 1.5 dB, 0 the shelf off) and corner; A3 the shared expander timing."""
+    apl = at.KNOBS["apl"]
+    assert (apl["linear_air_gain_db"], apl["linear_air_freq_hz"]) == ([0.5, 1.0, 1.5], [6000.0, 7500.0, 9000.0])
+    for engine in ("apl", "cathar"):
+        assert [at.KNOBS[engine][knob] for knob in TIMING] == [[0.02, 0.04, 0.08], [0.12, 0.18, 0.3]]
+    assert "linear_air_freq_hz" not in at.KNOBS["cathar"]
+
+
+def test_the_air_corner_is_inert_with_the_shelf_off():
+    """filters._build_linear_air_filter builds no shelf with the air off, whatever the corner."""
+    assert "linear_air_freq_hz" in at.inert_knobs("apl", {"enable_linear_air": False})
+    assert "linear_air_freq_hz" in _knobs("apl", {})
+
+
+def test_the_expander_timing_is_inert_with_the_expander_off_in_both_engines():
+    """filters._append_expander_stage builds no compand with the expander off; on, both engines move its timing."""
+    for engine in ("apl", "cathar"):
+        assert set(TIMING) <= at.inert_knobs(engine, {"enable_dynamic_expander": False})
+        assert set(TIMING) <= _knobs(engine, {})
+
+
+NEW_KNOBS = ("linear_air_gain_db", "linear_air_freq_hz", *TIMING)
+
+
+def _moves_by_knob(incumbent):
+    """`{knob: {value, ...}}` of the neighbour moves APL proposes for the knobs rounds A1 and A3 added or widened."""
+    moves = {knob: set() for knob in NEW_KNOBS}
+    for knob, value in at.neighbour_moves("apl", incumbent):
+        moves.get(knob, set()).add(value)
+    return moves
+
+
+def test_from_the_shipped_defaults_each_new_knob_steps_to_its_neighbours(tmp_path, monkeypatch):
+    """Seeded from the app (+1 dB at 7500 Hz, 0.04 / 0.18 s), each knob proposes the values beside the shipped one."""
+    monkeypatch.setattr(at.tune, "resolved_config", lambda *_args: dict(app_config.CONFIG))
+    incumbent = at.seed_defaults("apl", {}, tmp_path)
+    assert [incumbent[knob] for knob in NEW_KNOBS] == [1.0, 7500.0, 0.04, 0.18]
+    assert _moves_by_knob(incumbent) == {
+        "linear_air_gain_db": {0.5, 1.5},
+        "linear_air_freq_hz": {6000.0, 9000.0},
+        "expander_attack_s": {0.02, 0.08},
+        "expander_decay_s": {0.12, 0.3},
+    }
+
+
+def test_no_grid_lets_the_loop_step_to_the_shelf_round_three_rejected():
+    """+2 dB is not in the table, so a v1 / v2 grid (no reversal) cannot reach it either: +1.5 dB steps only back to +1."""
+    assert 2.0 not in at.KNOBS["apl"]["linear_air_gain_db"]
+    gains = [value for knob, value in at.neighbour_moves("apl", {"linear_air_gain_db": 1.5}) if knob == "linear_air_gain_db"]
+    assert gains == [1.0]

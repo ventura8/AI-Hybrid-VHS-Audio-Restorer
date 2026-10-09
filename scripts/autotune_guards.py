@@ -8,6 +8,11 @@ applies; a v1 or v2 grid has none of them (`NO_GUARDS`) and its rounds are judge
   heads the rejected way and ends at the value or past it (`linear_air_gain_db` up to 2.0 or
   above: round 3 heard +1 dB over +2 dB and off) is refused before it is rendered; a move back
   towards the accepted side never is. A key no engine tunes stops the loop as a typo.
+  Round 3 heard every shelf at 7500 Hz, so since `linear_air_freq_hz` became a knob
+  (2026-10-09) the air gain is judged as the 7500 Hz shelf that lifts 4-8 kHz as much
+  (`ledger_air_gain`): +1.5 dB at 6000 Hz lifts that band like +2.57 dB at 7500 Hz and is
+  refused, though its gain alone sits under 2.0, and the combination of two winners (+1.5 dB
+  at 7500 Hz and +1.0 dB at 6000 Hz) is refused the same way.
 - `audibility:` the audibility tie (principle 6). After the hash, each live candidate is
   compared with the incumbent per tape by `auditory.compare_files` (the null test and the
   noise-to-mask ratio at the section's `offset_db`), stopping at the first audible tape; the
@@ -36,11 +41,31 @@ its move.
 
 import json
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
+import scipy.optimize
+import scipy.signal
 
+from scripts import degradations_v3
 from scripts.restoration_quality import audio_io, auditory, reward
+
+# The air shelf as the ledger heard it: every round-3 render ran `treble=f=7500` (`linear_air_freq_hz` was hard-coded
+# until 2026-10-09), so a reversal on `linear_air_gain_db` is a gain at this corner.
+AIR_GAIN_KEY = "linear_air_gain_db"
+AIR_CORNER_KEY = "linear_air_freq_hz"
+LEDGER_AIR_CORNER_HZ = 7500.0
+# Where another corner's shelf is compared with the ledger's: its power gain over 4-8 kHz on a flat spectrum, the band
+# dsp.hf_4k8k reads. On it +1.5 dB at 6000 Hz lifts like +2.57 dB at 7500 Hz (refused under rejected_above 2.0), +1.0 dB
+# at 6000 Hz like +1.72 dB (allowed; on the en fixture it reads R2's absolute 's' level and hf_4k8k as the +2 dB shelf
+# does, 0.401 / 0.379 against 0.402 / 0.375). Over R2's own 4-12 kHz band the +1.5 dB 6000 Hz shelf restates to +1.92
+# dB: under the boundary, though it lifts 5-8 kHz more than the rejected shelf (+0.46..+1.19 against +0.27..+1.16 dB).
+AIR_LIFT_BAND_HZ = (4000.0, 8000.0)
+AIR_LIFT_POINTS = 257
+PIPELINE_RATE = 44100
+# The span the restated gain is searched in (dB); a gain whose lift falls outside it reads at the nearer end.
+AIR_GAIN_SPAN_DB = 40.0
 
 AUDIBILITY_SIDECAR_SUFFIX = ".audibility.json"
 # What the audibility sidecar keeps of `auditory.compare_files` (the per-window lists stay out).
@@ -147,11 +172,61 @@ def describe_guards(guards):
 # ----------------------------------------------------------------------------- before rendering: the ledger's boundaries
 
 
+@lru_cache(maxsize=None)
+def air_lift_db(gain_db, corner_hz):
+    """The air shelf's power gain over `AIR_LIFT_BAND_HZ` on a flat spectrum: FFmpeg's `treble=g=gain_db:f=corner_hz`."""
+    b, a = degradations_v3.treble_coefficients(gain_db, PIPELINE_RATE, corner_hz)
+    _freqs, response = scipy.signal.freqz(b, a, worN=np.linspace(*AIR_LIFT_BAND_HZ, AIR_LIFT_POINTS), fs=PIPELINE_RATE)
+    return float(10.0 * np.log10(np.mean(np.abs(response) ** 2)))
+
+
+@lru_cache(maxsize=None)
+def ledger_air_gain(gain_db, corner_hz):
+    """The gain of the 7500 Hz shelf (the one round 3 heard) that lifts 4-8 kHz as much as `gain_db` at `corner_hz` does."""
+    ends = [air_lift_db(sign * AIR_GAIN_SPAN_DB, LEDGER_AIR_CORNER_HZ) for sign in (-1.0, 1.0)]
+    target = min(max(air_lift_db(gain_db, corner_hz), ends[0]), ends[1])
+    return float(scipy.optimize.brentq(lambda gain: air_lift_db(gain, LEDGER_AIR_CORNER_HZ) - target, -AIR_GAIN_SPAN_DB, AIR_GAIN_SPAN_DB))
+
+
+def _restated_air(settings):
+    """`(gain, corner)` when `settings` put a finite air gain at a corner other than the ledger's, else None."""
+    gain, corner = settings.get(AIR_GAIN_KEY), settings.get(AIR_CORNER_KEY)
+    if _finite_number(gain) and _finite_number(corner) and float(corner) != LEDGER_AIR_CORNER_HZ:
+        return float(gain), float(corner)
+    return None
+
+
+def in_ledger_units(settings):
+    """`settings` with the air gain restated at the ledger's 7500 Hz corner (`ledger_air_gain`); unchanged at 7500 Hz or unset.
+
+    A corner the settings leave out (or set to None, the app's default) reads as the ledger's: the loop seeds every
+    knob from the app, so a candidate always carries one.
+    """
+    restated = _restated_air(settings)
+    return settings if restated is None else {**settings, AIR_GAIN_KEY: ledger_air_gain(*restated)}
+
+
+def _describe(rule, overrides, judged):
+    """Why `rule` refuses a candidate, naming the shelf it was restated from when its corner is not the ledger's."""
+    restated = _restated_air(overrides) if rule.key == AIR_GAIN_KEY else None
+    if restated is None:
+        return rule.describe(overrides.get(rule.key))
+    gain, corner = restated
+    why = rule.describe(round(judged[rule.key], 2))
+    return f"{why} ({gain:+g} dB at {corner:g} Hz lifts 4-8 kHz like that gain at {LEDGER_AIR_CORNER_HZ:g} Hz)"
+
+
 def refusals(everything, incumbent, reversals):
-    """`{cid: [why, ...]}` for every candidate a ledger boundary refuses; never the incumbent, which moves nothing."""
+    """`{cid: [why, ...]}` for every candidate a ledger boundary refuses; never the incumbent, which moves nothing.
+
+    Both sides are judged in the ledger's units (`in_ledger_units`), so a lower air corner cannot carry a candidate
+    past the boundary its gain alone stays under, and a move back towards the accepted side is still never refused.
+    """
     refused = {}
+    base = in_ledger_units(incumbent)
     for cid, overrides in everything.items():
-        why = [rule.describe(overrides.get(rule.key)) for rule in reward.reversals_refusing(overrides, incumbent, reversals)]
+        judged = in_ledger_units(overrides)
+        why = [_describe(rule, overrides, judged) for rule in reward.reversals_refusing(judged, base, reversals)]
         if why:
             refused[cid] = why
     return refused

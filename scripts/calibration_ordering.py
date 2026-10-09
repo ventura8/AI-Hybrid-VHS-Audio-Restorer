@@ -18,7 +18,7 @@ judges are vetoes now, never in a score sum (plan principle 7), so the composite
   unit (`reward.fill_missing`), so destroying what a reading reads never helps;
 - `--grid FILE` names the grid (a YAML or JSON mapping `{metric.side.stat: {target, family,
   dead_zone?, scale?, weight?}}`, under a `reward:` key, under `ranking:` as the v3 tuning
-  grids keep it (`tata_v3.yaml` 15 entries, `music_v3.yaml` 10), or at the top level). A file
+  grids keep it (`tata_v3.yaml` 12 entries, `music_v3.yaml` 10), or at the top level). A file
   with no such entry is refused: the v3 grids used to load empty and rank, without a word, on
   the default grid. Without `--grid`, `default_grid` takes every two-sided dsp reading
   of `scorecard.METRICS` at its neutral target (no change from the source), with a dead zone
