@@ -7,10 +7,11 @@ import json
 
 import numpy as np
 import pytest
+import scipy.signal
 import soundfile as sf
 
 from scripts import listen_ab
-from scripts.restoration_quality import ledger
+from scripts.restoration_quality import ledger, listen_cuts
 from scripts.restoration_quality.listen_modes import AbxMode
 
 PORT = 8765
@@ -166,9 +167,16 @@ def _voice_file(path, seconds=12.0):
     return path
 
 
+def _soundfile_mono(path, _work_dir, rate=listen_cuts.PICK_RATE):
+    """`listen_cuts.decode_mono` without ffmpeg (CI runners have none on PATH): soundfile, downmix, polyphase resample."""
+    audio, source_rate = sf.read(str(path), dtype="float32", always_2d=True)
+    return scipy.signal.resample_poly(audio.mean(axis=1), rate, source_rate).astype(np.float32)
+
+
 def test_main_cuts_serves_and_records_a_block(tmp_path, monkeypatch, capsys):
     """End to end without a socket: the stand-in server answers every trial; the ledger gets a valid record with hashes."""
     first, second = _voice_file(tmp_path / "a.wav"), _voice_file(tmp_path / "b.wav")
+    monkeypatch.setattr(listen_cuts, "decode_mono", _soundfile_mono)
 
     def answering_serve(session, port, open_browser=True):
         assert port == 9100 and not open_browser
