@@ -1,5 +1,7 @@
 """The tuner's knob tables (ear v3, plan 1.5): the live knobs, and the moves the switches or the tapes' lengths make dead."""
 
+import pytest
+
 from modules import config as app_config
 from scripts import autotune_restoration as at
 
@@ -244,3 +246,10 @@ def test_no_grid_lets_the_loop_step_to_the_shelf_round_three_rejected():
     assert 2.0 not in at.KNOBS["apl"]["linear_air_gain_db"]
     gains = [value for knob, value in at.neighbour_moves("apl", {"linear_air_gain_db": 1.5}) if knob == "linear_air_gain_db"]
     assert gains == [1.0]
+
+
+@pytest.mark.parametrize("knob", ["cathar_deesser_freq", "cathar_deesser_bands"])
+def test_the_deesser_shape_knobs_follow_the_threshold(knob):
+    """Round C2's frequency and band knobs are dead exactly when the threshold is: no material runs the de-esser."""
+    assert knob in at.inert_knobs("cathar", {"cathar_enable_deesser": False})
+    assert knob not in at.inert_knobs("cathar", {"cathar_enable_deesser": False, "cathar_music_enable_deesser": True})

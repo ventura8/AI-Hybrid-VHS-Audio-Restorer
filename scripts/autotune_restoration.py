@@ -170,6 +170,9 @@ KNOBS = {
         "cathar_enable_noiseprint": [True, False],
         "cathar_beta": [0.005, 0.01, 0.02],
         "cathar_deesser_threshold": [6.0, 9.0, 12.0],
+        # Round C2 (plan Part 2): where the multiband de-esser starts and how many bands it splits into.
+        "cathar_deesser_freq": [4000, 5000, 6000],
+        "cathar_deesser_bands": [1, 3],
         "cathar_enable_deesser": [True, False],
         "cathar_noiseprint_duration_s": [4.5, 6.0],
         "cathar_enable_coherent": [True, False],
@@ -379,7 +382,10 @@ INERT_WHEN = {
             ("cathar_alpha", "cathar_beta", "cathar_music_alpha", "cathar_split_band_hz", "cathar_alpha_high", "cathar_music_alpha_high"),
         ),
         # Speech takes cathar_enable_deesser, music cathar_music_enable_deesser: dead only with both off.
-        ({"cathar_enable_deesser": False, "cathar_music_enable_deesser": False}, ("cathar_deesser_threshold",)),
+        (
+            {"cathar_enable_deesser": False, "cathar_music_enable_deesser": False},
+            ("cathar_deesser_threshold", "cathar_deesser_freq", "cathar_deesser_bands"),
+        ),
         ({"cathar_enable_noiseprint": False, "cathar_music_enable_noiseprint": False}, ("cathar_noiseprint_duration_s",)),
         ({"cathar_music_profile": False}, _CATHAR_MUSIC_KEYS),
         ({"enable_pause_floor": False}, ("pause_floor_fill_db",)),

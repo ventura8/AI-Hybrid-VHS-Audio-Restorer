@@ -935,9 +935,13 @@ the incumbent. The knob tables were re-read from the code paths on
   `cathar_music_expander_depth_db` and `cathar_music_crt_notch_q` are knobs;
   the music rounds could not move them before.
 - `env:AI_RESTORE_CATHAR_BIN [None, 0.7.6]` is gone: once the installers
-  provisioned 0.7.6 it rendered one binary twice. A binary knob returns only
-  for a new build, `[None, experiments/cathar-0.8.0/cathar.exe]` in round
-  C0.
+  provisioned 0.7.6 it rendered one binary twice. Round C0 (2026-10-09) needed
+  no binary knob either: cathar 0.8.0 gave identical output on the identity
+  clips and the installers now provision it.
+- Round C2 (2026-10-09): cathar's de-esser shape is a knob,
+  `cathar_deesser_freq` `[4000, 5000, 6000]` and `cathar_deesser_bands`
+  `[1, 3]` beside the threshold; all three are inert only when neither speech
+  nor music runs the de-esser.
 - `apl_neural_model` was `[None, ROFORMER, ROFORMER_AGGR]`: once the
   Mel-RoFormer became the app's default, None and ROFORMER named one
   setting, so a run from the defaults rendered the default every round
