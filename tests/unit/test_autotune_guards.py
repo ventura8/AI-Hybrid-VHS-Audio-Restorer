@@ -39,9 +39,9 @@ def test_a_v2_grid_brings_no_guards():
 
 @pytest.mark.parametrize("name", ["tata_v3.yaml", "music_v3.yaml"])
 def test_a_v3_grid_brings_its_vetoes_the_air_reversal_and_the_tie(name):
-    """Every veto is measured in three floors; round 3's air verdict is a boundary; the tie uses the calibrated offset."""
+    """Every veto is one benign-pair floor (Session 0); round 3's air verdict is a boundary; the tie uses the calibrated offset."""
     guards = _guards(name, _v3_floors(name))
-    assert [veto.limit for veto in guards.vetoes.values()] == pytest.approx([0.03] * len(guards.vetoes))
+    assert [veto.limit for veto in guards.vetoes.values()] == pytest.approx([0.01] * len(guards.vetoes))
     assert [(rule.key, rule.bound, rule.side) for rule in guards.reversals] == [(AIR, 2.0, 1.0)]
     assert guards.audibility_offset_db == OFFSET
     assert "1 verdict reversals" in ag.describe_guards(guards)

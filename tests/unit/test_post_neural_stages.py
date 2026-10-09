@@ -48,3 +48,22 @@ def test_the_denoise_step_threads_the_switches_through(tmp_path):
     assert out == tmp_path / "done.wav"
     assert post.call_args.args[-2] == {"sibilant_guard": True, "pause_floor": True, "apply_air": False}
     assert post.call_args.args[-1] is None
+
+
+def test_the_stage_cache_is_handed_the_input_the_stage_folder_and_every_neural_switch(tmp_path):
+    """The cache keys on all seven switches and the strategy, and none of the post-neural settings."""
+    pair = (tmp_path / "s.wav", tmp_path / "d.wav")
+    switches = dict.fromkeys(processing.NEURAL_FLAGS, True)
+    with (
+        patch("modules.processing._stage_cache.through", return_value=pair) as through,
+        patch("modules.processing._post_denoise_cleanup_step", return_value=tmp_path / "c.wav") as cleanup,
+        patch("modules.processing._post_neural_stages", return_value=tmp_path / "done.wav"),
+    ):
+        processing._denoise_and_polish_full_audio_step(
+            tmp_path / "o.wav", tmp_path, strategy={"profile": {}}, apply_air=True, expander_depth_db=12.0, **switches
+        )
+    produce, input_wav, audio_dir, call = through.call_args.args
+    handed = (callable(produce), input_wav, audio_dir, call["flags"], call["strategy"], call["stage"])
+    assert handed == (True, tmp_path / "o.wav", tmp_path, switches, {"profile": {}}, "full_mix_neural")
+    post_neural = {"apply_air", "expander_depth_db", "sibilant_guard", "pause_floor"} & set(call)
+    assert (post_neural, cleanup.call_args.args[0]) == (set(), tmp_path / "d.wav")

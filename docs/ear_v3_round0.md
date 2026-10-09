@@ -160,6 +160,10 @@ SIGMOS 0.20-0.25: near-copies barely move Whisper or the embeddings, a real
 restoration change moves them more, so the vetoes would refuse moves on
 jitter. Proposed, not done: before the first v3 loop round, measure them on
 pairs the audibility check calls inaudible (v3 sibilance final against v2).
+The benign-pair mode exists now (`--benign-pair SOURCE OUTPUT_A OUTPUT_B`
+of `python -m scripts.reward_noise_floor`); its run on Session 0's four
+pairs nobody told apart, written to
+`experiments/reward/noise_floor_benign.json` for the vetoes, is pending.
 
 ## What Session 0 asks
 

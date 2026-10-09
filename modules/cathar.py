@@ -343,7 +343,8 @@ def _find_quiet_window(wav_path, duration_s=0.75):
         if len(mono) <= win:
             return 0.0
         return (source_start + _evaluate_quiet_probes(mono, win)) / sr
-    except Exception:
+    except Exception as exc:
+        log_msg(f"    [Cathar] Quiet-window search failed ({exc}); the noise print is taken from the start.", level="WARNING")
         return 0.0
 
 
@@ -490,7 +491,7 @@ def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_
     try:
         return _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json)
     except Exception as exc:
-        log_msg(f"    [Cathar] Noiseprint extraction bypassed: {exc}")
+        log_msg(f"    [Cathar] Noiseprint extraction bypassed: {exc}", level="WARNING")
         return None
     finally:
         if slice_wav.exists():

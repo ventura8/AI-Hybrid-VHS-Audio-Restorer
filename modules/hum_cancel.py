@@ -483,7 +483,7 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
         output_dir.mkdir(parents=True, exist_ok=True)
         produced = cancel_mains(source_wav, target, *plan)
     except STAGE_FAILURES as exc:
-        log_msg(f"    [Hum Cancel] Skipped after failure: {exc}")
+        log_msg(f"    [Hum Cancel] Skipped after failure: {exc}", level="WARNING")
         return source_wav
     if produced is None:
         log_msg("    [Hum Cancel] Skipped: too short to track.")

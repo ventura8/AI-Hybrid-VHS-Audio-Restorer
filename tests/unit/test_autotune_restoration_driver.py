@@ -58,6 +58,20 @@ def test_a_candidate_keeps_its_audio_removes_the_restored_video_and_never_render
     assert json.loads((wavs["t1"].parent / "overrides.json").read_text(encoding="utf-8")) == overrides
 
 
+def test_a_candidate_records_the_stage_cache_hits_and_misses_its_run_log_reports(tmp_path, monkeypatch):
+    """timing.json says how many tapes replayed the neural stage and how many rendered it."""
+
+    def restore_with_cache(cmd, **kwargs):
+        kwargs["stdout"].write("\x1b[K    [Stage Cache] Hit 0123456789ab: replayed 1.0 MB\n    [Stage Cache] Miss abc: rendering\n")
+        _fake_restore(cmd)
+
+    _app(monkeypatch, restore=restore_with_cache)
+    wavs = at.run_candidate("apl", {"linear_air_gain_db": 2.0}, {"t1": str(_tape(tmp_path))}, tmp_path / "out")
+    timing = json.loads((wavs["t1"].parent / "timing.json").read_text(encoding="utf-8"))
+    assert timing["stage_cache"] == {"hits": 1, "misses": 1}
+    assert at.stage_cache_counts(tmp_path / "no_such.log") == {"hits": 0, "misses": 0}
+
+
 REFUSED_CANDIDATES = [
     ({"no_such_setting": 1}, _echo_config, _fake_restore, "not a setting"),
     ({"linear_air_gain_db": 2.0}, lambda *_args: {}, _fake_restore, "did not honour"),
@@ -219,6 +233,22 @@ def test_a_resumed_run_keeps_its_saved_incumbent_and_stops_at_the_round_cap(tmp_
     at.main(_cli(tmp_path, "--start-file", str(start), "--rounds", "3"))
     assert [call.args[-1] for call in rounds.call_args_list] == [2, 3]
     assert json.loads((out / "final.json").read_text(encoding="utf-8")) == {"b": 2}
+
+
+def test_the_stage_cache_flag_reaches_every_candidate_through_the_environment(tmp_path, monkeypatch, capsys):
+    """--stage-cache sets AI_RESTORE_STAGE_CACHE (absolute) and --stage-cache-gb its cap; the candidates inherit both."""
+    _loop(monkeypatch, Mock(return_value=False))
+    at.main(_cli(tmp_path, "--stage-cache", str(tmp_path / "cache"), "--stage-cache-gb", "7.5"))
+    assert at.os.environ[at.stage_cache.ENV_VAR] == str((tmp_path / "cache").resolve())
+    assert at.os.environ[at.stage_cache.MAX_GB_ENV] == "7.5"
+    assert "stage cache:" in capsys.readouterr().out
+
+
+def test_without_the_flag_the_stage_cache_stays_off(tmp_path, monkeypatch):
+    _loop(monkeypatch, Mock(return_value=False))
+    at.main(_cli(tmp_path))
+    assert at.stage_cache.ENV_VAR not in at.os.environ
+    assert at.enable_stage_cache(None) is None
 
 
 def test_every_round_gets_the_tape_lengths_read_once_at_the_start(tmp_path, monkeypatch):

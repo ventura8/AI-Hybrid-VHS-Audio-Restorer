@@ -209,7 +209,9 @@ Principles (plan Part 1), each closing one of those failures:
 1. Audibility before ranking: a candidate inaudibly different from the
    incumbent is a tie.
 1. Learned judges (UTMOS, SCOREQ, SIGMOS, Whisper CER, WavLM, MERT) are
-   median-only vetoes beyond 3x their benign floor, never in the score.
+   median-only vetoes beyond their benign floor, never in the score (the
+   plan said 3x near-copy floors; since Session 0, 1x the floor of pairs a
+   blind listener could not tell apart).
 1. Speech, music and mixed have separate grids and thresholds.
 1. A reading is admitted by a monotonic response on the calibration
    degradations and a benign floor. The user's verdicts are falsifiers, and
@@ -512,6 +514,19 @@ first.
   reward ranks at: at the identity point (a bare `SOURCE`) the floors read
   16-200x too narrow. Each repeat after the first scores through its own
   cache directory, so the Whisper and stem caches cannot hide jitter.
+  `--benign-pair SOURCE OUTPUT_A OUTPUT_B [LEDGER_ID]` (repeatable, each
+  path its own value, so '=' and ',' survive) scores (source, A) as the
+  reference and (source, B) as `benign_pair`: the deviation between two
+  restorations a blind listener could not tell apart, with the ledger record
+  that says so kept in `sources[].ledger_id` (shape-checked, not looked
+  up). No near-copy is made of either; a repeat adds A's own jitter under
+  `reference`. Near-copies barely move Whisper or the embeddings, so the
+  learned vetoes read the benign-pair report
+  (`--noise-floors experiments/reward/noise_floor_benign.json`) and the
+  group reward's tie band keeps the output-point one. A report holds one
+  operating point (identity, output, benign_pair): a mix is refused unless
+  `--pool`, since a pooled p95 depends on how many deviations each point
+  brought; `by_transform` shows what each kind contributed.
 - `scripts/restoration_quality/reward.py`: per reading the two-sided
   distance. A reading that one compared candidate lacks counts as the
   group's worst plus one scale unit (`fill_missing`), so an optimiser cannot
@@ -678,7 +693,9 @@ adopted into the gates or grids yet. The facts that will decide defaults:
   repeats) lets both v3 grids' vetoes parse, but at 3x the floor the learned
   limits (CER 0.0025, speaker cosine 2.9e-5, UTMOS 0.0027, SCOREQ 0.0033,
   SIGMOS 0.20-0.25, MERT 2.3e-4) would veto on jitter: measure them on pairs
-  the audibility check calls inaudible before the first v3 loop round.
+  a blind listener could not tell apart before the first v3 loop round.
+  `reward_noise_floor --benign-pair` does that (built 2026-10-09; the run on
+  Session 0's four pairs is pending).
 - Erratum: the round-one hissy `tele7abc__cathar__alpha_2_0.mov` was
   rendered 2026-09-20 19:11 on cathar 0.7.3 (the installer pinned 0.7.3
   until b54c217, 2026-09-26); 0.7.6 came later that evening and is
@@ -718,15 +735,19 @@ Tele7abc (diff -17.6 dB, 97% of frames over the mask; 8/16). The listener:
 - In the loop (plan 1.5): two-stage scoring (the learned families on the
   best four candidates and the incumbent only) and inertness from each
   tape's material.
-- The stage cache (`AI_RESTORE_STAGE_CACHE`), R3's harness coverage
-  reading, `scripts/replay_post_neural.py`, the fidelity ladder,
-  `known_ordering_v3.json`, and a gate on `file.gain_ride_lu`.
+- R3's harness coverage reading, `scripts/replay_post_neural.py` (it would
+  rebuild a stage-cache entry's input and replay only the post-neural
+  stages; the entry's manifest records the input's sample hash for that),
+  the fidelity ladder, `known_ordering_v3.json`, and a gate on
+  `file.gain_ride_lu`. The stage cache itself is built (see "The
+  self-driving loop").
 - Before any v3 tuning round (Round 0 is done): Session 0 with the user (ABX
   of +1 against +2 dB air, ABX of alpha 2 on 0.7.3 against 0.7.5 on pauses,
   and the pause-depth continuum against the shipped pause floor); the
   calibration with a Vaccin excerpt (the R1 air assertion); and learned
   veto floors measured on inaudible pairs, since the noise-floor report
-  the v3 grids' vetoes read gives limits too tight (see "Round 0").
+  the v3 grids' vetoes read gives limits too tight (see "Round 0"): the
+  `--benign-pair` mode is built, its run on Session 0's pairs is not.
 
 ### The user's decisions (2026-10-08)
 
@@ -870,7 +891,8 @@ as before:
 - `vetoes:` (learned median veto): on any tape, a listed median moved the
   `worse` way from the incumbent's by more than `floor_multiple` times the
   reading's floor from `--noise-floors` (a `reward_noise_floor` report of the
-  shipped outputs; default `experiments/reward/noise_floor.json`), or a reading
+  Session 0 benign pairs; default `experiments/reward/noise_floor_benign.json`,
+  `floor_multiple` 1 in both v3 grids), or a reading
   the incumbent has went unread: the candidate is logged `vetoed` and cannot win
   (`reward.gate_constraints(learned_veto=...)` must read "ok"). A veto without a
   floor stops the loop before the first render, and so does a floor that is not
@@ -897,6 +919,26 @@ Scoring every family on the four tapes took about 7.3 min per candidate in
 the v4 round; the report pays that for the reference and each transform,
 per repeat, and each repeat after the first scores through its own cache.
 
+At 3x those near-copy floors the vetoes would refuse moves on the judges'
+own jitter (see "Round 0"). Measure the vetoes' floors on pairs a blind
+listener could not tell apart, in a report of their own, and pass that as
+`--noise-floors` (the loop's default since 2026-10-09: CER 0.038, speaker
+cosine 0.0063, UTMOS 0.051, SCOREQ 0.136, SIGMOS COL 0.226 / DISC 0.153,
+MERT 0.0029, Audiobox PQ 0.205 / PC 0.167; the music floors come from speech
+pairs and stay provisional until a music pair is heard); Session 0's pairs are
+listed in `scripts/reward_noise_floor.py`'s docstring and the ledger's
+`round: session0` records:
+
+```text
+python -m scripts.reward_noise_floor --benign-pair SOURCE OUTPUT_A OUTPUT_B LEDGER_ID ...
+    --families dsp,speech,mos,stems --repeats 2 --max-seconds 125
+    --out experiments/reward/noise_floor_benign.json
+```
+
+Session 0's listener told no two restorations apart at an unrecorded
+playback level, so those floors are generous: weigh each veto's
+`floor_multiple` against them before the first v3 round.
+
 Each refused, tied or vetoed candidate gets a line in `log.md` naming the
 boundary, or the tape, the reading and its move. Tests:
 `tests/unit/test_autotune_guards.py` (the loop) and
@@ -919,6 +961,31 @@ keeping until the listening set is built from the finals
 `cands/*/*.wav` of a finished loop after that. When a loop dies this way,
 remove the half-written candidate directory and the `.temp_work_*` folder
 beside the source before relaunching, or the resume trips over them.
+
+Render time is the third budget. `--stage-cache <out>/stage_cache` (with
+`--stage-cache-gb`, 50 by default) sets `AI_RESTORE_STAGE_CACHE` for every
+candidate's render: an APL candidate whose knobs all act after the neural
+denoiser (air, the sibilant guard, the expanders, the pause floor,
+`apl_expander_depth_db`, `apl_music_bg_floor_db`, `loudnorm_target_lra`:
+14 of the 26 APL knobs on 2026-10-09) replays the incumbent's chain and
+model output instead of rendering them. It caches the neural stage's two
+intermediate WAVs only, never a final output (the 250 GB lesson above):
+about 2.5 GB per tape-hour per distinct pre-neural setting, least recently
+used evicted first, so the incumbent's entries, hit every round, stay. Each
+candidate's `timing.json` holds
+`{"wall_s", "stage_cache": {"hits", "misses"}}`, counted from the
+`[Stage Cache] Hit` / `Miss` lines of its `run.log`; a candidate
+with misses moved a pre-neural knob (or the entry was evicted or refused:
+the `Not stored` line says why; editing a module or installing a package
+while a loop runs refuses the stores of the candidates then rendering, since
+they may run other code than their key names). A hit renders the same
+samples as a fresh render (`tests/unit/test_stage_cache_replay.py`; on real
+tape, the
+orchestrator's check in plan 1.5). The saving per candidate against the
+uncached ~205 s on four tapes is measured on the first loop round run with
+the flag; record it here. cathar never uses the cache. The key, its
+allowlist and the invariants are in the audio-restoration-engine skill and
+`docs/configuration.md`, "Stage Cache".
 
 Only when both engines have plateaued: run
 `scripts/audibility_check.py` on each final against what the user last heard

@@ -67,20 +67,29 @@ skill holds the readings, their status and the measured facts behind them.
 1. Run `scripts/autotune_restoration.py --engine cathar --tapes ...` and the
    same for `apl` on hardlinked copies of the sources
    (`tapes_apl.json`), detached (`experiments/run_autotune*.cmd`), and watch
-   `experiments/autotune/<engine>/log.md`. Ear v3 rounds take
+   `experiments/autotune/<engine>/log.md`. Launch the `apl` loop with
+   `--stage-cache <out>/stage_cache` (an absolute or repo-relative folder;
+   the loop resolves it): a candidate that moves only post-neural knobs then
+   replays the incumbent's chain and model output instead of rendering them
+   (`AI_RESTORE_STAGE_CACHE`, `docs/configuration.md`, "Stage Cache"), and
+   each candidate's `timing.json` counts its hits and misses. cathar ignores
+   the flag. Ear v3 rounds take
    `--grid scripts/tune_grids/tata_v3.yaml` (speech) or `music_v3.yaml`
    only after Round 0 and Session 0 have set their targets; until then
    their values are uncalibrated starting points. A v3 round also takes
    `--noise-floors`, a `python -m scripts.reward_noise_floor` report of the
-   shipped outputs (default `experiments/reward/noise_floor.json`, written with
-   `--families speech,mos,stems --repeats 2`): the grid's learned vetoes are
-   measured in those floors, and the loop refuses to start when a veto has no
-   floor or a floor of 0, and says which. A missing floor (`reward.NO_FLOOR`)
+   Session 0 benign pairs (default `experiments/reward/noise_floor_benign.json`,
+   written with `--benign-pair ... --families speech,mos,stems --repeats 2`):
+   the grid's learned vetoes are measured in those floors, one floor each, and
+   the loop refuses to start when a veto has no floor or a floor of 0, and
+   says which. A missing floor (`reward.NO_FLOOR`)
    names `--families`: the report reads only the families it was run with, dsp
    alone by default. A floor of 0 (`reward.NO_BENIGN_FLOOR`) asks for
    `--repeats 2` or more, or `resample_roundtrip` in `--transforms`: CER read
-   once can show no jitter, and a limit of 0 would veto Whisper's own. The
-   stored tie verdicts (`cands/*/*.audibility.json`) are keyed on
+   once can show no jitter, and a limit of 0 would veto Whisper's own.
+   Near-copy floors are so tight that 3x them vetoes moves on jitter, which is
+   why the default is the benign-pair report (measured 2026-10-09). The stored
+   tie verdicts (`cands/*/*.audibility.json`) are keyed on
    `auditory.VERDICT_RULE` as well as the files and the offset, so a verdict an
    older rule wrote is read again with no delete; bump `VERDICT_RULE` with any
    change to what `compare_files` calls audible. A v3 round takes

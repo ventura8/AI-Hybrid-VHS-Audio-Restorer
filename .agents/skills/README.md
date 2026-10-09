@@ -18,8 +18,10 @@ the Antigravity agent system.
 - [audio-restoration-engine/SKILL.md](audio-restoration-engine/SKILL.md): DSP
   filter graphs, ARNNDN speech denoisers, stem separation, and DTW audio
   synchronization; the loudnorm linear rule and its fallback, the
-  polarity-inverted pair check, and the engine's event log
-  (`modules/event_log.py`, `AI_RESTORE_EVENT_LOG`).
+  polarity-inverted pair check, the engine's event log
+  (`modules/event_log.py`, `AI_RESTORE_EVENT_LOG`), and the neural-stage
+  cache and its deny-by-default key (`modules/stage_cache.py`,
+  `AI_RESTORE_STAGE_CACHE`).
 - [markdown-quality/SKILL.md](markdown-quality/SKILL.md): Read-only Markdown
   formatting validation with `mdformat --check` and linting with `pymarkdown`
   `scan` (MD013).
@@ -51,7 +53,11 @@ the Antigravity agent system.
     (`experiments/reward/noise_floor.json`, every family the grid's vetoes
     name, `--repeats 2`): the loop refuses to start when a veto has no
     floor (its family missing from `--families`) or a floor of 0 (no
-    jitter measured, as CER at `--repeats 1`);
+    jitter measured, as CER at `--repeats 1`).
+    `--benign-pair SOURCE OUTPUT_A OUTPUT_B [LEDGER_ID]` measures the
+    vetoes' floors on pairs a blind listener could not tell apart, in a
+    report of their own (`experiments/reward/noise_floor_benign.json`;
+    points pool only with `--pool`);
   - `scripts/autotune_guards.py` (a module of the self-driving loop, not a
     script): the v3 grids' guards, the verdict-reversal refusal, the
     audibility tie (stored verdicts keyed on `auditory.VERDICT_RULE`) and

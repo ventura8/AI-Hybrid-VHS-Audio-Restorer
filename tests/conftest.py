@@ -67,6 +67,17 @@ def _enforce_per_file_coverage(session, coverage_json):
         session.exitstatus = 1
 
 
+@pytest.fixture(autouse=True)
+def _stage_cache_off(monkeypatch):
+    """A developer's AI_RESTORE_STAGE_CACHE never reaches a test, so no test writes into a real cache.
+
+    Set first so the original state is recorded: whatever a test then sets is undone after it.
+    """
+    for name in ("AI_RESTORE_STAGE_CACHE", "AI_RESTORE_STAGE_CACHE_MAX_GB"):
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+
+
 def pytest_sessionstart(session):
     """Record the coverage reports' modification times, so the finish hook reads only reports this run writes."""
     session.config.stash[REPORT_MTIMES_KEY] = {path: _report_mtime_ns(path) for path in COVERAGE_REPORTS}

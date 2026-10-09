@@ -66,11 +66,15 @@ ranking:
 # learned reading measured at --repeats 1 can show no jitter at all, and a limit of 0 would
 # veto any move the worse way, the judge's own jitter included. Measure with --repeats 2 or
 # more, or with resample_roundtrip in --transforms. MERT is a change detector, one-sided.
+# Floors and multiple (2026-10-09): the default report is the Session 0 benign-pair one
+# (experiments/reward/noise_floor_benign.json: MERT 0.0029, Audiobox PQ 0.205 / PC 0.167,
+# SIGMOS COL 0.226), measured on speech pairs only, so the music floors are provisional until a
+# music benign pair is heard; multiple 1 for the same reason as tata_v3.yaml.
 vetoes:
-  stems.mert_dist.output.median: {worse: up, floor_multiple: 3}
-  mos.audiobox_pq.delta.median: {worse: down, floor_multiple: 3}
-  mos.audiobox_pc.delta.median: {worse: down, floor_multiple: 3}
-  mos.sigmos_col.delta.median: {worse: down, floor_multiple: 3}
+  stems.mert_dist.output.median: {worse: up, floor_multiple: 1}
+  mos.audiobox_pq.delta.median: {worse: down, floor_multiple: 1}
+  mos.audiobox_pc.delta.median: {worse: down, floor_multiple: 1}
+  mos.sigmos_col.delta.median: {worse: down, floor_multiple: 1}
 
 # Round 3 (2026-10-08) judged Gaudeamus5 too: air +1 dB over +2 dB and off.
 reversals:

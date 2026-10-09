@@ -832,7 +832,14 @@ def _read_stereo_audio_for_analysis(wav_path):
     try:
         audio_info = sf.info(str(wav_path))
         return _read_analysis_audio(wav_path, audio_info), audio_info.samplerate
-    except Exception:
+    except Exception as exc:
+        # Every "unreadable" a stage reports (hum, tones, plosives, the subtraction's margin and
+        # tonality, the repair's gate) comes from here: a WARNING keeps a render that read
+        # nothing out of the stage cache, since a fresh render may read it.
+        log_msg(
+            f"    [Analysis] {Path(wav_path).name} could not be read ({type(exc).__name__}: {exc}); measured as unreadable.",
+            level="WARNING",
+        )
         return None, None
 
 

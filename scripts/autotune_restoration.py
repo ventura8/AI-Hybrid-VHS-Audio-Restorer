@@ -68,6 +68,13 @@ Knob-table facts the tables below rest on (2026-10-09, read from the code paths)
 - The cathar music profile's de-esser switch, expander depth and CRT notch width were not
   knobs, so the music rounds could not move them.
 
+`--stage-cache DIR` (plan 1.5) points every candidate's render at one neural-stage cache
+(`AI_RESTORE_STAGE_CACHE`, `modules/stage_cache.py`; `--stage-cache-gb` caps it, 50 GB by
+default): an auto_pure_linear candidate whose knobs all act after the neural denoiser (air,
+sibilant guard, pause floor, expanders, loudness range) replays the incumbent's chain and model
+output instead of rendering them. Each candidate's `timing.json` records the hits and misses
+its `run.log` reports. cathar never uses the cache. Off by default.
+
 Not built yet (plan 1.5, design 5.1): inertness from each tape's material. The `cathar_music_*`
 keys and `apl_music_neural_model` are dead on a tape the scanner reads below the music
 persistence floor (`modules/tonal_persistence.py`), and cathar's speech keys on a clip that
@@ -80,7 +87,8 @@ usage:
   autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
                           [--grid scripts/tune_grids/tata_v1.yaml] [--families dsp,stems,speech,mos]
                           [--start '{"cathar_alpha": 2.0}' | --start-file final.json] [--language ro] [--gates gates.json]
-                          [--parallel 2] [--noise-floors experiments/reward/noise_floor.json]
+                          [--parallel 2] [--noise-floors experiments/reward/noise_floor_benign.json]
+                          [--stage-cache experiments/autotune/stage_cache] [--stage-cache-gb 50]
 
 `tapes.json` maps a slug to a video path. Everything is resumable: candidates are keyed by
 their settings, and a scored candidate is never run or scored twice.
@@ -110,6 +118,7 @@ tune = import_module("scripts.tune_restoration")
 audio_io = import_module("scripts.restoration_quality.audio_io")
 guards_mod = import_module("scripts.autotune_guards")
 cathar = import_module("modules.cathar")
+stage_cache = import_module("modules.stage_cache")
 
 ENV_PREFIX = "env:"
 ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
@@ -505,8 +514,30 @@ def run_candidate(engine, overrides, tapes, out_dir):
     started = time.time()
     _restore(cand_dir, tapes, extra_env)
     _collect_outputs(cid, tapes, spec["suffix"], wavs)
-    (cand_dir / "timing.json").write_text(json.dumps({"wall_s": time.time() - started}), encoding="utf-8")
+    timing = {"wall_s": time.time() - started, "stage_cache": stage_cache_counts(cand_dir / "run.log")}
+    (cand_dir / "timing.json").write_text(json.dumps(timing), encoding="utf-8")
     return wavs
+
+
+def stage_cache_counts(run_log):
+    """The neural-stage cache's hits and misses a candidate's run log reports (both 0 with the cache off)."""
+    try:
+        text = Path(run_log).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"hits": 0, "misses": 0}
+    return {"hits": text.count("[Stage Cache] Hit "), "misses": text.count("[Stage Cache] Miss ")}
+
+
+def enable_stage_cache(folder, cap_gb=None):
+    """Points every candidate's render at one neural-stage cache; the children inherit it. None leaves it as it is (off)."""
+    if folder is None:
+        return None
+    root = Path(folder).resolve()
+    os.environ[stage_cache.ENV_VAR] = str(root)
+    if cap_gb is not None:
+        os.environ[stage_cache.MAX_GB_ENV] = f"{cap_gb:g}"
+    print(f"stage cache: {root} (cap {stage_cache.max_bytes() / stage_cache.GB:g} GB)", flush=True)
+    return root
 
 
 def _prepare_candidate(cid, cand_dir, spec, overrides):
@@ -951,6 +982,10 @@ def _parse_args(argv):
         default=guards_mod.DEFAULT_NOISE_FLOORS if guards_mod.DEFAULT_NOISE_FLOORS.exists() else None,
         help="a scripts/reward_noise_floor.py report: the benign floors a v3 grid's learned vetoes are measured in",
     )
+    parser.add_argument(
+        "--stage-cache", type=Path, default=None, help="a folder for the neural-stage cache (AI_RESTORE_STAGE_CACHE); off by default"
+    )
+    parser.add_argument("--stage-cache-gb", type=float, default=None, help="the stage cache's cap in GB (default 50)")
     args = parser.parse_args(argv)
     args.families = tuple(args.families.split(","))
     return args
@@ -973,6 +1008,7 @@ def _resume(args, out_dir):
 def main(argv=None):
     """Runs rounds until a plateau or the round cap, then writes the incumbent to `final.json`."""
     args = _parse_args(argv)
+    enable_stage_cache(args.stage_cache, args.stage_cache_gb)
     tapes = {slug: str(Path(p)) for slug, p in json.loads(args.tapes.read_text(encoding="utf-8")).items()}
     out_dir = args.out / args.engine
     out_dir.mkdir(parents=True, exist_ok=True)

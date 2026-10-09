@@ -45,8 +45,9 @@ from scripts.restoration_quality import audio_io, auditory, reward
 AUDIBILITY_SIDECAR_SUFFIX = ".audibility.json"
 # What the audibility sidecar keeps of `auditory.compare_files` (the per-window lists stay out).
 AUDIBILITY_FIELDS = ("audible", "identical", "nmr_max", "audible_frac", "event_frames")
-# Where `scripts/reward_noise_floor.py` writes the benign floors the learned vetoes are measured in.
-DEFAULT_NOISE_FLOORS = Path("experiments/reward/noise_floor.json")
+# Where `scripts/reward_noise_floor.py --benign-pair` writes the floors the learned vetoes are measured in:
+# the deviation between restorations the listener could not tell apart blind (Session 0, 2026-10-09).
+DEFAULT_NOISE_FLOORS = Path("experiments/reward/noise_floor_benign.json")
 # The verdict cell of a candidate set aside before scoring, by the key its verdict carries.
 ASIDE_CELLS = (
     ("inert", "inert (= `{}`)"),

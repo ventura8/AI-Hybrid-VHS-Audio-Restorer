@@ -391,6 +391,90 @@ reaches; that reading is not built yet, so until then compare a stage's
 (`.agent/workflows/tune_on_real_tapes.md`). Two runs in the same mode share
 record names, so give each its own folder.
 
+## Stage Cache
+
+`AI_RESTORE_STAGE_CACHE=<absolute folder>` in the environment (not a
+`config.yaml` key) keeps what `auto_pure_linear`'s and `denoise_only`'s
+neural stage hands on (everything up to and including the neural denoiser:
+the surgical notch, the deterministic chain and the model) and replays it
+when the stage runs again on the same input under the same settings. The
+self-driving loop sets it with `--stage-cache`
+(`scripts/autotune_restoration.py`), so a candidate whose knobs all act after
+the denoiser skips the chain and the model. Unset (the default), the cache is
+one environment read and every output keeps its bytes; a relative path leaves
+it off, with a warning, because each candidate runs in its own working folder.
+
+- An entry, `<folder>/v1/<key>/`, holds the chain's output (the sibilant
+  guard's reference) and the neural output, restored on a hit at the paths
+  the stage wrote them at under its folder, with a manifest of their sizes
+  and SHA-256 digests and the full key document (`key.json`, for diffing a
+  miss). A hit checks every digest while it copies; an entry that does not
+  read back is discarded and the stage renders afresh, while a replay that
+  fails with the entry still intact (the work folder's disk full, a file
+  there locked) keeps the entry. A cache folder that cannot be read is a
+  miss, with a warning: no cache problem ends a restoration. Final outputs
+  are never cached.
+- The key covers the input by its decoded samples (a soundfile WAV carries a
+  PEAK chunk with a write timestamp, so two writes of the same samples differ
+  in their bytes), its name and layout; every argument of the stage, the
+  scanner's whole strategy and the seven stage switches included; the
+  resolved configuration minus the keys below; the sources of every module
+  but `sibilant_guard`, `pause_floor`, `mastering` and `sync`, what importing
+  those four runs (their import-time code, without the bodies of the
+  functions import never calls) and `restore_audio_hybrid.py`, read when the
+  process starts; ffmpeg (content and `-version` output) and cathar
+  (content), which the chain runs; the model files the stage can load (name,
+  size, modification time) in the folder audio-separator loads them from
+  (`AUDIO_SEPARATOR_MODEL_DIR` when set, else `models/`);
+  `assets/blend_weights.npz`; the interpreter, the installed packages (read
+  at start-up too), torch, the GPU and its driver, the CPU and the
+  denoiser's chunk length; and, deny by default, every environment variable
+  whose name starts with `AI_RESTORE_`, `AUDIO_SEPARATOR_`, `CUDA`,
+  `CUBLAS`, `CUDNN`, `NVIDIA_`, `TORCH`, `PYTORCH_`, `OMP_`, `KMP_`, `MKL_`,
+  `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
+  `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
+  own two and `AI_RESTORE_EVENT_LOG`.
+- The 19 keys left out of the key, each read only after the denoiser
+  (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
+  code by `tests/unit/test_stage_cache_allowlist.py` and
+  `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
+  `linear_air_gain_db`, `enable_dynamic_expander`, `expander_depth_db`,
+  `expander_knee_offset_db`, `apl_expander_depth_db`,
+  `apl_enable_sibilant_guard`, `apl_sibilant_mix`, `apl_sibilant_guard_hz`,
+  `apl_sibilant_hf_share_min`, `enable_pause_floor`, `pause_floor_fill_db`,
+  `pause_floor_quiet_percentile`, `enable_loudnorm`, `loudnorm_target_lra`,
+  `loudnorm_linear_fallback`, `preserve_original_audio_track`,
+  `dtw_resolution` and `apl_music_bg_floor_db`. Every other key, one the code
+  does not know included, is in the key; the `cathar_*` keys among them,
+  because the chain's repair and subtraction run cathar's stages at those
+  settings.
+- Nothing is stored from a render during which a stage logged a warning or
+  an error (a fallback after a failure is never frozen), audio-separator's
+  own included (it logs through Python logging; the line
+  `Using soundfile for writing.`, logged at WARNING on every render, and its
+  note on inputs under 10 s do not count); from a stage folder that already
+  held files (a resumed work folder, whose stages reuse what they find);
+  when a module source was written after the process started, or the
+  sources or the installed
+  packages no longer hash as they did then (an edit or an install while a
+  candidate renders); when an output lies outside the stage folder; or when
+  the entry would put the cache over its cap or leave under 20 GB free on
+  the volume, both read again from the disk once eviction ran.
+  `apl_use_deepfilternet` and `apl_use_resemble_denoise` (weights outside
+  `models/`) and `AI_RESTORE_EVENT_LOG` (the plosive tamer records before the
+  cached stage) bypass the cache.
+- `AI_RESTORE_STAGE_CACHE_MAX_GB` (50) is the cap; the least recently used
+  entries go first, a hit counts as a use, and the entries other processes
+  are still building count toward it. An entry takes about 42 MB per minute
+  of stereo tape, 2.5 GB per hour. Only folders named like a key (64 hex
+  digits) or like an entry in progress (`tmp-<12 hex digits>-<pid>`) are
+  counted, evicted or swept: anything else under `v1/` is left alone.
+- cathar never uses it. On the music stem path only the vocal stem's neural
+  stage is cached; the separation still runs.
+- The run log says `[Stage Cache] Miss`, `Stored` (the entry's size, the
+  render time it saves and the cache's total), `Hit`, `Evicted`, `Bypassed`
+  and `Not stored` with the reason.
+
 ## Model Files
 
 `vocals_model`, `denoise_model` and `apl_neural_model` name UVR model files

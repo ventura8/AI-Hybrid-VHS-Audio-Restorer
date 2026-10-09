@@ -833,6 +833,15 @@ near-copies of it (one sample of delay, 16-bit requantisation, an opt-in
 resample round trip) against the same source, and writes each reading's
 test-retest floor (`readings.<key>.floor`). Run it on the shipped outputs:
 read at the identity point the floors come out 16-200 times too narrow.
+`--benign-pair SOURCE OUTPUT_A OUTPUT_B [LEDGER_ID]` (repeatable, each path
+its own value) scores two restorations of one source that a blind listener
+could not tell apart, A as the reference and B as `benign_pair`, so the
+floor is a difference nobody heard; the ledger record that says so is kept
+beside the pair. A report holds one operating point (identity, output or
+benign_pair) unless `--pool` is given, because a pooled percentile depends
+on how many deviations each point brought; `by_transform` shows each kind's
+share. The learned vetoes read the benign-pair report (see "The loop's v3
+guards"), the group reward's tie band the output-point one.
 `scripts/restoration_quality/reward.py` turns a group of candidates into
 rewards: two-sided distances per reading, a missing reading counted as the
 group's worst, per-family win rates with the floors as the tie band, the
@@ -1134,7 +1143,8 @@ them:
   more than `floor_multiple` times that reading's benign floor, or lost a
   reading the incumbent has, cannot win (`reward.gate_constraints` with
   `learned_veto`). The floors come from `--noise-floors`, a `reward_noise_floor`
-  report of the shipped outputs (default `experiments\reward\noise_floor.json`).
+  report (default `experiments\reward\noise_floor_benign.json`, the Session 0
+  benign pairs; both v3 grids set `floor_multiple` to 1).
   A veto with no floor stops the loop before the first render, so a v3 grid does
   not run unguarded. A floor of 0 stops it the same way: CER read at
   `--repeats 1` can have a p95 deviation of exactly 0, and a limit of 0 would
@@ -1154,6 +1164,28 @@ and mos; `music_v3`: stems and mos):
     --families speech,mos,stems --repeats 2 `
     --out experiments\reward\noise_floor.json
 ```
+
+Near-copies barely move Whisper or the learned embeddings, so at three times
+those floors the vetoes would refuse moves on the judges' own jitter (Round 0
+measured CER 0.0025 and speaker cosine 2.9e-5). The vetoes' floors come from
+pairs a blind listener could not tell apart, in a report of their own, passed
+as `--noise-floors experiments\reward\noise_floor_benign.json`, the loop's
+default. Measured 2026-10-09 on the four Session 0 pairs (16 scorings, 125 s,
+two repeats): CER 0.038, speaker cosine 0.0063, UTMOS 0.051, SCOREQ 0.136,
+SIGMOS COL 0.226 and DISC 0.153, MERT 0.0029, Audiobox PQ 0.205 and PC
+0.167. Those floors already mark what was not heard, so each veto is one
+floor, not three (at three the CER limit would pass an 11-point drop):
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.reward_noise_floor `
+    --benign-pair SOURCE OUTPUT_A OUTPUT_B LEDGER_ID ... `
+    --families dsp,speech,mos,stems --repeats 2 --max-seconds 125 `
+    --out experiments\reward\noise_floor_benign.json
+```
+
+Session 0's pairs (`round: session0` in the ledger) were told apart by
+nobody at a playback level nobody recorded, so their floors are generous;
+weigh each veto's `floor_multiple` against them.
 
 `log.md` shows a refused candidate as `refused (verdict reversal)`, a tie as
 `tie (inaudible on every tape)` and a vetoed one as `vetoed`, each with a

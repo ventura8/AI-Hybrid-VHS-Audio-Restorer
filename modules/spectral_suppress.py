@@ -266,5 +266,5 @@ def suppress_or_none(source_wav, target_wav, **settings):
     try:
         return suppress_file(source_wav, target_wav, **settings)
     except STAGE_FAILURES as exc:
-        log_msg(f"    [Spectral Denoise] Native suppressor failed ({exc}); falling back.")
+        log_msg(f"    [Spectral Denoise] Native suppressor failed ({exc}); falling back.", level="WARNING")
         return None

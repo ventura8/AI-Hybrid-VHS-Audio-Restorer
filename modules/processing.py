@@ -37,6 +37,8 @@ from . import enhance_chunking as _chunking
 from . import mastering as _mastering
 from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
+from . import stage_cache as _stage_cache
+from . import stage_cache_key as _stage_cache_key
 from . import utils as _utils
 from .config import (
     APL_MUSIC_NEURAL_MODEL,
@@ -607,7 +609,7 @@ def _ensure_float_pcm(wav_path):
             temp_path = wav_path.with_name(f"{wav_path.stem}.float.tmp{wav_path.suffix}")
             _write_float_blocks_atomic(wav_path, info, temp_path)
     except Exception as exc:
-        log_msg(f"    [Debug] Left {wav_path.name} at its original bit depth: {exc}", level="DEBUG")
+        log_msg(f"    [Warning] Left {wav_path.name} at its original bit depth: {exc}", level="WARNING")
     return wav_path
 
 
@@ -1094,6 +1096,8 @@ def _run_dsp_filter_file(input_wav, output_wav, filter_expr, desc, total_duratio
     if is_valid_audio(tmp_wav):
         publish(tmp_wav, output_wav)
         return output_wav
+    # A fallback logs at WARNING, so the stage cache never stores it (modules/stage_cache.py).
+    log_msg(f"    [Warning] {desc} wrote no valid audio; its input is handed on.", level="WARNING")
     tmp_wav.unlink(missing_ok=True)
     return input_wav
 
@@ -1160,6 +1164,7 @@ def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strat
 def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None, hum_cancel=False):
     """Pass 2.5: Pre-denoise surgical DSP notching of the higher mains harmonics."""
     if not is_valid_audio(precond_wav):
+        log_msg(f"    [Warning] {Path(precond_wav).name} does not read as audio; the surgical notch is skipped.", level="WARNING")
         return precond_wav
     surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy, hum_cancel=hum_cancel)
     if not surgical_filter:
@@ -1211,6 +1216,55 @@ def _neural_stage(apl_chain, model_to_use, surgical_wav, strategy=None):
 
 
 POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db"})
+# The stage switches the cached point reads, in the order the step takes them.
+NEURAL_FLAGS = ("spectral_denoise", "physical_repair", "deepfilternet", "hum_cancel", "plosive_tamer", "tone_cancel", "resemble_denoise")
+
+
+def _run_neural_model(surgical_wav, audio_dir, denoise_sub_dir, model_to_use, flags, total_duration):
+    """The neural model: DeepFilterNet when asked for, else Resemble when asked for, else the UVR / RoFormer separator."""
+    return _deepfilter.denoise_or(
+        surgical_wav,
+        audio_dir / "deepfilter_denoised",
+        flags["deepfilternet"],
+        lambda: _resemble.denoise_or(
+            surgical_wav,
+            audio_dir / "resemble_denoised",
+            flags["resemble_denoise"],
+            lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, denoise_model=model_to_use),
+            total_duration=total_duration,
+        ),
+    )
+
+
+def _neural_output(original_wav, audio_dir, total_duration, denoise_model, strategy, flags):
+    """Everything up to and including the neural model: (surgical_wav, denoised_wav).
+
+    The surgical notch, the deterministic chain, the model choice and the model, in that order.
+    The stage cache (`modules/stage_cache.py`) replays exactly this pair; nothing here reads a
+    post-neural setting.
+    """
+    model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
+    surgical_wav = _pre_denoise_surgical_step(
+        original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=flags["hum_cancel"]
+    )
+    plan = _apl_chain.stage_plan(
+        audio_dir,
+        total_duration,
+        strategy,
+        flags["physical_repair"],
+        flags["spectral_denoise"],
+        hum_cancel=flags["hum_cancel"],
+        plosive_tamer=flags["plosive_tamer"],
+        tone_cancel=flags["tone_cancel"],
+    )
+    surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
+    if "spectral_denoise" in applied:
+        model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
+    model_to_use, neural_wanted = _neural_stage(flags["spectral_denoise"], model_to_use, surgical_wav, strategy)
+    denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
+    if not neural_wanted:
+        return surgical_wav, surgical_wav
+    return surgical_wav, _run_neural_model(surgical_wav, audio_dir, denoise_sub_dir, model_to_use, flags, total_duration)
 
 
 def _denoise_and_polish_full_audio_step(
@@ -1240,39 +1294,16 @@ def _denoise_and_polish_full_audio_step(
         raise TypeError(f"unknown post-neural stage(s): {sorted(unknown)}")
     expander_depth_db = stages.get("expander_depth_db")
     stages = {name: bool(stages.get(name, False)) for name in ("sibilant_guard", "pause_floor", "apply_air")}
-    model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
-    surgical_wav = _pre_denoise_surgical_step(
-        original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=hum_cancel
+    flags = dict(
+        zip(NEURAL_FLAGS, (spectral_denoise, physical_repair, deepfilternet, hum_cancel, plosive_tamer, tone_cancel, resemble_denoise))
     )
-    plan = _apl_chain.stage_plan(
+    # With AI_RESTORE_STAGE_CACHE unset this is the producer itself; set, a recurring key replays its pair.
+    surgical_wav, denoised_wav = _stage_cache.through(
+        lambda: _neural_output(original_wav, audio_dir, total_duration, denoise_model, strategy, flags),
+        original_wav,
         audio_dir,
-        total_duration,
-        strategy,
-        physical_repair,
-        spectral_denoise,
-        hum_cancel=hum_cancel,
-        plosive_tamer=plosive_tamer,
-        tone_cancel=tone_cancel,
+        _stage_cache_key.neural_call(total_duration, denoise_model, strategy, flags, PIPELINE_SAMPLE_RATE),
     )
-    surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
-    if "spectral_denoise" in applied:
-        model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
-    model_to_use, neural_wanted = _neural_stage(spectral_denoise, model_to_use, surgical_wav, strategy)
-    denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
-    denoised_wav = surgical_wav
-    if neural_wanted:
-        denoised_wav = _deepfilter.denoise_or(
-            surgical_wav,
-            audio_dir / "deepfilter_denoised",
-            deepfilternet,
-            lambda: _resemble.denoise_or(
-                surgical_wav,
-                audio_dir / "resemble_denoised",
-                resemble_denoise,
-                lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, denoise_model=model_to_use),
-                total_duration=total_duration,
-            ),
-        )
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, expander_depth_db)
 

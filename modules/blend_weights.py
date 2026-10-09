@@ -462,9 +462,9 @@ def _blend_files(original_wav, denoised_wav, target, model):
         with sf.SoundFile(str(original_wav)) as original, sf.SoundFile(str(denoised_wav)) as denoised:
             return _blend_open(original, denoised, target, model) or denoised_wav
     except (OSError, RuntimeError) as exc:
-        log_msg(f"    [Blend] Skipped, audio unreadable: {exc}")
+        log_msg(f"    [Blend] Skipped, audio unreadable: {exc}", level="WARNING")
     except MemoryError:
-        log_msg("    [Blend] Skipped, out of memory.")
+        log_msg("    [Blend] Skipped, out of memory.", level="WARNING")
     return denoised_wav
 
 

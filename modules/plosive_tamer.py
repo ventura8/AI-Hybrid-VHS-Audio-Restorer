@@ -265,7 +265,7 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
         output_dir.mkdir(parents=True, exist_ok=True)
         produced = tame_file(source_wav, output_dir / f"tamed_{Path(source_wav).name}", events, low_db, baseline)
     except STAGE_FAILURES as exc:
-        log_msg(f"    [Plosive Tamer] Skipped after failure: {exc}")
+        log_msg(f"    [Plosive Tamer] Skipped after failure: {exc}", level="WARNING")
         event_log.write_skip(STAGE, source_wav, f"failed: {exc}", excess_db=APL_PLOSIVE_EXCESS_DB)
         return source_wav
     log_msg(f"    [Plosive Tamer] Tamed {len(events)} plosives.")

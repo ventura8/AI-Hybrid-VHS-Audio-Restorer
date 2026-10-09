@@ -107,7 +107,7 @@ ranking:
 # Learned judges are vetoes, never in the score (principle 7; critique 16): a candidate cannot
 # win when, on some tape, the median moved the `worse` way from the incumbent's by more than
 # `floor_multiple` x its benign floor (`--noise-floors`, the reward_noise_floor report of the
-# shipped outputs; default experiments/reward/noise_floor.json), or was lost while the
+# shipped outputs; default experiments/reward/noise_floor_benign.json), or was lost while the
 # incumbent read it (reward.vetoed_readings, then reward.gate_constraints(learned_veto=...)).
 # Tails are never read. A veto with no floor in the report stops the loop before it renders:
 # without the report this grid does not run, and the report reads only the families it was
@@ -115,13 +115,20 @@ ranking:
 # same way, named with the reading: CER read at --repeats 1 can have a p95 deviation of
 # exactly 0, and a limit of 0 would veto any move the worse way, Whisper's own jitter
 # included. Measure with --repeats 2 or more, or with resample_roundtrip in --transforms.
+# Floors and multiple (2026-10-09): the default report is experiments/reward/
+# noise_floor_benign.json, the deviation between pairs of restorations the listener could not
+# tell apart blind in Session 0 (`reward_noise_floor.py --benign-pair`; CER 0.038, speaker cos
+# 0.0063, UTMOS 0.051, SCOREQ 0.136, SIGMOS COL 0.226 / DISC 0.153). The near-copy report
+# (noise_floor.json: CER 0.0008, speaker cos 1e-5) made every veto refuse moves on jitter. A
+# benign-pair floor already marks what was not heard, so the multiple is 1, not 3: at 3 the CER
+# limit would let an 11-point intelligibility drop through.
 vetoes:
-  speech.cer.output.median: {worse: up, floor_multiple: 3}
-  speech.speaker_cos.output.median: {worse: down, floor_multiple: 3}
-  speech.utmos.delta.median: {worse: down, floor_multiple: 3}
-  mos.scoreq_nr.delta.median: {worse: down, floor_multiple: 3}
-  mos.sigmos_col.delta.median: {worse: down, floor_multiple: 3}
-  mos.sigmos_disc.delta.median: {worse: down, floor_multiple: 3}
+  speech.cer.output.median: {worse: up, floor_multiple: 1}
+  speech.speaker_cos.output.median: {worse: down, floor_multiple: 1}
+  speech.utmos.delta.median: {worse: down, floor_multiple: 1}
+  mos.scoreq_nr.delta.median: {worse: down, floor_multiple: 1}
+  mos.sigmos_col.delta.median: {worse: down, floor_multiple: 1}
+  mos.sigmos_disc.delta.median: {worse: down, floor_multiple: 1}
 
 # The verdict-reversal guard: a ledger boundary per entry (assets/quality_calibration/
 # verdicts.jsonl). A move that heads the rejected way and ends at the value or past it is

@@ -87,7 +87,11 @@ The engine supports 10 execution modes configured in `config.yaml`:
     both engines share; this mode takes its own expander depth
     (`apl_expander_depth_db`, 12 dB). With `AI_RESTORE_EVENT_LOG=<dir>` the
     sibilant guard, the plosive tamer, the pause floor and the mux record
-    what they found (`modules/event_log.py`).
+    what they found (`modules/event_log.py`). With
+    `AI_RESTORE_STAGE_CACHE=<absolute dir>` (the loop's `--stage-cache`)
+    the neural stage's output is stored and replayed while only
+    post-neural settings change (`modules/stage_cache.py`, deny-by-default
+    key; off by default, never used by `cathar`).
 - **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
   - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
     floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the

@@ -155,6 +155,73 @@ audio alignment, or FFmpeg multiplexing.
    repair. Each stage writes the same samples with the log on or off
    (tested per stage). Two runs in one mode share record names, so give
    every tuning candidate its own event-log folder.
+1. **`modules/stage_cache.py`, `modules/stage_cache_key.py`**: the neural-stage
+   cache (`AI_RESTORE_STAGE_CACHE=<absolute dir>`, off by default;
+   `docs/configuration.md`, "Stage Cache"). `processing._neural_output` is
+   everything `auto_pure_linear` and `denoise_only` run up to and including
+   the neural model (surgical notch, `apl_chain`, model choice, model);
+   `_denoise_and_polish_full_audio_step` hands it to `stage_cache.through`,
+   which stores or replays its `(surgical, denoised)` pair. Invariants:
+   - Off, `through` is one environment read and `produce()`: the same calls
+     in the same order as before, so every default output keeps its bytes.
+     cathar never calls it (`test_stage_cache_reach.py` proves its mode
+     cannot reach it).
+   - Deny by default: a `config.yaml` key stays out of the key only when it
+     is in `POST_NEURAL_CONFIG_KEYS` and every read of it is after the
+     cached point. A new post-neural key goes into that set, into
+     `READ_SITES` in `tests/unit/test_stage_cache_allowlist.py` (where it is
+     read) and is checked by `tests/unit/test_stage_cache_reach.py` (a graph
+     of every reference across `modules/` from the producer: nothing reached
+     may read an allowlisted key). A key not on the list is always keyed.
+     The `cathar_*` keys are read on this path (the repair and the
+     subtraction run cathar's stages), so they stay keyed.
+   - soundfile FLOAT WAVs are not byte-stable: two writes of the same
+     samples differ at byte 60, the PEAK chunk's timestamp (soundfile
+     0.14.0, libsndfile 1.2.2). The input is keyed by its decoded samples,
+     and "a hit equals a fresh render" is checked on decoded samples
+     (`autotune_restoration.exact_audio_sha256`'s rule), never file bytes.
+   - A stage that falls back after a failure must log at WARNING (or
+     ERROR): a render whose WARNING/ERROR count (`stage_cache.problem_count`:
+     `utils.problem_count` plus audio-separator's) moved is never stored.
+     The chain's fallbacks (repair, hum, tone, plosive, subtraction, tonal
+     cleanup, native suppressor, blend, depop, cathar's noise print) were
+     promoted for this, and on 2026-10-09 the shared analysis read behind
+     every stage's "unreadable" (`filters._read_stereo_audio_for_analysis`),
+     the surgical step's unreadable input, `_run_dsp_filter_file`'s invalid
+     output, `_ensure_float_pcm`'s failure and cathar's quiet-window search
+     (`tests/unit/test_stage_cache_fallbacks.py`). A new fallback in a
+     pre-neural stage needs the same. A deterministic skip (a recording too
+     short to scan) stays at INFO.
+   - audio-separator logs through Python logging, not `log_msg`:
+     `stage_cache.watch_separator_log` counts its WARNING and ERROR records
+     with a log-record factory (a handler would stop the separator adding
+     its own console handler, which it adds only when none is reachable).
+     Its routine lines (`SEPARATOR_ROUTINE`) do not count: every one of the
+     5,252 WARNING lines in 826 APL candidate logs was
+     `Using soundfile for writing.`, logged on every render (2026-10-09).
+   - The code and package fingerprints are read at start-up
+     (`stage_cache_key.prime`, with the cache on), when the process loads
+     its code; `stage_cache_key.drift` refuses a store when a module source
+     was written after the process started or the sources or packages no
+     longer hash as then. The four post-cache modules' import-time code
+     (`import_time_code`) is in the key, since processing imports `sync`
+     and `mastering` at start-up; only their function bodies are left out.
+   - The environment is keyed by prefix (`ENV_PREFIXES`), deny by default:
+     a numerics variable with another prefix goes into the list. The model
+     files are keyed in the folder audio-separator really loads from
+     (`AUDIO_SEPARATOR_MODEL_DIR` replaces the one the stage passes), and
+     the CPU by name.
+   - Tests that store an entry hold the host still
+     (`test_stage_cache.hold_the_host_still`): a GitHub runner has 14 GB
+     free, under `MIN_FREE_GB`, and another agent editing the checkout
+     would trip the drift check mid-test.
+   - Nothing is stored from a stage folder that already held files (a
+     resumed work folder), nor with DeepFilterNet or Resemble on, nor with
+     `AI_RESTORE_EVENT_LOG` set (the plosive tamer records before the cached
+     point); a key that cannot be computed bypasses with a warning.
+   - In-process patches of a module constant are not seen (the key reads
+     `config.CONFIG`): a test or experiment that patches one patches
+     `CONFIG` too, or leaves the cache off.
 1. **`modules/auto_scanner.py`**:
    - `_detect_flutter_or_pitch_drift`: Tracks the recorded video line whine as a
      fixed-frequency speed reference, so programme pitch cannot read as drift.
