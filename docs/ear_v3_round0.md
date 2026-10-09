@@ -179,3 +179,57 @@ every new render through `scripts/audibility_check.py` first:
 1. If time remains: T and V `known/*_single4s.wav` against `*_stitched.wav`
    (muffled or watery?); S pauses at 180 s, 0.7.3 against 0.7.5 alpha 2 and
    baseline (settles SOTI); G baseline against 0.7.5 alpha 2: dead pauses?
+
+## Session 0 results (2026-10-09, blind)
+
+One listener, blind, `python -m scripts.listen_ab` on 127.0.0.1, 10 s cuts
+loudness-matched on speech-active frames. The playback device and volume were
+not recorded (`playback` is null in the records). Every pair below was called
+audible by `scripts/audibility_check.py` first. Records: the six
+`round: session0` lines of `assets/quality_calibration/verdicts.jsonl`.
+
+Each block: the pair (tape, cut, question), what the check read, what was
+heard.
+
+- Hiss: 0.7.3 against 0.7.5 alpha 2 (T, 105 s, "more hiss in the pauses?").
+  Check: diff -17.6 dB, 97% of frames over the mask, NMR 41.6 dB. Heard: 6
+  same, 1 for 0.7.5.
+- Hiss: the same pair (S, 180 s). Check: audible. Heard: 7 same.
+- Air: ABX +1 dB against +2 dB shelf (S, 220 s). Check: 34% of frames over
+  the mask. Heard: 10/20, p 0.59.
+- Drift: shipped v1.3.8 APL against round-three B (T, 80 s, "more
+  natural?"). Check: diff -39.4 dB, 12 event frames, NMR 28 dB. Heard: 7
+  same.
+- Sanity: raw tape against shipped APL (T, 80 s, "cleaner?"). Heard: 3/3
+  APL.
+- Control: ABX 0.7.3 against 0.7.5 alpha 2 (T, 105 s, whole sound). Check:
+  the served cuts differ by -15 dB. Heard: 8/16, p 0.60.
+
+The listener's words: "I chose B every time because they all sounded the
+same." On both ABX blocks every answer was B.
+
+What it means:
+
+- The playback chain works (raw tape against a restoration is heard every
+  time), and the page serves different audio for A and B (checked: the
+  served cuts differ by -15 dB, loudness-matched).
+- No difference between two restorations measured so far is heard blind on
+  this setup, including the largest one available: 0.7.3 against 0.7.5,
+  which removes 5.6 against 11.0 dB of noise.
+- The unblinded verdicts this ledger rests on do not reproduce blind: round
+  one's "cathar alpha 2 has hiss" (two tapes) and round three's "B is better"
+  (SOTI).
+- The audibility check's "audible" does not predict this listener at all.
+  Its masking model is calibrated for a nominal playback level
+  (`PLAYBACK_SPL_LOUD_FRAMES = 65`), and its anchors came from the unblinded
+  round-three verdict. A tie is still trusted; "audible" is not, until the
+  check is recalibrated against a blind threshold.
+- The A0 drift (shipped `apl_tonal_flatness_max` 0.035 and
+  `apl_sibilant_mix` 0.8, against round-three B's 0.01 and 1.0, which tamed 9
+  plosives on Tele7abc) is not heard: the shipped values stay.
+
+Next measurement, before any tuning round: the listener's blind threshold on a
+blend continuum from the shipped restoration toward the raw tape (the
+`blend` mode of `listen_ab`), at a recorded device and volume. The percentage
+of raw tape at which the change is heard is the unit every later "audible"
+is judged in.

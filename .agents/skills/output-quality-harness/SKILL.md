@@ -687,6 +687,32 @@ adopted into the gates or grids yet. The facts that will decide defaults:
   append-only ledger as written, and name Session 0's ABX 0.7.3 against
   0.7.5.
 
+### Session 0 (2026-10-09, blind)
+
+Six blind blocks through `listen_ab` (the `round: session0` ledger records;
+device and volume not recorded). Raw tape against the shipped APL: 3/3
+heard. Every pair of two restorations, each called audible by
+`scripts/audibility_check.py`, was not: the 0.7.3 / 0.7.5 hiss pair on
+Tele7abc and SOTI (13 of 14 "same"), ABX +1 / +2 dB air on SOTI (10/20),
+shipped APL against round three's B (7 same), and an ABX control on the
+largest restoration difference available, 0.7.3 against 0.7.5 alpha 2 on
+Tele7abc (diff -17.6 dB, 97% of frames over the mask; 8/16). The listener:
+"they all sounded the same". So:
+
+- The unblinded verdicts of rounds one and three ("alpha 2 has hiss", "B is
+  better") do not reproduce blind. Treat unblinded ledger records as
+  hypotheses, not anchors.
+- `audibility_check.py`'s "audible" does not predict this listener. Its
+  tie stays trusted; nobody is asked to listen on its "audible" alone until
+  it is recalibrated on a blind threshold (a `blend` continuum from the
+  shipped restoration toward the raw tape, at a recorded device and volume).
+- The A0 drift (shipped `apl_tonal_flatness_max` 0.035 skips the plosive
+  tamer on the Tata tapes, flatness 0.0219; B ran 0.01 and tamed 9
+  plosives) is not heard: keep the shipped values.
+- Pass `--device` and `--volume` to every `listen_ab` block: the masking
+  model's playback level (`PLAYBACK_SPL_LOUD_FRAMES`) is meaningless
+  without them.
+
 ### Not built yet
 
 - In the loop (plan 1.5): two-stage scoring (the learned families on the
