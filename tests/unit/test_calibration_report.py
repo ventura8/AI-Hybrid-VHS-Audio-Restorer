@@ -41,13 +41,25 @@ def _report():
     }
 
 
-def test_every_check_type_and_section_renders(tmp_path):
-    """Every check type and section renders."""
+def _rendered(tmp_path):
+    """The markdown report of `_report()`, written with a previous round's gates file."""
     report_mod.write_reports(tmp_path, _report(), {"gates.json": {"listener.dead_air": {"threshold": -22.0}}})
-    markdown = (tmp_path / "report.md").read_text("utf-8")
+    return (tmp_path / "report.md").read_text("utf-8")
+
+
+def test_every_check_type_renders(tmp_path):
+    """The flat, match and blind check rows render."""
+    markdown = _rendered(tmp_path)
     assert "| d | m | flat | fail | | | | 0.100 / 0.300, 0.200 / 0.300, 0.400 / 0.300 |" in markdown
-    assert "| d | m | match | pass | | 1.00 | | 4000, , 2828 |" in markdown and "| d | m (blind) | down | unscored | | | | |" in markdown
-    assert "Verdict flags no gate reads: listener.dull" in markdown and "## Derived gates (mixed)" in markdown
+    assert "| d | m | match | pass | | 1.00 | | 4000, , 2828 |" in markdown
+    assert "| d | m (blind) | down | unscored | | | | |" in markdown
+
+
+def test_every_section_renders(tmp_path):
+    """The unmapped verdict flags and the per-route derived gates render."""
+    markdown = _rendered(tmp_path)
+    assert "Verdict flags no gate reads: listener.dull" in markdown
+    assert "## Derived gates (mixed)" in markdown
 
 
 def test_an_unscored_check_says_why_and_a_gate_names_its_rounds(tmp_path):

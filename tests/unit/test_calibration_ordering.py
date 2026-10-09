@@ -48,7 +48,8 @@ def test_without_any_grid_reading_nothing_is_ranked():
     result = {"variants": {"deesser_bug": _variant(["dsp.hf_4k8k"]), "apl": _variant(), "stitched": _variant()}}
     rules = co.ordering_rules(result, {})
     assert rules["ranked_on"] == 0
-    assert rules["bug_in_bottom_two"] is None and rules["good_in_top"] is None
+    assert rules["bug_in_bottom_two"] is None
+    assert rules["good_in_top"] is None
     assert rules["bug_flagged_muffled"] is True
 
 
@@ -56,7 +57,8 @@ def test_the_default_grid_holds_two_sided_dsp_readings_with_a_floor_dead_zone():
     """The default grid holds two sided dsp readings with a floor dead zone."""
     grid = co.default_grid({"dsp.balance_air_db": {"centre": 0.0, "floor": 0.1}})
     assert grid["dsp.balance_air_db.delta.median"] == {"target": 0.0, "family": "timbre", "dead_zone": pytest.approx(0.3)}
-    assert "dsp.gap_atten_db.delta.median" not in grid and "dsp.balance_top_db.delta.median" not in grid
+    assert "dsp.gap_atten_db.delta.median" not in grid
+    assert "dsp.balance_top_db.delta.median" not in grid
     assert "dsp.hf_4k8k.delta.median" not in grid
 
 
@@ -64,7 +66,8 @@ def test_flat_readings_carry_the_tuning_grid_names():
     """Flat readings carry the tuning grid names."""
     flat = co.flat_readings(_variant(readings={AIR: 1.5}))
     assert flat["dsp.balance_air_db.delta.median"] == 1.5
-    assert flat["dsp.balance_air_db.output.tail"] == 1.5 and "dsp.balance_air_db.source.median" not in flat
+    assert flat["dsp.balance_air_db.output.tail"] == 1.5
+    assert "dsp.balance_air_db.source.median" not in flat
 
 
 def _by_ear():
@@ -83,14 +86,17 @@ def _by_ear():
 def test_the_rules_flag_the_deesser_bug_and_sink_it():
     """The rules flag the deesser bug and sink it."""
     rules = _by_ear()
-    assert rules["bug_flagged_muffled"] and rules["bug_in_bottom_two"]
+    assert rules["bug_flagged_muffled"]
+    assert rules["bug_in_bottom_two"]
     assert rules["ranked_on"] == 5
 
 
 def test_the_rules_place_the_good_variants_where_the_ear_did():
     """The rules place the good variants where the ear did."""
     rules = _by_ear()
-    assert rules["single4s_duller_than_stitched"] and rules["apl_not_altered"] and rules["good_in_top"]
+    assert rules["single4s_duller_than_stitched"]
+    assert rules["apl_not_altered"]
+    assert rules["good_in_top"]
 
 
 def _listened(statuses, gate="listener.hiss"):
@@ -196,7 +202,8 @@ def _missing(_name):
 def test_a_stored_result_covers_the_families_it_was_asked_for():
     """A stored result covers the families it was asked for."""
     v2 = {"variants": {"a": {"families": {"dsp": "ok"}}}}
-    assert co.covers(v2, ["dsp"]) and not co.covers(v2, ["dsp", "mos"])
+    assert co.covers(v2, ["dsp"])
+    assert not co.covers(v2, ["dsp", "mos"])
     assert co.covers({"requested": ["dsp", "mos"], "variants": {}}, ["mos"])
 
 
@@ -224,4 +231,5 @@ def test_only_the_ledger_records_that_judged_a_scored_label_count():
         _record("tele7abc", "2", {"listener.hiss": ["final2"]}, {}),
     ]
     verdicts = co.tape_verdicts("tele7abc", {"variants": {"deesser_bug": "a.wav"}}, records)
-    assert verdicts["flags"] == {"listener.dull": ["deesser_bug"]} and verdicts["rounds"] == ["1"]
+    assert verdicts["flags"] == {"listener.dull": ["deesser_bug"]}
+    assert verdicts["rounds"] == ["1"]

@@ -75,7 +75,8 @@ SEPARATOR_LOGGER = "audio_separator"
 SEPARATOR_ROUTINE = ("Using soundfile for writing.", "Audio duration (", "Automatically enabling override_model_segment_size")
 _UNSAFE_IN_PART = ("\\", ":", "\0")
 _HEX = frozenset("0123456789abcdef")
-_IN_PROGRESS_NAME = re.compile(r"tmp-[0-9a-f]{12}-[0-9]+")
+# ASCII: `\d` then matches 0-9 only, the digits `os.getpid()` writes, as `[0-9]` did.
+_IN_PROGRESS_NAME = re.compile(r"tmp-[0-9a-f]{12}-\d+", re.ASCII)
 _WARNED = set()
 _NOTED = set()
 _SEPARATOR_PROBLEMS = collections.Counter()

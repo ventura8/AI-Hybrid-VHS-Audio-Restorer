@@ -1,6 +1,7 @@
 """The listening page's server logic: routes, one-time cut names, the request checks and the ledger write at the end."""
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -47,6 +48,11 @@ def _post(session, payload, headers=None):
     return session.handle("POST", "/api/answer", headers or JSON_HEADERS, json.dumps(payload).encode("utf-8"))
 
 
+def _state(session):
+    """The page's state as the browser reads it."""
+    return json.loads(_get(session, "/api/state")[2])
+
+
 def _answer_everything(session, pick):
     """Answers every trial through the POST route (one pass, so a refused answer cannot loop); returns the last response."""
     response = None
@@ -55,24 +61,48 @@ def _answer_everything(session, pick):
     return response
 
 
-def test_the_page_and_the_state(tmp_path):
-    """The page is HTML; the state names the trial, its three play buttons and the two choices."""
-    session = _session(tmp_path)
-    status, content_type, body = _get(session, "/")
-    state = json.loads(_get(session, "/api/state")[2])
-    assert status == 200 and content_type.startswith("text/html") and b"<title>Listening test</title>" in body
-    assert [button["name"] for button in state["buttons"]] == ["A", "B", "X"] and state["choices"] == ["A", "B"]
-    assert state["index"] == 0 and state["total"] == 4 and not state["done"]
+# ----------------------------------------------------------------------------- the page, its state and the cuts
+
+
+def test_the_page_is_html(tmp_path):
+    """The page is HTML under its own title."""
+    status, content_type, body = _get(_session(tmp_path), "/")
+    assert status == 200
+    assert content_type.startswith("text/html")
+    assert b"<title>Listening test</title>" in body
+
+
+def test_the_state_names_the_three_play_buttons_and_the_two_choices(tmp_path):
+    """The state names the trial's three play buttons and the two choices."""
+    state = _state(_session(tmp_path))
+    assert [button["name"] for button in state["buttons"]] == ["A", "B", "X"]
+    assert state["choices"] == ["A", "B"]
+
+
+def test_the_state_names_the_trial(tmp_path):
+    """A fresh block stands at the first of its four trials, not done."""
+    state = _state(_session(tmp_path))
+    assert state["index"] == 0
+    assert state["total"] == 4
+    assert not state["done"]
 
 
 def test_cuts_are_served_under_one_time_names(tmp_path):
-    """A play button's URL serves a WAV; an unknown name, another path or another method is not found."""
+    """A play button's URL serves a WAV."""
     session = _session(tmp_path)
-    url = json.loads(_get(session, "/api/state")[2])["buttons"][0]["url"]
-    status, content_type, body = _get(session, url)
-    assert status == 200 and content_type == "audio/wav" and body.startswith(b"RIFF")
-    assert _get(session, "/audio/0123.wav")[0] == 404 and _get(session, "/elsewhere")[0] == 404
-    assert session.handle("PUT", "/", {"Host": HOST}, b"")[0] == 404
+    status, content_type, body = _get(session, _state(session)["buttons"][0]["url"])
+    assert status == 200
+    assert content_type == "audio/wav"
+    assert body.startswith(b"RIFF")
+
+
+@pytest.mark.parametrize(("method", "path"), [("GET", "/audio/0123.wav"), ("GET", "/elsewhere"), ("PUT", "/")])
+def test_an_unknown_name_another_path_or_another_method_is_not_found(tmp_path, method, path):
+    """An unknown cut name, another path or another method is not found."""
+    assert _session(tmp_path).handle(method, path, {"Host": HOST}, b"")[0] == 404
+
+
+# ----------------------------------------------------------------------------- who may ask and who may answer
 
 
 def test_another_host_is_refused(tmp_path):
@@ -95,7 +125,9 @@ def test_an_answer_from_another_site_is_refused(tmp_path, headers):
     """A cross-site form or no-cors post (form content type) or a foreign Origin is refused: no answer is taken."""
     session = _session(tmp_path)
     status, _type, body = _post(session, {"trial": 0, "choice": "A"}, headers)
-    assert status == 403 and b"application/json" in body and not session.mode.answers
+    assert status == 403
+    assert b"application/json" in body
+    assert not session.mode.answers
 
 
 @pytest.mark.parametrize("origin", [None, f"http://{HOST}", f"http://localhost:{PORT}"])
@@ -104,16 +136,32 @@ def test_an_answer_from_this_page_is_taken(tmp_path, origin):
     session = _session(tmp_path)
     headers = {"Host": HOST, "Content-Type": "application/json; charset=utf-8"}
     status, _type, _body = _post(session, {"trial": 0, "choice": "A"}, headers if origin is None else {**headers, "Origin": origin})
-    assert status == 200 and len(session.mode.answers) == 1
+    assert status == 200
+    assert len(session.mode.answers) == 1
+
+
+# ----------------------------------------------------------------------------- a block through the server: abx, pair and blend
+
+
+def _abx_block(tmp_path):
+    """Four right answers through the server: the session, the last response and the ledger's records."""
+    session = _session(tmp_path)
+    status, _type, body = _answer_everything(session, lambda trial: trial["key"])
+    return SimpleNamespace(session=session, status=status, body=body, records=ledger.read(tmp_path / "verdicts.jsonl"))
+
+
+def test_an_abx_block_ends_with_its_summary(tmp_path):
+    """Four right answers: the last response is the summary."""
+    block = _abx_block(tmp_path)
+    assert block.status == 200
+    assert json.loads(block.body) == {"done": True, "summary": block.session.mode.summary()}
 
 
 def test_an_abx_block_ends_in_the_ledger(tmp_path):
-    """Four right answers: the last response is the summary, the ledger holds one valid abx record."""
-    session = _session(tmp_path)
-    status, _type, body = _answer_everything(session, lambda trial: trial["key"])
-    records = ledger.read(tmp_path / "verdicts.jsonl")
-    assert status == 200 and json.loads(body) == {"done": True, "summary": session.mode.summary()}
-    assert [record["id"] for record in records] == ["2026-10-09-test-1"] and records[0]["n_correct"] == 4
+    """Four right answers: the ledger holds one valid abx record with all four right."""
+    records = _abx_block(tmp_path).records
+    assert [record["id"] for record in records] == ["2026-10-09-test-1"]
+    assert records[0]["n_correct"] == 4
     assert records[0]["question"] == {"type": "abx", "stimuli": ["a", "b"], "blind": True, "text": ""}
 
 
@@ -146,6 +194,9 @@ def test_a_blend_trial_plays_the_mix(tmp_path):
     assert [button["name"] for button in session.state()["buttons"]] == ["R", "A", "B"]
 
 
+# ----------------------------------------------------------------------------- a ledger write that fails: the sidecar
+
+
 def _conflicting_ledger(path):
     """A ledger where stimulus 'a' on vaccin is another file than the session's a.wav."""
     record = {**_base(), "id": "older", "files": [ledger.file_entry("a", "elsewhere.wav"), ledger.file_entry("b", "b.wav")]}
@@ -154,37 +205,73 @@ def _conflicting_ledger(path):
     return path
 
 
-def test_a_refused_ledger_write_keeps_the_answers_in_a_sidecar(tmp_path):
-    """The ledger refuses the block (label 'a' is another file there): 500 naming the sidecar, the block closes, nothing half-written."""
+def _refused_block(tmp_path):
+    """A block the ledger refuses (label 'a' is another file there), answered to the end and its last reply sent."""
     session = _session(tmp_path, path=_conflicting_ledger(tmp_path / "v.jsonl"))
     status, _type, body = _answer_everything(session, lambda trial: trial["key"])
-    sidecar = tmp_path / "v.jsonl.unsaved-2026-10-09-test.json"
     session.after_reply()
-    assert status == 500 and b"NOT written to the ledger" in body and str(sidecar).encode("utf-8") in body
-    assert [record["id"] for record in json.loads(sidecar.read_text(encoding="utf-8"))] == ["2026-10-09-test-1"]
-    assert session.closed.is_set() and [record["id"] for record in ledger.read(tmp_path / "v.jsonl")] == ["older"]
+    return SimpleNamespace(session=session, status=status, body=body, sidecar=tmp_path / "v.jsonl.unsaved-2026-10-09-test.json")
 
 
-def test_when_the_sidecar_fails_too_the_summary_carries_the_records(tmp_path, monkeypatch):
-    """A disk error on the ledger and on the sidecar: the answers survive in the summary the terminal prints."""
+def test_a_refused_ledger_write_answers_500_naming_the_sidecar(tmp_path):
+    """The ledger refuses the block: the last response is a 500 that says so and names the sidecar."""
+    block = _refused_block(tmp_path)
+    assert block.status == 500
+    assert b"NOT written to the ledger" in block.body
+    assert str(block.sidecar).encode("utf-8") in block.body
+
+
+def test_a_refused_ledger_write_keeps_the_answers_in_a_sidecar(tmp_path):
+    """The ledger refuses the block: the answers are in the sidecar, the block closes, nothing half-written."""
+    block = _refused_block(tmp_path)
+    assert [record["id"] for record in json.loads(block.sidecar.read_text(encoding="utf-8"))] == ["2026-10-09-test-1"]
+    assert block.session.closed.is_set()
+    assert [record["id"] for record in ledger.read(tmp_path / "v.jsonl")] == ["older"]
+
+
+def _sidecar_failure(tmp_path, monkeypatch):
+    """A block whose ledger write and sidecar both hit a disk error: the session and the last response's status."""
 
     def broken(_records, _path):
         raise OSError("disk full")
 
     monkeypatch.setattr(listen_ab.ledger, "append_many", broken)
     session = _session(tmp_path, path=tmp_path / "missing" / "v.jsonl")
-    status, _type, _body = _answer_everything(session, lambda trial: "A")
-    assert status == 500 and "disk full" in session.view["summary"] and "failed too" in session.view["summary"]
-    assert '"id": "2026-10-09-test-1"' in session.view["summary"] and json.loads(_get(session, "/api/state")[2])["done"]
+    return session, _answer_everything(session, lambda trial: "A")[0]
+
+
+def test_when_the_sidecar_fails_too_the_response_names_both_failures(tmp_path, monkeypatch):
+    """A disk error on the ledger and on the sidecar: a 500 whose summary names the error and the failed sidecar."""
+    session, status = _sidecar_failure(tmp_path, monkeypatch)
+    assert status == 500
+    assert "disk full" in session.view["summary"]
+    assert "failed too" in session.view["summary"]
+
+
+def test_when_the_sidecar_fails_too_the_summary_carries_the_records(tmp_path, monkeypatch):
+    """A disk error on the ledger and on the sidecar: the answers survive in the summary the terminal prints."""
+    session, _status = _sidecar_failure(tmp_path, monkeypatch)
+    assert '"id": "2026-10-09-test-1"' in session.view["summary"]
+    assert _state(session)["done"]
+
+
+# ----------------------------------------------------------------------------- answers the server cannot take, and reading the request
 
 
 def test_answers_that_cannot_be_taken(tmp_path):
-    """Malformed JSON and an unknown choice are bad requests; a stale or repeated trial is a conflict."""
+    """Malformed JSON and an unknown choice are bad requests, and neither moves the block on: trial 0 is still open."""
     session = _session(tmp_path)
     assert session.handle("POST", "/api/answer", JSON_HEADERS, b"{not json")[0] == 400
     assert _post(session, {"trial": 0, "choice": "C"})[0] == 400
+    assert _post(session, {"trial": 0, "choice": "A"})[0] == 200
+
+
+def test_a_stale_or_repeated_trial_is_a_conflict(tmp_path):
+    """An answer to a trial not reached yet, or to one already answered, is a conflict."""
+    session = _session(tmp_path)
     assert _post(session, {"trial": 3, "choice": "A"})[0] == 409
-    assert _post(session, {"trial": 0, "choice": "A"})[0] == 200 and _post(session, {"trial": 0, "choice": "A"})[0] == 409
+    assert _post(session, {"trial": 0, "choice": "A"})[0] == 200
+    assert _post(session, {"trial": 0, "choice": "A"})[0] == 409
 
 
 def test_parse_answer_names_what_is_wrong():
@@ -196,10 +283,18 @@ def test_parse_answer_names_what_is_wrong():
         listen_ab.parse_answer(b'{"trial": "2", "choice": "B"}')
 
 
-def test_body_length_and_media_type_are_read_defensively():
-    """No header or a broken one reads as empty; a huge length is capped; the media type drops its parameters."""
-    assert listen_ab.body_length({}) == 0 and listen_ab.body_length({"Content-Length": "abc"}) == 0
-    assert listen_ab.body_length({"Content-Length": "999999"}) == listen_ab.MAX_BODY
+@pytest.mark.parametrize(
+    ("headers", "length"),
+    [({}, 0), ({"Content-Length": "abc"}, 0), ({"Content-Length": "999999"}, listen_ab.MAX_BODY)],
+    ids=["no-header", "broken", "huge"],
+)
+def test_body_length_is_read_defensively(headers, length):
+    """No header or a broken one reads as empty; a huge length is capped."""
+    assert listen_ab.body_length(headers) == length
+
+
+def test_the_media_type_is_read_defensively():
+    """The media type drops its parameters and its case; no header reads as none."""
     assert listen_ab.media_type({"Content-Type": "Application/JSON ; charset=utf-8"}) == "application/json"
     assert listen_ab.media_type({}) == ""
 

@@ -226,3 +226,13 @@ def test_the_envelope_follows_the_band_at_a_low_rate():
     env = file_metrics.envelope(_speech(3.0, rate=4000), 4000, 4)
     assert len(env) == 3000
     assert abs(float(env.mean())) < 1e-9
+
+
+def test_the_track_holds_the_matched_anchors_only():
+    """The ride's lag track: each matched anchor's centre and lag; an unread or unmatched anchor is left out."""
+    late = file_metrics.sync_drift(_long200(), _delayed(_long200(), 3000.0), RATE)
+    assert len(late["track"]) == 1
+    assert late["track"][0][0] == pytest.approx(196.0)
+    assert late["track"][0][1] == late["lag_end_ms"]
+    silent_start = file_metrics.sync_drift(_silenced(34.0), _silenced(34.0), RATE)
+    assert [lag for _centre, lag in silent_start["track"]] == [silent_start["lag_middle_ms"], silent_start["lag_end_ms"]]

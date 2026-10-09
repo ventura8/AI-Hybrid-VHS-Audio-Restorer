@@ -43,8 +43,10 @@ a mono float signal and returns a float32 array of the same length.
 - `phasey_resynth`: the "robotic" voice. A 1024 / 256 Hann STFT whose phases each move by
   `amount` times a uniform draw in (-pi, pi), resynthesised by overlap-add. Each frame keeps
   its magnitudes, but the overlap-add of incoherent frames does not: at full randomisation R1
-  reads a tilt of -0.83 / -1.15 dB/oct (en / fr speech fixtures) and `dsp.dropouts` 56-59
-  holes; at 15-40 % R1 moves under 0.15. Phasiness can pass for a timbre change.
+  reads a tilt of -0.83 / -1.15 dB/oct (en / fr speech fixtures); `dsp.dropouts` read 56-59
+  holes until the count was re-centred on the programme frames' median drop (en now 1: the
+  gain match had scaled the incoherent output down as a whole); at 15-40 % R1 moves under
+  0.15. Phasiness can pass for a timbre change.
 - `band_limited`: the linear-track source condition, an 8th-order Butterworth low pass run
   forward and back (the `underwater` filter, steep enough for R0's +-1/6 octave rule;
   `source_profile` reads a gentle filter over hiss higher, by design).
@@ -56,6 +58,19 @@ a mono float signal and returns a float32 array of the same length.
   zeroed at random, the rest raised to keep the power (asked for by the R2 owner).
 - `speed_drift`: the output running a fraction of a percent slow, a speed error the sync
   stage missed: a polyphase resample to `1 + percent / 100` times the length.
+- `holes`: the `dropouts` degradation's head-contact loss, built for the count that reads it
+  (`dsp_metrics.dropout_count`, `file.dropouts`): `count` holes of 30-50 ms with 0.5 ms
+  edges, each opening 50 ms of 10 ms frames the count calls programme, 250 ms apart, drawn
+  from their own seed so a level's holes are the first ones of every higher level's. The v2
+  generator (`realistic_defects.inject_dropouts`, the fixtures' injector, unchanged) drew a
+  count per file at 5-50 ms anywhere from the shared generator, each level its own: under
+  25 ms a hole cannot fill two frames and half of them fell under the programme cut, so the
+  whole pair read 1 / 2 / 2 on Vaccin and 1 / 0 / 3 on SOTI at 3 / 6 / 12 (calibration v3).
+  These read 3 / 6 / 12 on en and on every tape cut. They draw nothing from the caller's
+  generator, which shifted the shared stream of every later rng-driven case once.
+- `window_fricatives`: the 's' frames each 15 s runner window finds on its own percentiles,
+  joined; what `quality_degradations.fricative_ramp` weights, so the R2 degradations reach
+  the frames R2 reads (the whole-file mask reached 0.80-0.82 of them on Tele7abc).
 """
 
 from fractions import Fraction
@@ -63,6 +78,8 @@ from fractions import Fraction
 import numpy as np
 import scipy.ndimage
 import scipy.signal
+
+from scripts.restoration_quality import audio_io, dsp_metrics, sibilance
 
 # The shipped shelf corner (linear_air_freq_hz's default); air_shelf's freq_hz takes another.
 AIR_SHELF_HZ = 7500.0
@@ -103,6 +120,16 @@ SIB_ISLAND_FRAME = 256
 SIB_ISLAND_BAND_HZ = (4000.0, 12000.0)
 # A speed error the sync stage missed.
 DRIFT_DENOMINATOR = 100000
+# The `dropouts` holes: long enough for the count's two 10 ms frames whatever their phase, from
+# their own seed (nested levels), 250 ms apart so no two runs merge, with the fixtures' 0.5 ms
+# edges (`realistic_defects.DROPOUT_EDGE_S`).
+HOLE_SEED = 20261009
+HOLE_MS = (30.0, 50.0)
+HOLE_SPACING_S = 0.25
+HOLE_EDGE_S = 0.0005
+# The runner's windows (`runner.score_pair`'s defaults): R2 finds the 's' frames per window.
+RUNNER_WINDOW_S = 15.0
+RUNNER_HOP_S = 7.5
 EPS = 1e-20
 
 
@@ -317,3 +344,64 @@ def speed_drift(mono, percent):
     """`mono` running `percent` slow: resampled (polyphase) to `1 + percent / 100` times its length, so it drifts late."""
     ratio = Fraction(1.0 + percent / 100.0).limit_denominator(DRIFT_DENOMINATOR)
     return scipy.signal.resample_poly(_float(mono), ratio.numerator, ratio.denominator).astype(np.float32)
+
+
+def spaced_starts(order, frame, count, spacing):
+    """The first `count` frame starts in `order` that lie at least `spacing` samples apart."""
+    starts = []
+    for index in order:
+        start = int(index) * frame
+        if all(abs(start - other) >= spacing for other in starts):
+            starts.append(start)
+        if len(starts) == count:
+            break
+    return starts
+
+
+def holes(mono, rate, count):
+    """`mono` with `count` holes the dropout count resolves (module docstring); level by level, the holes are nested."""
+    out = np.asarray(mono, dtype=np.float32).copy()
+    for start, length in hole_spans(mono, rate, count, np.random.default_rng(HOLE_SEED)):
+        _hole(out, start, length, max(int(HOLE_EDGE_S * rate), 1))
+    return out
+
+
+def hole_spans(mono, rate, count, rng):
+    """The first `count` holes `rng` draws: `(start, length)` in samples, each opening a run of programme frames."""
+    frame = int(dsp_metrics.DROPOUT_FRAME_S * rate)
+    starts = spaced_starts(rng.permutation(programme_starts(mono, frame)), frame, count, HOLE_SPACING_S * rate)
+    return [(start, int(rng.uniform(*HOLE_MS) * rate / 1000.0)) for start in starts]
+
+
+def programme_starts(mono, frame):
+    """The frames that open `HOLE_MS[1]` of frames the dropout count calls programme (over the whole signal)."""
+    programme = dsp_metrics.programme_frames(dsp_metrics.frame_levels(mono, frame))
+    run = int(np.ceil(HOLE_MS[1] / 1000.0 / dsp_metrics.DROPOUT_FRAME_S))
+    return np.flatnonzero(np.convolve(programme.astype(np.int64), np.ones(run, dtype=np.int64), mode="valid") == run)
+
+
+def _hole(out, start, length, edge):
+    """Zeroes `length` samples of `out` from `start` (in place), faded over `edge` samples either side.
+
+    A hole opens a run of programme frames inside the signal (`programme_starts`), so its span is whole.
+    """
+    ramp = np.linspace(1.0, 0.0, edge, dtype=np.float32)
+    span = out[start:][:length]
+    span[:edge] *= ramp
+    span[edge:-edge] = 0.0
+    span[-edge:] *= ramp[::-1]
+
+
+def window_fricatives(mono, rate):
+    """Per sample, whether any 15 s runner window (7.5 s hop) calls it fricative on its own percentiles.
+
+    R2 classifies each window's frames on that window's floor and gap hiss; a mask from
+    whole-file percentiles missed them on a tape whose floor moves: on Tele7abc the 15 %
+    islands reached 18 of window 1's 55 read fricative frames (coverage 0.80-0.82 over the cut,
+    SOTI 0.97, Vaccin 0.87), the union 0.97-1.00.
+    """
+    mask = np.zeros(len(mono), dtype=bool)
+    for window in audio_io.windows(len(mono), rate, RUNNER_WINDOW_S, RUNNER_HOP_S):
+        span = window.slice_of(rate)
+        mask[span] |= sibilance.fricative_mask(mono[span], rate)
+    return mask

@@ -71,6 +71,34 @@ floor. On coloured noise the test calls 1.1% of the bins tones at 25 mask frames
 fewest a window reads), 0.08% at 40, none at 100. On Tele7abc it takes 100-400 or 100-600
 Hz on every window, plus 750-950 Hz on one and 5.25-5.45 kHz on two.
 
+Bins under the 16-bit dither leave too (`above_dither`): a bin whose mean pause power in the
+source sits less than 10 dB over the power 16-bit TPDF requantisation puts there
+(`dither_floor`, variance LSB^2 / 4) has no floor a 16-bit output can keep or lose. Calibration
+v3 (2026-10-09) found R4 had no absolute floor: Vaccin's capture holds a notch about 40 dB deep
+at 10.75-11.25 kHz (the pause frames -80..-87 dB raw rfft power against the dither's -71), the
+peaked test flags the 11.3-12.4 kHz hiss shelf beside it, and the top ERB band (10731-12000
+Hz) kept only the notch's bins, which the benign requantise lifted by +9.2..+16.5 dB on every
+window: slope +0.52 and LSD +2.35 for a change no one can hear (the Piper speech target's
+near-silent pauses, -110..-126 in this unit, read +0.82 / +1.50 the same way). Those two cases
+set the benign floors at 0.4426 dB/oct (slope) and 1.2744 dB (LSD), and the hiss residual's
+mild level cleared them only 2.58x and 1.53x. With the dither floor Vaccin's requantise reads
+0.003 / 0.017, en's 0.12 / 0.22, SOTI and Tele7abc unchanged (their pauses hold no bin under
+it within the cap). The floor is the p95 over every benign case of every language (24 cases
+R4 reads on en and the three tape cuts, 30 with fr), so it depends on the case set. On en
+and the tape cuts, the run that found the defect, en's requantise is a lone outlier the p95
+skips: the floors are about 0.003 and 0.024, and the hiss residual's mild level (+2 dB/oct,
+the median over the sources that read it) clears them about 400x and 80x. With the default
+languages, en and fr (`calibrate_quality_metrics.DEFAULT_LANGUAGES`), and the same tape
+cuts, fr's requantise reads 0.375 / 0.36 on its one readable window and the p95 falls
+between it and en's: the floors are about 0.07 and 0.13, and the mild level clears them
+about 16x and 15x. Both sets' floors are computed from the per-case readings with every
+other benign case at its measured 0, not yet from an en and fr calibration run. The hiss
+residual at +2 dB/oct reads slope 1.09 and LSD 2.10 on Vaccin (1.13 / 2.25 before), 1.00 /
+2.25 on fr, and its other cases are unchanged. A margin of 20 dB empties the en target's
+pauses (R4 reads None there); clamping instead of leaving the bins out was rejected: an
+output clamped to an absolute floor saturates the attenuation on deep-cleaned outputs, and
+a clamped source turns dither in an empty band into attenuation.
+
 Per 1-ERB band (Glasberg-Moore, `auditory.erb_band_edges`) from 100 Hz to the caller's band
 cap (the runner passes R0's brickwall, not its programme bandwidth: the pauses hold the
 residual heard above the voiced band), 12 kHz or Nyquist, whichever is lowest, the
@@ -177,6 +205,10 @@ MOD_MIN_PERIODS = 2.0
 MOD_FFT = 128
 MOD_FLOOR = 1e-6
 KURT_EPS = 1e-12
+# The 16-bit requantisation floor (`dither_floor`): a source pause bin less than 10 dB over it
+# carries no floor to compare against, only what a dither would put there.
+QUANT_LSB = 1.0 / 32768.0
+DITHER_MARGIN_DB = 10.0
 EPS = 1e-20
 RESIDUAL_NAMES = (
     "gap_atten_db",
@@ -295,7 +327,7 @@ def _residual(src, out, rate, pauses, top):
     freqs, src_power = _masked_power(src, rate, frame, mask)
     _freqs, out_power = _masked_power(out, rate, frame, mask)
     out_power = floored(out_power, src_power)
-    keep = residual_bins(freqs, src_power, top)
+    keep = residual_bins(freqs, src_power, top, frame)
     readings = residual_shape(freqs[keep], src_power[:, keep], out_power[:, keep], top)
     if readings is None:
         return None
@@ -321,9 +353,33 @@ def _masked_power(mono, rate, frame, mask):
     return freqs, power[mask]
 
 
-def residual_bins(freqs, src_power, top):
-    """The bins every residual reading uses: 100 Hz to `top`, less the bins a tone holds in the source's pauses."""
-    return (freqs >= RESIDUAL_LO_HZ) & (freqs < top) & ~tonal_bins(src_power)
+def residual_bins(freqs, src_power, top, frame=None):
+    """The bins every residual reading uses: 100 Hz to `top`, less the bins a tone holds in the source's pauses,
+    less the bins whose pause floor sits under 16-bit requantisation noise plus 10 dB (`above_dither`).
+
+    `frame` is the frame length in samples (`2 * (bins - 1)`, an even frame, when not given).
+    """
+    frame = frame or 2 * (len(freqs) - 1)
+    return (freqs >= RESIDUAL_LO_HZ) & (freqs < top) & ~tonal_bins(src_power) & above_dither(src_power, frame)
+
+
+def dither_floor(frame):
+    """The per-bin Hann-windowed rfft power of 16-bit TPDF requantisation on `frame`-sample frames.
+
+    The +-1 LSB triangular dither (LSB^2 / 6) and the rounding after it (LSB^2 / 12) make a
+    white noise of variance LSB^2 / 4, whose rfft power per bin is that times the window's
+    sum of squares.
+    """
+    return (QUANT_LSB**2 / 4.0) * float(np.sum(np.hanning(frame) ** 2))
+
+
+def above_dither(src_power, frame):
+    """Per bin, whether the source's mean pause power (`(frames, bins)`) stands at least 10 dB over `dither_floor`.
+
+    Under that there is no floor a 16-bit output can keep or lose: requantising the output
+    alone lifts such a bin by up to its distance under the dither (module docstring).
+    """
+    return src_power.mean(axis=0) >= dither_floor(frame) * 10.0 ** (DITHER_MARGIN_DB / 10.0)
 
 
 def tonal_bins(power):

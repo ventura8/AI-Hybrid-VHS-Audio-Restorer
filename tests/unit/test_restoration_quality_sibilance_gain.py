@@ -71,12 +71,16 @@ def _sunk(source):
 
 @pytest.mark.parametrize("make_pair", [_quiet, _padded, _sunk])
 def test_no_absolute_level_wherever_r1_reads_no_gain(make_pair):
-    """Where R1 refuses the window, R2 has no gain to subtract; the texture, which needs none, still reads."""
+    """Where R1 refuses the window, R2 has no gain to subtract; the texture, which needs none, still reads.
+
+    Except on the padded pair: its 1.1 s of voice hold about 24 fricative frames, under the
+    texture's 30 (`sibilance.TEXTURE_MIN_FRAMES`).
+    """
     source, output = make_pair(_voice_with_esses()[0])
     level, texture = _r2(source, output)
     assert balance_metrics.band_profile(source, output, RATE) is None
     assert level is None
-    assert texture is not None
+    assert (texture is None) == (make_pair is _padded)
 
 
 def test_clearing_hiss_under_the_band_moves_neither_reading():

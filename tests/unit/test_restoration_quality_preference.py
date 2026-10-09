@@ -58,7 +58,8 @@ def test_standardised_coefficients_are_the_raw_ones_times_the_scales():
     model = pref.fit(_records(pairs=600))
     raw, standardised = model.coefficients(), model.coefficients(standardised=True)
     assert [standardised[name] for name in model.names] == pytest.approx(list(np.array([raw[n] for n in model.names]) * model.scales))
-    assert model.n_pairs == 600 and model.names == ("air", "gap", "sib")
+    assert model.n_pairs == 600
+    assert model.names == ("air", "gap", "sib")
 
 
 def test_a_prediction_flips_with_the_order_and_ignores_missing_readings():
@@ -94,7 +95,8 @@ def test_leave_one_tape_out_does_as_well_as_the_listeners_own_weights():
     """Held out tape by tape, the head predicts within 3 points of the true weights."""
     records, groups = _taped()
     validation = pref.leave_one_group_out(records, groups)
-    assert set(validation.by_group) == {"tele7abc", "soti", "vaccin"} and validation.n_pairs == len(records)
+    assert set(validation.by_group) == {"tele7abc", "soti", "vaccin"}
+    assert validation.n_pairs == len(records)
     assert max(_held_out_gap(validation, records, groups, tape) for tape in validation.by_group) < 0.03
     assert validation.log_loss < _oracle(records)["log_loss"] + 0.02
 
@@ -207,7 +209,8 @@ def test_a_fit_that_does_not_converge_is_refused_unless_asked_to_keep_it(monkeyp
 def test_a_converged_fit_says_so():
     """The ordinary fit carries scipy's verdict."""
     model = pref.fit([({"air": 1.0}, {"air": 0.0}, 1.0)] * 4)
-    assert model.converged and model.message
+    assert model.converged
+    assert model.message
 
 
 def test_the_sigmoid_never_overflows():

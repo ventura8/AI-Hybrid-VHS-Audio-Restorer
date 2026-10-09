@@ -131,7 +131,8 @@ def test_appended_lines_are_lf_terminated_json(tmp_path):
     ledger.append(_flag("x-1"), path)
     ledger.append_many([_abx("x-2"), _pair("x-3")], path)
     raw = path.read_bytes()
-    assert b"\r" not in raw and raw.endswith(b"\n")
+    assert b"\r" not in raw
+    assert raw.endswith(b"\n")
     assert [json.loads(line)["id"] for line in raw.decode("utf-8").splitlines()] == ["x-1", "x-2", "x-3"]
 
 
@@ -153,19 +154,22 @@ def test_append_refuses_a_duplicate_id_and_an_invalid_record(tmp_path):
     """The ledger is append-only by id, and nothing invalid gets in."""
     path = tmp_path / "verdicts.jsonl"
     ledger.append(_flag(), path)
+    duplicate, invalid = _flag(), _set(_flag("flag-2"), ("date",), "today")
     with pytest.raises(ledger.LedgerError, match="already in the ledger"):
-        ledger.append(_flag(), path)
+        ledger.append(duplicate, path)
     with pytest.raises(ledger.LedgerError, match="new record 1: date must"):
-        ledger.append(_set(_flag("flag-2"), ("date",), "today"), path)
+        ledger.append(invalid, path)
 
 
 def test_append_many_writes_everything_or_nothing(tmp_path):
     """One bad record, or two new records sharing an id, keeps the whole batch out of the ledger."""
     path = tmp_path / "verdicts.jsonl"
+    one_bad = [_flag("ok-1"), _set(_flag("bad-2"), ("date",), "today")]
+    twins = [_flag("twin"), _preference("twin")]
     with pytest.raises(ledger.LedgerError, match="new record 2: date must"):
-        ledger.append_many([_flag("ok-1"), _set(_flag("bad-2"), ("date",), "today")], path)
+        ledger.append_many(one_bad, path)
     with pytest.raises(ledger.LedgerError, match="new records: duplicate id 'twin'"):
-        ledger.append_many([_flag("twin"), _preference("twin")], path)
+        ledger.append_many(twins, path)
     assert not path.exists()
 
 
@@ -232,8 +236,9 @@ def test_a_label_names_one_file_per_tape(tmp_path):
     """Reusing stimulus 'a' for another file on the same tape is refused by append and by read."""
     path = tmp_path / "verdicts.jsonl"
     ledger.append(_flag(), path)
+    relabelled = _relabelled("pref-2", "other.wav")
     with pytest.raises(ledger.LedgerError, match="give it a label of its own"):
-        ledger.append(_relabelled("pref-2", "other.wav"), path)
+        ledger.append(relabelled, path)
     path.write_text(json.dumps(_flag()) + "\n" + json.dumps(_relabelled("pref-2", "other.wav")) + "\n", encoding="utf-8")
     with pytest.raises(ledger.LedgerError, match="record 'pref-2'"):
         ledger.read(path)
@@ -254,7 +259,8 @@ def test_label_conflicts_trusts_the_digests_over_the_path():
     """One path holding other audio (a rebuilt file) conflicts; a relative and an absolute spelling of one file do not."""
     rebuilt = ledger.label_conflicts([_relabelled("one", "a.wav", "1" * 64)], _relabelled("two", "a.wav", "2" * 64))
     respelled = ledger.label_conflicts([_relabelled("one", "a.wav")], _relabelled("two", str(ledger.REPO_ROOT / "a.wav")))
-    assert len(rebuilt) == 1 and "'a' on tape 'tele7abc'" in rebuilt[0]
+    assert len(rebuilt) == 1
+    assert "'a' on tape 'tele7abc'" in rebuilt[0]
     assert not respelled
 
 

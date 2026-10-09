@@ -45,6 +45,7 @@ dependency.
 """
 
 import itertools
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -131,11 +132,16 @@ def _loss_and_gradient(weights, x, y, l2):
     return loss, x.T @ (sigmoid(z) - y) + l2 * weights
 
 
+def _check_l2(l2):
+    """ValueError unless `l2 > 0`; NaN is refused like zero."""
+    if math.isnan(l2) or l2 <= 0.0:
+        raise ValueError(f"l2 must be > 0 (an unregularised fit diverges on separable answers): {l2!r}")
+
+
 def _checked(records, l2, names):
     if not records:
         raise ValueError("no preference records to fit")
-    if not l2 > 0.0:
-        raise ValueError(f"l2 must be > 0 (an unregularised fit diverges on separable answers): {l2!r}")
+    _check_l2(l2)
     names = tuple(names) if names is not None else feature_names(records)
     if not names:
         raise ValueError("the records carry no readings")

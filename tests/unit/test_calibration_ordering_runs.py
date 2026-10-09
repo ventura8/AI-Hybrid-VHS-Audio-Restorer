@@ -90,7 +90,8 @@ def test_the_rules_are_read_again_under_the_derived_gates(manifest, tmp_path, mo
     assert co.reevaluate_ordering(ordering, strict, {})["tele"]["rules"]["flags_reproduced"] is True
     loose = {"listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -40.0, severity=FLAG)}
     after = co.reevaluate_ordering(ordering, loose, {})["tele"]
-    assert after["rules"]["flags_reproduced"] is False and after["flags"] == {"listener.dead_air": ["dead"]}
+    assert after["rules"]["flags_reproduced"] is False
+    assert after["flags"] == {"listener.dead_air": ["dead"]}
 
 
 def test_a_route_view_reads_only_that_routes_windows_and_keeps_the_file_readings(manifest, tmp_path, monkeypatch):
@@ -100,7 +101,8 @@ def test_a_route_view_reads_only_that_routes_windows_and_keeps_the_file_readings
     music = co.route_ordering(ordering, "music", GATES, {})["tele"]["result"]["variants"]["dead"]["aggregate"]
     speech = co.route_ordering(ordering, "speech", GATES, {})["tele"]["result"]["variants"]["dead"]["aggregate"]
     assert "dsp.gap_air_db" not in music
-    assert speech["dsp.gap_air_db"]["output"]["median"] == -30.0 and music["file.lufs"] == speech["file.lufs"]
+    assert speech["dsp.gap_air_db"]["output"]["median"] == -30.0
+    assert music["file.lufs"] == speech["file.lufs"]
 
 
 def test_a_manifest_outside_the_repository_is_refused(tmp_path):
@@ -157,5 +159,6 @@ def test_the_listened_tape_reads_its_flags_from_the_ledger():
     """`tele7abc_listen` belongs to the ledger's `tele7abc`; its round-1 flag record names the same flags, and `*`."""
     listen, _labels = _listen()
     verdicts = co.tape_verdicts("tele7abc_listen", listen, co.ledger_records())
-    assert verdicts["verdict_source"] == "ledger" and "1" in verdicts["rounds"]
+    assert verdicts["verdict_source"] == "ledger"
+    assert "1" in verdicts["rounds"]
     assert verdicts["flags"]["listener.hiss"] == sorted(listen["flags"]["listener.hiss"])

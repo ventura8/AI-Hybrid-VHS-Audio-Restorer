@@ -131,12 +131,14 @@ def test_the_default_polish_graphs_are_the_shipped_strings():
     assert built == SHIPPED_POLISH
 
 
+CORNER_AND_TIMING_KEYS = ("linear_air_freq_hz", "expander_attack_s", "expander_decay_s")
+
+
 def test_the_new_keys_default_to_the_shipped_shelf_corner_and_timing():
     """Unset, and as the repository's config.yaml sets them: 7500 Hz, 0.04 s and 0.18 s."""
     defaults = cfg._typed_config_defaults()
-    shipped = (7500.0, 0.04, 0.18)
-    assert (defaults["linear_air_freq_hz"], defaults["expander_attack_s"], defaults["expander_decay_s"]) == shipped
-    assert (cfg.LINEAR_AIR_FREQ_HZ, cfg.EXPANDER_ATTACK_S, cfg.EXPANDER_DECAY_S) == shipped
+    assert tuple(defaults[key] for key in CORNER_AND_TIMING_KEYS) == (7500.0, 0.04, 0.18)
+    assert tuple(getattr(cfg, key.upper()) for key in CORNER_AND_TIMING_KEYS) == (7500.0, 0.04, 0.18)
 
 
 def test_the_air_corner_follows_the_config():

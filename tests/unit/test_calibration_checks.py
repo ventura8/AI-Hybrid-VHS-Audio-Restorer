@@ -84,25 +84,26 @@ def test_an_unread_metric_is_unscored():
     """An unread metric is unscored."""
     cases, readings = _cases("underwater", [-3.0, -8.0, -20.0])
     result = checks.check_expectation("underwater", deg.Expectation("mos.sigmos_col", "down"), cases, readings, {})
-    assert result["status"] == "unscored" and result["reason"] == checks.NOT_READ
+    assert result["status"] == "unscored"
+    assert result["reason"] == checks.NOT_READ
     assert result["expect"] == "down"
 
 
 def test_a_flat_reading_inside_its_tolerance_passes_and_one_outside_fails():
     """A flat reading inside its tolerance passes and one outside fails."""
-    cases, readings = _cases("treble_dropouts", [0.0, 0.5, 1.0], "dsp.dropouts")
-    inside = checks.check_expectation("treble_dropouts", deg.Expectation("dsp.dropouts", "flat", tolerance=1.0), cases, readings, {})
+    cases, readings = _cases("treble_dropouts", [0.0, 0.5, 1.0], "file.dropouts")
+    inside = checks.check_expectation("treble_dropouts", deg.Expectation("file.dropouts", "flat", tolerance=1.0), cases, readings, {})
     assert inside["status"] == "pass"
-    outside = checks.check_expectation("treble_dropouts", deg.Expectation("dsp.dropouts", "flat", tolerance=0.4), cases, readings, {})
+    outside = checks.check_expectation("treble_dropouts", deg.Expectation("file.dropouts", "flat", tolerance=0.4), cases, readings, {})
     assert outside["status"] == "fail"
     assert outside["moves"] == [0.0, 0.5, 1.0]
 
 
 def test_a_flat_reading_may_move_three_benign_floors():
     """A flat reading may move three benign floors."""
-    cases, readings = _cases("treble_dropouts", [0.0, 1.0, 1.4], "dsp.dropouts")
-    floor = {"dsp.dropouts": {"centre": 0.0, "floor": 0.5}}
-    result = checks.check_expectation("treble_dropouts", deg.Expectation("dsp.dropouts", "flat", tolerance=0.1), cases, readings, floor)
+    cases, readings = _cases("treble_dropouts", [0.0, 1.0, 1.4], "file.dropouts")
+    floor = {"file.dropouts": {"centre": 0.0, "floor": 0.5}}
+    result = checks.check_expectation("treble_dropouts", deg.Expectation("file.dropouts", "flat", tolerance=0.1), cases, readings, floor)
     assert result["status"] == "pass"
     assert result["allowed"] == [1.5, 1.5, 1.5]
 
@@ -248,7 +249,8 @@ def test_a_scored_check_carries_no_reason():
     for case, value in zip(cases, (0.5, 1.0, 2.0)):
         readings[case.case_id]["dsp.balance_air_db"] = value
     result = checks.check_expectation("air_shelf_boost_music", deg.Expectation("dsp.balance_air_db", "up"), cases, readings, {})
-    assert result["status"] == "pass" and "reason" not in result
+    assert result["status"] == "pass"
+    assert "reason" not in result
 
 
 # The raw-pair sync offset (ms) per benign case on realistic-v2 en (review probe, `file_metrics.file_entries`).

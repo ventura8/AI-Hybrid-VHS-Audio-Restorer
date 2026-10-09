@@ -113,7 +113,13 @@ def test_a_real_excerpt_carries_the_degradations_that_need_no_reference():
     assert {"pause_residual_hiss", "air_shelf_boost", "hifi_compander_mistrack", "musical_noise"} <= on_tape
     assert not on_tape & {"hiss", "hiss_in_pauses", "air_shelf_boost_music", "background_stripped"}
     assert "linear_bandwidth" in on_tape
-    assert "identity_music" not in deg.on_tape_benign() and "identity" in deg.on_tape_benign()
+
+
+def test_a_real_excerpt_keeps_the_speech_identity_and_drops_the_music_one():
+    """The benign tape set keeps the identity pair and drops the music identity, which starts from the fixtures' music bed."""
+    benign = deg.on_tape_benign()
+    assert "identity_music" not in benign
+    assert "identity" in benign
 
 
 def test_only_the_shifts_change_readings_by_construction():

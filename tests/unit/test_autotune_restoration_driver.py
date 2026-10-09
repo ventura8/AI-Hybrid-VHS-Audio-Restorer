@@ -84,8 +84,10 @@ def test_a_candidate_the_app_would_not_run_as_asked_stops_the_loop(tmp_path, mon
     """An unknown setting, a setting the app reverts and a run that left no output each raise."""
     overrides, resolved, restore, message = case
     _app(monkeypatch, restore, resolved)
+    tapes = {"t1": str(_tape(tmp_path))}
+    out = tmp_path / "out"
     with pytest.raises(SystemExit, match=message):
-        at.run_candidate("apl", overrides, {"t1": str(_tape(tmp_path))}, tmp_path / "out")
+        at.run_candidate("apl", overrides, tapes, out)
 
 
 def test_seeding_takes_the_app_default_when_it_is_one_of_the_knob_values(tmp_path, monkeypatch):

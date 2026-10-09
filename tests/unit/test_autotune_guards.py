@@ -127,7 +127,8 @@ def test_a_lower_corner_cannot_carry_the_air_gain_past_the_ledger_boundary():
     }
     refused = ag.refusals(everything, SHIPPED_AIR, AIR_RULES)
     assert list(refused) == ["both"]
-    assert refused["both"][0].startswith("linear_air_gain_db 2.57 is at or above 2") and "+1.5 dB at 6000 Hz" in refused["both"][0]
+    assert refused["both"][0].startswith("linear_air_gain_db 2.57 is at or above 2")
+    assert "+1.5 dB at 6000 Hz" in refused["both"][0]
 
 
 def test_the_combination_of_two_allowed_winners_is_refused_when_together_they_pass_the_boundary():
@@ -344,11 +345,14 @@ def test_the_command_line_refuses_a_v3_grid_without_floors_and_a_missing_report(
     """No report at all names the missing floor and --families; a report path that does not exist is refused as such."""
     _loop(monkeypatch)
     monkeypatch.setattr(ag, "DEFAULT_NOISE_FLOORS", tmp_path / "absent.json")
+    without_floors = _cli(tmp_path, V3_GRID)
     with pytest.raises(SystemExit, match=f"grid: veto {CER}: no benign floor in --noise-floors") as refused:
-        at.main(_cli(tmp_path, V3_GRID))
-    assert "--families" in str(refused.value) and "--repeats" not in str(refused.value)
+        at.main(without_floors)
+    assert "--families" in str(refused.value)
+    assert "--repeats" not in str(refused.value)
+    missing_report = _cli(tmp_path, V3_GRID, "--noise-floors", str(tmp_path / "absent.json"))
     with pytest.raises(SystemExit, match="does not exist"):
-        at.main(_cli(tmp_path, V3_GRID, "--noise-floors", str(tmp_path / "absent.json")))
+        at.main(missing_report)
 
 
 def test_the_command_line_refuses_a_zero_floor_before_it_renders(tmp_path, monkeypatch):
@@ -356,7 +360,9 @@ def test_the_command_line_refuses_a_zero_floor_before_it_renders(tmp_path, monke
     floors = tmp_path / "noise_floor.json"
     floors.write_text(json.dumps({"readings": {CER: {"floor": 0.0}}}), encoding="utf-8")
     rounds = _loop(monkeypatch)
+    argv = _cli(tmp_path, V3_GRID, "--noise-floors", str(floors))
     with pytest.raises(SystemExit, match=f"grid: veto {CER}: no benign floor above 0") as refused:
-        at.main(_cli(tmp_path, V3_GRID, "--noise-floors", str(floors)))
-    assert "--repeats 2 or more" in str(refused.value) and "resample_roundtrip" in str(refused.value)
+        at.main(argv)
+    assert "--repeats 2 or more" in str(refused.value)
+    assert "resample_roundtrip" in str(refused.value)
     rounds.assert_not_called()

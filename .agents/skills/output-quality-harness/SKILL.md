@@ -330,7 +330,11 @@ their module docstrings hold the full measurements.
   APL no_air reads level +0.05 against the baseline's +0.72, so round one's
   "thin" on no_air was texture, not level. Benign floor: level 0.05 dB;
   texture under 0.05 for static filters and -0.1..-0.2 when hiss above the
-  band is cleared. `sib_peak_hz`, `sib_rel_amp_db` and the Romanian s-comma
+  band is cleared. Since calibration v3 the level's gain is matched around
+  each 's' (+-0.5 s of R1's programme cells, so a slow level rider is no
+  change) and the texture needs 30 fricative frames a window (10 read
+  noise); both changed Round 0 numbers (see "Calibration v3 with the Tata
+  cuts"). `sib_peak_hz`, `sib_rel_amp_db` and the Romanian s-comma
   class are not built: they rest on a refuted claim until a verdict backs
   them.
 - **R3, coverage** (plan: `meta.fricative_coverage`). The engine side is
@@ -366,14 +370,18 @@ their module docstrings hold the full measurements.
   v2 `gates.json` (the drivers' default `--gates`, and what
   `score_listen.py` passes) still lists it as a flag, and merged as it stood
   it made the loops count it again (an output at gap_air -10 dB failed it
-  as a flag).
+  as a flag). Bins whose source pause floor sits under the 16-bit dither
+  plus 10 dB leave every R4 reading (`above_dither`): requantising alone
+  had lifted Vaccin's notched top band 9-16 dB.
 - **R7, gain riding** (`file_metrics.py`: `file.gain_ride_lu`, the p95, with
   `file.gain_ride_std_lu` and `file.gain_ride_deriv_lu`). EBU short-term
   loudness of the raw source and output over windows standing 10 LU over the
   source's floor, the static offset removed, the sync lag applied first.
   The accepted v2 finals of the speech tapes read p95 0.82-1.80 LU, so the
   design's 1.5 LU flag would fire on three accepted files: display-only
-  until the `loudnorm_ride` degradation calibrates it.
+  until the `loudnorm_ride` degradation calibrates it. Each output window
+  is read along the sync's lag track (the matched anchors' lags), so a
+  speed drift is no ride either.
 - **Sync** (`file.sync_drift_ms`, `file.sync_offset_ms`,
   `file.sync_unmatched`, the per-anchor lags). The envelope correlation of
   8 s anchors at the start, centre and end of the raw pair. Hard gates: drift
@@ -663,6 +671,75 @@ none of them. The calibration writes under its `--out`, while the drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`:
 a v3 round passes `--gates experiments/quality_calibration_v3/gates.json`.
 
+### Calibration v3 with the Tata cuts (2026-10-09)
+
+The first v3 run (`--metrics dsp`, en, `--excerpts` Vaccin 60-360 s, SOTI
+60-360 s, the whole 134 s Tele7abc) passed 98 of 144 checks with 8 non-blind
+failures. Three (`hum` and the two dropout checks) had passed in v2, which
+ran en alone; the other five are checks v2 did not have. Each was traced to
+a reading, a degradation or a case set, and fixed there; no expectation was
+loosened:
+
+- `hum` (3 of 4 sources): the degradation put 50 Hz hum on every base,
+  while the runner reads the mains R0 names, and R0 names 60 Hz on the
+  hum-free en, es and it Piper targets (near-monotone partials hold fixed
+  bins; the 3 dB frames floor was set on noise only). The case now injects
+  at R0's mains (`quality_degradations.capture_mains_hz`): en +0.02 /
+  +0.27 / +2.35, es and it order too, the tapes (50 Hz) unchanged. Not
+  adopted: requiring R0's fundamental to stand about 10 dB out (Piper at
+  most 8.1 dB, the tapes 13.1-19.9; it would also settle Vaccin's 60 Hz
+  near miss) until the 24 IA clips and 300 noise clips confirm the cut.
+- `words_muted` / `dropouts` on `dsp.dropouts` (medians 0 / 0 / 0): one
+  hole sits in at most two of a 300 s cut's 40 windows, so the window
+  median is blind. They now assert `file.dropouts`, the count over the
+  whole aligned pair (`runner.dropout_entry`). The count measures each
+  frame's drop against the programme frames' median drop and asks the
+  100-1000 Hz body to fall too (`dsp_metrics.dropout_count`): on judged
+  files the least-squares gain match had scaled drifting outputs down as a
+  whole (gaudeamus5 845 holes, 0 re-centred; SOTI cathar075 276 to 94), and
+  a 2 um treble lift read 10 holes on SOTI. `dropouts` draws nested 30-50 ms
+  holes on programme frames from its own seed (`degradations_v3.holes`):
+  3 / 6 / 12 on every source; `words_muted` orders on all four;
+  `treble_dropouts` and every benign case read 0. The hard gate still
+  reads `dsp.dropouts` (a p90 of 1 at most); move it to `file.dropouts`
+  once Round 0 is re-scored with the new count.
+- `pause_residual_hiss` slope and LSD (effect 2.6x and 1.5x the floor): the
+  benign requantise set the floors (0.44 / 1.27). Vaccin's capture holds a
+  notch 40 dB deep at 10.75-11.25 kHz, under the 16-bit dither, which
+  lifted its top ERB band 9-16 dB. R4 now leaves out every bin whose source
+  pause floor sits under the dither plus 10 dB (`pause_metrics.above_dither`):
+  Vaccin's requantise reads 0.003 / 0.017 and en's 0.12 / 0.22. The floor is
+  a p95 over every benign case, so it depends on the case set. On en and the
+  tape cuts (this run) en's requantise is a lone outlier the p95 skips: the
+  floors are about 0.003 / 0.024, which the mild hiss level clears about
+  400x / 80x. On the default en and fr (`DEFAULT_LANGUAGES`) with the same
+  cuts, fr's requantise reads 0.375 / 0.36: the floors are about 0.07 /
+  0.13, cleared about 16x / 15x. Both are computed from the per-case
+  readings (every other benign case reads 0), not yet from an en and fr
+  calibration run.
+- `sibilant_islands` texture (3 of 4): en's one readable window holds 10
+  fricative frames, where the spread is noise (+-0.17..0.35 over 8 seeds).
+  The texture needs 30 (`sibilance.TEXTURE_MIN_FRAMES`); en and Vaccin go
+  unread, and the islands are placed on each runner window's own fricative
+  frames (`degradations_v3.window_fricatives`): fr 0.16 / 0.22 / 0.62, SOTI
+  0.13 / 0.31 / 0.64, Tele7abc 0.16 / 0.32 / 0.59. The calibration's
+  default languages are now en and fr.
+- `loudnorm_ride` on R2's level (Vaccin +0.56 dB at 0.9): one window gain
+  from the loud frames cannot cancel a ride the 's' frames sample
+  elsewhere. R2 matches the gain on R1's programme cells within 0.5 s of
+  each 's' (`sibilance.frame_gains_db`): 0.045 dB at most.
+- `sync_drift` on `file.gain_ride_lu` (0.18 / 0.30 / 0.71 LU against 0.1):
+  the median lag cannot align a drift of 146-587 ms. R7 reads each output
+  window along the sync's lag track (`file_metrics.lag_track`): 0.032 LU at
+  most; a track that moves no window by half a 1 ms step leaves the old
+  reading exactly.
+
+`SCORE_SCHEMA` is 4, so every cached v3 score is read again. Cases are
+written once and reused, so a rerun deletes the cases these changes rebuild
+(`hum`, `dropouts`, `sibilant_islands`, `sibilants_*`; `dropouts` no longer
+draws from the shared generator, so every later rng-driven case of a
+language changes on a fresh build: delete `cases/` to reproduce).
+
 ### Round 0 (2026-10-09)
 
 ```text
@@ -755,6 +832,10 @@ Tele7abc (diff -17.6 dB, 97% of frames over the mask; 8/16). The listener:
 - In the loop (plan 1.5): two-stage scoring (the learned families on the
   best four candidates and the incumbent only) and inertness from each
   tape's material.
+- From calibration v3: the hard dropout gate on `file.dropouts` instead of
+  the window tail of `dsp.dropouts` (after Round 0 is re-scored), and R0
+  naming a mains only when its fundamental stands about 10 dB out (after
+  the IA and noise clips confirm it).
 - R3's harness coverage reading, `scripts/replay_post_neural.py` (it would
   rebuild a stage-cache entry's input and replay only the post-neural
   stages; the entry's manifest records the input's sample hash for that),

@@ -86,7 +86,8 @@ def test_accepted_with_no_complaint_counts_as_clean_for_every_listener_flag():
     """Accepted with no complaint counts as clean for every listener flag."""
     lists = {"flags": {}, "clean": {"*": ["good"]}}
     assert cg.gate_metric_values(_listed(-33.0, -11.0, lists), DEAD, "listener.pause_collapse") == ([-11.0], [])
-    assert cg.lists_gate(lists, "listener.hiss") and not cg.lists_gate(lists, "dsp.hf_4k8k")
+    assert cg.lists_gate(lists, "listener.hiss")
+    assert not cg.lists_gate(lists, "dsp.hf_4k8k")
 
 
 def test_a_listed_gate_records_where_its_verdicts_came_from():
@@ -106,7 +107,8 @@ def test_an_empty_list_still_marks_the_gate_judged():
 def test_gates_whose_family_did_not_score_are_skipped_with_the_reason():
     """Gates whose family did not score are skipped with the reason."""
     derived, skipped = cg.derive_gates(FLOOR, {}, families=["dsp"])
-    assert "dsp.hf_4k8k" in derived and derived["dsp.hf_4k8k"]["family"] == "dsp"
+    assert "dsp.hf_4k8k" in derived
+    assert derived["dsp.hf_4k8k"]["family"] == "dsp"
     assert skipped["mos.sigmos_col"] == "family mos not scored in this run"
     assert skipped["speech.speaker"].startswith("relative threshold")
 
@@ -121,7 +123,8 @@ def test_a_scored_family_without_a_benign_floor_is_named_too():
 def test_route_gates_keep_the_gates_read_on_that_route():
     """Route gates keep the gates read on that route."""
     derived, _skipped = cg.derive_route_gates("music", {**FLOOR, "dsp.attack_db": {"centre": 0.0, "floor": 0.1}}, {}, ["dsp"])
-    assert "dsp.attack_db" in [GATES[name].metric for name in derived] and "dsp.hf_4k8k" not in derived
+    assert "dsp.attack_db" in [GATES[name].metric for name in derived]
+    assert "dsp.hf_4k8k" not in derived
     assert {entry["route"] for entry in derived.values()} == {"music"}
 
 
@@ -194,7 +197,8 @@ def test_a_new_round_about_another_gate_on_another_tape_does_not_promote():
     second = _dead_air({**_listed(-33.0, -11.0, rounds=("1",)), "soti": _bright_tape("4")}, first, "1+4")
     assert (first["rounds"], first["rounds_agreeing"]) == (["1"], 1)
     assert (second["severity"], second["rounds"], second["rounds_agreeing"]) == (FLAG, ["1"], 1)
-    assert second["round"] == "1+4" and "promoted_from" not in second
+    assert second["round"] == "1+4"
+    assert "promoted_from" not in second
 
 
 def test_a_manifest_run_then_a_ledger_run_on_the_same_verdicts_does_not_promote():
@@ -216,14 +220,17 @@ def test_verdict_rounds_come_from_the_tapes_that_side_the_gate():
 def test_derived_entries_become_gates_over_the_hand_set_definitions():
     """Derived entries become gates over the hand set definitions."""
     gates = cg.as_gates({"listener.dead_air": {"threshold": -22.0, "severity": HARD}})
-    assert gates["listener.dead_air"].threshold == -22.0 and gates["listener.dead_air"].severity == HARD
+    assert gates["listener.dead_air"].threshold == -22.0
+    assert gates["listener.dead_air"].severity == HARD
     assert gates["listener.dead_air"].metric == GATES["listener.dead_air"].metric
 
 
 def test_passes_reads_every_operator():
     """Passes reads every operator."""
-    assert cg.passes(1.0, "<=", 1.0) and cg.passes(1.0, ">=", 1.0)
-    assert cg.passes(-1.0, "abs<=", 1.5) and not cg.passes(-2.0, "abs<=", 1.5)
+    assert cg.passes(1.0, "<=", 1.0)
+    assert cg.passes(1.0, ">=", 1.0)
+    assert cg.passes(-1.0, "abs<=", 1.5)
+    assert not cg.passes(-2.0, "abs<=", 1.5)
 
 
 def test_a_previous_entry_without_a_round_never_counts_as_an_agreeing_round():

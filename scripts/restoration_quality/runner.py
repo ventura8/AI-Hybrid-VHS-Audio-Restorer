@@ -440,8 +440,19 @@ def _dsp_family(pair, card, _registry):
     for key, value in trade.items():
         card.file[f"file.{key}"] = {"source": 0.0, "output": value, "delta": value}
     card.file.update(file_metrics.file_entries(pair.raw_source, pair.raw_output, pair.rate))
+    card.file.update(dropout_entry(pair))
     card.file.update(profile_entries(profile))
     card.meta.update({"source_profile": profile, "pause_vad": pause_metrics.resolved_vad_name()})
+
+
+def dropout_entry(pair):
+    """`file.dropouts`: the holes over the whole aligned pair, where the window median of `dsp.dropouts` goes blind.
+
+    One hole sits in at most two of the 15 s windows (2 of 40 on a 300 s cut), so a few holes
+    in a long file leave every window median at 0 (calibration v3, `dsp_metrics.dropout_count`).
+    """
+    holes = float(dsp_metrics.dropout_count(pair.source, pair.output, pair.rate))
+    return {"file.dropouts": {"source": 0.0, "output": holes, "delta": holes}}
 
 
 def profile_entries(profile):

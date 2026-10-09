@@ -48,9 +48,10 @@ def fixture_scored(tmp_path_factory):
 
 
 def test_the_file_level_readings_land_on_the_card(scored):
-    """R7 and the sync are read once per pair; the capture profile lands as source-side `meta.*` readings."""
+    """R7, the sync and the whole-pair holes are read once per pair; the capture profile lands as source-side `meta.*` readings."""
     _result, card, _folder = scored
-    assert {"file.gain_ride_lu", "file.sync_drift_ms", "file.sync_unmatched"} <= set(card.file)
+    assert {"file.gain_ride_lu", "file.sync_drift_ms", "file.sync_unmatched", "file.dropouts"} <= set(card.file)
+    assert card.file["file.dropouts"] == {"source": 0.0, "output": 0.0, "delta": 0.0}
     assert card.file["file.sync_unmatched"]["output"] == 0.0
     assert set(card.file["meta.prog_bandwidth_hz"]) == {"source"}
 

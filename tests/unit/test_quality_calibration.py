@@ -71,31 +71,44 @@ def test_card_readings_take_the_delta_medians_and_the_profiles_source_side():
     """A change is read as its delta median, the capture profile as the source's own reading."""
     card = _card("x_output.wav", ("dsp",))
     readings = cal.card_readings(card.aggregate)
-    assert readings["dsp.hf_4k8k"] == pytest.approx(-1.12) and readings["meta.prog_bandwidth_hz"] == 4000.0
+    assert readings["dsp.hf_4k8k"] == pytest.approx(-1.12)
+    assert readings["meta.prog_bandwidth_hz"] == 4000.0
 
 
 def test_route_readings_split_the_windows_and_keep_the_whole_file_readings():
     """Each route reads its own windows; the profile rides along on every route."""
     card = _card("x_output.wav", ("dsp",))
     routes = cal.route_readings(card, cal.card_readings(card.aggregate))
-    assert "dsp.hf_4k8k" in routes["speech"] and "dsp.hf_4k8k" not in routes["music"]
-    assert routes["music"]["meta.prog_bandwidth_hz"] == 4000.0 and routes["mixed"] == {"meta.prog_bandwidth_hz": 4000.0}
+    assert "dsp.hf_4k8k" in routes["speech"]
+    assert "dsp.hf_4k8k" not in routes["music"]
+    assert routes["music"]["meta.prog_bandwidth_hz"] == 4000.0
+    assert routes["mixed"] == {"meta.prog_bandwidth_hz": 4000.0}
 
 
 def test_a_cached_score_covers_only_its_own_families_and_schema():
     """A dsp-only score never stands in for an all-family run, nor a score of another schema."""
     doc = {"schema": cal.SCORE_SCHEMA, "requested": ["dsp", "mos"]}
-    assert cal.covers(doc, ("dsp",)) and not cal.covers(doc, ("dsp", "speech"))
+    assert cal.covers(doc, ("dsp",))
+    assert not cal.covers(doc, ("dsp", "speech"))
     assert not cal.covers({"requested": ["dsp"]}, ("dsp",))
+
+
+# The case filters live in helpers: radon counts a comprehension and every assert as a branch, so a test that
+# holds four single assertions (Sonar S9073) keeps its own body free of comprehensions to stay at grade A.
+def _of_kind(cases, kind):
+    """The cases of one kind (degradation or benign), in build order."""
+    return [case for case in cases if case.kind == kind]
 
 
 @pytest.mark.usefixtures("fake_scoring")
 def test_build_cases_writes_every_pair_with_its_base_and_scores_nothing(tmp_path):
     """Three levels per degradation plus the benign set; each degradation case points at its untouched material."""
     cases = cal.build_cases("unused", ["en"], tmp_path)
-    degradations = [case for case in cases if case.kind == "degradation"]
-    assert len(degradations) == 3 * len(SUBSET) and len(cases) == len(degradations) + len(deg.BENIGN)
-    assert all(case.base.is_file() for case in degradations) and not SCORED
+    degradations = _of_kind(cases, "degradation")
+    assert len(degradations) == 3 * len(SUBSET)
+    assert len(cases) == len(degradations) + len(deg.BENIGN)
+    assert all(case.base.is_file() for case in degradations)
+    assert not SCORED
 
 
 @pytest.mark.usefixtures("fake_scoring")
@@ -115,13 +128,19 @@ def test_scores_are_cached_and_scored_again_when_a_family_is_added(tmp_path):
     assert scores[cases[0].case_id]["requested"] == ["dsp", "mos"]
 
 
+def _named(cases, name):
+    """The cases of one degradation or benign transform, in build order."""
+    return [case for case in cases if case.name == name]
+
+
 @pytest.mark.usefixtures("fake_scoring")
 def test_a_source_condition_case_reads_its_bases_profile(tmp_path):
     """The base material's own bandwidth rides along as `base.*`, pooled and per route."""
-    cases = [case for case in cal.build_cases("unused", ["en"], tmp_path) if case.name == "linear_bandwidth"]
+    cases = _named(cal.build_cases("unused", ["en"], tmp_path), "linear_bandwidth")
     scores = cal.score_cases(cases, ("dsp",), _registry(), tmp_path, tmp_path / "scores")
     readings = cal.readings_of(scores)[cases[0].case_id]
-    assert readings["base.prog_bandwidth_hz"] == 4000.0 and readings["meta.prog_bandwidth_hz"] == 4000.0
+    assert readings["base.prog_bandwidth_hz"] == 4000.0
+    assert readings["meta.prog_bandwidth_hz"] == 4000.0
     assert cal.readings_of(scores, "music")[cases[0].case_id]["base.prog_bandwidth_hz"] == 4000.0
 
 
@@ -169,14 +188,20 @@ def _variant_doc(card):
     return {"rows": rows, "aggregate": card.aggregate, "verdicts": verdicts, "hard_failures": [], "families": card.families}
 
 
+def _names_in(directory):
+    """The names of the files a run left in `directory`."""
+    return {path.name for path in directory.iterdir()}
+
+
 @pytest.mark.usefixtures("fake_scoring", "fake_ordering")
 def test_a_whole_run_writes_the_pooled_and_per_route_gates_and_the_report(tmp_path, capsys):
     """Every gates file and both reports are written; a family that did not score is said, with its gates."""
     _run(tmp_path)
-    written = {path.name for path in tmp_path.iterdir()}
+    written = _names_in(tmp_path)
     assert {"gates.json", "gates_speech.json", "gates_music.json", "gates_mixed.json", "report.json", "report.md"} <= written
     report = json.loads((tmp_path / "report.json").read_text("utf-8"))
-    assert report["round"] == "manifest" and report["skipped_gates"]["mos.sigmos_col"] == "family mos not scored in this run"
+    assert report["round"] == "manifest"
+    assert report["skipped_gates"]["mos.sigmos_col"] == "family mos not scored in this run"
     assert "families not scored" in capsys.readouterr().out
 
 
@@ -207,7 +232,8 @@ def test_a_written_case_is_kept_on_the_next_build(tmp_path):
     first = cal.build_cases("unused", ["en"], tmp_path)[0]
     sf.write(str(first.output), np.zeros(10, dtype=np.float32), RATE, subtype="FLOAT")
     again = cal.build_cases("unused", ["en"], tmp_path)[0]
-    assert again.output == first.output and sf.info(str(again.output)).frames == 10
+    assert again.output == first.output
+    assert sf.info(str(again.output)).frames == 10
 
 
 @pytest.mark.usefixtures("fake_scoring")
@@ -218,9 +244,15 @@ def test_a_tape_excerpt_carries_only_the_degradations_it_can(tmp_path):
     cases = cal.build_tape_cases([excerpt], tmp_path)
     assert {case.name for case in cases if case.kind == "degradation"} == set(SUBSET)
     assert {case.name for case in cases if case.kind == "benign"} == set(deg.on_tape_benign())
-    assert {cal.whisper_language(case) for case in cases} == {"ro"} and cases[0].language == "ro-Tele7abc_125s"
+    assert {cal.whisper_language(case) for case in cases} == {"ro"}
+    assert cases[0].language == "ro-Tele7abc_125s"
 
 
 def test_no_excerpt_adds_no_case(tmp_path):
     """Without `--excerpts` the suite is the fixtures' alone."""
     assert not cal.build_tape_cases(None, tmp_path)
+
+
+def test_the_default_languages_carry_a_voice_whose_windows_hold_enough_fricatives():
+    """en alone left the texture check on one window of 10 fricative frames; fr holds 102."""
+    assert cal._parse_args([]).languages == ["en", "fr"] == list(cal.DEFAULT_LANGUAGES)

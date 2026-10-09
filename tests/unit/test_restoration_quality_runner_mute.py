@@ -57,7 +57,8 @@ def test_the_skipped_window_keeps_its_other_readings_and_a_zero_source_side():
     pair = types.SimpleNamespace(source=_muted(source, 13.0, 2.0), output=_muted(output, 13.0, 2.0), rate=RATE, profile={})
     row = WindowRow(0, 0.0, 15.0, "speech")
     runner._dsp_window(pair, row, runner.quiet_level_db(source, RATE))
-    assert row.output["dsp.balance_top_db"] is None and row.source["dsp.balance_top_db"] == 0.0
+    assert row.output["dsp.balance_top_db"] is None
+    assert row.source["dsp.balance_top_db"] == 0.0
     assert all(row.output[f"dsp.{name}"] is None for name in balance_metrics.READINGS)
     assert row.output["dsp.residual_noise_db"] is not None
 
@@ -67,7 +68,8 @@ def test_the_floor_is_the_median_window_p10_so_a_mute_moves_only_the_windows_it_
     source = _muted(_restored(52.5)[0], 48.5, 2.0)
     pair = _pair(source)
     floor = runner.mute_floor_db(pair)
-    assert len(pair.windows) == runner.MUTE_MEDIAN_WINDOWS and floor == runner.median_floor_db(pair, pair.windows)
+    assert len(pair.windows) == runner.MUTE_MEDIAN_WINDOWS
+    assert floor == runner.median_floor_db(pair, pair.windows)
     assert abs(floor - runner.quiet_level_db(source[: 15 * RATE], RATE)) < 1.0
     assert [runner.holds_mute(source[w.slice_of(RATE)], RATE, floor) for w in pair.windows] == [False] * 5 + [True] * 2
 
@@ -111,12 +113,23 @@ def _skips_only(readings, skipped):
     return all((tilt is None) if index in skipped else (tilt is not None and abs(tilt) < 0.3) for index, tilt in enumerate(tilts))
 
 
+def _muted_15_s():
+    """The 15 s oracle restoration muted from 13 s to its end, and the pair `mute_floor_db` reads on its source."""
+    source, output = _muted_pair(15.0, 13.0)
+    return source, output, _pair(source)
+
+
+def test_a_15_s_pair_reads_its_floor_over_the_span_of_both_of_its_windows():
+    """Both windows hold the last 7.5 s: a median of their p10s is the mute, so the floor is read over their span."""
+    _source, _output, pair = _muted_15_s()
+    assert len(pair.windows) == 2
+    assert runner.mute_floor_db(pair) == runner.span_floor_db(pair, pair.windows)
+    assert runner.median_floor_db(pair, pair.windows) < runner.mute_floor_db(pair) - 30.0
+
+
 def test_a_15_s_pair_reads_its_floor_past_a_mute_that_fills_both_of_its_windows():
     """Both windows hold the last 7.5 s: a median of their p10s was the mute, and R1 read air -19 dB in both."""
-    source, output = _muted_pair(15.0, 13.0)
-    pair = _pair(source)
-    assert len(pair.windows) == 2 and runner.mute_floor_db(pair) == runner.span_floor_db(pair, pair.windows)
-    assert runner.median_floor_db(pair, pair.windows) < runner.mute_floor_db(pair) - 30.0
+    source, output, pair = _muted_15_s()
     assert abs(runner.mute_floor_db(pair) - runner.quiet_level_db(_restored()[0], RATE)) < 1.0
     assert [set(readings.values()) for readings in _r1_over_windows(source, output)] == [{None}, {None}]
 
@@ -169,14 +182,16 @@ def test_a_long_blank_before_a_short_programme_skips_the_window_half_over_it():
     pair = _pair(source, routes)
     assert [w.start_s for w in runner.programme_windows(pair)] == [52.5, 60.0, 67.5]
     tilts = _tilts(_r1_over_windows(source, output, routes))
-    assert tilts[7] is None and all(abs(tilt) < 0.3 for tilt in tilts[8:])
+    assert tilts[7] is None
+    assert all(abs(tilt) < 0.3 for tilt in tilts[8:])
 
 
 def test_a_20_s_pair_skips_the_two_windows_over_its_mute_and_reads_the_third():
     """17-19 s fills 16 % of 7.5-20 s and 40 % of 15-20 s; 0-15 s holds none of it and reads the oracle as no change."""
     source, output = _muted_pair(20.0, 17.0)
     first, *muted = _r1_over_windows(source, output)
-    assert all(set(readings.values()) == {None} for readings in muted) and len(muted) == 2
+    assert all(set(readings.values()) == {None} for readings in muted)
+    assert len(muted) == 2
     assert abs(first["balance_tilt_db_oct"]) < 0.3
 
 

@@ -529,7 +529,7 @@ def _contradicts(answer):
     """A label both flagged with a flag and heard clean of it (or accepted with no complaint at all)."""
     flagged, clean = answer["flagged"], answer["clean"]
     every = set(itertools.chain.from_iterable(flagged.values()))
-    per_flag = [set(labels) & set(clean.get(flag, [])) for flag, labels in flagged.items()]
+    per_flag = (set(labels) & set(clean.get(flag, [])) for flag, labels in flagged.items())
     return bool(every & set(clean.get(ANY_FLAG, []))) or any(per_flag)
 
 

@@ -168,7 +168,8 @@ def test_without_the_noise_margin_hiss_between_sparse_harmonics_reads_as_a_chang
     source, output = clean + noise, clean + 0.1 * noise
     monkeypatch.setattr(balance, "MAX_NOISE_SHARE", np.inf)
     guarded = balance.balance_readings(source, output, RATE)
-    assert _moves_under(guarded, 0.3) and guarded["balance_presence_db"] is not None
+    assert _moves_under(guarded, 0.3)
+    assert guarded["balance_presence_db"] is not None
     monkeypatch.setattr(balance, "NOISE_MARGIN_DB", 0.0)
     monkeypatch.setattr(balance, "NOISE_MEAN_OVER_FLOOR", 1.0)
     assert balance.balance_readings(source, output, RATE)["balance_presence_db"] < -3.0
@@ -271,16 +272,23 @@ def test_programme_below_1_2_khz_reads_body_only():
     clean, noise = _programme(top_hz=1200.0)
     readings = balance.balance_readings(clean + noise, _tilted(clean + noise, -1.0), RATE)
     assert readings["balance_tilt_db_oct"] is None
-    assert readings["balance_presence_db"] is None and readings["balance_air_db"] is None
+    assert readings["balance_presence_db"] is None
+    assert readings["balance_air_db"] is None
     assert abs(readings["balance_body_db"]) < 0.3
 
 
 def test_the_band_layout_under_a_cap_starts_each_reading_above_its_span():
     """The last band centres under the cap: air's 5 kHz span has no band under a 5.2 kHz cap, its first under 5292 Hz."""
     assert [balance.bands_under("balance_air_db", cap) for cap in (5000.0, 5200.0, 5300.0, 7127.0)] == [0, 0, 1, 3]
-    assert balance.bands_under("balance_presence_db", 2100.0) == 0 and balance.bands_under("balance_tilt_db_oct", 1100.0) < 3
+    assert balance.bands_under("balance_presence_db", 2100.0) == 0
+    assert balance.bands_under("balance_tilt_db_oct", 1100.0) < 3
     assert balance.bands_under("balance_air_db", None, 22050) == balance.bands_under("balance_air_db", 11025.0) == 7
-    assert not balance.readable_under("balance_tilt_db_oct", 1400.0) and balance.readable_under("balance_tilt_db_oct", 1414.2)
+
+
+def test_the_tilt_is_readable_from_its_third_band_only():
+    """The tilt needs three bands, which the layout carries from a 1408 Hz cap: 1400 Hz reads no tilt, 1414.2 Hz does."""
+    assert not balance.readable_under("balance_tilt_db_oct", 1400.0)
+    assert balance.readable_under("balance_tilt_db_oct", 1414.2)
 
 
 def test_the_first_readable_cap_is_where_the_layout_carries_the_reading():

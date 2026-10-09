@@ -8,6 +8,7 @@ from scripts.restoration_quality import reward as rw
 
 CER = "speech.cer.output.median"
 UTMOS = "speech.utmos.delta.median"
+NOISE_FLOOR_COMMAND = "python -m scripts.reward_noise_floor"
 
 
 def test_a_veto_is_floor_multiple_floors_of_a_move_the_worse_way():
@@ -20,13 +21,20 @@ def test_a_veto_is_floor_multiple_floors_of_a_move_the_worse_way():
     assert rw.vetoed_readings({CER: 0.0, UTMOS: 0.5}, incumbent, vetoes) == []
 
 
-def test_a_lost_reading_vetoes_and_one_the_incumbent_lacks_vetoes_nothing():
-    """A learned family that failed for the candidate alone cannot let it win; nothing to compare with is no veto."""
-    veto = rw.Veto("up", 0.1)
-    assert veto.trips(None, 0.2) and veto.trips(math.nan, 0.2)
-    assert not veto.trips(0.9, None)
-    assert not veto.trips(0.3, 0.2)
-    assert rw.vetoed_readings(None, None, {CER: veto}) == []
+UP_VETO = rw.Veto("up", 0.1)
+
+
+@pytest.mark.parametrize("lost", [None, math.nan], ids=["missing", "nan"])
+def test_a_lost_reading_vetoes(lost):
+    """A learned family that failed for the candidate alone cannot let it win."""
+    assert UP_VETO.trips(lost, 0.2)
+
+
+def test_a_reading_the_incumbent_lacks_vetoes_nothing():
+    """Nothing to compare with is no veto; a move inside the limit is none either."""
+    assert not UP_VETO.trips(0.9, None)
+    assert not UP_VETO.trips(0.3, 0.2)
+    assert rw.vetoed_readings(None, None, {CER: UP_VETO}) == []
 
 
 @pytest.mark.parametrize(
@@ -55,20 +63,22 @@ def _refusal(floors):
     return str(refused.value)
 
 
-def test_a_zero_floor_names_the_reading_and_how_to_measure_its_jitter():
+@pytest.mark.parametrize("hint", ["--repeats 2 or more", "resample_roundtrip", NOISE_FLOOR_COMMAND])
+def test_a_zero_floor_names_the_reading_and_how_to_measure_its_jitter(hint):
     """CER read at --repeats 1 can have a p95 deviation of exactly 0; a 0 limit would veto Whisper's own jitter."""
     refused = _refusal({CER: 0.0})
     assert refused.startswith(f"veto {CER}: no benign floor above 0")
-    assert "--repeats 2 or more" in refused and "resample_roundtrip" in refused
-    assert "python -m scripts.reward_noise_floor" in refused and "--families" not in refused
+    assert hint in refused
+    assert "--families" not in refused
 
 
-def test_a_missing_floor_names_the_family_flag_not_the_repeats():
+@pytest.mark.parametrize("hint", ["--families", "the default is dsp only", NOISE_FLOOR_COMMAND])
+def test_a_missing_floor_names_the_family_flag_not_the_repeats(hint):
     """The default report reads dsp only, so a learned reading is absent: more repeats would not bring it back."""
     refused = _refusal({"dsp.lkr.output.median": 0.01})
     assert refused.startswith(f"veto {CER}: no benign floor in --noise-floors")
-    assert "--families" in refused and "the default is dsp only" in refused
-    assert "python -m scripts.reward_noise_floor" in refused and "--repeats" not in refused
+    assert hint in refused
+    assert "--repeats" not in refused
 
 
 def test_no_vetoes_and_no_reversals_parse_to_nothing():
@@ -107,13 +117,28 @@ def test_a_reversal_refuses_a_move_that_heads_past_the_rejected_value(value, cur
     assert AIR_RULE.refuses(value, current) is refused
 
 
+FILL = "pause_floor_fill_db"
+
+
+def _lower_rule():
+    """A boundary rejected below 8 dB of pause fill, with no verdict named."""
+    (rule,) = rw.parse_reversals([{"key": FILL, "rejected_below": 8.0}])
+    return rule
+
+
 def test_a_lower_boundary_refuses_moves_down_to_it():
     """rejected_below mirrors rejected_above; an entry without a verdict names the ledger."""
-    (rule,) = rw.parse_reversals([{"key": "pause_floor_fill_db", "rejected_below": 8.0}])
-    assert rule.refuses(8.0, 12.0) and not rule.refuses(18.0, 12.0)
+    rule = _lower_rule()
+    assert rule.refuses(8.0, 12.0)
+    assert not rule.refuses(18.0, 12.0)
     assert rule.describe(8.0).endswith("at or below 8, rejected by ear (ledger)")
-    assert rw.reversals_refusing({"pause_floor_fill_db": 8.0}, {"pause_floor_fill_db": 12.0}, [rule]) == [rule]
-    assert rw.reversals_refusing({}, {"pause_floor_fill_db": 12.0}, [rule]) == []
+
+
+def test_only_a_move_to_the_lower_boundary_is_listed_as_refused():
+    """The move down to 8 dB is refused by the rule; settings that leave the knob alone are refused by nothing."""
+    rule = _lower_rule()
+    assert rw.reversals_refusing({FILL: 8.0}, {FILL: 12.0}, [rule]) == [rule]
+    assert rw.reversals_refusing({}, {FILL: 12.0}, [rule]) == []
 
 
 @pytest.mark.parametrize(

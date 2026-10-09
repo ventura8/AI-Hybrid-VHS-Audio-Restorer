@@ -711,7 +711,10 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   The texture separates round one's "distortion of spoken 's'" (APL
   baseline, no_air, roformer: +2.18..+2.26) from the cathar renders
   (+0.83..+1.34), and APL no_air reads level +0.05 against the baseline's
-  +0.72: its "thin" was texture, not level.
+  +0.72: its "thin" was texture, not level. Since calibration v3 the level's
+  gain match is taken around each 's' (R1's programme cells within 0.5 s),
+  so a slow level rider is no change to the 's', and the texture needs 30
+  fricative frames in a window (on 10 its spread is noise).
 - **The residual in the true pauses (R4)**, `pause_metrics.py`:
   `dsp.gap_atten_db`, `gap_slope_db_oct`, `gap_spread_db`,
   `gap_hf_excess_db` (4-10 kHz minus 0.2-1 kHz), `gap_lsd_db`,
@@ -723,11 +726,14 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   hiss; the ledger's 0.7.6 is an erratum) reads an HF excess of +3.11 dB
   and 0.7.5 (clean) +0.49; their attenuation, 42.3 against 42.8 dB, does not
   separate them. No threshold is set yet, and `listener.hiss` stays
-  display-only; Round 0 proposed R4's flags without adopting them.
+  display-only; Round 0 proposed R4's flags without adopting them. A bin
+  whose source pause floor sits under the 16-bit dither plus 10 dB is left
+  out: requantising alone had lifted Vaccin's notched top band 9-16 dB.
 - **Gain riding (R7)**, `file_metrics.py`: `file.gain_ride_lu`, the p95 of
   the short-term loudness difference left once the static gain is removed,
-  over windows standing 10 LU over the source's floor. The accepted v2
-  finals read 0.82-1.80 LU on the speech tapes, so it is shown, not
+  over windows standing 10 LU over the source's floor, each output window
+  read along the sync's lag track so a speed drift is no ride. The accepted
+  v2 finals read 0.82-1.80 LU on the speech tapes, so it is shown, not
   flagged, until the `loudnorm_ride` degradation calibrates it.
 - **Sync**, `file_metrics.py`: `file.sync_drift_ms`, `file.sync_offset_ms`
   and `file.sync_unmatched` from 8 s envelope anchors at the start, centre
@@ -995,6 +1001,36 @@ and Tele7abc (4490 Hz) clip it. Those numbers come from a probe of the runner on
 the whole source, not from a calibration run, and a failing non-blind check
 makes the run exit 1: run the calibration with a Vaccin excerpt (`--metrics dsp`
 is enough) before its gates are trusted.
+
+That run (2026-10-09: en, `--metrics dsp`, `--excerpts` of Vaccin and SOTI
+at 60-360 s and the whole Tele7abc cut) passed 98 of 144 checks with eight
+non-blind failures. Each was fixed where it arose, none by loosening an
+expectation (the numbers are in the output-quality-harness skill):
+
+- `hum` failed on en: R0 names 60 Hz on the hum-free en, es and it Piper
+  targets, and the runner reads hum there, while the case injected 50 Hz.
+  The case now injects at the mains R0 names on its base.
+- `words_muted` and `dropouts` read 0 at every level on the tapes: one hole
+  sits in at most two of a 300 s cut's 40 windows, so the window median of
+  `dsp.dropouts` cannot see a few. They assert `file.dropouts`, the count
+  over the whole aligned pair, which also reads each frame's drop against
+  the programme frames' median (a level offset is no hole) and asks the
+  100-1000 Hz body to fall (a treble lift is no hole); `dropouts` draws
+  nested 30-50 ms holes on programme frames, so 3 / 6 / 12 read 3 / 6 / 12.
+- `pause_residual_hiss` failed the effect rule on slope and LSD: the
+  benign requantise set the floor on Vaccin's notched top band. R4 leaves
+  out the bins under the 16-bit dither plus 10 dB.
+- `sibilant_islands` did not order on en (10 fricative frames): the texture
+  needs 30, the islands follow each window's own fricatives, and the
+  calibration's default languages are en and fr.
+- `loudnorm_ride` moved R2's level on Vaccin by up to 0.56 dB; with the gain
+  matched around each 's' it moves 0.045 dB at most.
+- `sync_drift` read as a gain ride on the 300 s cuts (up to 1.34 LU); read
+  along the sync's lag track it reads 0.032 LU at most.
+
+The score cache's schema is 4, so every v3 score is read again; cases are
+built once and reused, so delete the cases a change rebuilds (or all of
+`cases/`, since `dropouts` no longer draws from the shared generator).
 
 The calibration writes its gate files under `--out`; the tuning drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`,

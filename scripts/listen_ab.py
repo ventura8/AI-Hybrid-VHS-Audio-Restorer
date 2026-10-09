@@ -297,8 +297,10 @@ def serve(session, port, open_browser=True):
     if open_browser:
         webbrowser.open(url)
     try:
-        while not session.closed.wait(0.5):
-            pass
+        # Half-second waits, not one unbounded wait: Ctrl+C reaches the loop between them (Windows).
+        closed = False
+        while not closed:
+            closed = session.closed.wait(0.5)
     except KeyboardInterrupt:
         print("stopped: an unfinished block is not written to the ledger")
     finally:

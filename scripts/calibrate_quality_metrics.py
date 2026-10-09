@@ -49,6 +49,8 @@ What changed for ear v3 (design 4.4, critique 11), and why:
   and the speech benign set, as language `ro-<stem>` (Whisper reads Romanian). On the
   fixtures gap_air moved 0.02-0.37 dB against thresholds of -20 / -25, and the en / de
   speech fixtures hold no 200 ms non-speech run for R4 to read at all.
+- fr beside en by default (`DEFAULT_LANGUAGES`, 2026-10-09): R2's texture needs 30
+  fricative frames a window, which en's speech target never holds; fr's does.
 
 Writes `report.json`, `report.md`, `gates.json` and `gates_<route>.json` (each in the format
 `scripts/restoration_quality/gates.py:load_gates` reads).
@@ -82,7 +84,9 @@ scorecard = import_module("scripts.restoration_quality.scorecard")
 source_profile = import_module("scripts.restoration_quality.source_profile")
 GATES = import_module("scripts.restoration_quality.gates").GATES
 
-SCORE_SCHEMA = 3
+# 4 (2026-10-09): R2 matches the gain per frame and needs 30 frames for the texture, R4 leaves out the bins
+# under the 16-bit dither, R7 reads along the sync track, `file.dropouts` is new: every v3 score is stale.
+SCORE_SCHEMA = 4
 SPEECH_FIXTURE = "mid00_speech_m15"
 DONOR_FIXTURE = "mid01_speech_m15"
 MUSIC_FIXTURE = "mid00_musiconly_m15"
@@ -92,6 +96,9 @@ META_PREFIX = checks_mod.META_PREFIX
 PROFILE_READINGS = ("prog_bandwidth_hz",)
 GATE_FILE = creport.GATE_FILE
 TAPE_LANGUAGE = "ro"
+# fr beside en (2026-10-09): en's readable window holds 10 fricative frames, under the texture's 30; de and es
+# hold none and it two; fr holds 102 and orders the `sibilant_islands` levels (0.14 / 0.36 / 0.75 over 8 seeds).
+DEFAULT_LANGUAGES = ("en", "fr")
 # The benign floor, for scripts that cite it from here (`reward_noise_floor.py`).
 noise_floor = checks_mod.noise_floor
 
@@ -356,7 +363,7 @@ def derive_all(context, previous):
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fixtures", type=Path, default=Path("artifacts/realistic-v2"))
-    parser.add_argument("--languages", nargs="+", default=["en"])
+    parser.add_argument("--languages", nargs="+", default=list(DEFAULT_LANGUAGES))
     parser.add_argument("--excerpts", nargs="+", type=Path, default=None, help="real tape excerpts (WAV) to degrade beside the fixtures")
     parser.add_argument("--metrics", default="all")
     parser.add_argument("--known-ordering", type=Path, default=None)

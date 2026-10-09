@@ -146,8 +146,9 @@ def test_prepare_refuses_an_override_the_app_does_not_read(tmp_path, monkeypatch
     """A typo in the grid stops the run before any excerpt is cut."""
     _out_dir, grid_path = _state(tmp_path, monkeypatch)
     grid_path.write_text(yaml.safe_dump({**GRID, "variants": {"cathar": {"typo": {"cathar_alfa": 2.0}}}}), encoding="utf-8")
+    args = _args(grid_path, tapes_dir=str(tmp_path), limit=0, catalog=None, whole=False)
     with pytest.raises(SystemExit, match="cathar__typo"):
-        tr.cmd_prepare(_args(grid_path, tapes_dir=str(tmp_path), limit=0, catalog=None, whole=False))
+        tr.cmd_prepare(args)
 
 
 def test_prepare_refuses_excerpts_too_short_for_the_cathar_probe(tmp_path, monkeypatch):
@@ -155,8 +156,9 @@ def test_prepare_refuses_excerpts_too_short_for_the_cathar_probe(tmp_path, monke
     _out_dir, grid_path = _state(tmp_path, monkeypatch)
     short = {**MANIFEST, "whole": False, "excerpts": [{**MANIFEST["excerpts"][0], "probed_s": 60.0}]}
     monkeypatch.setattr(tr, "build_manifest", lambda *_args: short)
+    args = _args(grid_path, tapes_dir=str(tmp_path), limit=0, catalog=None, whole=False)
     with pytest.raises(SystemExit, match="cathar__baseline: needs"):
-        tr.cmd_prepare(_args(grid_path, tapes_dir=str(tmp_path), limit=0, catalog=None, whole=False))
+        tr.cmd_prepare(args)
 
 
 def test_run_runs_every_variant_under_a_lock_it_removes(tmp_path, monkeypatch):
@@ -175,8 +177,9 @@ def test_run_refuses_while_another_driver_holds_the_lock(tmp_path, monkeypatch):
     """Never two restorations at once."""
     out_dir, grid_path = _state(tmp_path, monkeypatch)
     (out_dir / ".running").write_text("1", encoding="utf-8")
+    args = _args(grid_path)
     with pytest.raises(SystemExit, match="another driver is running"):
-        tr.cmd_run(_args(grid_path))
+        tr.cmd_run(args)
 
 
 def test_score_scores_the_chosen_families_with_the_chosen_gates(tmp_path, monkeypatch):

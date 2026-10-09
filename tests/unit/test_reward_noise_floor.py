@@ -89,7 +89,8 @@ def test_a_one_sample_shift_delays_every_channel_and_keeps_the_programme():
     audio = _stereo(1.0)
     shifted = nf.shift_one_sample(audio, RATE, None)
     assert shifted.shape == (audio.shape[0] + 1, 2)
-    assert np.array_equal(shifted[1:], audio) and not shifted[0].any()
+    assert np.array_equal(shifted[1:], audio)
+    assert not shifted[0].any()
 
 
 def test_requantisation_and_the_resample_round_trip_stay_near_the_source():
@@ -117,7 +118,8 @@ def test_a_near_copy_is_written_once_and_reused(tmp_path):
     first = nf.variant_wav(source, "shift_1", tmp_path / "cache")
     stamp = first.stat().st_mtime_ns
     second = nf.variant_wav(source, "shift_1", tmp_path / "cache")
-    assert second == first and second.stat().st_mtime_ns == stamp
+    assert second == first
+    assert second.stat().st_mtime_ns == stamp
     assert not list((tmp_path / "cache" / nf.WORK_DIR).glob("*.partial.wav"))
 
 
@@ -164,7 +166,8 @@ def test_repeats_score_every_pair_again_and_their_jitter_enters_the_floor(tmp_pa
     calls = []
     report = _measured(tmp_path, nf.Plan(("shift_1",), repeats=3), _fake_scorer(calls, drift=0.01))
     entry = report["readings"][KEY]
-    assert len(calls) == 6 and entry["n"] == 5
+    assert len(calls) == 6
+    assert entry["n"] == 5
     assert entry["by_transform"] == pytest.approx({"reference": 0.04, "shift_1": 0.15})
 
 
@@ -178,13 +181,25 @@ def test_every_repeat_after_the_first_scores_through_its_own_cache(tmp_path):
     assert report["repeat_caches"] == [str(cache) for cache in expected]
 
 
-def test_the_report_names_its_sources_and_settings_and_survives_json(tmp_path):
-    """The model registry stays out of the report; the gate counts are readings like any other."""
+def _stored_report(tmp_path):
+    """The report of two near-copies of a bare source, as it reads back after a round trip through JSON."""
     report = _measured(tmp_path, nf.Plan(("shift_1", "requantise_16")), _fake_scorer([]))
-    stored = json.loads(json.dumps(report, default=str))
-    assert stored["sources"][0]["scorings"] == 3 and stored["sources"][0]["families"] == {"dsp": "ok"}
-    assert (stored["sources"][0]["operating_point"], stored["sources"][0]["output"]) == ("identity", None)
-    assert "registry" not in stored["score_options"] and stored["score_options"]["windows"] == 15.0
+    return json.loads(json.dumps(report, default=str))
+
+
+def test_the_report_names_its_sources_and_survives_json(tmp_path):
+    """Each source records its scorings, the families that scored, its operating point and its output."""
+    source = _stored_report(tmp_path)["sources"][0]
+    assert source["scorings"] == 3
+    assert source["families"] == {"dsp": "ok"}
+    assert (source["operating_point"], source["output"]) == ("identity", None)
+
+
+def test_the_report_names_its_settings_and_survives_json(tmp_path):
+    """The model registry stays out of the report; the gate counts are readings like any other."""
+    stored = _stored_report(tmp_path)
+    assert "registry" not in stored["score_options"]
+    assert stored["score_options"]["windows"] == 15.0
     assert stored["readings"]["gates.hard_failures"]["floor"] == 0.0
 
 
@@ -222,11 +237,18 @@ def _dsp_by_transform(report, name):
     return {key: entry["by_transform"][name] for key, entry in report["readings"].items() if key.startswith("dsp.")}
 
 
+def test_the_command_line_run_succeeds_and_says_it_wrote_the_report(real_run):
+    """End to end: the run exits 0 and its console reports the file it wrote."""
+    code, _report, console = real_run
+    assert code == 0
+    assert "wrote" in console
+
+
 def test_the_command_line_scores_a_restored_output_against_its_source(real_run):
     """End to end: the pair is read from SOURCE=OUTPUT and the report says it measured the output point."""
-    code, report, console = real_run
-    assert code == 0 and "wrote" in console
-    assert report["operating_points"] == ["output"] and Path(report["sources"][0]["output"]).name == "output.wav"
+    _code, report, _console = real_run
+    assert report["operating_points"] == ["output"]
+    assert Path(report["sources"][0]["output"]).name == "output.wav"
     assert report["readings"]["gates.hard_failures"]["by_transform"] == {"shift_1": 0.0, "requantise_16": 0.0}
 
 
@@ -256,8 +278,10 @@ def test_a_path_holding_an_equals_sign_is_read_whole(tmp_path):
 def test_a_pair_without_a_file_on_both_sides_is_refused(tmp_path, make):
     """A missing output, or nothing before the '=', is refused at parse time."""
     _source(tmp_path)
+    # Arguments are built ahead of `pytest.raises`, so only the call under test can raise inside it.
+    argument = make(tmp_path)
     with pytest.raises(argparse.ArgumentTypeError):
-        nf.pair_arg(make(tmp_path))
+        nf.pair_arg(argument)
 
 
 def test_the_argument_types_read_lists_and_numbers():
@@ -286,14 +310,17 @@ def test_the_argument_types_read_lists_and_numbers():
 )
 def test_the_command_line_refuses_bad_values(tmp_path, extra):
     """Every value is checked at parse time; argparse exits naming it."""
+    argv = [str(_source(tmp_path)), "--out", str(tmp_path / "floor.json"), *extra]
     with pytest.raises(SystemExit):
-        nf.parse_args([str(_source(tmp_path)), "--out", str(tmp_path / "floor.json"), *extra])
+        nf.parse_args(argv)
 
 
 def test_a_missing_source_or_an_output_outside_every_root_is_refused(tmp_path, monkeypatch):
     """Inputs must exist; every path must lie in the repository, the temp directory or a listed data root."""
     monkeypatch.delenv("AI_RESTORE_DATA_ROOTS", raising=False)
+    missing_source = [str(tmp_path / "absent.wav"), "--out", str(tmp_path / "floor.json")]
     with pytest.raises(SystemExit):
-        nf.parse_args([str(tmp_path / "absent.wav"), "--out", str(tmp_path / "floor.json")])
+        nf.parse_args(missing_source)
+    outside_out = [str(_source(tmp_path)), "--out", str(Path(tmp_path.anchor) / "outside_every_root" / "floor.json")]
     with pytest.raises(SystemExit):
-        nf.main([str(_source(tmp_path)), "--out", str(Path(tmp_path.anchor) / "outside_every_root" / "floor.json")])
+        nf.main(outside_out)

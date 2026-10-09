@@ -4,7 +4,8 @@ Every paired reading runs on a lag-aligned, gain-matched pair (`audio_io.align_p
 faults a listener hears on a whole tape are invisible to them. Both readings take the RAW mono
 pair at one rate (the runner's `Pair` resamples the output to the source's rate first: the
 Tele7abc source is 48 kHz, its outputs 44.1 kHz). `file_entries` reads the sync first and
-hands its median lag to the ride, so a sync fault does not read as a ride as well.
+hands the ride its median lag and its lag track (the matched anchors' lags at their centres),
+so a sync fault does not read as a ride as well: neither a constant offset nor a drift.
 
 Gain riding (`file.gain_ride_lu`, R7 of ear v3)
 -----------------------------------------------
@@ -36,7 +37,27 @@ Measured on synthetic speech (random syllables, 16 and 44.1 kHz): identity and a
 -6 dB read 0, a denoiser that removes a 3e-3 hiss reads 0.03 LU p95, a +-3 dB rider at
 0.2 Hz reads 2.2 LU p95 (std 1.2, steps 3.9 LU/s; the 3 s window halves a 5 s period's
 swing). A late copy read without the lag rides 0.02 / 0.19 / 0.43 / 0.93 / 2.03 LU p95 at
-5 / 40 / 100 / 300 / 800 ms, and 0 with it. Measured on the v2 finals the user accepted
+5 / 40 / 100 / 300 / 800 ms, and 0 with it.
+
+A speed error the sync stage missed is no constant lag: once the median lag is out the output
+is still early by up to half the drift near the start and late by up to half near the end,
+and each 3 s window compares the source with a shifted output. Calibration v3 (2026-10-09)
+read `sync_drift` 0.05 / 0.1 / 0.2 % slow on the 300 s Tata cuts (146 / 293 / 587 ms of
+drift) as a ride of 0.41 / 0.80 / 1.34 LU p95 (Vaccin; SOTI 0.24 / 0.42 / 1.06, Tele7abc's
+134 s 0.12 / 0.19 / 0.37), over the 0.1 LU the table allows a speed error. So each output
+window is read along the lag track (`lag_track`: linear between the matched anchors and past
+the end ones on the end segments' slopes, a constant with one anchor), on a grid of the
+largest divisor of the 100 ms block within 1 ms (`track_step`), so a window the track does
+not move starts where the block grid starts it. Those cases then read 0.008 / 0.014 / 0.031
+(Vaccin), 0.008 / 0.015 / 0.032 (SOTI), 0.009 / 0.017 / 0.021 (Tele7abc) and 0.006 / 0.009 /
+0.010 LU (en); 200 s of synthetic speech 0.2 / 0.5 % slow (382 / 958 ms) 0.62 / 1.11 LU with
+the median lag alone, 0.021 / 0.049 along the track, and the +-3 dB rider 0.2 % slow still
+reads 2.27 (2.25 without the drift). A track that moves no window by half a step (0.48 ms at
+44.1 kHz, 0.5 ms at 48 kHz; the v2 finals drift 0.02-0.26 ms, the round-0 files read for this
+0.07-0.44 ms) leaves the block grid's reading exactly as it was; the calibration's
+`loudnorm_ride` and benign cases read the same to the fourth decimal.
+
+Measured on the v2 finals the user accepted
 (round 2, "pauses natural on both"), p95 APL / cathar: Tele7abc 1.13 / 1.55, SOTI
 0.96 / 0.82, Vaccin 1.80 / 1.66, Gaudeamus5 (music) 0.22 / 0.54; the floor gate drops 0-5
 of their 131-458 windows. The design's 1.5 LU flag [S] would fire on three accepted files,
@@ -103,6 +124,8 @@ RELATIVE_GATE_LU = -10.0
 FLOOR_PERCENTILE = 10.0
 FLOOR_MARGIN_LU = 10.0
 MIN_RIDE_WINDOWS = 5
+# The output is read along the sync's lag track on a grid of at most 1 ms (`track_step`).
+TRACK_STEP_S = 0.001
 RIDE_PERCENTILE = 95.0
 STEP_PERCENTILES = (10.0, 90.0)
 RIDE_NAMES = ("std_lu", "p95_abs_lu", "deriv_p10_p90")
@@ -211,22 +234,126 @@ def shifted(source, output, lag_samples):
     return source[-lag:], output
 
 
-def gain_ride(source, output, rate, lag_samples=0):
+def track_step(rate):
+    """The output's read grid along a lag track: the largest divisor of the 100 ms block within 1 ms of samples.
+
+    It must divide the block, so a window the track does not move starts exactly where the
+    block grid starts it (44.1 kHz: 42 samples, 48 kHz: 48, 22.05 kHz: 21, 16 kHz: 16).
+    """
+    block = int(round(BLOCK_S * rate))
+    limit = max(1, int(TRACK_STEP_S * rate))
+    return max(size for size in range(1, limit + 1) if block % size == 0)
+
+
+def window_starts(count, rate):
+    """The sample where each of `count` short-term windows starts, on the 1 s hop of 100 ms blocks."""
+    return np.arange(count) * BLOCKS_PER_HOP * int(round(BLOCK_S * rate))
+
+
+def window_levels(mono, rate, starts):
+    """The 3 s K-weighted short-term loudness of `mono` from each of `starts` (samples, rounded to `track_step`); NaN off either end.
+
+    One energy per step and a cumulative sum: a three-hour capture holds one float64 per
+    millisecond (86 MB at 44.1 kHz), never a float64 copy of itself.
+    """
+    step = track_step(rate)
+    energies = hop_energies(mono, rate, step)
+    span = SHORT_TERM_HOPS * BLOCKS_PER_HOP * int(round(BLOCK_S * rate)) // step
+    cumulative = np.concatenate(([0.0], np.cumsum(energies)))
+    first = np.rint(np.asarray(starts, dtype=np.float64) / step).astype(np.int64)
+    inside = (first >= 0) & (first + span <= len(energies))
+    first = np.where(inside, first, 0)
+    total = cumulative[np.minimum(first + span, len(energies))] - cumulative[first]
+    return np.where(inside, lufs(total / (span * step)), np.nan)
+
+
+def lag_track(track, times_s):
+    """The output's lag in seconds at each of `times_s` (source time) from the matched anchors `[(centre_s, lag_ms), ...]`.
+
+    Linear between the anchors and past the end ones along the end segments' slopes (a speed
+    error keeps drifting beyond them); one anchor is a constant lag, none is 0.
+    """
+    times = np.asarray(times_s, dtype=np.float64)
+    if not track:
+        return np.zeros(len(times))
+    centres, lags = (np.array(column, dtype=np.float64) for column in zip(*sorted(track)))
+    lags = lags / 1000.0
+    if len(centres) == 1:
+        return np.full(len(times), lags[0])
+    return _extended(centres, lags, times)
+
+
+def _extended(centres, lags, times):
+    """`np.interp` inside the anchors, the first and last segments' slopes carried past them."""
+    head = lags[0] + (times - centres[0]) * _slope(centres[:2], lags[:2])
+    tail = lags[-1] + (times - centres[-1]) * _slope(centres[-2:], lags[-2:])
+    return np.where(times < centres[0], head, np.where(times > centres[-1], tail, np.interp(times, centres, lags)))
+
+
+def _slope(centres, lags):
+    """The lag's change per second between two anchors; 0 for two anchors at one time."""
+    span = float(centres[1] - centres[0])
+    return float(lags[1] - lags[0]) / span if span > 0.0 else 0.0
+
+
+def window_offsets(track, lag_samples, rate, count):
+    """Per short-term window, how far (samples) the lag track puts the output from where the median lag shift left it.
+
+    The track's times are the raw source's; an early output (negative lag) cut the source's
+    head, so the shifted source's window centres sit that much later on the raw timeline. With
+    no matched anchor the shift is all there is: every offset is 0.
+    """
+    if not track:
+        return np.zeros(count)
+    block = int(round(BLOCK_S * rate))
+    centres = window_starts(count, rate) + SHORT_TERM_HOPS * BLOCKS_PER_HOP * block / 2.0 + max(0, -int(lag_samples))
+    return lag_track(track, centres / rate) * rate - int(lag_samples)
+
+
+def output_levels(output, rate, offsets):
+    """The output's short-term levels against each source window: on the block grid, or along `offsets` once one moves a step.
+
+    A track that moves no window by half a step or more (every v2 final and judged file:
+    drift under 0.5 ms) leaves the block grid's reading exactly as it was.
+    """
+    if not np.any(np.abs(offsets) >= 0.5 * track_step(rate)):
+        return short_term_loudness(output, rate)
+    return window_levels(output, rate, window_starts(len(offsets), rate) + offsets)
+
+
+def gain_ride(source, output, rate, lag_samples=0, track=()):
     """How far the output's short-term loudness wanders from the source's once the static gain is taken out.
 
     `lag_samples` is the output's lag behind the source (`sync_drift`'s median lag), taken out by
-    timing only. `{"std_lu", "p95_abs_lu", "deriv_p10_p90", "offset_lu", "windows"}`; the readings
-    are None when fewer than five windows carry programme.
+    timing only; `track` is the sync's matched anchors (`sync_drift`'s `"track"`), along which each
+    output window is read where a speed error moved it (module docstring).
+    `{"std_lu", "p95_abs_lu", "deriv_p10_p90", "offset_lu", "windows"}`; the readings are None when
+    fewer than five windows carry programme. A window whose output runs off either end is not read.
     """
-    source, output = shifted(source, output, lag_samples)
-    energies, block = block_energies(source, rate)
-    src, out = short_term_levels(energies, block), short_term_loudness(output, rate)
-    count = min(len(src), len(out))
-    active = speech_active(src[:count], noise_floor(energies, block))
+    src, out, active = paired_levels(source, output, rate, (lag_samples, track))
     windows = int(active.sum())
     if windows < MIN_RIDE_WINDOWS:
         return {**dict.fromkeys(RIDE_NAMES), "offset_lu": None, "windows": windows}
-    deviation = np.maximum(out[:count], ABSOLUTE_GATE_LUFS) - src[:count]
+    return {**ride_readings(np.maximum(out, ABSOLUTE_GATE_LUFS) - src, active), "windows": windows}
+
+
+def paired_levels(source, output, rate, sync):
+    """`(source levels, output levels, active)` over the windows both sides carry; `sync = (lag_samples, track)`.
+
+    A window is active when the source carries programme there (`speech_active`) and the
+    output's window, read along the track, lies inside the output.
+    """
+    lag_samples, track = sync
+    source, output = shifted(source, output, lag_samples)
+    energies, block = block_energies(source, rate)
+    src = short_term_levels(energies, block)
+    out = output_levels(output, rate, window_offsets(track, lag_samples, rate, len(src)))
+    count = min(len(src), len(out))
+    return src[:count], out[:count], speech_active(src[:count], noise_floor(energies, block)) & np.isfinite(out[:count])
+
+
+def ride_readings(deviation, active):
+    """The ride's spread once the static gain (the median deviation over the active windows) is out."""
     offset = float(np.median(deviation[active]))
     ride = np.where(active, deviation - offset, np.nan)
     kept = ride[active]
@@ -235,7 +362,6 @@ def gain_ride(source, output, rate, lag_samples=0):
         "p95_abs_lu": float(np.percentile(np.abs(kept), RIDE_PERCENTILE)),
         "deriv_p10_p90": step_spread(ride),
         "offset_lu": offset,
-        "windows": windows,
     }
 
 
@@ -404,15 +530,22 @@ def _peak_lag(correlation, reach, frame_ms):
 def sync_drift(source, output, rate, floor=None):
     """The output's lag behind the source near its start, middle and end, and what they say about the sync.
 
-    `{"lag_start_ms", "lag_middle_ms", "lag_end_ms", "drift_ms", "offset_ms", "segments", "unmatched"}`:
+    `{"lag_start_ms", "lag_middle_ms", "lag_end_ms", "drift_ms", "offset_ms", "segments", "unmatched", "track"}`:
     the matched lags (None when unread or unmatched), their largest change, the largest |lag|, how
-    many anchors matched and how many carried programme the output did not follow within the search.
+    many anchors matched, how many carried programme the output did not follow within the search,
+    and the matched anchors' `(centre_s, lag_ms)` for the ride to read along (`matched_track`).
     """
     floor = source_floor(source, rate) if floor is None else floor
     length, groups = anchor_candidates(len(source), rate)
-    readings = [anchor_lag(output, pick_anchor(source, rate, floor, starts, length), rate) for starts in groups]
+    anchors = [pick_anchor(source, rate, floor, starts, length) for starts in groups]
+    readings = [anchor_lag(output, anchor, rate) for anchor in anchors]
     lags = {f"lag_{name}_ms": lag for name, (_status, lag) in zip(SEGMENT_NAMES, readings)}
-    return {**lags, **_summary(readings)}
+    return {**lags, **_summary(readings), "track": matched_track(anchors, readings, rate)}
+
+
+def matched_track(anchors, readings, rate):
+    """`[(centre_s, lag_ms), ...]` of the matched anchors: each anchor's centre in source seconds and its lag."""
+    return [((anchor[0].start + anchor[0].stop) / 2.0 / rate, lag) for anchor, (status, lag) in zip(anchors, readings) if status == MATCHED]
 
 
 def _summary(readings):
@@ -439,7 +572,7 @@ def median_lag_samples(sync, rate):
 def file_entries(source, output, rate):
     """The card's file-level entries (`{"source": 0, "output": value, "delta": value}`) from the raw mono pair."""
     sync = sync_drift(source, output, rate)
-    ride = gain_ride(source, output, rate, median_lag_samples(sync, rate))
+    ride = gain_ride(source, output, rate, median_lag_samples(sync, rate), sync["track"])
     values = {
         "file.gain_ride_lu": ride["p95_abs_lu"],
         "file.gain_ride_std_lu": ride["std_lu"],

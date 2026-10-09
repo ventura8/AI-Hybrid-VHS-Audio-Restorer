@@ -19,7 +19,8 @@ def test_the_summary_counts_passes_only_and_names_every_clipped_check(tmp_path, 
     assert cal.print_summary(tmp_path, checks, {"dsp": {"ok": 1}}, ("dsp",)) == 0
     out = capsys.readouterr().out
     assert "1/3 sensitivity checks pass; 0 non-blind failures; 2 non-blind unscored" in out
-    assert "air_shelf_boost_music dsp.balance_air_db (1414 Hz)" in out and "families not scored" not in out
+    assert "air_shelf_boost_music dsp.balance_air_db (1414 Hz)" in out
+    assert "families not scored" not in out
 
 
 def test_a_non_blind_failure_still_sets_the_exit_code(tmp_path, capsys):

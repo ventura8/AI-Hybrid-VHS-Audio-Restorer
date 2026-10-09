@@ -127,6 +127,24 @@ def test_the_fricative_weight_is_zero_away_from_the_ess_bursts_and_one_inside_th
     assert (weight >= 0.999).sum() > 0
 
 
+def test_the_fricative_weight_covers_every_frame_a_runner_window_reads():
+    """30 s whose halves carry different hiss floors: every 10 ms frame a 15 s window calls fricative is weighted over one half.
+
+    The whole-file mask, on whole-file percentiles, misses some of them: what the R2 readings read on their own windows.
+    """
+    voice = _speech(seconds=30.0)
+    floors = np.where(np.arange(len(voice)) < len(voice) // 2, 1e-4, 3e-3)
+    mono = (voice + floors * np.random.default_rng(1).standard_normal(len(voice))).astype(np.float32)
+    marked = np.zeros(len(mono), dtype=bool)
+    for window in deg.audio_io.windows(len(mono), RATE, deg.v3.RUNNER_WINDOW_S, deg.v3.RUNNER_HOP_S):
+        marked[window.slice_of(RATE)] |= sibilance.fricative_mask(mono[window.slice_of(RATE)], RATE)
+    frame = int(sibilance.FRAME_S * RATE)
+    centres = np.arange(len(mono) // frame) * frame + frame // 2
+    read = centres[marked[centres]]
+    assert np.any(~sibilance.fricative_mask(mono, RATE)[read])
+    assert np.all(deg.fricative_ramp(mono, RATE)[read] > 0.5)
+
+
 @pytest.mark.parametrize("generator", [deg.sibilants_thinned, deg.sibilants_dulled])
 def test_thinned_and_dulled_sibilants_change_the_ess_bursts_only(generator):
     """Outside the (5 ms ramped) fricative weight the output is the base bit for bit; inside, nearly every sample moves."""

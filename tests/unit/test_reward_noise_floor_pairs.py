@@ -76,22 +76,25 @@ def test_the_ledger_id_is_optional_and_pairs_repeat(tmp_path):
 def test_a_malformed_benign_pair_is_refused_at_parse_time(tmp_path, values):
     """Three or four values, three existing paths, two different outputs: argparse exits otherwise."""
     paths = [str(path) for path in _trio(tmp_path)]
+    argv = _args(tmp_path, "--benign-pair", *values(paths))
     with pytest.raises(SystemExit):
-        nf.parse_args(_args(tmp_path, "--benign-pair", *values(paths)))
+        nf.parse_args(argv)
 
 
 def test_an_entry_swallowed_as_the_ledger_id_is_refused_with_a_hint(tmp_path, capsys):
     """A SOURCE=OUTPUT written after a pair would be its fourth value: not a record id, so the message says where it goes."""
     source, first, second = (str(path) for path in _trio(tmp_path))
+    argv = _args(tmp_path, "--benign-pair", source, first, second, f"{source}={first}")
     with pytest.raises(SystemExit):
-        nf.parse_args(_args(tmp_path, "--benign-pair", source, first, second, f"{source}={first}"))
+        nf.parse_args(argv)
     assert "not a ledger record id" in capsys.readouterr().err
 
 
 def test_no_entry_at_all_is_refused(tmp_path, capsys):
     """Neither a positional entry nor a benign pair: nothing to measure."""
+    argv = _args(tmp_path)
     with pytest.raises(SystemExit):
-        nf.parse_args(_args(tmp_path))
+        nf.parse_args(argv)
     assert "--benign-pair" in capsys.readouterr().err
 
 
@@ -133,7 +136,8 @@ def test_repeats_add_the_scorers_jitter_beside_the_pairs_difference(tmp_path):
     entry = report["readings"][KEY]
     assert (len(calls), entry["n"]) == (4, 3)
     assert entry["by_transform"] == pytest.approx({"benign_pair": 0.28, "reference": 0.02})
-    assert entry["max"] == pytest.approx(0.28) and 0.25 < entry["floor"] <= 0.28
+    assert entry["max"] == pytest.approx(0.28)
+    assert 0.25 < entry["floor"] <= 0.28
 
 
 def test_the_report_records_the_pair_and_its_ledger_record(tmp_path):
@@ -159,7 +163,8 @@ def test_max_seconds_cuts_the_source_and_both_outputs_alike(tmp_path):
     """Every side of a benign pair is cut to the same head before scoring."""
     material = nf.prepared(nf.BenignPair(*_trio(tmp_path, seconds=1.0)), tmp_path / "cache", 0.5)
     frames = [sf.info(str(path)).frames for path in (material.source_wav, material.output_wav, material.output_b_wav)]
-    assert frames == [RATE // 2] * 3 and material.operating_point == "benign_pair"
+    assert frames == [RATE // 2] * 3
+    assert material.operating_point == "benign_pair"
 
 
 def test_a_pooled_report_keeps_what_each_kind_contributed(tmp_path):
@@ -175,14 +180,15 @@ def test_a_pooled_report_keeps_what_each_kind_contributed(tmp_path):
 
 def test_the_command_line_writes_a_benign_pair_report(tmp_path, monkeypatch):
     """End to end with the scorer faked: the pair's paths hold '=' and ',', the report and the console name the point."""
-    source, first, second = (str(path) for path in _trio(tmp_path, ("src.wav", "take=1,a.wav", "take=2,b.wav")))
+    source, first, second = map(str, _trio(tmp_path, ("src.wav", "take=1,a.wav", "take=2,b.wav")))
     monkeypatch.setattr(nf.runner, "ModelRegistry", _registry)
     monkeypatch.setattr(nf.runner, "score_pair", _fake_scorer([]))
     console = io.StringIO()
     with contextlib.redirect_stdout(console):
         code = nf.main(_args(tmp_path, "--benign-pair", source, first, second, LEDGER_ID, "--device", "cpu"))
     report = json.loads((tmp_path / "floor.json").read_text(encoding="utf-8"))
-    assert code == 0 and "at benign_pair" in console.getvalue()
+    assert code == 0
+    assert "at benign_pair" in console.getvalue()
     assert report["readings"][KEY]["floor"] == pytest.approx(0.5)
     assert report["sources"][0]["ledger_id"] == LEDGER_ID
 
@@ -191,5 +197,6 @@ def test_a_benign_pair_outside_every_data_root_is_refused(tmp_path, monkeypatch)
     """The pair's paths are confined where they are used: a file outside the allowed roots stops the run, named."""
     source, first, second = (str(path) for path in _trio(tmp_path))
     monkeypatch.setattr(cli_paths, "allowed_roots", lambda: (tmp_path / "elsewhere",))
+    argv = _args(tmp_path, "--benign-pair", source, first, second)
     with pytest.raises(SystemExit, match="--benign-pair SOURCE"):
-        nf.main(_args(tmp_path, "--benign-pair", source, first, second))
+        nf.main(argv)

@@ -42,7 +42,8 @@ def test_abx_results_carry_the_binomial_p():
     mode = listen_modes.AbxMode(["a", "b"], 24, np.random.default_rng(2))
     _answer_all(mode, lambda trial: trial["key"])
     result = mode.results()[0]
-    assert result["n_correct"] == 24 and result["answer"]["heard"]
+    assert result["n_correct"] == 24
+    assert result["answer"]["heard"]
     assert not ledger.validate_record(_record(mode, "abx-1"))
     assert mode.summary().startswith("24/24 right, p = 0.000: heard")
 
@@ -61,7 +62,8 @@ def test_pair_counts_each_pair_with_same_and_the_replicate():
     picks = itertools.cycle(["A", "B", ledger.SAME])
     _answer_all(mode, lambda _trial: next(picks))
     results = mode.results()
-    assert mode.total == 7 and len(results) == 3
+    assert mode.total == 7
+    assert len(results) == 3
     assert sum(result["n_trials"] for result in results) == 7
     assert [trial[3] for result in results for trial in result["answer"]["trials"]].count(True) == 1
 
@@ -104,21 +106,33 @@ def test_blend_opens_on_the_full_candidate():
     mode = listen_modes.BlendMode(["inc", "cand"], 30, np.random.default_rng(6))
     trial = mode.trial(0)
     slot = 1 if trial["key"] == "A" else 2
-    assert trial["x"] == 1.0 and trial["play"][0] == ("R", {"inc": 1.0})
+    assert trial["x"] == 1.0
+    assert trial["play"][0] == ("R", {"inc": 1.0})
     assert trial["play"][slot][1] == {"inc": 0.0, "cand": 1.0}
 
 
-def test_blend_posterior_finds_a_simulated_listener():
-    """A simulated listener with threshold 0.3: the estimate lands near it and the record is valid."""
+def _simulated_blend():
+    """A blend run answered by a simulated listener whose threshold is 0.3."""
     rng = np.random.default_rng(7)
     mode = listen_modes.BlendMode(["inc", "cand"], 60, np.random.default_rng(8))
     _answer_all(
         mode, lambda trial: trial["key"] if rng.random() < listen_modes.p_correct(trial["x"], 0.3) else "AB".replace(trial["key"], "")
     )
-    answer = mode.results()[0]["answer"]
+    return mode
+
+
+def test_blend_posterior_finds_a_simulated_listener():
+    """A simulated listener with threshold 0.3: the estimate lands near it, inside its own band."""
+    answer = _simulated_blend().results()[0]["answer"]
     assert answer["band"][0] <= answer["threshold_x"] <= answer["band"][1]
     assert 0.12 < answer["threshold_x"] < 0.6
-    assert not ledger.validate_record(_record(mode, "blend-1")) and "90% band" in mode.summary()
+
+
+def test_the_simulated_listeners_blend_record_is_valid():
+    """The simulated listener's blend record passes the ledger's validation and the summary names its band."""
+    mode = _simulated_blend()
+    assert not ledger.validate_record(_record(mode, "blend-1"))
+    assert "90% band" in mode.summary()
 
 
 def test_x_at_target_inverts_the_psychometric_function():

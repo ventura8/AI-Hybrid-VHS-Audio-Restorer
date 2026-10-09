@@ -165,6 +165,9 @@ METRICS = {
         MetricSpec("file.lra", "file", NONE, "LU"),
         MetricSpec("file.noise_removed_db", "file", HIGHER, "dB"),
         MetricSpec("file.programme_deviation_db", "file", LOWER, "dB"),
+        # The holes over the whole aligned pair (runner.dropout_entry): the window median of
+        # `dsp.dropouts` reads 0 wherever a long file holds a few (calibration v3).
+        MetricSpec("file.dropouts", "file", LOWER, "count"),
         # R7 and the sync (file_metrics.py): the raw pair, once per file. The ride is shown,
         # not flagged, until the loudnorm_ride degradation calibrates it (the accepted v2
         # finals read up to 1.80 LU p95); the sync readings are gated in gates.py.

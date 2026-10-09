@@ -43,7 +43,8 @@ def test_a_grid_file_reads_its_ranking_section(tmp_path):
 def test_the_v3_tuning_grids_load_their_ranking(name, count, reading):
     """`--grid tata_v3.yaml` ranks on its own readings, not on the default grid."""
     grid = co.load_grid(REPO / "scripts" / "tune_grids" / name)
-    assert len(grid) == count and reading in grid
+    assert len(grid) == count
+    assert reading in grid
 
 
 def test_a_grid_file_without_entries_is_refused(tmp_path):

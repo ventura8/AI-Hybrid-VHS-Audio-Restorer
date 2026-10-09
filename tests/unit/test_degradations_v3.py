@@ -251,7 +251,8 @@ def test_sibilant_islands_change_the_marked_frames_only():
     assert np.allclose(out[:kept], noise[:kept], atol=1e-6)
     marked, before = out[half:][:half], noise[half:][:half]
     assert not np.allclose(marked, before, atol=1e-3)
-    assert abs(_gain_db(marked, before, 4000.0, 12000.0)) < 3.0 and abs(_gain_db(marked, before, 300.0, 3000.0)) < 0.1
+    assert abs(_gain_db(marked, before, 4000.0, 12000.0)) < 3.0
+    assert abs(_gain_db(marked, before, 300.0, 3000.0)) < 0.1
 
 
 def test_speed_drift_makes_the_output_longer_by_its_percentage():

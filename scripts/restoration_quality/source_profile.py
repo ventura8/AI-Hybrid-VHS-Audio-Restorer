@@ -43,7 +43,15 @@ a pure function of the source; the caller caches it per source. Its fields:
   bins on every frame and so holds the frames' medians; speech moves its pitch from frame
   to frame and sits on one harmonic's bins on few of them. `mains_excess_db` is
   `measure_hum.hum_excess_db` at the chosen mains (>= 6 dB "carries hum"), read on up to
-  eight evenly spaced 15 s excerpts.
+  eight evenly spaced 15 s excerpts. The 3 dB floor was set on noise alone, and speech that
+  holds its pitch passes it: on the hum-free realistic-v2 Piper targets the frames name
+  60 Hz on en (3.36 dB), es and it, and one series reads up to 11.1 dB (fr mid01, 50 Hz),
+  most of it from search-edge peaks on fixed partials (calibration v3, 2026-10-09). The
+  fundamental tells them apart: Piper's k = 1 median prominence is at most 8.1 dB on either
+  series, the Tata tapes' 13.1-19.9 dB at 50 Hz. A rule naming a mains only above about
+  10 dB there is proposed, not adopted, until the IA clips and the noise clips confirm it (a
+  hum carried by its 100 Hz harmonic would be missed); the `hum` calibration case injects at
+  whatever mains R0 names (`quality_degradations.capture_mains_hz`).
   `measure_hum` is already imported by `dsp_metrics`, so this adds no import side effect.
 - `line_hz` / `line_ppm` / `line_sd_ppm` / `line_hum_corr` / `line_origin`: the CRT line
   tracked on 1 s frames: the strongest bin in 15375-15984 Hz standing >= 12 dB over the

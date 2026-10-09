@@ -48,7 +48,9 @@ def test_the_handler_carries_get_and_post(tmp_path):
     getter.do_GET()
     poster = _handler(session, "POST", "/api/answer", json.dumps({"trial": 0, "choice": "A"}).encode("utf-8"))
     poster.do_POST()
-    assert getter.wfile.getvalue().startswith(b"HTTP/1.0 200") and b"Cache-Control: no-store" in getter.wfile.getvalue()
+    response = getter.wfile.getvalue()
+    assert response.startswith(b"HTTP/1.0 200")
+    assert b"Cache-Control: no-store" in response
     assert b'"index": 1' in poster.wfile.getvalue()
 
 
@@ -83,7 +85,8 @@ def test_serve_binds_loopback_and_stops_when_the_block_closes(tmp_path, monkeypa
     session.view["summary"] = "done"
     session.closed.set()
     assert listen_ab.serve(session, 9000) == "done"
-    assert _FakeServer.instances[-1].address == ("127.0.0.1", 9000) and opened == ["http://127.0.0.1:9000/"]
+    assert _FakeServer.instances[-1].address == ("127.0.0.1", 9000)
+    assert opened == ["http://127.0.0.1:9000/"]
     assert _FakeServer.instances[-1].calls[-2:] == ["shutdown", "close"]
 
 
@@ -157,7 +160,8 @@ def test_the_pair_replicate_takes_the_anchor(tmp_path):
     """With an anchor, the replicated pair is one the anchor plays in; by default every pair is played once."""
     args = _args(tmp_path, "--anchor", f"z={tmp_path / 'c.wav'}", mode="pair", count=3)
     mode = listen_ab.build_mode(args, ["a", "b", "c", "z"], np.random.default_rng(6))
-    assert mode.total == 7 and "z" in mode.order[-1]
+    assert mode.total == 7
+    assert "z" in mode.order[-1]
 
 
 def _voice_file(path, seconds=12.0):
@@ -173,25 +177,40 @@ def _soundfile_mono(path, _work_dir, rate=listen_cuts.PICK_RATE):
     return scipy.signal.resample_poly(audio.mean(axis=1), rate, source_rate).astype(np.float32)
 
 
-def test_main_cuts_serves_and_records_a_block(tmp_path, monkeypatch, capsys):
-    """End to end without a socket: the stand-in server answers every trial; the ledger gets a valid record with hashes."""
+def _answering_serve(session, port, open_browser=True):
+    """The stand-in server: answers every trial correctly and hands back the block's summary."""
+    assert port == 9100
+    assert not open_browser
+    for index in range(session.mode.total):
+        body = json.dumps({"trial": index, "choice": session.view["trial"]["key"]}).encode("utf-8")
+        session.handle("POST", "/api/answer", {"Host": f"127.0.0.1:{port}", "Content-Type": "application/json"}, body)
+    return session.view["summary"]
+
+
+def _recorded_block(tmp_path, monkeypatch):
+    """`main` end to end on two voice files with the stand-in server: its exit code, the ledger record and the first file."""
     first, second = _voice_file(tmp_path / "a.wav"), _voice_file(tmp_path / "b.wav")
     monkeypatch.setattr(listen_cuts, "decode_mono", _soundfile_mono)
-
-    def answering_serve(session, port, open_browser=True):
-        assert port == 9100 and not open_browser
-        for index in range(session.mode.total):
-            body = json.dumps({"trial": index, "choice": session.view["trial"]["key"]}).encode("utf-8")
-            session.handle("POST", "/api/answer", {"Host": f"127.0.0.1:{port}", "Content-Type": "application/json"}, body)
-        return session.view["summary"]
-
-    monkeypatch.setattr(listen_ab, "serve", answering_serve)
+    monkeypatch.setattr(listen_ab, "serve", _answering_serve)
     argv = ["abx", "--tape", "vaccin", "--stim", f"a={first}", "--stim", f"b={second}", "--seconds", "8", "--trials", "16"]
     code = listen_ab.main([*argv, "--port", "9100", "--no-browser", "--ledger", str(tmp_path / "v.jsonl"), "--seed", "1"])
-    record = ledger.read(tmp_path / "v.jsonl")[0]
-    assert code == 0 and "16/16 right" in capsys.readouterr().out
-    assert record["files"][0]["sha256"] == ledger.sha256_of(first) and set(record["context"]["cut_sha256"]) == {"a", "b"}
-    assert record["windows"][0][1] - record["windows"][0][0] == pytest.approx(8.0) and record["context"]["gain_clamped"] == []
+    return code, ledger.read(tmp_path / "v.jsonl")[0], first
+
+
+def test_main_cuts_serves_and_records_a_block(tmp_path, monkeypatch, capsys):
+    """End to end without a socket: the stand-in server answers every trial; the ledger gets a valid record with hashes."""
+    code, record, first = _recorded_block(tmp_path, monkeypatch)
+    assert code == 0
+    assert "16/16 right" in capsys.readouterr().out
+    assert record["files"][0]["sha256"] == ledger.sha256_of(first)
+    assert set(record["context"]["cut_sha256"]) == {"a", "b"}
+
+
+def test_main_records_the_cut_window_and_no_held_gain(tmp_path, monkeypatch):
+    """The recorded window spans the asked 8 s; two equal-level voices need no gain held at the clamp."""
+    _code, record, _first = _recorded_block(tmp_path, monkeypatch)
+    assert record["windows"][0][1] - record["windows"][0][0] == pytest.approx(8.0)
+    assert record["context"]["gain_clamped"] == []
 
 
 def test_main_refuses_bad_arguments(tmp_path):
@@ -209,8 +228,9 @@ def _two_voices(tmp_path, *extra):
 def test_main_refuses_a_cut_past_the_end_of_the_files(tmp_path, monkeypatch):
     """A start past the end gives silent cuts: the block stops before it is served."""
     monkeypatch.setattr(listen_ab, "serve", lambda *_args, **_kwargs: pytest.fail("a silent block was served"))
+    argv = _two_voices(tmp_path, "--start", "100", "--no-browser")
     with pytest.raises(SystemExit, match=r"silent at 100\.0 s .*: a, b"):
-        listen_ab.main(_two_voices(tmp_path, "--start", "100", "--no-browser"))
+        listen_ab.main(argv)
 
 
 def test_main_refuses_a_label_the_ledger_gives_another_file(tmp_path, monkeypatch):
@@ -220,8 +240,9 @@ def test_main_refuses_a_label_the_ledger_gives_another_file(tmp_path, monkeypatc
     older.update(question={"type": "preference", "stimuli": ["a", "b"]}, answer={"order": [["a"], ["b"]]}, confidence=None)
     ledger.append({**older, "playback": {"device": None, "volume": None}}, tmp_path / "v.jsonl")
     monkeypatch.setattr(listen_ab.cuts_mod, "prepare_cuts", lambda *_args: pytest.fail("cut before the label check"))
+    argv = _two_voices(tmp_path, "--start", "1")
     with pytest.raises(SystemExit, match="give it a label of its own"):
-        listen_ab.main(_two_voices(tmp_path, "--start", "1"))
+        listen_ab.main(argv)
 
 
 def test_clamped_note_names_the_held_gains():

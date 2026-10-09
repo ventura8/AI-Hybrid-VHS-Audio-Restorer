@@ -302,7 +302,8 @@ def test_an_l_minus_r_pair_is_inverted_and_profiled_on_the_difference():
     profile = _profile(np.stack([programme, -programme], axis=1))
     state = profile["channel_state"]
     assert state["correlation"] == pytest.approx(-1.0)
-    assert state["inverted"] and not state["dual_mono"]
+    assert state["inverted"]
+    assert not state["dual_mono"]
     assert _octaves_off(profile["prog_bandwidth_hz"], 8000.0) <= SIXTH_OCTAVE
 
 
@@ -310,7 +311,8 @@ def test_identical_channels_are_dual_mono():
     """Identical channels are dual mono, fully correlated and level."""
     programme = _programme(seconds=4.0)
     state = source_profile.channel_state(np.stack([programme, programme], axis=1), RATE)
-    assert state["dual_mono"] and not state["inverted"]
+    assert state["dual_mono"]
+    assert not state["inverted"]
     assert state["correlation"] == pytest.approx(1.0)
     assert state["energy_ratio_db"] == pytest.approx(0.0)
 
@@ -353,7 +355,8 @@ def test_silent_channels_have_no_ratio_or_correlation():
     state = source_profile.channel_state(np.zeros((RATE, 2), dtype=np.float32), RATE)
     assert state["energy_ratio_db"] is None
     assert state["correlation"] is None
-    assert state["dual_mono"] and not state["inverted"]
+    assert state["dual_mono"]
+    assert not state["inverted"]
 
 
 def test_mono_input_is_one_channel_in_either_shape():
@@ -369,5 +372,6 @@ def test_short_audio_reads_none_but_keeps_its_channel_state():
     programme = _programme(seconds=1.5)
     short = _profile(np.stack([programme, programme], axis=1))
     assert _profile(programme[: RATE // 2])["mains_hz"] is None
-    assert short["prog_bandwidth_hz"] is None and short["brickwall_hz"] is None
+    assert short["prog_bandwidth_hz"] is None
+    assert short["brickwall_hz"] is None
     assert short["channel_state"]["dual_mono"]

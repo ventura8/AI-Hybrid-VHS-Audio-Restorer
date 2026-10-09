@@ -161,7 +161,8 @@ def _inside(moves, allowed, strict):
 
 def _matches(value, level, base, octaves):
     """Whether a source reading sits within `octaves` of what the condition makes it: the level, or the base's own if lower."""
-    if value is None or not value > 0:
+    # A NaN reading matches nothing, the same as a missing or non-positive one.
+    if value is None or np.isnan(value) or value <= 0:
         return False
     expected = min(float(level), base) if base else float(level)
     return abs(np.log2(value / expected)) <= octaves

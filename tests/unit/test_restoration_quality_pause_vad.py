@@ -90,7 +90,8 @@ def test_the_silero_hook_runs_at_16_khz_and_maps_its_timestamps_to_frames(monkey
     vad = pause_metrics.resolve_vad()
     speech = vad(np.zeros(2 * RATE, dtype=np.float32), RATE, FRAME)
     pause_metrics.silero_model.cache_clear()
-    assert vad is pause_metrics.silero_vad and pause_metrics.resolved_vad_name() == "silero"
+    assert vad is pause_metrics.silero_vad
+    assert pause_metrics.resolved_vad_name() == "silero"
     assert calls == [(2 * pause_metrics.SILERO_RATE, "model", pause_metrics.SILERO_RATE)]
     assert list(np.flatnonzero(speech)) == list(range(25, 50))
 
@@ -113,4 +114,5 @@ def test_the_mask_survives_a_vad_that_comes_back_short():
     source = 0.1 * np.sin(2 * np.pi * 200.0 * t) * ((t % 1.0) < 0.5) + 1e-3 * rng.standard_normal(len(t))
     mask, runs = pause_metrics.true_pause_mask(source, RATE, _short_vad)
     assert len(mask) == len(runs) == len(t) // FRAME
-    assert mask.any() and not runs[-5:].any()
+    assert mask.any()
+    assert not runs[-5:].any()

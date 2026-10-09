@@ -88,7 +88,8 @@ def test_stale_reports_from_an_earlier_run_are_not_read(calls, capsys):
     session_hooks.pytest_sessionfinish(session, 0)
     out = capsys.readouterr().out
     assert (calls["badge"], calls["gate"]) == ([], [])
-    assert "No coverage.xml written by this session" in out and "No coverage.json written by this session" in out
+    assert "No coverage.xml written by this session" in out
+    assert "No coverage.json written by this session" in out
 
 
 def test_missing_reports_and_a_session_never_started_are_skipped(calls):

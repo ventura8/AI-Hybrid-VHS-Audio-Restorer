@@ -52,33 +52,69 @@ def _run(tmp_path, capsys):
     return code, capsys.readouterr().out
 
 
-def test_check_verdicts_reproduces_a_synthetic_ledger(tmp_path, capsys):
-    """Every verdict holds: exit 0, both records counted as checked, a label no record names printed as unjudged."""
+def _reproduced_run(tmp_path, capsys):
+    """Every verdict of the synthetic ledger holds on its report, which also scores an unjudged label v."""
     _verdict_ledger(tmp_path / "v.jsonl")
     _scores(tmp_path / "scores", "soti", {"x": ([THIN], 2), "y": ([], 1), "z": ([THIN], 0), "v": ([], 0), "w": ([], 0)})
-    code, out = _run(tmp_path, capsys)
-    assert code == 0 and "every checked listener verdict is reproduced" in out
+    return _run(tmp_path, capsys)
+
+
+def test_check_verdicts_reproduces_a_synthetic_ledger(tmp_path, capsys):
+    """Every verdict holds: exit 0 and both records counted as checked."""
+    code, out = _reproduced_run(tmp_path, capsys)
+    assert code == 0
+    assert "every checked listener verdict is reproduced" in out
     assert f"2 verdict records checked, 0 {NOT_ASSERTED}, 0 on display-only gates alone, 0 waiting for a report" in out
-    assert "soti: v (unjudged): -" in out and "soti: w: -" in out
+
+
+def test_check_verdicts_prints_a_label_no_record_names_as_unjudged(tmp_path, capsys):
+    """On the reproduced ledger a label no record names is printed as unjudged, a heard one without a mark."""
+    out = _reproduced_run(tmp_path, capsys)[1]
+    assert "soti: v (unjudged): -" in out
+    assert "soti: w: -" in out
+
+
+def _broken_run(tmp_path, capsys):
+    """The synthetic ledger against a report that breaks each of its verdicts."""
+    _verdict_ledger(tmp_path / "v.jsonl")
+    _scores(tmp_path / "scores", "soti", {"x": ([], 1), "y": (["listener.dead_air"], 3), "z": (["listener.dead_air"], 0)})
+    return _run(tmp_path, capsys)
 
 
 def test_check_verdicts_names_each_broken_verdict(tmp_path, capsys):
-    """A missing flag, a flagged accepted output, a clean flag raised and a reversed preference each get a line."""
-    _verdict_ledger(tmp_path / "v.jsonl")
-    _scores(tmp_path / "scores", "soti", {"x": ([], 1), "y": (["listener.dead_air"], 3), "z": (["listener.dead_air"], 0)})
-    code, out = _run(tmp_path, capsys)
-    assert code == 1 and "soti: x should be flagged listener.sibilance_thin, has nothing" in out
+    """A missing flag and a flagged accepted output each get a line, and the run exits 1."""
+    code, out = _broken_run(tmp_path, capsys)
+    assert code == 1
+    assert "soti: x should be flagged listener.sibilance_thin, has nothing" in out
     assert "soti: y was accepted by ear but carries ['listener.dead_air']" in out
+
+
+def test_check_verdicts_names_a_raised_clean_flag_and_a_reversed_preference(tmp_path, capsys):
+    """A clean flag raised and a reversed preference each get a line too."""
+    out = _broken_run(tmp_path, capsys)[1]
     assert "soti: z was heard clean of listener.dead_air but carries it" in out
     assert "soti: y fails more hard gates (3) than x (1)" in out
 
 
-def test_check_verdicts_without_scores_checks_nothing(tmp_path, capsys):
-    """No scored report: exit 2 and "nothing checked", never "reproduced"."""
+def _unscored_run(tmp_path, capsys):
+    """The synthetic ledger with no scored report at all."""
     _verdict_ledger(tmp_path / "v.jsonl")
-    code, out = _run(tmp_path, capsys)
-    assert code == 2 and "no scores under" in out and "nothing checked" in out
-    assert "reproduced" not in out and "2 waiting for a report: v-flags, v-pref" in out
+    return _run(tmp_path, capsys)
+
+
+def test_check_verdicts_without_scores_checks_nothing(tmp_path, capsys):
+    """No scored report: exit 2 and "nothing checked"."""
+    code, out = _unscored_run(tmp_path, capsys)
+    assert code == 2
+    assert "no scores under" in out
+    assert "nothing checked" in out
+
+
+def test_check_verdicts_without_scores_never_claims_a_reproduction(tmp_path, capsys):
+    """No scored report: never "reproduced", and both records wait for a report."""
+    out = _unscored_run(tmp_path, capsys)[1]
+    assert "reproduced" not in out
+    assert "2 waiting for a report: v-flags, v-pref" in out
 
 
 def test_check_verdicts_whose_reports_score_no_judged_label_checks_nothing(tmp_path, capsys):
@@ -87,7 +123,9 @@ def test_check_verdicts_whose_reports_score_no_judged_label_checks_nothing(tmp_p
     _scores(tmp_path / "scores", "soti", {"other": ([], 0)})
     _scores(tmp_path / "scores", "vaccin", {"x": ([THIN], 0)})
     code, out = _run(tmp_path, capsys)
-    assert code == 2 and "0 verdict records checked" in out and "2 waiting for a report" in out
+    assert code == 2
+    assert "0 verdict records checked" in out
+    assert "2 waiting for a report" in out
 
 
 def test_a_two_tier_ranking_is_asserted_and_a_longer_one_is_not(tmp_path, capsys):
@@ -97,7 +135,9 @@ def test_a_two_tier_ranking_is_asserted_and_a_longer_one_is_not(tmp_path, capsys
     _verdict_ledger(tmp_path / "v.jsonl", two_tier, ranking)
     _scores(tmp_path / "scores", "soti", {"x": ([THIN], 0), "y": ([], 2), "z": ([], 1)})
     code, out = _run(tmp_path, capsys)
-    assert code == 1 and "soti: y fails more hard gates (2) than z (1)" in out and "z fails more" not in out
+    assert code == 1
+    assert "soti: y fails more hard gates (2) than z (1)" in out
+    assert "z fails more" not in out
     assert f"3 verdict records checked, 1 {NOT_ASSERTED}, 0 on display-only gates alone, 0 waiting" in out
 
 
@@ -106,19 +146,30 @@ def _hiss_record(rid, flagged, clean):
     return _on_soti(_base(rid, "flag", {"flagged": {HISS: flagged} if flagged else {}, "clean": clean}, ("x", "y", "a")))
 
 
-def test_a_flag_on_a_display_only_gate_is_reported_not_asserted(tmp_path, capsys):
+def _display_only_run(tmp_path, capsys):
     """Hiss is display-only: x flagged hissy carries only its thin flag (a new report), y heard clean of hiss and a,
-    accepted with no complaint, still carry it (a stored report); none of the three fails, and the run lists the flags
-    it skipped."""
+    accepted with no complaint, still carry it (a stored report)."""
     hiss = _hiss_record("v-hiss", ["x"], {HISS: ["y"], ledger.ANY_FLAG: ["a"]})
     _verdict_ledger(tmp_path / "v.jsonl", hiss)
     variants = {"x": ([THIN], 2), "y": ([HISS], 1), "z": ([], 0), "a": ([HISS], 0)}
     _scores(tmp_path / "scores", "soti", variants)
-    code, out = _run(tmp_path, capsys)
-    assert code == 0 and "every checked listener verdict is reproduced" in out
+    return _run(tmp_path, capsys)
+
+
+def test_a_flag_on_a_display_only_gate_is_reported_not_asserted(tmp_path, capsys):
+    """None of the three hiss verdicts fails: exit 0 with the three records checked."""
+    code, out = _display_only_run(tmp_path, capsys)
+    assert code == 0
+    assert "every checked listener verdict is reproduced" in out
     assert f"3 verdict records checked, 0 {NOT_ASSERTED}, 0 on display-only gates alone, 0 waiting for a report" in out
+
+
+def test_a_run_lists_the_display_only_flags_it_skipped(tmp_path, capsys):
+    """The run lists the hiss flag it skipped and still prints the hiss y and a carry."""
+    out = _display_only_run(tmp_path, capsys)[1]
     assert out.rstrip().splitlines()[-2].endswith("; 1 display-only flags not asserted: v-hiss listener.hiss")
-    assert "soti: y: listener.hiss" in out and "soti: a: listener.hiss" in out
+    assert "soti: y: listener.hiss" in out
+    assert "soti: a: listener.hiss" in out
 
 
 def test_the_same_report_fails_the_flag_once_its_gate_is_asserted():
@@ -141,7 +192,8 @@ def test_a_flag_record_on_display_only_gates_alone_is_counted_on_its_own(tmp_pat
     ledger.append_many([_hiss_record("v-hiss", ["x"], {HISS: ["y"]}), _hiss_record("v-empty", [], {})], tmp_path / "v.jsonl")
     _scores(tmp_path / "scores", "soti", {"x": ([HISS], 0), "y": ([], 0)})
     code, out = _run(tmp_path, capsys)
-    assert code == 2 and f"0 verdict records checked, 1 {NOT_ASSERTED}, 1 on display-only gates alone, 0 waiting for a report" in out
+    assert code == 2
+    assert f"0 verdict records checked, 1 {NOT_ASSERTED}, 1 on display-only gates alone, 0 waiting for a report" in out
     assert "1 display-only flags not asserted: v-hiss listener.hiss" in out
 
 
@@ -158,7 +210,8 @@ def test_the_coverage_tally_files_a_display_only_record_apart_from_the_unasserte
 def test_the_display_only_gates_are_the_demoted_ones_and_the_soft_ones():
     """listener.hiss and every soft gate (never counted as a flag) are skipped; the listener flags still checked are not."""
     display_only = _check_module().display_only_gates(gates)
-    assert HISS in display_only and "file.lufs" in display_only
+    assert HISS in display_only
+    assert "file.lufs" in display_only
     assert not display_only & {name for name, gate in gates.GATES.items() if gate.severity == gates.FLAG}
 
 
@@ -170,11 +223,24 @@ def test_check_verdicts_finds_the_ledger_module_when_run_as_a_script(monkeypatch
     assert str(module.REPO) in sys.path
 
 
-def test_the_shipped_ledger_against_the_stored_reports_says_what_it_checked(capsys):
-    """On the repository's own ledger and reports the run states its coverage and never claims more than it checked."""
+def _shipped_run(capsys):
+    """The run on the repository's own ledger and stored reports: `(exit code, printed text)`."""
     code = _check_module().main([])
-    out = capsys.readouterr().out
-    assert code in (0, 1, 2) and "verdict records checked" in out and "waiting for a report" in out
+    return code, capsys.readouterr().out
+
+
+def test_the_shipped_ledger_against_the_stored_reports_says_what_it_checked(capsys):
+    """On the repository's own ledger and reports the run states its coverage."""
+    code, out = _shipped_run(capsys)
+    assert code in (0, 1, 2)
+    assert "verdict records checked" in out
+    assert "waiting for a report" in out
     assert "on display-only gates alone" in out
+
+
+def test_the_shipped_ledger_never_claims_more_than_it_checked(capsys):
+    """On the repository's own ledger "nothing checked" goes with exit 2 alone, and no hiss verdict is asserted."""
+    code, out = _shipped_run(capsys)
     assert (code == 2) == ("nothing checked" in out)
-    assert "should be flagged listener.hiss" not in out and "clean of listener.hiss" not in out
+    assert "should be flagged listener.hiss" not in out
+    assert "clean of listener.hiss" not in out

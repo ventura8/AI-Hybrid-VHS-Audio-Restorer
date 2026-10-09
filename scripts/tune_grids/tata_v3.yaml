@@ -40,6 +40,14 @@
 # included, so every verdict below is an unblinded hypothesis and every value here is one too,
 # until the listener's blind threshold (the blend continuum) gives "audible" a unit.
 #
+# Since calibration v3 (2026-10-09) some of these entries rest on pre-fix readings: R4 now
+# leaves out the pause bins under the 16-bit dither plus 10 dB (pause_metrics.above_dither), and
+# R2 matches the gain around each 's' and reads the texture only on 30 fricative frames a
+# window. The R4 dead zones (slope, spread, LSD, island kurtosis) and the R2 dead zones (sib_abs,
+# texture) must be re-derived from a Round 0 re-score: one is running into
+# experiments/tata_listen/scores_v3, and the pre-fix reports the Round 0 figures here quote are
+# kept in experiments/tata_listen/scores_v3_precal. No value below has been changed for it yet.
+#
 # `scale` is the reading's benign floor where one was measured (what hiss removal or a fresh
 # realisation of the same noise moves it), so a distance counts in floors. The Session 0
 # benign-pair floors (experiments/reward/noise_floor_benign.json, pairs nobody told apart) are
