@@ -18,7 +18,20 @@ audio alignment, or FFmpeg multiplexing.
   - Acoustic profiling $\\rightarrow$ dynamic mode selection $\\rightarrow$
     shift/DTW (DTW when drift is detected, shift otherwise, falling back to
     configured `SYNC_METHOD` on analysis failure) $\\rightarrow$ remux.
-  - Scans the capture and dispatches the best restoration pipeline.
+  - Scans the capture and dispatches the best restoration pipeline:
+    `auto_pure_linear` on every acoustic class, `cathar` on sustained tonal
+    programme with no silence for the noise probe (AGENTS.md section 2).
+- **`auto_pure_linear`** -> `*_PureLinear_Cleaned.<ext>`
+  - Scan $\\rightarrow$ pre-conditioning $\\rightarrow$ `modules/apl_chain.py`
+    (surgical notches, gated repair, hum canceller, plosive tamer, optional
+    subtraction) $\\rightarrow$ neural denoiser $\\rightarrow$ sibilant
+    guard, polish (expander, air shelf), pause floor $\\rightarrow$
+    shift/DTW $\\rightarrow$ remux.
+  - The engine the harness's loops tune beside `cathar`.
+- **`cathar`** / **`cathar_vhs`** -> `*_Cathar_Cleaned.<ext>`
+  - The Rust `cathar.exe` stage chain (dewind to SBR enhance), the music
+    profile, polish and pause floor $\\rightarrow$ shift/DTW $\\rightarrow$
+    remux; bit-identity on its five reference clips guards every change.
 - **`multipass_auto`** -> `*_MultiPass_Cleaned.<ext>`
   - Pre-scan $\\rightarrow$ pre-conditioning $\\rightarrow$ BS-Roformer $\\rightarrow$
     Resemble-Enhance $\\rightarrow$ shift/DTW $\\rightarrow$ amix.
@@ -27,7 +40,7 @@ audio alignment, or FFmpeg multiplexing.
   - Pre-scan $\\rightarrow$ pre-conditioning $\\rightarrow$ BS-Roformer
     $\\rightarrow$ UVR-DeNoise
     $\\rightarrow$ de-esser $\\rightarrow$ shift/DTW $\\rightarrow$ amix.
-  - Default mode: pure speech and ambient denoise, no vocoder synthesis.
+  - Pure speech and ambient denoise, no vocoder synthesis.
 - **`hybrid`** -> `*_Hybrid_Cleaned.<ext>`
   - BS-Roformer $\\rightarrow$ Resemble-Enhance $\\rightarrow$ UVR-DeNoise
     $\\rightarrow$ shift/DTW
@@ -59,7 +72,16 @@ audio alignment, or FFmpeg multiplexing.
      attenuating the louder channel, and mirrors the live channel to both sides
      when the gap exceeds `DEAD_CHANNEL_DB`.
    - `_detect_stereo_azimuth_skew`: Cross-correlation lag, returned only when
-     the channels clear `AZIMUTH_MIN_CORRELATION`.
+     the channels clear `AZIMUTH_MIN_CORRELATION` (0.3) as |r|.
+     `signed_channel_correlation` keeps the sign (`_channel_correlation`
+     returned only |r|, so the gate passed a polarity-inverted pair). For L
+     and -L the lag the correlation's maximum gives is half a period of the
+     strongest partial, not a skew: a 1 kHz tone reads -0.50 ms, a 2 kHz tone
+     -0.25 ms and noise low-passed at 3 kHz -0.23 ms, each of which the
+     pre-conditioning would apply as a delay. A pair at r \<= -0.3 is always
+     logged as inverted; `azimuth_reject_inverted_pair` (default false, so
+     every output keeps its bytes) reads no skew from it. A NaN correlation
+     passes the gate as before and is not flagged.
    - `_detect_crt_flyback_notch`: Band search across 15450-15900 Hz, classified
      by nearest line rate so an off-speed tape is still identified.
    - `_detect_mains_buzz_notch`: Hum vote constrained to the family the detected
@@ -83,16 +105,65 @@ audio alignment, or FFmpeg multiplexing.
      as fixed-point.
    - `_collect_stem_candidates`: Token-based, case-insensitive stem matching
      across every naming convention `audio-separator` emits.
-   - `_resolve_loudnorm_args` / `_measure_mix_loudness`: Two-pass EBU R128
-     normalization, falling back to single-pass if measurement fails.
    - `_final_mix_step`: Stem mix via FFmpeg `amix` with container-dependent
-     audio encoding, resample to `PIPELINE_SAMPLE_RATE`, and a true-peak
-     limiter.
+     audio encoding, resample to `PIPELINE_SAMPLE_RATE`, and the mastering
+     tail of `modules/mastering.py`.
    - `_final_mux_single_audio_step`: Direct stream video copy with
      container-dependent audio mux.
+1. **`modules/mastering.py`**:
+   - `_resolve_loudnorm_args` / `_resolve_single_track_loudnorm_args`:
+     two-pass loudnorm to -16 LUFS, -1 dBTP and `loudnorm_target_lra`,
+     falling back to single-pass if measurement fails. The tail after the
+     loudness stage is a resample and `LOUDNORM_TRUE_PEAK_LIMITER`, which
+     despite its name is `alimiter` at 0.891 (-1 dBFS) on the samples at
+     44.1 kHz, a sample-peak limiter.
+   - `linear_mode_blockers`: ffmpeg's rule for loudnorm's linear mode,
+     `TP + (I_target - I) <= TP_target`, `LRA <= target`, and a set
+     measurement (I and LRA not 0, TP not 99, threshold not -70), with one
+     override: given a duration under 3 s (`LOUDNORM_SHORT_PROGRAMME_S`,
+     loudnorm's frame buffer) it returns no blockers, because ffmpeg runs
+     such a programme linear whatever was measured (it also measures LRA
+     0, the unset value). The mux passes the duration it knows; without one
+     the short case is not checked. On synthetic programmes it reproduced
+     the `normalization_type` ffmpeg 8.0.1 reported in all nine cases
+     checked, and the boundary (linear at 2.9 s, dynamic at 3.0 s) held on
+     8.0.1 and 9.0.1. `_log_loudness_range` logs the mode by it.
+   - `loudnorm_linear_fallback` (`ffmpeg` default, or `gain_limiter`): what
+     the mux does when the true-peak rule alone takes loudnorm out of linear
+     mode (`LinearGain`: one `volume` gain and the existing limiter).
+   - With `AI_RESTORE_EVENT_LOG` set, one more null-sink pass records what
+     the loudness stage rendered (`normalization_type`, output I, TP, LRA,
+     threshold, the blockers, the predicted mode, the fallback) as
+     `loudnorm__<recording>__<mode>__<track>.json`, beside the track the mux
+     masters and in the event-log folder. A decision ffmpeg made against the
+     rule is logged as a warning.
+1. **`modules/event_log.py`**: the engine's event log
+   (`AI_RESTORE_EVENT_LOG=<dir>`, unset by default, and then nothing is
+   written or computed). The sibilant guard, the plosive tamer and the pause
+   floor keeper each write
+   `<stage>__<recording>__<mode>__<track>.json`: the stage, the recording
+   (the `.temp_work_<stem>` folder name, else the track's stem), the
+   configured `process_mode`, the
+   track's path and rate, the stage's thresholds, and the spans it found in
+   seconds (`events_s`). The sibilant guard's and the plosive tamer's spans
+   sit on the pre-neural reference / input timeline, the pause floor's on
+   the restored file's (`events_s`, the pauses found, and `filled_s`, the
+   frames the fill lifts; the gain reaches at most 20 ms past each `filled_s`
+   run). A stage that does not look writes `skipped` with its reason
+   (switched off, refused material) or `failed: <error>`; a failure after
+   the detection replaces the events, since the output then carries no
+   repair. Each stage writes the same samples with the log on or off
+   (tested per stage). Two runs in one mode share record names, so give
+   every tuning candidate its own event-log folder.
 1. **`modules/auto_scanner.py`**:
    - `_detect_flutter_or_pitch_drift`: Tracks the recorded video line whine as a
      fixed-frequency speed reference, so programme pitch cannot read as drift.
+     The harness's capture profile (R0, 2026-10-09) found the line on the
+     Tata tapes steady (7 and 13 ppm) and not wandering with the hum, the
+     `playback_chain` class: on a PAL SP linear track the line's wavelength
+     (about 1.5 um) is far beyond the ~8 kHz response, so it cannot be on
+     the tape. F3, its own change, revisits the DTW trigger and this
+     wording, guarded by the harness's `file.sync_drift_ms`.
    - `_best_fitting_reference`: Picks PAL or NTSC by which nominal the tracked
      mean sits nearest, since the search bands overlap.
    - `_estimate_onset_periodicity`: Autocorrelation peak of the spectral-flux
@@ -181,11 +252,23 @@ audio alignment, or FFmpeg multiplexing.
   pause level, quiet = within 10 dB of the p15 level, only the deficit,
   never above the source) after the expander in both engines; the mux then
   runs `loudnorm ... linear=true`, which ffmpeg silently turns dynamic when
-  the measured LRA exceeds the target (`loudnorm_target_lra`, the run log
-  states which mode held). "distortion of spoken 's'" is the neural stage
+  the measured LRA exceeds the target (`loudnorm_target_lra`) or the
+  true-peak rule fails (see "Loudness mode" below; the run log states which
+  mode held). "distortion of spoken 's'" is the neural stage
   emptying the 1-4 kHz body under fricatives (`dsp.sib_centroid_hz`
   +370..+620 Hz): `modules/sibilant_guard.py` puts a share of the pre-neural
-  high band back inside the fricative events only. cathar's hiss and its
+  high band back inside the fricative events only. The guard has no tonal
+  skip, unlike the plosive tamer: the Tata tapes, where the 's' was heard
+  distorted, read tonal (flatness 0.022); its detector's own rules (most of
+  the hop's energy above the guard frequency, a zero-crossing rate no voiced
+  sound reaches, 20-400 ms) keep cymbals and held notes out. At
+  `apl_sibilant_hf_share_min` 0.5 it caught 3 events in five minutes of
+  Vaccin where the harness found 30 (12.5% of its fricative frames), so the
+  loops' mix and crossover moves changed the audio by -70..-100 dBFS only;
+  measure a detector-bound stage's coverage (the event log) before tuning
+  it. Ear v3 found the thin 's' was the air shelf's whole-spectrum tilt
+  (+2 dB at 7.5 kHz lifts every frame about 1.6 dB above 4 kHz); round one's
+  "distortion" reads as texture, not level. cathar's hiss and its
   shaved highs get one factor each side of a crossover
   (`modules/split_band.py`, `cathar_split_band_hz`, `cathar_alpha_high`).
   Music loses its stem under a full-mix chain: `modules/apl_stems.py` runs
@@ -198,8 +281,35 @@ audio alignment, or FFmpeg multiplexing.
 - **Knob table hygiene**: a key the app overrides per material must be in
   the loop's `KNOBS` or its rounds are inert there (the music loop's rounds
   4-5 moved `cathar_alpha` while the music profile overrode it: three
-  candidates rendered byte-identical audio); when several candidates score
-  exactly alike, hash their audio before spending another round.
+  candidates rendered byte-identical audio). The loop now hashes every
+  candidate's audio per tape and logs a byte-identical one as inert, never
+  scored (output-quality-harness skill). A knob is dead only when every
+  code path that reads it is: `apl_tonal_flatness_max` stays live with the
+  subtraction stage off, because the plosive tamer (`_skip_reason`) and the
+  hum canceller's series length (`_series_length`) read it. The tuned APL
+  finals carried 0.01, the shipped default is 0.035 and the Tata tapes read
+  0.022, so tuned APL ran the tamer and the 40-harmonic hum series where
+  shipped APL does not (round A0 decides). `apl_music_persistence_min`
+  picks the tapes that take `apl_music_neural_model`, and
+  `apl_noiseprint_tonal_s` also feeds the stem path's background suppressor
+  (`apl_stems._background_pass`, while `apl_music_bg_floor_db` is below 0).
+- **Loudness mode**: loudnorm's applied pass holds linear mode (one gain for
+  the programme) only while `TP + (I_target - I) <= TP_target`, the
+  measured LRA is within `loudnorm_target_lra` and the measurement is set;
+  otherwise it rides the gain and lifts the pause floors after every engine
+  has finished. A programme under 3 s runs linear whatever was measured
+  (the fixtures and the harness windows are all longer). The run log used
+  to check the range half only: of the 616 distinct decisions it logged as
+  "linear" in the 1020 run logs under the repository on 2026-10-09, 229
+  (37%) broke the true-peak half and ran dynamic (the count moves with the
+  logs on disk; `linear_mode_blockers` over the logged I, TP and LRA
+  re-derives it). `loudnorm_linear_fallback`
+  set to `gain_limiter` answers the true-peak-only case with one gain and the
+  existing limiter; the limiter holds sample peaks only, so on three
+  synthetic programmes with clicks the render peaked at up to +0.24 dBTP
+  where loudnorm's dynamic mode held -1.8 to -1.9. The default stays
+  `ffmpeg` (every output keeps its bytes) until the pause-texture round
+  judges it by ear; with the event log on the record shows which mode ran.
 - **A second cathar build**: `AI_RESTORE_CATHAR_BIN` names another binary
   (kept under `experiments/cathar-<version>/`, hash verified) so an upgrade
   is measured before it replaces `.venv/Scripts/cathar.exe`; 0.7.6 replaced
@@ -208,6 +318,20 @@ audio alignment, or FFmpeg multiplexing.
   chain calls were bit-identical between 0.7.5 and 0.7.6; the upstream
   `cathar vhs` chain is not a candidate (single quietest-4 s probe, alpha 3:
   colouration -0.43, discontinuity tail -1.61 on Tele7abc; vbasky/cathar#26).
+  cathar 0.8.0 is approved for download (the user, 2026-10-08) into
+  `experiments/cathar-0.8.0/` with its checksum, not fetched yet: round C0
+  runs it behind `AI_RESTORE_CATHAR_BIN`, first through the identity check
+  against `experiments/cathar_ab_head.json` (identical means adopt; else the
+  ear and a user ABX). The installers stay at 0.7.6 until it is accepted.
+- **No generative engines** (the user, 2026-10-08): the enhancement rounds
+  and the learned training add no generative stage (no flow, vocoder or
+  GRPO-trained enhancer, nothing like Resemble-Enhance's enhancer) to
+  `auto_pure_linear` or cathar. The learned changes planned are
+  an anchored fine-tune of the Mel-RoFormer denoiser (isolated
+  `tools/msst/` venv, a new `apl_neural_model` value, default off until the
+  loop and the ear accept it) and, later, a per-tape settings policy that
+  offsets post-neural knobs from the shipped defaults (switch off by
+  default).
 - **Two engines at once**: the work directory is `.temp_work_<stem>` beside the
   source, so two runs on the same file collide. Run engines in parallel only
   on different paths (NTFS hardlinks of the tapes for the second engine).

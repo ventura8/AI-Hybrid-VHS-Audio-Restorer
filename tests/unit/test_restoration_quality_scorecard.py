@@ -57,4 +57,33 @@ def test_paired_deltas_flattens_a_card():
 def test_every_metric_spec_has_a_family_and_direction():
     for name, spec in sc.METRICS.items():
         assert name.startswith(spec.family + ".")
-        assert spec.better in {"higher", "lower", "none"}
+        assert spec.better in sc.DIRECTIONS
+
+
+def test_a_two_sided_tail_is_the_decile_further_from_the_target():
+    """A reading wrong either way points its tail at whichever end moved further from its neutral point."""
+    values = np.array([-3.0, -2.0, -1.0, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    assert sc.summarise(values, sc.TWO_SIDED)["tail"] < 0.0
+    assert sc.summarise(-values, sc.TWO_SIDED)["tail"] > 0.0
+    assert sc.summarise(values, sc.TWO_SIDED, target=-3.0)["tail"] > 0.0
+
+
+def test_counts_report_their_worst_window_and_p95():
+    """One click in one window is not diluted by the median: the max and p95 sit beside it."""
+    rows = [
+        sc.WindowRow(i, i * 7.5, i * 7.5 + 15.0, "speech", {"dsp.clicks_per_s": 0.0}, {"dsp.clicks_per_s": c})
+        for i, c in enumerate([0, 0, 0, 2.0])
+    ]
+    summary = sc.aggregate(rows)["dsp.clicks_per_s"]["output"]
+    assert (summary["median"], summary["max"]) == (0.0, 2.0)
+    assert 0.0 < summary["p95"] <= 2.0
+    assert "max" not in sc.summarise(np.arange(4.0), sc.LOWER)
+
+
+def test_the_ear_v3_readings_are_registered_with_their_family_and_direction():
+    """R1 and R2's level are two-sided, R4's texture lower-is-better, R7 and the sync per file, R0 displayed."""
+    two_sided = ("dsp.balance_tilt_db_oct", "dsp.balance_top_db", "dsp.sib_abs_level_db", "dsp.gap_hf_excess_db", "dsp.gap_atten_db")
+    assert all(sc.METRICS[name].better == sc.TWO_SIDED for name in two_sided)
+    assert sc.METRICS["dsp.gap_mod_dist_db"].routes == sc.SPEECH_ROUTES
+    assert {sc.METRICS[name].family for name in ("file.gain_ride_lu", "file.sync_drift_ms")} == {"file"}
+    assert all(spec.better == sc.NONE for name, spec in sc.METRICS.items() if spec.family == "meta")

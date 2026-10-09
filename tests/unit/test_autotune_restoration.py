@@ -1,4 +1,4 @@
-"""Pure logic of the self-driving tuner: candidate ids, neighbours, combinations, the verdict."""
+"""Pure logic of the self-driving tuner: candidate ids, neighbours, combinations, the verdict, inert switches."""
 
 from scripts import autotune_restoration as at
 
@@ -35,7 +35,7 @@ def test_combine_merges_two_winning_moves_and_ignores_a_single_one():
     winners = [{"cathar_alpha": 1.5, "cathar_beta": 0.01}, {"cathar_alpha": 2.0, "cathar_beta": 0.005}]
     combo = at.combine(incumbent, winners)
     assert list(combo.values()) == [{"cathar_alpha": 1.5, "cathar_beta": 0.005}]
-    assert at.combine(incumbent, winners[:1]) == {}
+    assert not at.combine(incumbent, winners[:1])
 
 
 def _scores():

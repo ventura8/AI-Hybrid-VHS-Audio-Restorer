@@ -4,6 +4,7 @@ Bursts are drawn the way the calibrated fixture draws them -- band-limited under
 fast attack, decaying tail, +6 dB over the programme -- at known positions on a voice.
 """
 
+import json
 from unittest.mock import patch
 
 import numpy as np
@@ -11,7 +12,7 @@ import pytest
 import scipy.signal
 import soundfile as sf
 
-from modules import plosive_tamer
+from modules import event_log, plosive_tamer
 
 RATE = 44100
 SECONDS = 8.0
@@ -224,3 +225,60 @@ def test_the_stage_is_wired_after_the_hum_canceller(tmp_path):
     names = [name for name, _wanted, _stage in plan]
     assert names.index("plosive_tamer") == names.index("tone_cancel") + 1
     assert names.index("hum_cancel") < names.index("plosive_tamer") < names.index("tonal_cleanup")
+
+
+def _tame_with_log(source, work, log_dir, monkeypatch):
+    """The recording through the stage with the event log on (or off, when `log_dir` is None); returns the tamed samples."""
+    if log_dir is None:
+        monkeypatch.delenv("AI_RESTORE_EVENT_LOG", raising=False)
+    else:
+        monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(log_dir))
+    with (
+        patch.object(plosive_tamer, "APL_ENABLE_PLOSIVE_TAMER", True),
+        patch.object(plosive_tamer, "estimate_tonality", return_value=0.2),
+        patch("modules.plosive_tamer.log_msg"),
+    ):
+        return sf.read(str(plosive_tamer.apply_when_needed(source, work)), dtype="float32")[0]
+
+
+def _record(log_dir, source):
+    """The stage's event-log record for a recording."""
+    return json.loads((log_dir / event_log.record_name(plosive_tamer.STAGE, source)).read_text(encoding="utf-8"))
+
+
+def test_the_event_log_holds_the_plosives_found_and_changes_no_sample(blasted, tmp_path, monkeypatch):
+    """Each burst's logged event starts within ten milliseconds of it; the tamed samples are the same with the log off."""
+    source, _voice_signal = blasted
+    logged = _tame_with_log(source, tmp_path / "on", tmp_path / "events", monkeypatch)
+    record = _record(tmp_path / "events", source)
+    assert (record["count"], record["excess_db"], record["rate"]) == (4, plosive_tamer.APL_PLOSIVE_EXCESS_DB, RATE)
+    assert all(abs(start * RATE - position) < 0.010 * RATE for position, (start, _stop) in zip(POSITIONS, record["events_s"]))
+    assert np.array_equal(logged, _tame_with_log(source, tmp_path / "off", None, monkeypatch))
+
+
+def test_tonal_material_logs_why_the_stage_did_not_look(blasted, tmp_path, monkeypatch):
+    """A skipped recording leaves its reason in the log."""
+    source, _voice_signal = blasted
+    monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(tmp_path / "events"))
+    with (
+        patch.object(plosive_tamer, "APL_ENABLE_PLOSIVE_TAMER", True),
+        patch.object(plosive_tamer, "estimate_tonality", return_value=0.001),
+    ):
+        assert plosive_tamer.apply_when_needed(source, tmp_path / "work") == source
+    record = _record(tmp_path / "events", source)
+    assert (record["skipped"], record["count"], record["excess_db"]) == ("tonal material", 0, plosive_tamer.APL_PLOSIVE_EXCESS_DB)
+
+
+def test_a_failure_after_the_detection_replaces_the_events_with_the_error(blasted, tmp_path, monkeypatch):
+    """The repair raised, so the output carries none: the record says the stage failed, not what it found."""
+    source, _voice_signal = blasted
+    monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(tmp_path / "events"))
+    with (
+        patch.object(plosive_tamer, "APL_ENABLE_PLOSIVE_TAMER", True),
+        patch.object(plosive_tamer, "estimate_tonality", return_value=0.2),
+        patch.object(plosive_tamer, "tame_file", side_effect=OSError("disk full")),
+        patch("modules.plosive_tamer.log_msg"),
+    ):
+        assert plosive_tamer.apply_when_needed(source, tmp_path / "work") == source
+    record = _record(tmp_path / "events", source)
+    assert (record["skipped"], record["count"], record["events_s"]) == ("failed: disk full", 0, [])

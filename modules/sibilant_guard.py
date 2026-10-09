@@ -9,8 +9,20 @@ The guard finds the fricative events on the audio the neural stage was given -- 
 above the recording's floor whose energy sits mostly above the guard frequency and whose
 zero-crossing rate is noise-like, in runs a fricative's length -- and inside those events
 only puts a share of the reference's high band back into the restored audio. Outside the
-events the output is the restored audio to the bit. Tonal material skips the stage: a
-cymbal or a violin's upper partials read as fricatives on every one of those terms.
+events the output is the restored audio to the bit. There is no tonal skip, unlike the
+plosive tamer: the Tata tapes, where the listener heard the 's' distorted, read tonal
+(flatness 0.022). The detector's own rules keep a cymbal or a held note out: most of the
+hop's energy above the guard frequency, a zero-crossing rate a voiced sound never reaches,
+and a fricative's length (20-400 ms).
+
+With `AI_RESTORE_EVENT_LOG=<dir>` set, the events the detector found on the reference are
+written there as seconds (`modules/event_log.py`), with the guard frequency, high-band share
+and mix they were found and guarded at, so the harness can measure how many of the
+fricatives the stage actually reaches: at a high-band share of 0.5 it caught 3 events in
+five minutes of Vaccin against the harness's 30. Switched off, the record says so
+(`skipped`), and a stage that raised records `failed: <error>` (a failure after the
+detection replaces the events, since the output then carries no guard). Unset, nothing is
+written.
 """
 
 from pathlib import Path
@@ -19,6 +31,7 @@ import numpy as np
 import scipy.signal
 import soundfile as sf
 
+from . import event_log
 from .config import APL_ENABLE_SIBILANT_GUARD, APL_SIBILANT_GUARD_HZ, APL_SIBILANT_HF_SHARE_MIN, APL_SIBILANT_MIX
 from .hygiene import atomic_target
 from .impulse_repair import _spans
@@ -43,6 +56,7 @@ ZCR_MIN = 0.12
 PAD_S = 0.5
 BLOCK_SAMPLES = 1 << 20
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
+STAGE = "sibilant_guard"
 
 
 def _high_pass(guard_hz, rate):
@@ -182,9 +196,15 @@ def _skip_reason(reference_wav):
     return None
 
 
+def _thresholds():
+    """The settings every record of the stage carries."""
+    return {"guard_hz": APL_SIBILANT_GUARD_HZ, "hf_share_min": HF_SHARE_MIN, "mix": APL_SIBILANT_MIX}
+
+
 def _guarded(reference_wav, restored_wav, audio_dir):
     """The guarded file and the number of events it covers; the restored input and zero when there is nothing to guard."""
-    events, _rate = detect_events(reference_wav)
+    events, rate = detect_events(reference_wav)
+    event_log.write_spans(STAGE, reference_wav, events, rate, **_thresholds())
     if not events:
         return restored_wav, 0
     output_dir = Path(audio_dir) / "sibilant_guard"
@@ -204,6 +224,7 @@ def apply_when_needed(reference_wav, restored_wav, audio_dir, strategy=None):
     del strategy
     reason = _skip_reason(reference_wav)
     if reason is not None:
+        event_log.write_skip(STAGE, reference_wav, reason, **_thresholds())
         if reason != "switched off":
             log_msg(f"    [Sibilant Guard] Skipped: {reason}.")
         return restored_wav
@@ -211,6 +232,7 @@ def apply_when_needed(reference_wav, restored_wav, audio_dir, strategy=None):
         produced, count = _guarded(reference_wav, restored_wav, audio_dir)
     except STAGE_FAILURES as exc:
         log_msg(f"    [Sibilant Guard] Skipped after failure: {exc}")
+        event_log.write_skip(STAGE, reference_wav, f"failed: {exc}", **_thresholds())
         return restored_wav
     if count == 0:
         log_msg("    [Sibilant Guard] Skipped: no sibilants found.")

@@ -68,6 +68,39 @@ poetry run pytest tests/integration/test_end_to_end.py -v
 poetry run python tests/tooling/quality_gate.py
 ```
 
+## Tool Quirks That Cost Time
+
+- **The conftest updates the badge only from this session's reports.**
+  `tests/conftest.py`'s `pytest_sessionfinish` returns early under `--no-cov` or
+  without `--cov` (pytest-cov's `_cov` plugin not registered). With `--cov` it
+  rebuilds `assets/coverage.svg` and runs the per-file gate only from a
+  `coverage.xml` / `coverage.json` this session wrote (`pytest_sessionstart`
+  records their modification times and the finish compares them), so a stale
+  report from an earlier run is never read
+  (`tests/unit/test_conftest_coverage_hook.py`). Until 2026-10-09 every session
+  rewrote the badge from the `coverage.xml` in its working directory, `--no-cov`
+  included, and a targeted run from the repository root moved it (95.68% to
+  95.87%). A targeted `--cov ... --cov-report=xml` run from the root still
+  writes partial coverage there and moves the badge, so take the committed badge
+  from the full quality gate run (whose runners also run `quality_gate.py` and
+  `badge_report.py` as their own steps) and run targeted coverage from an empty
+  directory.
+- **`--cov` takes a path, not a dotted module.**
+  `pytest --cov=scripts.restoration_quality.auditory` fails at collection
+  with numpy's "cannot load module more than once per process"; pass the
+  package directory instead (`--cov=scripts` or
+  `--cov=scripts/restoration_quality`). With other agents in the checkout,
+  give coverage a private data file (`COVERAGE_FILE` under the temp
+  directory) and pass `-p no:cacheprovider`.
+- **Never run a tool with a directory of stray `.py` files as the working
+  directory.** Python puts the working directory (or a script's own
+  folder) first on the import path, so a stray file there shadows a real
+  module. On 2026-10-09 radon, run from a session scratchpad, imported an
+  old probe named `six.py`, which rewrote `scripts/cli_paths.py` before it
+  failed; the file was restored from `HEAD`. Run pytest, radon and the
+  linters from the repository root or from an empty directory, and keep
+  probe scripts in a folder of their own, run by path.
+
 ## Mocking Conventions and Invariants
 
 1. **Subprocess Isolation**: Never invoke real external binaries (FFmpeg,

@@ -1,0 +1,143 @@
+# Ear v3 grid for the Tata speech tapes (plan Part 1 / 1.5, design section 5.3, critique fixes).
+#
+# Every ranked reading is a two-sided distance from what the listener accepted, never a raw
+# direction (principle 1): `weight * max(0, |x - target| - dead_zone) / scale`, lower is better,
+# so everything inside the dead zone ties. `scripts/tune_restoration.py` ranks these distances
+# (weighted mean rank) and `scripts/restoration_quality/reward.py` reads the same entries for
+# its per-family win rates (`family` names the family; the worst family decides). Keys are the
+# flat aggregates of `runner.aggregates_for_tuning` (metric.side.stat).
+#
+# Starting values, measured read-only on 2026-10-09 (medians over the speech windows; the
+# runner clips R2 and R4 to R0's brickwall, R1 to R0's programme bandwidth). Round 0 re-derives
+# every target and dead zone on Tele7abc and tests them on SOTI / Vaccin (critique 29); until
+# then each entry is UNCALIBRATED and says what it stands on:
+# - "v2 finals": the round-2 files the user accepted (2026-10-05: pauses natural on both, APL
+#   better than cathar on speech, APL's 's' still thin), `D:\Tata\New folder\variants\v2`,
+#   Tele7abc / SOTI / Vaccin;
+# - "v4_air": APL with the 7.5 kHz air shelf at +2 / +1 dB / off (round 3, 2026-10-08: +1 over
+#   +2 and off; +2 is what round 2 heard thin);
+# - "round 1": the Tele7abc listening cache (2026-09-20): cathar alpha 2 on 0.7.6 "has hiss",
+#   the same on 0.7.5 clean and ranked first, APL baseline "silent in pauses" (dead air) and
+#   "distortion of spoken 's'".
+# `scale` is the reading's benign floor where one was measured (what hiss removal or a fresh
+# realisation of the same noise moves it), so a distance counts in floors.
+#
+# Weights: speech-side readings (timbre, sibilance) 1.5, noise-side 1.0 [S: speculative, the
+# P.835 SIG/BAK prior, English population data].
+#
+# Not ranked here, on purpose:
+# - dsp.hf_4k8k / dsp.hf_8k16k: one-sided, they ranked a brighter top better (tata_v2 ranked
+#   hf_4k8k "up" while the user heard +2 dB air thin); they stay as backstop gates in gates.py;
+# - dsp.residual_noise_db, file.noise_removed_db: more noise removed is shown, never ranked;
+# - dsp.lkr: a hard gate (backstop) until R10 reproduces a musical-noise verdict;
+# - dsp.gap_pause_s: the seconds of true pause R4 stands on (coverage, shown beside it);
+# - dsp.balance_top_db: presence or air, what the bright / dull flags read (gates.py);
+# - the sync (file.sync_*): hard gates in gates.py, not a distance;
+# - learned judges: vetoes only (below), never in the score.
+
+excerpt_s: 125
+margin_s: 5
+
+engines:
+  cathar: {process_mode: cathar, suffix: _Cathar_Cleaned}
+  apl: {process_mode: auto_pure_linear, suffix: _PureLinear_Cleaned}
+
+gates:
+  max_failed_excerpts: 1
+
+ranking:
+  # --- timbre (R1, balance_metrics.py): programme-cell balance against the source.
+  # v2 finals: tilt APL -0.04 / +0.01 / +0.04, cathar -0.27 / -0.55 / -0.04 dB/oct; presence APL
+  # -0.06 / 0.00 / -0.03, cathar -0.36 / -0.60 / -0.12 dB. v4_air: R1 cannot see the 7.5 kHz
+  # shelf where the programme band ends at 4.5 / 5.0 kHz (presence and tilt move <= 0.04);
+  # Vaccin's air reads +0.43 / +0.17 / -0.05 for +2 / +1 / off. Benign floor (oracle hiss
+  # removal on realistic-v2, p90): tilt 0.02-0.09 dB/oct, presence 0.01-0.12, air 0.18-0.24,
+  # body 0.04-0.10 dB.
+  dsp.balance_tilt_db_oct.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.1, weight: 1.5, family: timbre}
+  dsp.balance_presence_db.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.1, weight: 1.5, family: timbre}
+  # +1 dB inside, +2 dB outside on Vaccin; unread on Tele7abc and SOTI (nothing passes above 5 kHz).
+  dsp.balance_air_db.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.25, weight: 1.5, family: timbre}
+  # v2 finals: APL -0.80 / -0.95 / -0.55, cathar +0.48 / 0.00 / -0.01; both accepted.
+  dsp.balance_body_db.output.median: {target: 0.0, dead_zone: 1.0, scale: 0.1, weight: 1.5, family: timbre}
+
+  # --- sibilance (R2, sibilance.py): the 's' after R1's gain match, and its texture.
+  # Abs level: v4_air +2 / +1 / off = +0.53 / +0.25 / -0.04 (Tele7abc), +0.27 / +0.14 / -0.01
+  # (SOTI), +0.63 / +0.32 / +0.03 (Vaccin); v2 finals cathar -0.04 / -0.29 / +0.36 (accepted).
+  # +-0.40 holds every accepted file and two of the three thin ones out (SOTI's +2 reads +0.27,
+  # inside: R2 alone cannot call it there). Benign floor 0.05 dB (hiss removal, sibilance.py).
+  dsp.sib_abs_level_db.output.median: {target: 0.0, dead_zone: 0.4, scale: 0.05, weight: 1.5, family: sibilance}
+  # Texture: round 1 APL baseline / no_air / roformer ("distortion of spoken 's'") +2.18..+2.26,
+  # the cathar renders +0.83..+1.34; v2 finals +0.04..+0.33. The dead zone ends at the midpoint
+  # (1.75). Benign floor: static filters < 0.05, hiss removed above the band -0.1..-0.2.
+  dsp.sib_texture_db.output.median: {target: 0.0, dead_zone: 1.75, scale: 0.2, weight: 1.5, family: sibilance}
+  # The net centroid shift (v2): -600..+300 Hz, the two v2 flags (sibilance_dull / _thin); APL
+  # baseline read +629 Hz (thin), cathar -100..-380 (de-esser, accepted). Scale [S].
+  dsp.sib_centroid_hz.delta.median: {target: -150.0, dead_zone: 450.0, scale: 50.0, weight: 1.5, family: sibilance}
+
+  # --- pauses (R4, pause_metrics.gap_residual_readings): the residual in the true pauses.
+  # Attenuation: v2 finals APL 3.3 / 8.1 / 8.3, cathar 9.0 / 14.1 / 12.0 dB (pauses natural on
+  # both). It does not order round 1 alone (hiss 42.3, clean 42.8, dead APL 38.4 dB): the shape
+  # readings below carry that; this one keeps a candidate from undoing the denoise. Session 0's
+  # sweep sets the user's own target before the pause-texture round (A3).
+  dsp.gap_atten_db.output.median: {target: 8.7, dead_zone: 5.4, scale: 1.0, weight: 1.0, family: pauses}
+  # Slope: v2 finals APL -0.11 / -0.14 / +0.34, cathar +0.60 / +1.08 / +1.23; round 1 hiss
+  # +1.91, clean +1.09 / +0.16, dead -4.40 dB/oct. Fresh hiss realisation: 0.15.
+  dsp.gap_slope_db_oct.output.median: {target: 0.0, dead_zone: 1.5, scale: 0.15, weight: 1.0, family: pauses}
+  # HF excess: v2 finals APL -0.29 / -0.48 / -0.07, cathar +1.28 / +2.31 / +1.67; round 1 hiss
+  # +3.11, clean +0.49 / -0.02, dead -13.67 dB. Fresh hiss realisation: 0.67.
+  dsp.gap_hf_excess_db.output.median: {target: 0.0, dead_zone: 2.7, scale: 0.67, weight: 1.0, family: pauses}
+  # Spread, LSD: v2 finals up to 2.74 / 3.49 dB; fresh hiss LSD 0.44; spread scale [S].
+  dsp.gap_spread_db.output.median: {target: 0.0, dead_zone: 3.0, scale: 0.5, weight: 1.0, family: pauses}
+  dsp.gap_lsd_db.output.median: {target: 0.0, dead_zone: 3.5, scale: 0.44, weight: 1.0, family: pauses}
+  # Modulation: v2 finals 3.97-5.96; round 1 clean (0.7.5) 9.9; synthetic islands 12.4, a gated
+  # residual 9.8; fresh hiss 1.2.
+  dsp.gap_mod_dist_db.output.median: {target: 0.0, dead_zone: 10.0, scale: 1.2, weight: 1.0, family: pauses}
+  # Island kurtosis: v2 finals -0.00..+0.52; round 1 clean 1.73 / 0.96, hiss 1.75, dead 0.18.
+  dsp.gap_island_kurt.output.median: {target: 0.0, dead_zone: 1.8, scale: 0.1, weight: 1.0, family: pauses}
+
+  # --- level (R7, file_metrics.gain_ride): v2 finals p95 APL 1.13 / 0.96 / 1.80, cathar
+  # 1.55 / 0.82 / 1.66 LU. Shown, not flagged, until the loudnorm_ride degradation calibrates
+  # it; here only a ride beyond every accepted file costs. Scale [S].
+  file.gain_ride_lu.output.median: {target: 0.0, dead_zone: 1.8, scale: 0.2, weight: 1.0, family: level}
+
+# The three sections below are the loop's guards (plan 1.5); `scripts/autotune_restoration.py`
+# applies them and `tune_restoration.py` reads none of them. A v1 / v2 grid has none, so its
+# loop judges as before.
+#
+# Learned judges are vetoes, never in the score (principle 7; critique 16): a candidate cannot
+# win when, on some tape, the median moved the `worse` way from the incumbent's by more than
+# `floor_multiple` x its benign floor (`--noise-floors`, the reward_noise_floor report of the
+# shipped outputs; default experiments/reward/noise_floor.json), or was lost while the
+# incumbent read it (reward.vetoed_readings, then reward.gate_constraints(learned_veto=...)).
+# Tails are never read. A veto with no floor in the report stops the loop before it renders:
+# without the report this grid does not run, and the report reads only the families it was
+# run with (--families speech,mos here; the default is dsp only). A floor of 0 stops it the
+# same way, named with the reading: CER read at --repeats 1 can have a p95 deviation of
+# exactly 0, and a limit of 0 would veto any move the worse way, Whisper's own jitter
+# included. Measure with --repeats 2 or more, or with resample_roundtrip in --transforms.
+vetoes:
+  speech.cer.output.median: {worse: up, floor_multiple: 3}
+  speech.speaker_cos.output.median: {worse: down, floor_multiple: 3}
+  speech.utmos.delta.median: {worse: down, floor_multiple: 3}
+  mos.scoreq_nr.delta.median: {worse: down, floor_multiple: 3}
+  mos.sigmos_col.delta.median: {worse: down, floor_multiple: 3}
+  mos.sigmos_disc.delta.median: {worse: down, floor_multiple: 3}
+
+# The verdict-reversal guard: a ledger boundary per entry (assets/quality_calibration/
+# verdicts.jsonl). A move that heads the rejected way and ends at the value or past it is
+# refused before it is rendered (reward.reversals_refusing); a move back is never refused.
+reversals:
+  # Round 3 (2026-10-08), every tape: air +1 dB over +2 dB and off (the 's' less thin).
+  - {key: linear_air_gain_db, rejected_above: 2.0, verdict: r3-air-preference}
+
+# The audibility tie (principle 6): a candidate auditory.compare_files cannot tell from the
+# incumbent on any tape is a tie, never scored and never accepted. offset_db is the masked
+# threshold's offset under the spread excitation (auditory.MASKING_OFFSET_DB, calibrated
+# 2026-10-09: air +1 vs +2 dB audible on every tape, the v3 sibilance final vs v2 inaudible).
+audibility: {offset_db: 24.0}
+
+variants:
+  cathar:
+    baseline: {}
+  apl:
+    baseline: {}

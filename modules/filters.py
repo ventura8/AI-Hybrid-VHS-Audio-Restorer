@@ -4,7 +4,8 @@ Provides filter graph generation, model path resolution, character escaping,
 and robust process execution for VHS native DSP restoration and pre-conditioning:
 - Stage 1: Hardware DC Offset Bias Removal (2 Hz sub-audible highpass filter).
 - Stage 2: Stereo Channel Balance Auto-Leveling (Left/Right channel RMS balancing).
-- Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay).
+- Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay;
+  a polarity-inverted pair is logged, and read as no skew behind azimuth_reject_inverted_pair).
 - Stage 4: Analog Preamp De-Clipping (peak clipping threshold reconstruction via adeclip).
 - Stage 5: Impulsive Pop/Click Suppression (adeclick) and Motor Rumble Highpass (45-75 Hz).
 - Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters).
@@ -15,6 +16,7 @@ and robust process execution for VHS native DSP restoration and pre-conditioning
 
 import hashlib
 import http.client
+import math
 import urllib.parse
 from pathlib import Path
 
@@ -36,6 +38,7 @@ from .config import (
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
+    AZIMUTH_REJECT_INVERTED_PAIR,
     CRT_NOTCH_Q,
     ENABLE_ADECLICK,
     ENABLE_DYNAMIC_EXPANDER,
@@ -712,14 +715,55 @@ def _is_valid_stereo(stereo_audio):
 AZIMUTH_MIN_CORRELATION = 0.3
 
 
-def _channel_correlation(left, right):
-    """Absolute Pearson correlation between two channels; 0.0 if either is silent."""
+def signed_channel_correlation(left, right):
+    """Pearson correlation between two channels with its sign; 0.0 if either is silent.
+
+    A pair wired or captured with one channel's polarity inverted reads near -1: the same
+    content, upside down.
+    """
     left_centred = left - np.mean(left)
     right_centred = right - np.mean(right)
     denom = float(np.sqrt(np.sum(left_centred**2) * np.sum(right_centred**2)))
     if denom <= 0.0:
         return 0.0
-    return abs(float(np.sum(left_centred * right_centred) / denom))
+    return float(np.sum(left_centred * right_centred) / denom)
+
+
+def _channel_correlation(left, right):
+    """Absolute Pearson correlation between two channels; 0.0 if either is silent."""
+    return abs(signed_channel_correlation(left, right))
+
+
+def _refuses_inverted_pair(correlation):
+    """Flags a polarity-inverted pair in the log; True when the configuration refuses to read a lag from one.
+
+    The gate reads |r|, so an inverted pair (r near -1) passes it, and the lag the
+    cross-correlation's maximum then gives is not the skew: for L and -L the maximum is where
+    the programme's own autocorrelation is most negative, half a period of its strongest
+    partial. Measured with this detector on L/-L pairs at 44.1 kHz: a 1 kHz tone reads
+    -0.50 ms, a 2 kHz tone -0.25 ms, noise low-passed at 3 kHz -0.23 ms, each of which the
+    pre-conditioning would "correct" with a delay; a 200 Hz-led voice (half period 2.5 ms,
+    outside the 1 ms window) and white noise read 0. `azimuth_reject_inverted_pair` (off by
+    default, so every output stays the same bytes) returns no skew for such a pair instead.
+    """
+    refused = bool(AZIMUTH_REJECT_INVERTED_PAIR)
+    action = "no azimuth delay read from it" if refused else "the azimuth delay read from it is unreliable"
+    log_msg(f"    [Auto-Scan] Channels are polarity-inverted (r={correlation:.2f}); {action}.")
+    return refused
+
+
+def _azimuth_pair_usable(left, right):
+    """Whether a lag read between two channels can be an azimuth skew: they share content, and in phase unless allowed.
+
+    Only a correlation at or under -AZIMUTH_MIN_CORRELATION is an inverted pair; everything
+    else meets the |r| gate as before. A NaN correlation (a channel holding NaN samples)
+    fails every comparison, so the gate has always let it through; it still does, and it
+    is not flagged as inverted.
+    """
+    correlation = signed_channel_correlation(left, right)
+    if correlation <= -AZIMUTH_MIN_CORRELATION:
+        return not _refuses_inverted_pair(correlation)
+    return math.isnan(correlation) or abs(correlation) >= AZIMUTH_MIN_CORRELATION
 
 
 def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
@@ -737,7 +781,7 @@ def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
         return 0.0
     left = stereo_audio[:32768, 0]
     right = stereo_audio[:32768, 1]
-    if _channel_correlation(left, right) < AZIMUTH_MIN_CORRELATION:
+    if not _azimuth_pair_usable(left, right):
         return 0.0
 
     corr = np.correlate(left - np.mean(left), right - np.mean(right), mode="full")

@@ -581,6 +581,11 @@ _BOOL_CONFIG_FIELDS = (
     # The listener-round stages: the pause floor and the sibilant guard were accepted by the
     # loops (see the numeric keys); the stem path was not and stays off.
     ("enable_pause_floor", True),
+    # A pair correlating at r <= -0.3 is one channel polarity-inverted; the |r| azimuth gate
+    # passes it and reads a false skew (L/-L: 1 kHz tone -0.50 ms, 2 kHz -0.25 ms; see
+    # modules/filters.py). The scan always logs such a pair; on, it reads no skew from it.
+    # Off by default so every output stays the same bytes.
+    ("azimuth_reject_inverted_pair", False),
     ("apl_music_stem_path", False),
     ("apl_enable_sibilant_guard", True),
     ("cathar_enable_deesser", True),
@@ -614,6 +619,10 @@ _BOOL_STRINGS = {
 VALID_CATHAR_DENOISE_METHODS = {"spectral", "wiener"}
 VALID_CATHAR_AZIMUTH_METHODS = {"correlation", "gcc-phat"}
 VALID_CATHAR_ENHANCE_METHODS = {"replicate", "interpolate"}
+# The mux's answer when loudnorm would leave linear mode for the true-peak rule alone: 'ffmpeg'
+# rides the gain (dynamic mode, today), 'gain_limiter' applies one gain and the mux's sample-peak
+# limiter (-1 dBFS), which can leave intersample overs (see modules/mastering.py).
+VALID_LOUDNORM_LINEAR_FALLBACKS = {"ffmpeg", "gain_limiter"}
 
 
 def _reject_config_value(param_name, raw_value, default):
@@ -639,6 +648,10 @@ def _normalize_cathar_azimuth_method(raw_value):
 
 def _normalize_cathar_enhance_method(raw_value):
     return _normalize_choice(raw_value, VALID_CATHAR_ENHANCE_METHODS, "cathar_enhance_method", "replicate")
+
+
+def _normalize_loudnorm_linear_fallback(raw_value):
+    return _normalize_choice(raw_value, VALID_LOUDNORM_LINEAR_FALLBACKS, "loudnorm_linear_fallback", "ffmpeg")
 
 
 def _is_bad_number(val):
@@ -739,6 +752,7 @@ def _apply_user_config(defaults, user_config):
     defaults["cathar_denoise_method"] = _normalize_cathar_denoise_method(defaults.get("cathar_denoise_method"))
     defaults["cathar_azimuth_method"] = _normalize_cathar_azimuth_method(defaults.get("cathar_azimuth_method"))
     defaults["cathar_enhance_method"] = _normalize_cathar_enhance_method(defaults.get("cathar_enhance_method"))
+    defaults["loudnorm_linear_fallback"] = _normalize_loudnorm_linear_fallback(defaults.get("loudnorm_linear_fallback"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -768,6 +782,14 @@ def load_config():
         # follows the chain's choice.
         "apl_neural_model": DEFAULT_APL_NEURAL_MODEL,
         "apl_music_neural_model": "",
+        # ffmpeg holds linear mode only while TP + (I_target - I) <= TP_target, LRA <= target and
+        # the measurement is set (I and LRA not 0, TP not 99, threshold not -70), and always on a
+        # programme under 3 s (mastering.linear_mode_blockers, given the duration the mux knows):
+        # of the 616 distinct decisions the run logs in the repository called "linear" on
+        # 2026-10-09, 229 (37%) broke the true-peak half and ran dynamic, riding the pauses.
+        # 'ffmpeg' keeps that and every output's bytes; 'gain_limiter'
+        # (VALID_LOUDNORM_LINEAR_FALLBACKS) is for the pause-texture round to judge.
+        "loudnorm_linear_fallback": "ffmpeg",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -916,6 +938,8 @@ ENABLE_LOUDNORM = bool(CONFIG.get("enable_loudnorm", True))
 ENABLE_DYNAMIC_EXPANDER = bool(CONFIG.get("enable_dynamic_expander", True))
 ENABLE_LINEAR_AIR = bool(CONFIG.get("enable_linear_air", True))
 LOUDNORM_TARGET_LRA = float(CONFIG.get("loudnorm_target_lra", 20.0))
+LOUDNORM_LINEAR_FALLBACK = str(CONFIG.get("loudnorm_linear_fallback", "ffmpeg"))
+AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
 CRT_NOTCH_Q = float(CONFIG.get("crt_notch_q", 30.0))

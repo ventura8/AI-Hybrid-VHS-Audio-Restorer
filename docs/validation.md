@@ -54,6 +54,8 @@ export AI_RESTORE_DATA_ROOTS=/media/tapes
 The restorer itself does not read this variable. The tuning loop
 (`scripts/autotune_restoration.py`) adds each tape's folder to it for the
 scorer it launches, so a loop over tapes on another drive needs nothing set.
+The audibility check (`scripts/audibility_check.py`) and the listening tool
+(`python -m scripts.listen_ab`) need it set for the family tapes on `D:\Tata`.
 
 ## Fast Spot Checks
 
@@ -549,8 +551,14 @@ native-rate DSP on the source's own frame classes, reproduce the verdicts
 - `dsp.gap_air_db`: the 3-10 kHz power in the inter-word gaps (source
   frames between the p15 and p40 levels) over the loud frames. Source -6 dB
   on Tele7abc; the "silent" outputs -27, the "hissy" one -18.5, the accepted
-  cathar 0.7.5 output -22.6. `listener.hiss` flags at or above -20,
-  `listener.dead_air` at or below -25.
+  cathar 0.7.5 output -22.6. `listener.hiss` flagged above -20 dB and
+  `listener.dead_air` flags below -25. Ear v3 made `listener.hiss`
+  display-only: the round-2 finals the user heard as natural pauses read
+  -8..-12, so the flag fired on accepted files and never moved (see "Ear
+  v3" below). A gates file sets its threshold but not its severity
+  (`gates.DISPLAY_ONLY`): the v2 `experiments/quality_calibration/gates.json`,
+  which both tuning drivers default `--gates` to and `score_listen.py`
+  passes, still lists it as a flag and had made the loops count it again.
 - `dsp.pause_depth_db`: the loud frames' median level minus the deep frames'
   (under p15), output minus source. The roformer variant +41 (the long
   pauses collapse), APL baseline +36, cathar +28..+32; `listener.pause_collapse`
@@ -578,24 +586,260 @@ round confirms their thresholds. Re-scored with them, the Tele7abc
 listening set flags exactly what the listener flagged and nothing they
 accepted (`experiments/tata_listen/check_verdicts.py`;
 `score_listen.py <slug> --dsp-rescore` re-reads the dsp family into a
-stored report, keeping the MOS, ASR and stem results).
+stored report, keeping the MOS, ASR and stem results). Since ear v3 made
+`listener.hiss` display-only, the check reports a ledger flag on it, or on
+any display-only or soft gate, as not asserted instead of checking it.
 
-Three learned readings were added beside them as guardrails: `mos.scoreq_nr`
+Four learned readings were added beside them as guardrails: `mos.scoreq_nr`
 (SCOREQ, NeurIPS 2024, the no-reference MOS that with UTMOS correlated best
 with listeners in URGENT 2024; the "natural" model's ONNX export, vendored
-from Zenodo, 16 kHz), `mos.dnsmos_gap` (P.835 SIG minus BAK: the voice
-paying for the quiet), `speech.ssl_dist` (the cosine distance between the
+from Zenodo, 16 kHz; whether URGENT 2024 evaluated this variant is not
+verified, so it vetoes on its median and is never ranked), `mos.dnsmos_gap`
+(P.835 SIG minus BAK: the voice paying for the quiet), `speech.ssl_dist`
+(the cosine distance between the
 WavLM encoder's mean-pooled layer-6 states of source and output, an
 over-suppression reading that needs no transcript), and `stems.mert_dist`
 (MERT-v1-95M embedding distance on the full mix, the most balanced correlate
 with listeners in a 2025 separation test). `dsp.zimtohrli_loud` (Google's
 48 kHz psychoacoustic distance on the loud frames) has its loader but no
-binding: the PyPI wheel is published by a third party, not by the project,
-so it is not installed. An audio-LLM A/B judge was deliberately left out:
-the published evidence is system-level, open models collapse to one score,
+binding: the PyPI wheel is published by a third party, not by the project.
+The user approved installing it on 2026-10-08 (it needs only numpy); until
+it is provisioned the reading records unavailable. MERT's weights are
+CC-BY-NC-4.0, kept for research use by the same decision. An audio-LLM A/B
+judge was deliberately left out: the published evidence is system-level,
+open models collapse to one score,
 positional bias needs both orders, and nothing was validated on Romanian or
 tape; it would only ever break ties between near-equal winners at the end,
 never score inside the loop.
+
+### Ear v3
+
+The user's ear found three things the v2 harness could not see, and ear v3
+(Phase 0, built 2026-10-09 to the plan approved on 2026-10-08) is built
+around them:
+
+- a whole-spectrum tilt. The `auto_pure_linear` air shelf at +2 dB (7.5 kHz)
+  lifted the output about 1.6 dB above 4 kHz on every frame, and the user
+  heard the 's' as thin. The sibilance readings are net of the plain frames
+  and the gap readings are relative to the same side's loud frames, so a
+  change that lifts every frame cancels in both; the least-squares gain
+  match can absorb a tilt; `tata_v1.yaml` and `tata_v2.yaml` rank
+  `dsp.hf_4k8k.delta.median` up, and the HF gates are one-sided. In each of
+  the 16 rounds of the four APL loops a +1 dB candidate was scored; it
+  ranked behind the +2 dB incumbent in 15 and lost to another accepted move
+  in the 16th. The user chose +1 dB by ear (2026-10-08).
+- a stage that touched almost nothing. At a high-band share of 0.5 the
+  sibilant guard's detector found 3 events in five minutes of Vaccin where
+  the harness found 30 (12.5% of its fricative frames), and two loops tuned
+  its mix and crossover on changes of -70..-100 dBFS.
+- a flag that never moved. The round-2 finals the user heard as natural
+  pauses read `gap_air` -8..-12 dB, and cathar alpha 2 ("has hiss", round 1)
+  -15..-18.5: gap level alone does not order the verdicts.
+
+So every reading is now ranked as a two-sided distance from what the user
+accepted, `weight * max(0, |x - target| - dead_zone) / scale`, never as a
+raw direction; every net reading gets an absolute twin; timbre is read on
+programme cells only (time-frequency cells where the source stands at least
+12 dB over its own floor on loud frames), gain-matched on the 300-3000 Hz
+programme cells; a capture profile per source clips the readings to what
+the source can hold; an event reading reports how many events it stands
+on; a candidate inaudibly different from the incumbent is a tie; learned
+judges veto on their median beyond three times their benign floor and are
+never summed into a score; speech, music and mixed have their own grids;
+and a reading is admitted by a monotonic response on the calibration
+degradations and a benign floor, with the user's verdicts as falsifiers.
+Every threshold and target is uncalibrated until Round 0 re-scores the
+stored listening files, derives them on Tele7abc and tests them on SOTI and
+Vaccin.
+
+#### The new readings
+
+- **The capture profile (R0)**, `scripts/restoration_quality/source_profile.py`,
+  read once per source on the raw multichannel file and cached under the
+  scorer's cache (`profile/<source key>_<code hash>.json`), shown as
+  `meta.*`: the programme bandwidth (the highest 1/6-octave band where the
+  loud frames stand 3 dB over the inter-word gaps), the brickwall cut (a
+  codec low-pass), the mains frequency read on 1 s frames, the CRT line's
+  frequency, wander and origin, and the channel state with the signed
+  correlation. The hum and whistle readings now take the profile's mains and
+  line instead of 50 Hz and 15625 Hz. On the Tata tapes the bands end at
+  4490 Hz (Tele7abc), 5040 Hz (SOTI) and 7127 Hz (Vaccin); Tele7abc and SOTI
+  have a dead right channel; every tape is 50 Hz; the lines on Tele7abc and
+  SOTI are steady (7 and 13 ppm) and do not follow the hum, so they come
+  from the playback chain, not the tape.
+- **Spectral balance (R1)**, `balance_metrics.py`: per 1-ERB band, the
+  median output-over-source level on programme cells, as a tilt above
+  1 kHz (`dsp.balance_tilt_db_oct`) and the presence (2-5 kHz), air (5 kHz to
+  the band) and body (100-300 Hz) levels. Hiss removal must not read as
+  dulling, so a cell must also stand 18 dB over its bin's noise and a band
+  that noise could fill reads nothing; on oracle hiss removal over
+  `artifacts/realistic-v2` it then moves under 0.25 dB at p90 (it read up to
+  -15 dB of air without the guards). The flags `listener.bright` and
+  `listener.dull` read presence or air at +1 and -1 dB. R1 cannot see the
+  's' (no 's' frame is a loud frame), and a reading needs a band of R1's
+  own 1-ERB layout under the clip: air gets its first band only under a
+  5292 Hz band, presence under 2125 Hz and the tilt its third band under
+  1408 Hz (`balance_metrics.readable_from_hz`), so where a tape's band ends at
+  4.5-5 kHz R1 cannot see the air shelf either. A window whose source holds an
+  analog mute reads R1 None (`runner.holds_mute`: 5% of its live 20 ms frames
+  15 dB or more under the source's floor); without the guard the quiet frames
+  measure the mute and read hiss removal as about -19 dB of air. The floor
+  (`runner.mute_floor_db`) is the median of each programme window's p10 when
+  there are seven windows or more (`MUTE_MEDIAN_WINDOWS`): a mute up to 7.5 s
+  touches three windows at most, so it cannot own it. Below that it is the
+  higher of the median (`median_floor_db`) and the p25 of every live frame in
+  them (`span_floor_db`), the median taking the higher middle p10 of an even
+  count, so a mute sets the floor only when it fills more than half the windows
+  and a quarter of the span. Each alone missed one: a 15 s pair's two
+  windows both cover its last 7.5 s, so a 2 s mute owned the median; a 4 s mute
+  owned the median of five windows on 37.5-40 s pairs; a blank lead-in (4 s
+  before 11 s of speech, 8 s before 15 s, 10 s before 20 s, 60 s before 15 s)
+  owned the p25. Measured 2026-10-09, with the median alone in brackets:
+  realistic-v2 `_vhs` 0 of 920 windows skipped (0), `_clean` 23 (0), `_target`
+  293 (95); IA 20 of 109 (6), three of them over two -86 dBFS stretches the
+  median missed (3.5 s at the end in windows 1-2, 1.06 s at the start in
+  window 0) and two the 8.2 s at -62 dBFS that open jakki-brambles; Tata 1 of 137
+  (1). Every misreading window of a 1-4 s mute at -90 to -65 dBFS on 15-50 s
+  pairs is guarded, except a 4 s mute in 15 s (24% at every depth).
+- **The 's' read absolutely (R2)**, `sibilance.py`: `dsp.sib_abs_level_db`,
+  the fricative frames' level from 4 kHz up after R1's gain match, and
+  `dsp.sib_texture_db`, the roughness of the 's' spectrum. Both are clipped
+  to the brickwall rather than the programme band, which is read on voiced
+  frames. On the air-shelf set (+2 / +1 dB / off) the level reads
+  +0.53 / +0.25 / -0.04 dB on Tele7abc and +0.63 / +0.32 / +0.03 on Vaccin.
+  The texture separates round one's "distortion of spoken 's'" (APL
+  baseline, no_air, roformer: +2.18..+2.26) from the cathar renders
+  (+0.83..+1.34), and APL no_air reads level +0.05 against the baseline's
+  +0.72: its "thin" was texture, not level.
+- **The residual in the true pauses (R4)**, `pause_metrics.py`:
+  `dsp.gap_atten_db`, `gap_slope_db_oct`, `gap_spread_db`,
+  `gap_hf_excess_db` (4-10 kHz minus 0.2-1 kHz), `gap_lsd_db`,
+  `gap_mod_dist_db`, `gap_island_kurt` and `gap_pause_s`, on every source
+  frame at or under p40 inside a non-speech run of at least 200 ms (a
+  four-band DSP VAD averaged over 60 ms; `AI_RESTORE_PAUSE_VAD=silero` asks
+  for silero-vad once it is installed). Hum leaves both sides first. On the
+  one Tele7abc pair where only the cathar binary differs, 0.7.6 (heard:
+  hiss) reads an HF excess of +3.11 dB and 0.7.5 (clean) +0.49; their
+  attenuation, 42.3 against 42.8 dB, does not separate them. No threshold
+  is set yet, and `listener.hiss` is display-only until Round 0 derives
+  R4's flags.
+- **Gain riding (R7)**, `file_metrics.py`: `file.gain_ride_lu`, the p95 of
+  the short-term loudness difference left once the static gain is removed,
+  over windows standing 10 LU over the source's floor. The accepted v2
+  finals read 0.82-1.80 LU on the speech tapes, so it is shown, not
+  flagged, until the `loudnorm_ride` degradation calibrates it.
+- **Sync**, `file_metrics.py`: `file.sync_drift_ms`, `file.sync_offset_ms`
+  and `file.sync_unmatched` from 8 s envelope anchors at the start, centre
+  and end of the raw pair, which every window reading aligns away. Hard
+  gates at one PAL video frame (40 ms) and no unmatched anchor; the 32 v2
+  final pairs read 4.7-5.4 ms of constant lag and under 0.3 ms of drift.
+
+The engine side of the coverage check is built: with
+`AI_RESTORE_EVENT_LOG=<dir>` set, the sibilant guard, the plosive tamer,
+the pause floor and the mux write what they found or did
+(`modules/event_log.py`). The harness reading that compares the guard's
+events with its own fricatives is the next piece.
+
+#### Audibility before ranking
+
+```powershell
+.\.venv\Scripts\python.exe scripts\audibility_check.py incumbent.wav `
+    candidate.wav --json audibility.json
+```
+
+The check hashes both decoded files, aligns the candidate to the incumbent (lag
+and polarity) and reads the time-domain difference against the incumbent's
+masked threshold per 1-ERB band and 2048-sample frame, over 15 s windows. The
+pair is audible when a window has 5% of its frames over the threshold or two
+frames 6 dB over it (a click, a dropout), or one frame anywhere 12 dB over it (a
+click near a frame boundary, which lands in one Hann frame: swept across one
+hop, the two-frame rule alone read a 1 ms click as a tie in 4 to 24 of 32
+positions, depending on its level). A pair the check cannot vouch for reads
+audible, never a tie: a NaN sample, two different multichannel counts (a mono
+side is repeated on every channel and compared per channel, not refused), or
+more than 50 ms left uncompared once aligned, head and tail together
+(`length_mismatch_s`). Before the length was counted, a render cut short, empty,
+or missing its first 91 ms read as a tie; now a delay over 50 ms, or an
+equal-length shift over 25 ms, reads audible. Equal PCM hashes make a pair
+identical only when its samples are finite: one NaN spreads over its whole
+channel when DC is removed, so two different broken renders decoded alike. Two
+values are declared assumptions: the incumbent's loud frames play at 65 dB SPL,
+and the masked threshold sits 24 dB under the spread excitation. The check is
+one-sided: "inaudible" is trusted and makes a candidate a tie that cannot win,
+is never played to the user and skips the learned judges; "audible" proves
+nothing about better. On the stored listening files (2026-10-09):
+
+| Pair | Tape | Audible share | Windows at 5% | NMR peak, dB |
+| :--- | :--- | ---: | ---: | ---: |
+| air +1 vs +2 dB | Tele7abc | 0.42 | 9/9 | 7.1 |
+| air +1 vs +2 dB | SOTI | 0.34 | 25/29 | 5.5 |
+| air +1 vs +2 dB | Vaccin | 0.45 | 31/31 | 11.5 |
+| air +1 vs +2 dB | Gaudeamus5 | 0.97 | 20/20 | 22.9 |
+| sibilance v3 vs v2 | Tele7abc | 0 | 0/9 | -1.8 |
+| sibilance v3 vs v2 | SOTI | 0 | 0/29 | -4.8 |
+| sibilance v3 vs v2 | Vaccin | 0 | 0/31 | -21.2 |
+| sibilance v3 vs v2 | Gaudeamus5 | 0.0015 | 0/20 | 0.0 |
+| 1-sample shift | Tele7abc | 0 | 0/9 | -200 |
+
+At a 20 dB offset SOTI's +1 dB against off becomes a tie; at 30 dB every
+anchor still holds. The air anchor rests on one unblinded preference, so the
+first listening session repeats it as an ABX.
+
+#### The verdict ledger and the listening tool
+
+Every verdict the user gives is one line of
+`assets/quality_calibration/verdicts.jsonl`, append-only
+(`scripts/restoration_quality/ledger.py` holds the schema): the files heard with
+their sha256, the windows, the question (`abx`, `pair`, `blend`, `flag` or
+`preference`), the answer and the user's own words. Flags and clean lists come
+only from those words, and `clean["*"]` marks an output accepted with no
+complaint. The 33 backfilled records cover rounds one to three.
+`experiments/tata_listen/check_verdicts.py` reads them and exits 2 when no
+stored report scores a judged label, so it can no longer pass on nothing. A flag
+on a display-only gate (`gates.DISPLAY_ONLY` or a soft gate; `listener.hiss`
+today) is reported as not asserted and checked neither flagged nor clean, and a
+stored report that still lists such a flag does not fail on it. A flag record
+that judges labels on display-only gates alone is counted on its own ("on
+display-only gates alone"), apart from the records not asserted (longer
+rankings, trials, empty flag records). On 2026-10-09 the run checks 3 records,
+leaves 4 not asserted, 0 on display-only gates alone and 26 waiting for the
+Round 0 re-score, and lists 6 `listener.hiss` flags as not asserted (the
+Tele7abc known set and listening flags, and the four round-two pause records).
+
+```powershell
+Set-Item Env:AI_RESTORE_DATA_ROOTS "D:\Tata"
+.\.venv\Scripts\python.exe -m scripts.listen_ab abx --tape vaccin `
+    --stim A=<file> --stim B=<file>
+```
+
+The page binds 127.0.0.1 only: family tapes never leave the machine, and no
+cloud or audio-LLM judge is used. `abx` runs 24 trials (17 right is
+p 0.032); `pair` asks which of two outputs is better with an explicit
+"same" and one replicate per block; `blend` finds the share of the
+candidate mixed into the incumbent the user hears 75% of the time. Cuts are
+8-12 s, aligned, loudness-matched on speech-active frames and placed where
+the two stimuli differ most audibly. The answers go to the ledger when the
+block ends.
+
+#### The reward and the preference head
+
+The loop uses the constraints and the noise floors below (see "The loop's
+v3 guards"); the group reward and the preference head are built for the
+training plan and not used by the loop yet.
+`python -m scripts.reward_noise_floor SOURCE=OUTPUT ... --out FILE.json`
+(as a module from the repository root) scores each output, then
+near-copies of it (one sample of delay, 16-bit requantisation, an opt-in
+resample round trip) against the same source, and writes each reading's
+test-retest floor (`readings.<key>.floor`). Run it on the shipped outputs:
+read at the identity point the floors come out 16-200 times too narrow.
+`scripts/restoration_quality/reward.py` turns a group of candidates into
+rewards: two-sided distances per reading, a missing reading counted as the
+group's worst, per-family win rates with the floors as the tie band, the
+worst family deciding; hard gates, verdict reversals and learned vetoes
+exclude a candidate and an inaudible one ties. `preference.py` fits a
+Bradley-Terry head on the user's pairwise answers (regularised logistic,
+leave one tape out) and picks the next pair to ask; it sets the grids'
+weights and checks them, and is never the loop's objective.
 
 ### Calibrating the output-quality metrics
 
@@ -660,6 +904,91 @@ Vaccin) found:
   Audiobox's production complexity, so the hand-set 0.3 and -0.5 would have
   vetoed the accepted outputs). Whisper's worst-decile CER is 0.3-0.7 on
   every restoration of hissy tape, so that gate is soft.
+
+The v2 gates came from a `--metrics dsp` run, so every speech, mos and stems
+gate kept its hand-set value, and the known-ordering composite (three
+learned judges) read 0 for every variant, ranking them in listing order.
+For ear v3 the calibration scores every family every time and re-scores a
+cached case that lacks one; ranks the known-ordering tapes by the v3
+two-sided score (`--grid`); takes the user's flags from the ledger; writes
+`gates_speech.json`, `gates_music.json` and `gates_mixed.json` beside the
+pooled `gates.json`; records for each gate how many verdicts it rests on,
+where they came from and how many listening rounds agree; and turns a
+listener flag into a hard gate only once two rounds agree. `--excerpts`
+runs the degradations a real tape can carry on cuts of the Tata tapes,
+since on Piper fixtures the gap readings moved only 0.02-0.37 dB. Each new
+degradation (`scripts/degradations_v3.py`: the app's own air shelf, a
+spectral tilt, four pause residuals, a Hi-Fi compander mistrack, a loudnorm
+ride, a phase-scrambled "robotic" voice, a band-limited source, treble
+dropouts, islands in the 's', a speed drift) declares which readings must
+move and which must not. Building them showed that FFmpeg's
+`treble=g:f=7500` is the RBJ shelf at Q 1/sqrt(2), that this shelf moves
+the net sibilance reading by a median 53% of the absolute one (so the net
+reading is asserted to stay under its absolute twin, not to stay still),
+and that full phase scrambling reads as a -0.8 to -1.2 dB/oct tilt.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\calibrate_quality_metrics.py `
+    --fixtures artifacts\realistic-v2 --languages en fr es `
+    --known-ordering assets\quality_calibration\known_ordering_v2.json `
+    --round r0 --out experiments\quality_calibration_v3
+```
+
+Without `--grid` the ranking uses every two-sided dsp reading at "no
+change" with a dead zone of three benign floors. `--grid` reads the
+entries with a `target` under a `reward:` key, else under `ranking:` (the
+v3 tuning grids: `tata_v3.yaml` 15 entries, `music_v3.yaml` 10), else at
+the top level, and refuses a file with none. The run reads and checks the
+grid before the synthetic suite, so a bad grid stops it in seconds instead
+of after hours of scoring.
+
+The rounds that agree are counted per gate, on the ledger rounds of the
+verdicts that gate rests on (`rounds` in each gate entry, shown as e.g.
+`2 (1, 4)` in `report.md`): a round counts only when the previous
+threshold still separates the gate's good and bad readings and those
+verdicts hold a round the previous entry's did not; the run's own round
+id is display only.
+Manifest lists and by-ear ranks name no ledger round, so a gate resting on
+them counts 1, and a `--no-ledger` run or a v2 gates file restarts the
+count. Counted on the run's id, a round-4 flag about another gate on
+another tape had promoted `dead_air`, `pause_collapse` and
+`sibilance_thin` to hard on round-1 evidence alone.
+
+The benign floor leaves out the readings a benign case changes by
+construction (`quality_degradations.benign_changes`): the 5, 30 and 60 ms
+shifts delay the raw pair, so its sync readings (`file.sync_offset_ms`,
+`file.sync_lag_*_ms`) read the shift itself, the fault the 40 ms gate
+stands for. With them in, the shifts set a 57 ms floor on realistic-v2
+en + fr and relaxed the 40 ms sync-offset gate to 172 ms; the drift, one
+constant lag, stays in the floor.
+
+A check that reads nothing is unscored and says why: `clipped` when the widest
+programme band R0 read over the degradation's cases
+(`calibration_checks._source_band`) leaves the reading no band of R1's own
+layout, so no case's band carries it (`balance_metrics.bands_under` and
+`readable_under`: air needs a band of 5292 Hz, presence 2125 Hz, the tilt's
+third band 1408 Hz, so a 5.0-5.29 kHz source such as the Italian speech target
+at 5040 Hz is clipped, and `report.md` shows 5292 Hz as where air is read from),
+`not read` otherwise. The widest, not the median (2026-10-09): with
+`--excerpts`, en (3000 Hz), Tele7abc (4490), SOTI (5040) and Vaccin (7127) pool
+under one name, and their median of 4765 Hz called an air reading Vaccin failed
+to give `clipped`, which the run prints as expected; it is now `not read`. The
+summary counts only real passes, prints how many non-blind checks are unscored
+and names every one R0's band clipped. Both air-shelf entries assert R1 air
+(non-blind): on every fixture the check reports `clipped` (speech targets
+1.1-5.0 kHz, music beds 1414 Hz, whose programme ends under 1.6 kHz). With
+`--excerpts` the speech entry asserts on Vaccin (R0 7127 Hz), where the runner's
+R1 path reads +0.135 / +0.27 / +0.54 dB for a +0.5 / 1 / 2 dB shelf (the cut
+mirrors it) on 30 of 61 windows, over a benign floor of 8e-5 dB; SOTI (5040 Hz)
+and Tele7abc (4490 Hz) clip it. Those numbers come from a probe of the runner on
+the whole source, not from a calibration run, and a failing non-blind check
+makes the run exit 1: run the calibration with a Vaccin excerpt (`--metrics dsp`
+is enough) before its gates are trusted.
+
+The calibration writes its gate files under `--out`; the tuning drivers
+still default `--gates` to the v2 `experiments/quality_calibration/gates.json`,
+so an ear v3 round names the v3 file:
+`--gates experiments\quality_calibration_v3\gates.json`.
 
 ### Fine-tuning on real tapes
 
@@ -742,6 +1071,94 @@ cathar identity reference was re-based on the new defaults and 0.7.6 (the
 previous reference is `experiments/cathar_ab_head_before_feedback_2026_09_26`).
 The listening set `D:\Tata\New folder\variants\v2` (every plateau beside its
 source, with `index.md`) is what confirms or overrides them by ear.
+
+### The loop's knob tables
+
+Before ear v3's rounds the loop's tables were re-read against the code paths
+that read each knob (2026-10-09). `apl_tonal_flatness_max` had been listed
+as dead with the subtraction stage off, but the plosive tamer and the hum
+canceller's series length read it: the tuned APL finals carried 0.01 where
+the shipped default is 0.035, and the Tata tapes read 0.022, so tuned APL ran
+the tamer and the 40-harmonic hum series and shipped APL does not. The first
+APL round (A0) settles which is better. `apl_music_persistence_min` decides
+which tapes take `apl_music_neural_model` (now a knob of its own), and
+`apl_noiseprint_tonal_s` also feeds the stem path's background suppressor.
+The music profile's de-esser switch, expander depth and CRT notch width are
+knobs; the music rounds could not move them before. The cathar binary knob
+(`[None, 0.7.6]`) is gone: once the installers provisioned 0.7.6 it
+rendered the same binary twice; it returns only for cathar 0.8.0 in round
+C0. `apl_neural_model` listed `[None, ROFORMER, ROFORMER_AGGR]`, one
+setting twice once the listener round made the Mel-RoFormer the default:
+from a start without the key every round rendered the default under its
+file name (found inert) and never proposed the aggressive model. It is now
+`[ROFORMER, ROFORMER_AGGR]`, seeded from the app's resolved value, so its
+one move is the aggressive model; a saved state holding None for such a
+knob is seeded too.
+
+A dead move is now left out twice. Before rendering, `INERT_WHEN` drops the
+knobs the incumbent's switches make dead (each entry names every switch it
+needs, `(when, knobs)`), and the tapes' lengths drop a print-length move
+that cannot change cathar's probe. After rendering, every candidate's audio
+is hashed per tape, exactly and with its DC offset kept, into
+`cands/<cid>/<slug>.audio_sha256.json`; a candidate that sounds byte for
+byte like the incumbent or an earlier candidate on every tape is logged as
+`inert` with a "knob-table finding" line in `log.md` and never scored. Inert
+renders had cost about 30% of a round.
+
+### The loop's v3 guards
+
+An ear v3 grid adds three sections the loop applies (plan 1.5,
+`scripts/autotune_guards.py`); the v1 and v2 grids have none of them, so
+their rounds are judged as before, and `tune_restoration.py` reads none of
+them:
+
+- `reversals:`, the verdict-reversal guard, one ledger boundary per entry:
+  `{key: linear_air_gain_db, rejected_above: 2.0, verdict: r3-air-preference}`
+  (round 3: +1 dB over +2 dB and off, on every tape). A move that heads the
+  rejected way and ends at the value or past it is refused before it is
+  rendered; a move back towards the accepted side never is. A key no engine
+  tunes stops the loop as a typo.
+- `audibility: {offset_db: 24.0}`, the audibility tie. After the hash, each live
+  candidate is compared with the incumbent per tape by `auditory.compare_files`,
+  stopping at the first audible tape, and the verdict is kept in
+  `cands/<cid>/<slug>.audibility.json`. A candidate inaudible on every tape is a
+  tie: not scored, never accepted. A pair the check cannot compare (other sample
+  rates) reads audible. It decodes whole files while no scorer runs; synthetic
+  stereo took about 1 s per 2 min. The stored verdict is keyed on
+  `auditory.VERDICT_RULE`, the two files and the offset, so a verdict an older
+  rule wrote is read again; bump `VERDICT_RULE` with any change to what
+  `compare_files` calls audible.
+- `vetoes:`, the learned median veto: a candidate whose median of a listed
+  learned judge moved the `worse` way from the incumbent's, on some tape, by
+  more than `floor_multiple` times that reading's benign floor, or lost a
+  reading the incumbent has, cannot win (`reward.gate_constraints` with
+  `learned_veto`). The floors come from `--noise-floors`, a `reward_noise_floor`
+  report of the shipped outputs (default `experiments\reward\noise_floor.json`).
+  A veto with no floor stops the loop before the first render, so a v3 grid does
+  not run unguarded. A floor of 0 stops it the same way: CER read at
+  `--repeats 1` can have a p95 deviation of exactly 0, and a limit of 0 would
+  veto any move the worse way, Whisper's own jitter included. The refusal names
+  the reading and the cause. A veto whose reading the report lacks stops the
+  loop with `reward.NO_FLOOR`, which names `--families` (the report reads only
+  the families it was run with; `python -m scripts.reward_noise_floor` runs dsp
+  alone by default). A floor of 0 stops it with `reward.NO_BENIGN_FLOOR`, which
+  asks for `--repeats 2` or more, or `resample_roundtrip` in `--transforms`.
+
+Before a v3 round, write that report on the shipped APL and cathar outputs
+of the tuning tapes, with every family the vetoes name (`tata_v3`: speech
+and mos; `music_v3`: stems and mos):
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.reward_noise_floor SOURCE=OUTPUT ... `
+    --families speech,mos,stems --repeats 2 `
+    --out experiments\reward\noise_floor.json
+```
+
+`log.md` shows a refused candidate as `refused (verdict reversal)`, a tie as
+`tie (inaudible on every tape)` and a vetoed one as `vetoed`, each with a
+line naming the reason (the boundary and its ledger verdict, or the tape,
+the reading and its move). Two-stage scoring (the learned families on the
+best four only) and inertness from each tape's material are not built.
 
 ## CI Parity
 

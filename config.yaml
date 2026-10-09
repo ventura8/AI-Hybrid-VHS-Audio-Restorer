@@ -235,6 +235,16 @@ batch_jobs: 8
 #   - Default: 50.0 (Empirical: 50 Hz PAL mains hum detected in 13/21 tapes;
 #     100 Hz 2nd harmonic auto-detected separately by auto_ffmpeg_native scan;
 #     set to 60.0 for NTSC captures, 0.0 to disable entirely)
+#
+# azimuth_reject_inverted_pair (the scanner's azimuth reading, which the analog
+# pre-conditioning of every mode, cathar included, applies as a delay):
+#   - A pair whose channels correlate negatively (r <= -0.3) carries one channel with
+#     its polarity inverted. The azimuth gate reads |r|, so such a pair passes it and
+#     the lag it reads is not a skew: on L/-L pairs a 1 kHz tone reads -0.50 ms and a
+#     2 kHz tone -0.25 ms, which the pre-conditioning would apply as a delay. The scan
+#     always logs such a pair.
+#   - false (Default): the skew is read as before, so every output keeps its bytes.
+#   - true: no azimuth skew is read from an inverted pair.
 # ------------------------------------------------------------------------------
 afftdn_nr: 10.0
 afftdn_nf: -55.0
@@ -242,6 +252,7 @@ afftdn_tn: true
 highpass_freq: 80
 enable_adeclick: true
 notch_freq: 50.0
+azimuth_reject_inverted_pair: false
 
 # ------------------------------------------------------------------------------
 # ARNNDN Speech Settings (for 'arnndn_speech' mode)
@@ -458,7 +469,8 @@ cathar_dereverb_strength: 2.0
 #   - false: Disabled.
 #
 # enable_loudnorm:
-#   - true:  Applies broadcast EBU R128 (-16 LUFS) loudness normalization and True-Peak limiting (Default).
+#   - true:  Applies two-pass EBU R128 loudness normalization (-16 LUFS, -1 dBTP) followed by a
+#            sample-peak limiter (alimiter at -1 dBFS; see loudnorm_linear_fallback) (Default).
 #   - false: Disabled.
 #
 # enable_dynamic_expander:
@@ -499,6 +511,27 @@ cathar_dereverb_strength: 2.0
 #     gain between words. The run log states the measured range and the mode. 20 is
 #     the listener round's plateau, accepted by all four loops.
 #
+# loudnorm_linear_fallback:
+#   - What the mux does when loudnorm would leave its linear mode only because of the
+#     true-peak rule. ffmpeg holds linear mode only while the measured true peak plus
+#     the gain to -16 LUFS stays at or under -1 dBTP, the measured range stays at or
+#     under loudnorm_target_lra, and the measurement is set (I and LRA not 0, TP not
+#     99, threshold not -70), except that a programme under 3 s always runs linear
+#     (mastering.linear_mode_blockers is the rule, the short case included when the
+#     mux passes the duration). The run log now applies all of it; it used to check
+#     the range alone, and of the 616 distinct decisions it logged as "linear" in the
+#     repository's run logs on 2026-10-09, 229 (37%) broke the true-peak half and ran
+#     dynamic.
+#   - 'ffmpeg' (Default): loudnorm falls back to its dynamic mode and rides the gain,
+#     as every release so far has; every output keeps its bytes.
+#   - 'gain_limiter': one gain to the target (volume) and the mux's existing limiter
+#     on the peaks instead. A range over its target still goes to loudnorm. That
+#     limiter is alimiter at -1 dBFS on the samples, not a true-peak limiter: on
+#     synthetic programmes with clicks the render peaked at up to +0.24 dBTP, where
+#     loudnorm's dynamic mode held -1.8. With AI_RESTORE_EVENT_LOG set the render's
+#     true peak is measured and recorded. Not yet judged by ear; the pause-texture
+#     round decides it.
+#
 # crt_notch_q:
 #   - Q of the CRT line-whistle notch in the pre-conditioning graph (30 is the shipped
 #     width; cathar's music profile narrows it to cathar_music_crt_notch_q).
@@ -516,6 +549,7 @@ enable_pause_floor: true
 pause_floor_fill_db: 12.0
 pause_floor_quiet_percentile: 15.0
 loudnorm_target_lra: 20.0
+loudnorm_linear_fallback: "ffmpeg"
 crt_notch_q: 30.0
 enable_linear_air: true
 linear_air_gain_db: 1.0

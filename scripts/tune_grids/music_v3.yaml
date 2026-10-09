@@ -1,0 +1,85 @@
+# Ear v3 grid for music (plan Part 1 / 1.5, design section 5.3): the Internet Archive clips
+# that carry music plus the first minute of the Gaudeamus tape, as music_v2. Speech, music and
+# mixed take separate grids and thresholds (principle 8); no speech reading is ranked here.
+#
+# Every ranked reading is a two-sided distance from what the listener accepted:
+# `weight * max(0, |x - target| - dead_zone) / scale`, lower is better (`tune_restoration.py`
+# ranks it, `restoration_quality/reward.py` reads the same entries per `family`). A reading
+# whose good end is a bound (an envelope correlation of 1, no stem lost) has its target there
+# and no dead zone, so the distance ranks it one way.
+#
+# UNCALIBRATED starting values. What they stand on: the music v2 loop's final candidates
+# (`experiments/autotune_music_v2/*/cands/*`, 12 clips each), whose renders the user called
+# "music fine on both" (round 2, 2026-10-05), and the realistic-v2 oracle (balance_metrics.py).
+# The finals spread widely per clip (APL attack tail -8.5..+0.85 dB, onset correlation
+# 0.48-0.94, worst-octave tail -38.8..-1.6 dB), so no per-clip target exists yet; Round 0 and
+# the music listening session (after A6) set them. Weights are all 1.0 (the speech-side 1.5
+# applies to speech).
+#
+# Not ranked: dsp.hf_4k8k / hf_8k16k (backstop gates), dsp.residual_noise_db (more noise
+# removed is shown, never ranked: nothing here rewards removal, so watch the loop for drift
+# toward less of it), dsp.lkr (hard gate), the sync (hard gates). The R11 low-end and R8
+# above-band readings are P1 and not built.
+
+excerpt_s: 15
+margin_s: 0
+
+engines:
+  cathar: {process_mode: cathar, suffix: _Cathar_Cleaned}
+  apl: {process_mode: auto_pure_linear, suffix: _PureLinear_Cleaned}
+
+gates:
+  max_failed_excerpts: 4
+
+ranking:
+  # --- timbre (R1 on music). realistic-v2 music oracle (hiss removed, p90 |move|): tilt
+  # 0.07-0.09 dB/oct, presence 0.09-0.12, air 0.18-0.24, body 0.07-0.10 dB; an RBJ +2 dB shelf
+  # at 7.5 kHz reads air +1.27 (median). Body is readable on 6 of 150 windows.
+  dsp.balance_tilt_db_oct.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.1, weight: 1.0, family: timbre}
+  dsp.balance_presence_db.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.12, weight: 1.0, family: timbre}
+  dsp.balance_air_db.output.median: {target: 0.0, dead_zone: 0.3, scale: 0.25, weight: 1.0, family: timbre}
+  dsp.balance_body_db.output.median: {target: 0.0, dead_zone: 0.5, scale: 0.1, weight: 1.0, family: timbre}
+
+  # --- transients (transient_metrics.py): v2 finals attack tail APL median +0.2, cathar -0.8
+  # dB; onset correlation APL median 0.90, cathar 0.81. Scales [S].
+  dsp.attack_db.delta.tail: {target: 0.0, dead_zone: 1.0, scale: 0.5, weight: 1.0, family: transients}
+  dsp.onset_corr.output.median: {target: 1.0, dead_zone: 0.0, scale: 0.05, weight: 1.0, family: transients}
+
+  # --- background (DSP readings on the separated stems; stems.mert_dist is a learned judge and
+  # only vetoes). v2 finals: worst-octave tail -38.8..-1.55 dB, LSD 1.6-42 dB, envelope
+  # correlation 0.71-1.00. Scales [S].
+  stems.octave_ratio_db.output.tail: {target: 0.0, dead_zone: 2.0, scale: 1.0, weight: 1.0, family: background}
+  stems.lsd_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.0, family: background}
+  stems.envelope_corr.output.median: {target: 1.0, dead_zone: 0.0, scale: 0.02, weight: 1.0, family: background}
+
+  # --- level (R7): Gaudeamus5 v2 finals p95 0.22 (APL) / 0.54 (cathar) LU; dense music whose
+  # quietest tenth is still music reads None (3 of 11 clips). Scale [S].
+  file.gain_ride_lu.output.median: {target: 0.0, dead_zone: 0.6, scale: 0.2, weight: 1.0, family: level}
+
+# The loop's guards (plan 1.5; tata_v3.yaml says how each works): `autotune_restoration.py`
+# applies them, `tune_restoration.py` reads none of them.
+#
+# Learned judges are vetoes, never in the score: a candidate cannot win when, on some clip, the
+# median moved the `worse` way from the incumbent's by more than `floor_multiple` x its benign
+# floor (`--noise-floors`, a report run with --families stems,mos; without a floor for each of
+# them the loop does not start). A floor of 0 stops it the same way, named with the reading: a
+# learned reading measured at --repeats 1 can show no jitter at all, and a limit of 0 would
+# veto any move the worse way, the judge's own jitter included. Measure with --repeats 2 or
+# more, or with resample_roundtrip in --transforms. MERT is a change detector, one-sided.
+vetoes:
+  stems.mert_dist.output.median: {worse: up, floor_multiple: 3}
+  mos.audiobox_pq.delta.median: {worse: down, floor_multiple: 3}
+  mos.audiobox_pc.delta.median: {worse: down, floor_multiple: 3}
+  mos.sigmos_col.delta.median: {worse: down, floor_multiple: 3}
+
+# Round 3 (2026-10-08) judged Gaudeamus5 too: air +1 dB over +2 dB and off.
+reversals:
+  - {key: linear_air_gain_db, rejected_above: 2.0, verdict: r3-air-preference}
+
+audibility: {offset_db: 24.0}
+
+variants:
+  cathar:
+    baseline: {}
+  apl:
+    baseline: {}

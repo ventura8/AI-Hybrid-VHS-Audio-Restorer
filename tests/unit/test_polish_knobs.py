@@ -63,10 +63,14 @@ def test_loudnorm_target_reads_the_configured_range():
 
 
 def _loudness_messages():
-    """The three verdicts at the broadcast 11 LU target: 18.4 measured is over it, 6.0 under it, nan unreadable."""
+    """The three verdicts at the broadcast 11 LU target: 18.4 measured is over it, 6.0 under it, nan unreadable.
+
+    The narrow range peaks at -6 dBTP, so the +4.1 dB gain to -16 LUFS leaves it at -1.9 dBTP,
+    inside ffmpeg's true-peak half of the linear rule too.
+    """
     with patch("modules.mastering.log_msg") as log, patch.object(cfg, "LOUDNORM_TARGET_LRA", 11.0):
-        mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "18.4", "input_tp": "-3.0"})
-        mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "6.0", "input_tp": "-3.0"})
+        mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "18.4", "input_tp": "-3.0", "input_thresh": "-30.5"})
+        mastering._log_loudness_range({"input_i": "-20.1", "input_lra": "6.0", "input_tp": "-6.0", "input_thresh": "-30.5"})
         mastering._log_loudness_range({"input_lra": "nan"})
     return [call.args[0] for call in log.call_args_list]
 

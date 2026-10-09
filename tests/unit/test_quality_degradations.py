@@ -88,6 +88,7 @@ def test_every_degradation_and_benign_transform_applies():
     voice = _voice()
     materials = {
         "noise": 1e-3 * np.random.default_rng(5).standard_normal(len(voice)).astype(np.float32),
+        "clean": voice,
         "vhs": voice,
         "donor": np.roll(voice, 1000),
         "voice": voice,

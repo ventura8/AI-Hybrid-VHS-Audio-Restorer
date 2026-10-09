@@ -13,6 +13,18 @@ louder than the source, and never touched where the source carries programme. On
 deficit is filled: where the restored audio already sits at or above the target, the gain is
 zero and the samples pass through to the bit. The reference is the pre-conditioned audio the
 engine started from, so the fill carries no hum or line whistle the notches already took.
+
+With `AI_RESTORE_EVENT_LOG=<dir>` set, the stage writes a record into that folder
+(`modules/event_log.py`), in seconds on the restored file's timeline, with the fill depth,
+the quiet percentile and how many frames were filled or why none were. Two sets of spans:
+`events_s` is the pauses found, the runs of 20 ms frames the stage calls quiet on the
+source (the smoothed quiet weight over 0.5); `filled_s` is the frames the fill lifts (a
+gain above zero), which can also take the frame just outside each pause and the frames
+around a lone quiet one, where the three-frame smoothing leaves a weight of 1/3. The
+per-sample gain reaches up to one frame (20 ms) past each end of a `filled_s` run (the
+interpolation between frame centres and the 20 ms smoothing) and is exactly zero beyond.
+Switched off, the record says so (`skipped`), and a stage that raised records
+`failed: <error>`. Unset, nothing is written and the spans are not even computed.
 """
 
 from pathlib import Path
@@ -20,8 +32,10 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from . import event_log
 from .config import ENABLE_PAUSE_FLOOR, PAUSE_FLOOR_FILL_DB, PAUSE_FLOOR_QUIET_PERCENTILE
 from .hygiene import atomic_target
+from .impulse_repair import _spans
 from .utils import is_valid_audio, log_msg
 
 FRAME_S = 0.02
@@ -35,6 +49,7 @@ DEFICIT_SHARE = 0.95
 SMOOTH_FRAMES = 3
 BLOCK_SAMPLES = 1 << 20
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
+STAGE = "pause_floor"
 
 
 def frame_levels(wav_path, frame):
@@ -173,25 +188,66 @@ def _target_for(restored_wav, audio_dir):
     return output_dir / f"paused_{tag}_{Path(restored_wav).name}"
 
 
+def pause_spans(mask, lag):
+    """The runs of a per-frame mask on the aligned envelopes, as frame spans on the restored file's timeline."""
+    offset = max(lag, 0)
+    return [(start + offset, stop + offset) for start, stop in _spans(mask)]
+
+
+def _found(weight, gains, lag):
+    """The frame spans the event log records: the pauses found and the frames filled; both empty while the log is off."""
+    if not event_log.enabled():
+        return [], []
+    filled = [] if gains is None else pause_spans(gains > 0.0, lag)
+    return pause_spans(weight > 0.5, lag), filled
+
+
 def _restored_gain(reference, restored, frame, rate, frames):
-    """The per-sample gain on the reference for the restored file's timeline, and how many frames it fills."""
+    """The per-sample gain on the reference for the restored file's timeline, how many frames it fills, and the spans found.
+
+    Without a gain the second value is why there is none. The spans are the pauses found
+    and the frames filled, as frame spans on the restored timeline, read only while the
+    event log is on.
+    """
     ref_env, res_env, lag = _aligned(reference, restored)
     weight = quiet_weight(ref_env, PAUSE_FLOOR_QUIET_PERCENTILE)
     reason = _nothing_to_fill(ref_env, res_env, weight)
     if reason is not None:
-        return None, reason
+        return None, reason, _found(weight, None, lag)
     gains = fill_gains(ref_env, res_env, weight, PAUSE_FLOOR_FILL_DB)
     frame_gain = np.concatenate((np.zeros(max(lag, 0)), gains))
-    return gain_curve(frame_gain, frames, frame, rate), int((gains > 0).sum())
+    return gain_curve(frame_gain, frames, frame, rate), int((gains > 0).sum()), _found(weight, gains, lag)
+
+
+def _thresholds():
+    """The settings every record of the stage carries."""
+    return {"fill_db": PAUSE_FLOOR_FILL_DB, "quiet_percentile": PAUSE_FLOOR_QUIET_PERCENTILE}
+
+
+def _log_pauses(restored_wav, found, frame, rate, outcome):
+    """Writes the pauses found and the frames filled, in seconds, into the event log when it is on.
+
+    `outcome` is what the stage did: the number of frames filled, or the reason it filled
+    none.
+    """
+    pauses, filled = found
+    details = {**_thresholds(), "outcome": outcome, "filled_s": event_log.seconds(_in_samples(filled, frame), rate)}
+    event_log.write_spans(STAGE, restored_wav, _in_samples(pauses, frame), rate, **details)
+
+
+def _in_samples(spans, frame):
+    """Frame spans as sample spans."""
+    return [(start * frame, stop * frame) for start, stop in spans]
 
 
 def keep_floor(reference_wav, restored_wav, audio_dir):
     """Runs the stage; returns the new path, or `restored_wav` with the reason logged."""
     frame = max(1, int(FRAME_S * sf.info(str(restored_wav)).samplerate))
-    reference, rate, channels, frames = frame_levels(reference_wav, frame)
-    restored, rate2, channels2, frames2 = frame_levels(restored_wav, frame)
-    reason = _shape_mismatch((rate, channels, frames), (rate2, channels2, frames2))
-    gain, filled = (None, reason) if reason else _restored_gain(reference, restored, frame, rate2, frames2)
+    reference, *reference_meta = frame_levels(reference_wav, frame)
+    restored, rate, channels, frames = frame_levels(restored_wav, frame)
+    reason = _shape_mismatch(tuple(reference_meta), (rate, channels, frames))
+    gain, filled, found = (None, reason, ([], [])) if reason else _restored_gain(reference, restored, frame, rate, frames)
+    _log_pauses(restored_wav, found, frame, rate, filled)
     if gain is None:
         log_msg(f"    [Pause Floor] Skipped: {filled}.")
         return restored_wav
@@ -210,9 +266,11 @@ def apply_when_needed(reference_wav, restored_wav, audio_dir, strategy=None):
     """
     del strategy
     if not ENABLE_PAUSE_FLOOR or PAUSE_FLOOR_FILL_DB <= 0.0:
+        event_log.write_skip(STAGE, restored_wav, "switched off", **_thresholds())
         return restored_wav
     try:
         return keep_floor(reference_wav, restored_wav, audio_dir)
     except STAGE_FAILURES as exc:
         log_msg(f"    [Pause Floor] Skipped after failure: {exc}")
+        event_log.write_skip(STAGE, restored_wav, f"failed: {exc}", **_thresholds())
         return restored_wav

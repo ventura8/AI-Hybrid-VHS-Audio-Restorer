@@ -23,8 +23,9 @@ alignment:
 - **Analog Hardware Pre-Conditioning**: DC offset blocker (2 Hz highpass),
   stereo balance handling (`pan`) that levels a modest imbalance by attenuating
   the louder side and mirrors the live channel when the other one is dead,
-  correlation-gated sub-ms azimuth delay (`adelay`), and peak de-clipping
-  (`adeclip`).
+  correlation-gated sub-ms azimuth delay (`adelay`; a polarity-inverted pair,
+  r at or under -0.3, is logged, and `azimuth_reject_inverted_pair` reads no
+  skew from it), and peak de-clipping (`adeclip`).
 - **Native VHS DSP Filtering**: Multi-threaded FFmpeg filter graphs (`afftdn`,
   `adeclick`, `highpass`, `bandreject`).
 - **Surgical Tone Notching**: mains hum constrained to the family the detected
@@ -39,10 +40,15 @@ alignment:
 - **Sub-Sample Audio Synchronization**: Cross-correlation lag estimation and
   Dynamic Time Warping (DTW) with GPU PyTorch and CPU fallback.
 - **Lossless Mastering & Container Remux**: 32-bit float PCM (`pcm_f32le`)
-  intermediates end-to-end, two-pass EBU R128 loudness normalization followed by
-  a true-peak limiter in every mode, container-dependent final encoding,
-  stream-copied video
-  (`-c:v copy`), and optional dual-track archival audio preservation.
+  intermediates end-to-end, two-pass loudness normalization (ffmpeg
+  `loudnorm`, EBU R128 measurement, -16 LUFS and -1 dBTP) followed by a
+  sample-peak limiter (`alimiter` at -1 dBFS) in every mode,
+  container-dependent final encoding, stream-copied video (`-c:v copy`), and
+  optional dual-track archival audio preservation. loudnorm holds its linear
+  mode only while the range and the true-peak rule allow it, and always on
+  a programme under 3 s; 37% of the logged "linear" decisions broke the
+  true-peak half and rode the gain (`loudnorm_linear_fallback`,
+  `docs/configuration.md`).
 
 ______________________________________________________________________
 
@@ -76,9 +82,12 @@ The engine supports 10 execution modes configured in `config.yaml`:
     denoiser on speech (`apl_neural_model`; `apl_music_neural_model`, empty,
     is the model on music). The polish expander's depth and knee
     (`expander_depth_db`, `expander_knee_offset_db`), the mux's
-    `loudnorm_target_lra` (loudnorm turns dynamic above it) and `crt_notch_q`
-    are keys both engines share; this mode takes its own expander depth
-    (`apl_expander_depth_db`, 12 dB).
+    `loudnorm_target_lra` (loudnorm turns dynamic above it, and past its
+    true-peak rule; `loudnorm_linear_fallback`) and `crt_notch_q` are keys
+    both engines share; this mode takes its own expander depth
+    (`apl_expander_depth_db`, 12 dB). With `AI_RESTORE_EVENT_LOG=<dir>` the
+    sibilant guard, the plosive tamer, the pause floor and the mux record
+    what they found (`modules/event_log.py`).
 - **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
   - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
     floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the
@@ -230,6 +239,33 @@ modified (including during every CodeRabbit review wave):
    reduction, peak-to-noise ratio, CRT whistle elimination, and rumble
    suppression on physical audio data before finishing.
 
+### Judging Outputs: the Harness and the User's Ear
+
+The output-quality harness (the "AI human ear", output-quality-harness
+skill) judges every restoration setting; the user's ear decides. Rules the
+user set, with their reasons:
+
+- Ask the user to listen only at a plateau, and only when the plateau is
+  audibly different from what they last heard: run
+  `scripts/audibility_check.py` first (the v3 sibilance loop's plateau
+  differed by -70..-100 dBFS and would have wasted a session).
+- Ask in short blind A/B batches (10-20 picks) through
+  `python -m scripts.listen_ab`, which serves the page on 127.0.0.1 only:
+  the family tapes never leave the machine, and no cloud or audio-LLM judge
+  is used. Every answer goes to the verdict ledger
+  (`assets/quality_calibration/verdicts.jsonl`); flags come only from the
+  user's own words.
+- No default ships without a listening session and one
+  `artifacts/realistic-v2` plus IA-corpus confirmation.
+- Readings are ranked two-sided, as distance from what the user accepted;
+  learned judges only veto. A reading that cannot see a percept (a
+  whole-spectrum tilt cancels in every reading net of plain or loud frames)
+  gets an absolute twin before a loop tunes against it.
+- Learned training goes only where it fits (2026-10-08): GRPO for a
+  per-tape settings policy, later, and only if it beats the single best
+  preset; an anchored fine-tune for the Mel-RoFormer denoiser; a
+  Bradley-Terry preference head as the judge. No generative engines.
+
 ______________________________________________________________________
 
 ## 4. Strict Linting & Coding Standards
@@ -286,6 +322,17 @@ ______________________________________________________________________
   `scripts/download_dnsmos.py`. Everything installs into the repository's
   virtual environments and is declared in Poetry; nothing goes to the system
   interpreter. Report what was provisioned and what it cost (time, disk).
+- **Approved for ear v3 and the training plan (the user, 2026-10-08)**, not
+  provisioned as of 2026-10-09: the cathar 0.8.0 Windows archive (into
+  `experiments/cathar-0.8.0/` with its checksum, used through
+  `AI_RESTORE_CATHAR_BIN`; the installers stay at 0.7.6 until it passes the
+  identity check or a listening session), silero-vad (needs only torch),
+  zimtohrli (needs only numpy), optuna (dev group) and an isolated
+  `tools/msst/` venv for the denoiser fine-tune, kept apart like
+  `tools/piper-tts` so the CUDA torch set and `onnxruntime-gpu` stay
+  untouched. Check each one's dependency tree for plain `onnxruntime`
+  before it enters the main venv. MERT's CC-BY-NC-4.0 weights stay
+  (research use).
 
 ______________________________________________________________________
 
@@ -320,7 +367,10 @@ The repository defines the following modular skills in `.agents/skills/`.
 - [output-quality-harness](.agents/skills/output-quality-harness/SKILL.md):
   The "AI human ear": scoring an output like a listener, calibration, tuning
   on real tapes, and the self-driving loop that asks the user only at its
-  plateau.
+  plateau; ear v3's readings, the audibility check
+  (`scripts/audibility_check.py`), the verdict ledger and the listening tool
+  (`scripts/listen_ab.py`), and the reward pieces
+  (`scripts/reward_noise_floor.py`).
 - [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
   SonarQube Cloud on this repository: the CI scan, reading and fixing its
   findings without suppressions, project settings on sonarcloud.io, and the
@@ -356,8 +406,9 @@ Targeted workflow playbooks are maintained under `.agent/workflows/`:
 - [fix_lints_and_tests.md](.agent/workflows/fix_lints_and_tests.md): Rapid
   delinting and test fixing playbook.
 - [tune_on_real_tapes.md](.agent/workflows/tune_on_real_tapes.md): Measuring a
-  listening complaint, letting the autotune loop refine, confirming on full
-  tapes and feeding winners back.
+  listening complaint, letting the autotune loop refine, checking the
+  plateau is audible, asking through the listening tool and the verdict
+  ledger, confirming on full tapes and feeding winners back.
 - [sonarqube_findings.md](.agent/workflows/sonarqube_findings.md): Triage of a
   failed SonarQube Cloud check and fixing its findings at the source.
 

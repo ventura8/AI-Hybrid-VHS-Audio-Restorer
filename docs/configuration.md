@@ -177,8 +177,13 @@
   Hz below the threshold, the most tonal third of the corpus -- subtraction
   runs at the gentler factor. At 3.0 that material deviated 0.49 dB against
   cathar's 0.32; at 2.0 it is 0.33 with noise removal still ahead. The gate
-  fires on none of the noisier material. - `auto_cathar_tonal` (default
-  **true**), `auto_cathar_flatness_max` (default 0.04) and
+  fires on none of the noisier material. The threshold also decides
+  whether the plosive tamer runs and how long the hum canceller's series
+  is, so it stays live with `apl_enable_spectral_denoise` off: the Tata
+  tapes read 0.022, and the tuned finals' 0.01 ran the tamer and the
+  40-harmonic series where the shipped 0.035 does not. -
+  `auto_cathar_tonal` (default **true**), `auto_cathar_flatness_max`
+  (default 0.04) and
   `auto_cathar_probe_similarity` (default 0.9). Where `auto` prefers
   `cathar`'s fidelity: sustained tonal programme with no silence for
   `auto_pure_linear`'s 4 s noise probe to learn from. The tape reads as
@@ -300,7 +305,8 @@ overrides them is `D:\Tata\New folder\variants\v2`):
 
 - `loudnorm_target_lra` (20.0, from 11.0): the mux's loudness-range target;
   above it ffmpeg's loudnorm turns dynamic and rides the gain between words.
-  All four loops accepted 20.
+  All four loops accepted 20. The range is one half of ffmpeg's rule; the
+  true peak is the other (see `loudnorm_linear_fallback` below).
 
 - `crt_notch_q` (30.0): the CRT line-whistle notch's Q in the pre-conditioning
   graph; `cathar_music_crt_notch_q` (60.0) on music.
@@ -315,13 +321,75 @@ overrides them is `D:\Tata\New folder\variants\v2`):
   at 7.5 kHz (`enable_linear_air`). Set by ear on 2026-10-08: at +2 dB the
   user heard the 's' as thin; in an A/B of +2 dB, +1 dB and off on the four
   Tata tapes they chose +1 dB. The shelf is what brightens the 's' (the
-  denoiser leaves fricatives within 1 dB of the other speech in every band);
-  the harness's loops kept +2 dB because it does not read the brighter top as
-  a fault.
+  denoiser leaves fricatives within 1 dB of the other speech in every band;
+  the +2 dB shelf lifts the whole output about 1.6 dB above 4 kHz). Each of
+  the 16 rounds of the four APL loops scored a +1 dB candidate and none
+  accepted it: it ranked behind the +2 dB incumbent in 15 and lost to
+  another move in the 16th, under grids that rank
+  `dsp.hf_4k8k.delta.median` up beside HF gates that only bound a loss.
+  Ear v3 reads the tilt two-sided (`docs/validation.md`, "Ear v3").
 
 A tuning result that carries a knob an accepted switch made inert (the
 subtraction's factor, probe and native suppressor once
 `apl_enable_spectral_denoise` is off) leaves that knob at its shipped value.
+
+## Mastering and Pre-Conditioning Switches
+
+Two keys added with ear v3 (2026-10-09), both defaulting to what every
+earlier release did, so every output keeps its bytes until a listening
+session decides otherwise:
+
+- `loudnorm_linear_fallback` (`ffmpeg`, or `gain_limiter`): what the mux
+  does when ffmpeg's loudnorm would leave its linear mode only because of
+  the true-peak rule. Linear mode (one gain for the whole programme) holds
+  only while the measured true peak plus the gain to -16 LUFS stays at or
+  under -1 dBTP, the measured range stays within `loudnorm_target_lra`, and
+  the measurement is set (I and LRA not 0, TP not 99, threshold not -70);
+  otherwise loudnorm rides the gain and lifts the pause floors after the
+  engine has finished. A programme under 3 s, shorter than loudnorm's frame
+  buffer, runs linear whatever was measured. The run log used to check the
+  range half only: of the 616 distinct decisions it logged as "linear" in
+  the repository's run logs on 2026-10-09, 229 (37%) broke the true-peak
+  half and ran dynamic. The log now applies the rule (`linear_mode_blockers`
+  in `modules/mastering.py`, with the short-programme case taken from the
+  duration the mux knows), which reproduced ffmpeg 8.0.1's own decision in
+  all nine synthetic cases checked and its 3 s boundary (linear at 2.9 s,
+  dynamic at 3.0 s). `ffmpeg` keeps the dynamic ride. `gain_limiter`
+  applies one gain to the target and the mux's existing limiter instead; a
+  range over its target still goes to loudnorm. That limiter is `alimiter`
+  at -1 dBFS on the samples, not a true-peak limiter: on three synthetic
+  programmes with clicks the render peaked at up to +0.24 dBTP where
+  loudnorm's dynamic mode held -1.8 to -1.9. The pause-texture round judges
+  it by ear.
+- `azimuth_reject_inverted_pair` (false): the pre-conditioning's azimuth
+  delay in every mode, cathar included. The gate that admits a channel pair
+  read |r|, so a pair with one channel's polarity inverted passed it, and
+  the lag it then reads is half a period of the programme's strongest
+  partial, not a skew: on L/-L pairs a 1 kHz tone reads -0.50 ms, a 2 kHz
+  tone -0.25 ms and noise low-passed at 3 kHz -0.23 ms, each of which the
+  pre-conditioning would apply as a delay. A pair at r -0.3 or below is
+  always logged as inverted; with the key on, no skew is read from it.
+
+## Event Log
+
+`AI_RESTORE_EVENT_LOG=<dir>` in the environment (not a `config.yaml` key)
+makes the event-gated stages write what they found into that folder, one
+JSON record each, `<stage>__<recording>__<mode>__<track>.json`: the
+sibilant guard and the plosive tamer (the spans they detected, on the
+pre-neural audio's timeline, with their thresholds), the pause floor keeper
+(the pauses it found and the frames it filled, on the restored file's
+timeline), and the mux's loudness stage (the measured values, the mode
+ffmpeg's rule predicts, the fallback, and what the applied pass reported,
+`normalization_type` included; also written beside the track it masters).
+A stage that did not look records why (switched off, refused material, or
+`failed: <error>`). Unset, nothing is written, no extra pass runs, and the
+audio is the same either way. The records are written for the
+output-quality harness's coverage reading (ear v3's R3,
+`meta.fricative_coverage`), which will measure how many events a stage
+reaches; that reading is not built yet, so until then compare a stage's
+`events_s` with the harness's own locator by hand
+(`.agent/workflows/tune_on_real_tapes.md`). Two runs in the same mode share
+record names, so give each its own folder.
 
 ## Model Files
 

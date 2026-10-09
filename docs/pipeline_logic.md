@@ -63,8 +63,9 @@ compatibility aliases.
    music), and `apl_use_resemble_denoise` puts
    Resemble-Enhance's denoiser (a masking model) in its place the same way.
 1. **Pass 8 (Smart Sync & Mastering)**: Sub-sample DTW/shift alignment, two-pass
-   EBU R128 loudness normalization (-16 LUFS / -1.0 dBTP true-peak limiter), and
-   transparent container remuxing into `*_PureLinear_Cleaned.<ext>`.
+   EBU R128 loudness normalization to -16 LUFS and -1 dBTP followed by a
+   sample-peak limiter (`alimiter` at -1 dBFS; see "Mastering chain" below),
+   and transparent container remuxing into `*_PureLinear_Cleaned.<ext>`.
 
 The stages between pre-conditioning and the neural denoiser run through one
 runner (`modules/apl_chain.py`): each is opted into by the mode, reads its own
@@ -108,8 +109,8 @@ and the runner logs which stages applied and which skipped.
    - **Music & Ambient Stem**: Conserved and cleanly denoised with UVR-DeNoise
      - downward dynamic expander below -45 dB.
 1. **Pass 4 (Smart Sync & Mix)**: Sub-sample DTW/shift alignment, 32-bit float
-   `amix`, then two-pass EBU R128 loudness normalization followed by a true-peak
-   limiter and a resample back to 44.1 kHz.
+   `amix`, then two-pass EBU R128 loudness normalization followed by a resample
+   back to 44.1 kHz and a sample-peak limiter (`alimiter` at -1 dBFS).
 1. **Final Remux**: Stream-copied container remux into `*_Pure_Cleaned.<ext>`.
 
 ## `denoise_only` flow
@@ -157,13 +158,29 @@ Every mode ends in the same mastering chain, including the single-track modes
 (`denoise_only`, `vhs_native`, `auto_ffmpeg_native`, `arnndn_speech`), which
 previously remuxed with no loudness stage at all.
 
-Loudness normalization runs in two passes. The first measures the finished mix,
-and the second applies `loudnorm` with those measured values so the target is
-hit exactly rather than approximated. Some FFmpeg builds change the sample rate
-while processing `loudnorm`, so the chain explicitly resamples to 44.1 kHz and
-ends with a true-peak limiter that guarantees the -1.0 dBTP ceiling. If
-measurement fails the pipeline logs a warning and falls back to single-pass
-normalization.
+Loudness normalization runs in two passes. The first measures the finished mix
+(or the single processed track), and the second applies `loudnorm` with those
+measured values and `linear=true`, so the target is hit exactly rather than
+approximated. loudnorm keeps that linear mode, one gain for the whole
+programme, only while ffmpeg's rule allows it: the measured true peak plus the
+gain to -16 LUFS stays at or under -1 dBTP, the measured range stays within
+`loudnorm_target_lra`, and the measurement is set; a programme under 3 s
+always runs linear. Otherwise loudnorm turns dynamic and rides the gain, which
+lifts the pause floors. The run log names the mode and why
+(`linear_mode_blockers` in `modules/mastering.py`); of the decisions the run
+logs once called "linear", 37% broke the true-peak half and ran dynamic.
+
+Some FFmpeg builds change the sample rate while processing `loudnorm`, so the
+chain explicitly resamples to 44.1 kHz and ends with a sample-peak limiter,
+`alimiter` at 0.891 (-1 dBFS on the samples). It is not a true-peak limiter
+and guarantees no dBTP ceiling. On the default path loudnorm holds the true
+peak itself: linear mode runs only when the gain leaves it at or under
+-1 dBTP, and the dynamic mode held -1.8 to -1.9 dBTP on synthetic programmes
+with clicks. `loudnorm_linear_fallback: gain_limiter` (off by default) answers
+the true-peak-only case with one `volume` gain to the target in place of
+loudnorm, and there the limiter leaves intersample overs: the same programmes
+peaked at up to +0.24 dBTP (`docs/configuration.md`). If measurement fails
+the pipeline logs a warning and falls back to single-pass normalization.
 
 ## Sync methods
 
