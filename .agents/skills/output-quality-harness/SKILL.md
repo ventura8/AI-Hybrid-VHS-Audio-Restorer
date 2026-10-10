@@ -1117,7 +1117,9 @@ and `state.json` under
 `experiments/autotune/<engine>/` make it resumable. Run both engines at once
 only on different source paths: the app's work directory is
 `.temp_work_<stem>` beside the source, so APL runs on NTFS hardlinks of the
-tapes (`experiments/autotune/tapes_apl.json`).
+tapes (`experiments/autotune/tapes_apl.json`). Run loops from the main
+checkout only: a git worktree lacks the ignored gates file, benign floors
+and models the defaults point at (the pipeline-runner skill, worktrees).
 
 The loop scores only the families its grid reads (`--families auto`, the
 default since 2026-10-11): dsp always, plus the family of every ranking
