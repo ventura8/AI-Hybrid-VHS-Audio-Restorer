@@ -1019,6 +1019,13 @@ unheard control). Run on the five v6/v7 loops (report
   turns any reading difference outside its dead zone into a whole step).
   Most other picks are audible by the check but -20 to -52 dB, under what
   was not heard.
+- The loop's acceptances are not that noise: re-judged offline from the
+  stored `*.score.json` with readings closer than 0.25, 0.5 or 1x their
+  benign floor (`experiments/reward/noise_floor_benign.json`) ranked as
+  ties, every accepted move of the five loops still beats its incumbent
+  (7-10 of 12 clips) and the speech rounds still have no winner. The noise
+  sits in single-clip ranks; the mean over 12 clips and the half-the-tapes
+  rule absorb it, so the ranking keeps exact ties.
 - Selectable: only `apl_music_stem_path` on, on three clips (APL music
   round 2: `m_wbbddanceswithwolves` -7.9 dB, `m_vid-20220730-091707` -9.4,
   `x_vid-20230606-121054` -14.4), the switch the 2026-09-25 listener round
