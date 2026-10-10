@@ -75,6 +75,11 @@ Ear v3 wiring (the dsp family):
       was the texture, not a level loss.
   The texture's benign floor (hiss removed above the band moves it -0.1..-0.2 on synthetic
   speech, `sibilance.py`) sits inside the grids' dead zone around the accepted readings.
+- R11 (`lf_metrics`, `dsp.lf_programme_db`) reads every window on the aligned pair with the
+  mains R0 names left out of its 40-200 Hz band (nothing where R0 names none: unlike the hum
+  reading it needs no series to read, so it takes no 50 Hz fallback), and skips the windows
+  R1's mute guard skips (`_dsp_window` decides the mute once for both): it takes R1's gain
+  match, whose noise guard a mute's floor opens to the hiss. It is not clipped to R0's band.
 - R7 and the sync (`file_metrics.file_entries`) run once per pair on the raw, un-matched
   mono pair; the pause VAD that ran (`pause_metrics.resolved_vad_name`) goes into
   `card.meta["pause_vad"]`.
@@ -95,6 +100,7 @@ from scripts.restoration_quality import (
     balance_metrics,
     dsp_metrics,
     file_metrics,
+    lf_metrics,
     pause_metrics,
     sibilance,
     source_profile,
@@ -113,6 +119,7 @@ PROFILE_DIR = "profile"
 # The capture-profile fields shown as `meta.*` readings (numbers only; the channel state stays in card.meta).
 PROFILE_READINGS = ("prog_bandwidth_hz", "brickwall_hz", "mains_hz", "mains_evidence_db", "line_hz", "line_ppm", "line_sd_ppm")
 SPEECH_ROUTES = ("speech", "mixed")
+LF_READING = f"dsp.{lf_metrics.READING}"
 # R1's mute guard (module docstring): 20 ms frames, each window's p10 as its floor, the file's
 # floor the median of those over seven programme windows or more (a mute up to 7.5 s touches
 # three windows at most, so it cannot own a median of seven; five let a 4 s mute own it on a
@@ -262,8 +269,9 @@ def _rows_for(pair):
 def _dsp_window(pair, row, mute_floor=None):
     """Every DSP guardrail on one window; paired readings go on the output side with a zero source.
 
-    `mute_floor` is the source's floor (`mute_floor_db`): R1 reads None on a window that holds
-    an analog mute under it (`holds_mute`); None reads R1 on every window.
+    `mute_floor` is the source's floor (`mute_floor_db`): R1 and R11 read None on a window that
+    holds an analog mute under it (`holds_mute`, decided once per window); None reads them on
+    every window.
     """
     sl = row_slice(pair, row)
     src, out = pair.source[sl], pair.output[sl]
@@ -279,7 +287,10 @@ def _dsp_window(pair, row, mute_floor=None):
     _both(row, "dsp.clicks_per_s", dsp_metrics.click_density, src, out, pair.rate)
     _both(row, "dsp.whistle_db", dsp_metrics.whistle_line_db, src, out, pair.rate, _field(pair, "line_hz", dsp_metrics.WHISTLE_HZ))
     _both(row, "dsp.hum_excess_db", dsp_metrics.hum_excess_db, src, out, pair.rate, _field(pair, "mains_hz", DEFAULT_MAINS_HZ))
-    _balance(row, balance_window(src, out, pair.rate, _field(pair, "prog_bandwidth_hz"), mute_floor))
+    muted = holds_mute(src, pair.rate, mute_floor)
+    _balance(row, _balance_unless(muted, src, out, pair.rate, _field(pair, "prog_bandwidth_hz")))
+    lf_value = _lf_unless(muted, src, out, pair.rate, _field(pair, "mains_hz"))
+    row.source[LF_READING], row.output[LF_READING] = 0.0, lf_value
 
 
 def _both(row, name, function, src, out, rate, *args):
@@ -288,9 +299,23 @@ def _both(row, name, function, src, out, rate, *args):
 
 def balance_window(src, out, rate, bandwidth_hz, mute_floor=None):
     """R1's readings on one window, every one None when the source holds an analog mute under `mute_floor`."""
-    if holds_mute(src, rate, mute_floor):
+    return _balance_unless(holds_mute(src, rate, mute_floor), src, out, rate, bandwidth_hz)
+
+
+def _balance_unless(muted, src, out, rate, bandwidth_hz):
+    """R1's readings on one window, every one None on a `muted` window."""
+    if muted:
         return dict.fromkeys(balance_metrics.READINGS)
     return balance_metrics.balance_readings(src, out, rate, bandwidth_hz)
+
+
+def _lf_unless(muted, src, out, rate, mains_hz):
+    """R11 on one window with the mains `mains_hz` left out, None on a `muted` window.
+
+    R11 takes R1's gain match, whose noise guard a mute's floor opens to the hiss on the loud
+    frames, so it skips R1's windows (`holds_mute`).
+    """
+    return None if muted else lf_metrics.lf_programme_db(src, out, rate, mains_hz)
 
 
 def _balance(row, readings):

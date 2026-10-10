@@ -341,6 +341,17 @@ arnndn_enable_adeclick: true
 #     speech over a music bed 0.007-0.033, dry dialogue under 0.003, so 0.05 sits in
 #     the gap. cathar_music_profile false gives every tape the speech settings.
 #
+# cathar_music_beta / cathar_music_enable_repair / cathar_music_dewind_cutoff:
+#   - The music profile's subtraction floor, transient spike repair switch and dewind
+#     cutoff, in place of cathar_beta, cathar_enable_repair and cathar_dewind_cutoff on a
+#     tape the profile takes. Until 2026-10-09 music ran the speech keys, so 0.02, true
+#     and 80 keep every music output's bytes. Round C3 (music profile) searches them;
+#     none is judged by ear yet.
+#   - A cathar tape is high-passed twice: the pre-conditioning graph's highpass at the
+#     scanner's rumble pick (0 / 45 / 60 / 75 Hz, 80 when the scan fails), then cathar's
+#     dewind, a high-pass at its cutoff (80, the higher of the two). The music cutoff
+#     replaces the dewind's only; a tape the scanner cut at 60 or 75 Hz keeps that cut.
+#
 # cathar_beta:
 #   - Spectral floor to prevent musical noise artifacts (suggested: 0.005 to 0.05, default: 0.01)
 #
@@ -453,6 +464,9 @@ cathar_music_enable_deplosive: false
 cathar_music_enable_deesser: false
 cathar_music_expander_depth_db: 4.0
 cathar_music_crt_notch_q: 60.0
+cathar_music_beta: 0.02
+cathar_music_enable_repair: true
+cathar_music_dewind_cutoff: 80
 cathar_enable_deesser: true
 cathar_deesser_bands: 3
 cathar_deesser_freq: 4000

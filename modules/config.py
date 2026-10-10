@@ -199,7 +199,20 @@ _NUMERIC_CONFIG_FIELDS = (
     ("cathar_music_alpha", float, 0.5, 0.0),
     # The listener round's plateau (see cathar_alpha): floor 0.02, repair strength 2.
     ("cathar_beta", float, 0.02, 0.0),
+    # The music profile's subtraction floor, in place of cathar_beta on a tape the profile takes.
+    # Until 2026-10-09 music ran at cathar_beta (the denoise step's default), so 0.02 keeps every
+    # music output's bytes. Round C3 (music profile) searches it beside cathar_music_alpha; not
+    # yet judged by ear.
+    ("cathar_music_beta", float, 0.02, 0.0),
+    # cathar's dewind is a high-pass at this cutoff (`dewind --cutoff`), and it runs after the
+    # shared pre-conditioning graph's own high-pass (`highpass=f=<highpass_hz>`, the scanner's
+    # rumble pick: 0 / 45 / 60 / 75 Hz, 80 when the scan fails), so a cathar tape is high-passed
+    # twice and at 80 Hz the dewind is the higher cut. cathar_music_dewind_cutoff replaces the
+    # dewind's cutoff on music; the pre-conditioning high-pass stays, shared with every mode, so a
+    # tape the scanner cut at 60 or 75 Hz keeps that cut under a lower dewind. 80 is the cutoff
+    # music has run at (cathar_dewind_cutoff); round C3 searches 40 / 60 / 80, not yet judged by ear.
     ("cathar_dewind_cutoff", int, 80, 0),
+    ("cathar_music_dewind_cutoff", int, 80, 0),
     ("cathar_declick_threshold", float, 8.0, 0.0),
     ("cathar_decrackle_sensitivity", int, 6, 0),
     ("cathar_declip_threshold", float, 0.95, 0.0, 1.0),
@@ -590,6 +603,12 @@ _BOOL_CONFIG_FIELDS = (
     ("cathar_music_enable_coherent", True),
     ("cathar_music_enable_deplosive", False),
     ("cathar_music_enable_deesser", False),
+    # The music profile's switch for cathar's transient spike repair (`repair`: isolated whistles,
+    # bursts and glitches), in place of cathar_enable_repair. On, as music has always run (it took
+    # cathar_enable_repair until 2026-10-09). APL leaves cathar's repair out of its own physical
+    # repair because on the paired fixtures it made undamaged material measurably worse
+    # (apl_enable_physical_repair); round C3 judges it off on music, not yet by ear.
+    ("cathar_music_enable_repair", True),
     # The listener-round stages: the pause floor and the sibilant guard were accepted by the
     # loops (see the numeric keys); the stem path was not and stays off.
     ("enable_pause_floor", True),
@@ -943,6 +962,9 @@ CATHAR_MUSIC_ALPHA = float(CONFIG.get("cathar_music_alpha", 0.5))
 CATHAR_MUSIC_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_music_enable_noiseprint", False))
 CATHAR_MUSIC_ENABLE_COHERENT = bool(CONFIG.get("cathar_music_enable_coherent", True))
 CATHAR_MUSIC_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_music_enable_deplosive", False))
+CATHAR_MUSIC_BETA = float(CONFIG.get("cathar_music_beta", 0.02))
+CATHAR_MUSIC_ENABLE_REPAIR = bool(CONFIG.get("cathar_music_enable_repair", True))
+CATHAR_MUSIC_DEWIND_CUTOFF = int(CONFIG.get("cathar_music_dewind_cutoff", 80))
 
 # Advanced Audio Polish & Archival Configs
 ENABLE_DEESSER = bool(CONFIG.get("enable_deesser", True))

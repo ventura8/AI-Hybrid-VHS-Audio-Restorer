@@ -86,7 +86,11 @@ GATES = import_module("scripts.restoration_quality.gates").GATES
 
 # 4 (2026-10-09): R2 matches the gain per frame and needs 30 frames for the texture, R4 leaves out the bins
 # under the 16-bit dither, R7 reads along the sync track, `file.dropouts` is new: every v3 score is stale.
-SCORE_SCHEMA = 4
+# 5 (2026-10-10): R11 (`dsp.lf_programme_db`) is new; a schema-4 score lacks it, and the benign cases
+# would then give it no floor at all (every R11 check would clear "three floors" of zero).
+# 6 (2026-10-10): R11 reads its band on a rate-scaled STFT (1.35 Hz bins) and `dsp.attack_db` is paired on the
+# source's onsets: a schema-5 score (the R11 subset runs before either) reads both the old way.
+SCORE_SCHEMA = 6
 SPEECH_FIXTURE = "mid00_speech_m15"
 DONOR_FIXTURE = "mid01_speech_m15"
 MUSIC_FIXTURE = "mid00_musiconly_m15"

@@ -280,6 +280,41 @@ def test_a_shifts_drift_stays_in_the_benign_floor():
     assert _sync_floor()["file.sync_drift_ms"]["floor"] > 0.0
 
 
+def _two_languages(name, metric, values):
+    """`(cases, readings)` of one degradation on en and fr, `values` per language in level order."""
+    cases, readings = [], {}
+    for language, levels in values.items():
+        more, read = _cases(name, levels, metric, language)
+        cases, readings = cases + more, {**readings, **read}
+    return cases, readings
+
+
+HISS_FLOOR = {"dsp.gap_atten_db": {"centre": 0.0, "floor": 0.0079}, "dsp.gap_air_db": {"centre": 0.0, "floor": 0.0015}}
+
+
+def _hiss_expectations():
+    """`{metric: (direction, blind)}` of the `hiss_in_pauses` entry."""
+    return {e.metric: (e.direction, e.blind) for e in deg.DEGRADATIONS["hiss_in_pauses"].expects}
+
+
+def test_hiss_in_pauses_asserts_r4s_attenuation_and_reports_gap_air():
+    """R4's true-pause attenuation and the residual noise are asserted; gap_air rides along blind."""
+    expects = _hiss_expectations()
+    assert expects["dsp.gap_atten_db"] == ("down", False)
+    assert expects["dsp.gap_air_db"] == ("up", True)
+    assert expects["dsp.residual_noise_db"] == ("up", False)
+
+
+def test_on_calibration_v3bs_readings_r4_passes_where_gap_air_would_fail():
+    """en and fr: R4 orders the hiss on both (10 dB a step); asserted, gap_air's order-statistic step orders on en alone."""
+    atten = _two_languages("hiss_in_pauses", "dsp.gap_atten_db", {"en": [-33.9, -43.9, -53.8], "fr": [-41.0, -51.0, -60.9]})
+    result = checks.check_expectation("hiss_in_pauses", deg.Expectation("dsp.gap_atten_db", "down"), *atten, HISS_FLOOR)
+    assert (result["status"], result["monotonic_share"]) == ("pass", 1.0)
+    air = _two_languages("hiss_in_pauses", "dsp.gap_air_db", {"en": [0.024, 0.025, 0.086], "fr": [0.00265, 0.00265, 0.00097]})
+    asserted = checks.check_expectation("hiss_in_pauses", deg.Expectation("dsp.gap_air_db", "up"), *air, HISS_FLOOR)
+    assert (asserted["status"], asserted["monotonic_share"]) == ("fail", 0.5)
+
+
 def test_run_checks_covers_every_declared_expectation():
     """Run checks covers every declared expectation."""
     rows = checks.run_checks([], {}, {})

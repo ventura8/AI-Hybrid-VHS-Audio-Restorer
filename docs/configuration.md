@@ -238,7 +238,17 @@
     loop of the listener round (four rounds on 12 clips, hard-gate failures 31
     to 27) also switches the de-esser off (`cathar_music_enable_deesser`,
     false), sets the polish expander to 4 dB (`cathar_music_expander_depth_db`)
-    and narrows the CRT notch to Q 60 (`cathar_music_crt_notch_q`);
+    and narrows the CRT notch to Q 60 (`cathar_music_crt_notch_q`). Round C3
+    gives music its own subtraction floor (`cathar_music_beta`, 0.02), spike
+    repair switch (`cathar_music_enable_repair`, true) and dewind cutoff
+    (`cathar_music_dewind_cutoff`, 80 Hz) in place of `cathar_beta`,
+    `cathar_enable_repair` and `cathar_dewind_cutoff`, which music ran until
+    2026-10-09, so the defaults keep every output's bytes; none is judged by
+    ear yet. A cathar tape is high-passed twice: the pre-conditioning graph's
+    `highpass` at the scanner's rumble pick (0, 45, 60 or 75 Hz; 80 when the
+    scan fails), then cathar's `dewind`, a high-pass at its cutoff (80 Hz, the
+    higher of the two). The music cutoff replaces the dewind's only, so a tape
+    the scanner cut at 60 or 75 Hz keeps that cut under a lower dewind.
     `cathar_music_profile` false keeps the speech settings everywhere. - `auto`
     (default): - Intelligent
     acoustic profile scan

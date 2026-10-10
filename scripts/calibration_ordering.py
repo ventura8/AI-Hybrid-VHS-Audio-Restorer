@@ -24,8 +24,10 @@ judges are vetoes now, never in a score sum (plan principle 7), so the composite
   of `scorecard.METRICS` at its neutral target (no change from the source), with a dead zone
   of three benign floors: a stand-in until Round 0 sets the accepted targets. Pause
   attenuation is left out (its target is the listener's preferred attenuation, which
-  Session 0 measures; at 0 it would rank the least-denoised output first) and so is
-  `balance_top_db` (presence or air again);
+  Session 0 measures; at 0 it would rank the least-denoised output first), and so are
+  `balance_top_db` (presence or air again) and R11's `lf_programme_db` (2026-10-10: on speech
+  it reads mostly the low end's noise removed, oracle p90 1.0 dB, so at 0 it would add that
+  removal to every variant's score; a verdict or the round's grid puts it in a ranking);
 - a tape whose variants read none of the grid's readings is unranked: `ranked_on` is 0 and
   the rules that need a ranking read None instead of testing listing order.
 
@@ -66,8 +68,8 @@ MUFFLED_GATES = ("dsp.hf_4k8k", "dsp.hf_8k16k", "mos.sigmos_col", "listener.dull
 ALTERED_GATES = ("speech.speaker", "speech.cer_median", "speech.cer_tail")
 # A lower reading of any of these on the single 4 s probe than on the stitched print is "duller".
 DULL_READINGS = ("dsp.hf_4k8k", "mos.sigmos_col", "dsp.balance_top_db", "dsp.sib_abs_level_db")
-RANKING_EXCLUDED = ("dsp.gap_atten_db", "dsp.balance_top_db")
-FAMILY_BY_PREFIX = {"dsp.balance_": "timbre", "dsp.sib_": "sibilance", "dsp.gap_": "pauses"}
+RANKING_EXCLUDED = ("dsp.gap_atten_db", "dsp.balance_top_db", "dsp.lf_programme_db")
+FAMILY_BY_PREFIX = {"dsp.balance_": "timbre", "dsp.lf_": "timbre", "dsp.sib_": "sibilance", "dsp.gap_": "pauses"}
 RANKED_STAT = "delta.median"
 GRID_SECTIONS = ("reward", "ranking")
 FLAT_SIDES = ("output", "delta")

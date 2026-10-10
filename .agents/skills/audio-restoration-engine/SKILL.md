@@ -301,7 +301,20 @@ audio alignment, or FFmpeg multiplexing.
   included), dry dialogue under 0.003; no identity clip crosses the floor, so
   the profile keeps 5/5 bit-identity. Values come from the music autotune
   (`experiments/autotune_music`); re-read them from its `final.json` before
-  touching the defaults.
+  touching the defaults. Round C3 (2026-10-09) split three speech keys music
+  used to share: `cathar_music_beta` (the denoise floor, was `cathar_beta`
+  through `_cathar_denoise_step`'s default), `cathar_music_enable_repair`
+  (was `cathar_enable_repair`) and `cathar_music_dewind_cutoff` (was
+  `cathar_dewind_cutoff`), defaulting to 0.02, true and 80 so music keeps its
+  bytes (`tests/unit/test_cathar_music_round_c3.py` pins HEAD 54048a9's
+  command lines). The "double high-pass": every cathar tape goes through the
+  shared pre-conditioning `highpass=f=<highpass_hz>` (the scanner's rumble
+  pick, 0/45/60/75 Hz, 80 on a failed scan; part of the cached file's
+  fingerprint) and then `dewind --cutoff 80` (cathar 0.8.0: "high-pass", 80
+  by default). The music cutoff moves the dewind only; the scanned high-pass
+  stays, so 40 or 60 Hz gives bass back only down to the scanner's cut. APL
+  never reads the music keys: `spectral_denoise` calls the dewind and
+  denoise steps with their speech defaults.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

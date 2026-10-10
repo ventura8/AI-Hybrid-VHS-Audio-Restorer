@@ -46,6 +46,20 @@ live in `scripts/degradations_v3.py`; their measured effect on the realistic-v2 
 - `spectral_tilt_*` (+-0.5 / 1 / 2 dB/oct above 1 kHz): R1's tilt reads 0.50 / 1.00 / 1.99
   on en speech (de 0.51 / 1.02 / 2.05), presence 0.53 / 1.07 / 2.13, R2's absolute level
   1.07 / 2.13 / 4.27 against the net 0.21 / 0.35 / 0.69.
+- `lf_shelf_boost_music` / `lf_shelf_cut_music` (FFmpeg's `bass` shelf at 100 Hz, +-1.5 / 3 / 6
+  dB) and `lf_highpass_music` / `lf_highpass` (FFmpeg's `highpass` at round C3's 40 / 60 / 80 Hz
+  dewind corners), R11's entries (`lf_metrics`), both magnitudes applied zero-phase: read with the
+  runner's dsp family (2026-10-10, R11's band STFT) the shelf reads R11 +0.56 / +1.15 / +2.41 on
+  the en music bed (fr +0.62 / +1.27 / +2.66) and the cut the mirror; the high pass -0.12 / -0.47
+  / -1.09 on the bed (fr -0.15 / -0.57 / -1.27) and -0.014 / -0.073 / -0.224 on the speech target
+  (fr -0.042 / -0.140 / -0.317), over a benign floor of 8.4e-6. R1's body follows on fr's bed
+  (+0.07 / +0.13 / +0.28 for the boost; en's bed reads none) and is reported; lkr stays under
+  1e-6 and R1's tilt under 1e-4 where it reads (unread on the beds: R0 reads 1414 Hz there). Run causally, the
+  high pass turned `align_pair`'s lag on the beds (up to 101 samples on fr at 80 Hz) and lkr
+  read 0.20-0.26 (`degradations_v3`). R11 also holds still where it must: hum at R0's mains
+  moves it 0.022 at most (asserted), and it reports the oracle of `linear_bandwidth` (-0.10 en,
+  the fixture noise's low end removed; fr +0.03) and the spectral tilt's opposite sign (the gain
+  match takes in 1-3 kHz).
 - `pause_residual_*` (the source's own pauses replaced by a transformed copy at -12 dB,
   speech untouched): on the fr fixture the scaled copy reads attenuation 5.9 / 11.9 / 17.9
   dB with every shape reading 0.00; the +2 / 4 / 6 dB/oct hiss residual slope 1.06 / 2.12 /
@@ -448,8 +462,19 @@ DEGRADATIONS = {
     ),
     # The hum sits on the mains R0 names on the base (`capture_mains_hz`), the one the runner reads: R0
     # names 60 Hz on the hum-free en / es / it Piper targets, where 50 Hz hum read -0.38 at 0.03 (en,
-    # calibration v3). At R0's mains en reads +0.02 / +0.27 / +2.35; es and it order too.
-    "hum": Degradation("speech", (0.003, 0.01, 0.03), (Expectation("dsp.hum_excess_db", "up"), Expectation(SIGMOS_NOISE, "down", True))),
+    # calibration v3). At R0's mains en reads +0.02 / +0.27 / +2.35; es and it order too. R11 leaves
+    # R0's mains lines out of its band, so hum is no low end to it: en -0.000 / -0.000 / +0.022, fr
+    # +0.000 / +0.001 / +0.005 (2026-10-10, R11's band STFT; the 8192-sample frame read up to 0.048);
+    # the 0.1 dB allowance covers the 6th-8th harmonics in the gain band.
+    "hum": Degradation(
+        "speech",
+        (0.003, 0.01, 0.03),
+        (
+            Expectation("dsp.hum_excess_db", "up"),
+            Expectation(SIGMOS_NOISE, "down", True),
+            Expectation("dsp.lf_programme_db", "flat", tolerance=0.1),
+        ),
+    ),
     "underwater": Degradation(
         "speech",
         (8000.0, 6000.0, 4000.0),
@@ -515,10 +540,26 @@ DEGRADATIONS = {
             Expectation(SIGMOS_DISC, "down", True),
         ),
     ),
+    # R4's true-pause attenuation asserts the hiss; gap_air is blind here (calibration v3b, 2026-10-10). The hiss lands
+    # where the expander's gain is closed, but gap_air reads the source's p15-p40 frames, 60 % (en) and 71 % (fr) of them
+    # inside the speech mask at unity gain (mean closed gain 0.10 / 0.15 there, 0.70 / 0.69 on the deep frames). In the
+    # median gap frame the added 3-10 kHz hiss sits 51 / 41 / 31 dB (en) and 73 / 63 / 53 dB (fr) under the frame's own
+    # air (fr's gap frames are fricative-heavy: source gap_air +0.8 dB, en -3.5), so what moves the reading is an
+    # order-statistic step: fr +0.0027 / +0.0027 / +0.0010 at margins 30 / 20 / 10, unordered (en +0.024 / +0.025 /
+    # +0.086: hundredths of a dB, no detection either). R4 reads the true pauses (0.62 s en, 0.78 s fr): -33.9 / -43.9 /
+    # -53.8 (en) and -41.0 / -51.0 / -60.9 (fr), 10 dB a step, about 4700x its 0.0079 floor at the mildest margin.
+    # No counted gate loses its calibration: gap_air "up" backs only `listener.hiss` (display, R4 decides); its "down"
+    # side, `listener.dead_air`, stays asserted by `gated_pauses`. The unit speech's 0.58 s pauses put its p15-p40 class
+    # in the pauses, which is why gap_air orders there.
     "hiss_in_pauses": Degradation(
         "speech",
         (30.0, 20.0, 10.0),
-        (Expectation("dsp.gap_air_db", "up"), Expectation("dsp.residual_noise_db", "up"), Expectation(SIGMOS_NOISE, "down", True)),
+        (
+            Expectation("dsp.gap_atten_db", "down"),
+            Expectation("dsp.residual_noise_db", "up"),
+            Expectation("dsp.gap_air_db", "up", True),
+            Expectation(SIGMOS_NOISE, "down", True),
+        ),
     ),
     # The centroid is blind here: the synthetic fricatives carry too little body for removing
     # it to move them (a few hertz), while on tape the same removal read +370..+620 Hz.
@@ -544,6 +585,8 @@ DEGRADATIONS = {
             Expectation(SIB_ABS, "down"),
         ),
     ),
+    # `dsp.attack_db` is paired on the source's onsets since calibration v3b (`transient_metrics.paired_attack_db`): the
+    # difference of two medians read fr's 20 ms smear +0.085 and set the benign floor at 0.0027 from one dither draw.
     "transient_smear": Degradation(
         "music",
         (20.0, 50.0, 120.0),
@@ -582,6 +625,10 @@ AIR_CORNERS_HZ = (9000.0, 7500.0, 6000.0)
 AIR_CORNER_GAIN_DB = 1.5
 TILT_LEVELS = (0.5, 1.0, 2.0)
 ORACLE_REMOVED_DB = -20.0
+# R11 (`lf_metrics`): FFmpeg's `bass` shelf at 100 Hz (-6 / -3 / +3 dB among the levels) and round C3's dewind corners.
+LF_PROGRAMME = "dsp.lf_programme_db"
+LF_SHELF_LEVELS = (1.5, 3.0, 6.0)
+LF_HIGHPASS_HZ = (40.0, 60.0, 80.0)
 
 
 def _negated(levels):
@@ -633,13 +680,27 @@ def _air_music(direction):
 
 
 def _tilt(direction, opposite):
-    """A tilt above 1 kHz: R1's tilt and presence and R2's absolute level read it, the net level lags."""
+    """A tilt above 1 kHz: R1's tilt and presence and R2's absolute level read it, the net level lags.
+
+    R1's body and R11 report the other way: their gain match takes in 1-3 kHz, which the tilt moves.
+    """
     return (
         Expectation(TILT, direction),
         Expectation("dsp.balance_presence_db", direction),
         Expectation(SIB_ABS, direction),
         Expectation(SIB_NET, "flat", twin=SIB_ABS),
         Expectation("dsp.balance_body_db", opposite, True),
+        Expectation(LF_PROGRAMME, opposite, True),
+    )
+
+
+def _low_end(direction):
+    """A low-end change (100 Hz shelf, 40-80 Hz high pass): R11 reads it, R1's body follows where it reads, nothing above 1 kHz moves."""
+    return (
+        Expectation(LF_PROGRAMME, direction),
+        Expectation("dsp.balance_body_db", direction, True),
+        Expectation(TILT, "flat", tolerance=UNTOUCHED_DB),
+        NO_ISLANDS,
     )
 
 
@@ -665,6 +726,10 @@ V3_DEGRADATIONS = {
     "air_shelf_boost_music": Degradation("music", AIR_LEVELS, _air_music("up")),
     "air_shelf_cut_music": Degradation("music", _negated(AIR_LEVELS), _air_music("down")),
     "air_corner": Degradation("speech", AIR_CORNERS_HZ, _air_corner()),
+    "lf_shelf_boost_music": Degradation("music", LF_SHELF_LEVELS, _low_end("up")),
+    "lf_shelf_cut_music": Degradation("music", _negated(LF_SHELF_LEVELS), _low_end("down")),
+    "lf_highpass_music": Degradation("music", LF_HIGHPASS_HZ, _low_end("down")),
+    "lf_highpass": Degradation("speech", LF_HIGHPASS_HZ, _low_end("down")),
     "spectral_tilt_up": Degradation("speech", TILT_LEVELS, _tilt("up", "down")),
     "spectral_tilt_down": Degradation("speech", _negated(TILT_LEVELS), _tilt("down", "up")),
     "pause_residual_scaled": Degradation(
@@ -736,6 +801,7 @@ V3_DEGRADATIONS = {
             Expectation(TILT, "flat", tolerance=BALANCE_BENIGN_DB),
             Expectation("dsp.balance_presence_db", "flat", tolerance=BALANCE_BENIGN_DB),
             Expectation(BALANCE_AIR, "flat", tolerance=BALANCE_BENIGN_DB),
+            Expectation(LF_PROGRAMME, "flat", True, tolerance=BALANCE_BENIGN_DB),
         ),
     ),
     "treble_dropouts": Degradation(
@@ -854,6 +920,14 @@ def _cornered(level, base, rate, _materials, _rng):
     return base, v3.air_shelf(base, rate, AIR_CORNER_GAIN_DB, level)
 
 
+def _low_shelved(level, base, rate, _materials, _rng):
+    return base, v3.lf_shelf(base, rate, level)
+
+
+def _high_passed(level, base, rate, _materials, _rng):
+    return base, v3.lf_highpass(base, rate, level)
+
+
 def _tilted(level, base, rate, _materials, _rng):
     return base, v3.spectral_tilt(base, rate, level)
 
@@ -907,6 +981,8 @@ def _drifting(level, base, _rate, _materials, _rng):
 V3_BUILDERS = {
     "air_shelf": _air,
     "air_corner": _cornered,
+    "lf_shelf": _low_shelved,
+    "lf_highpass": _high_passed,
     "spectral_tilt": _tilted,
     "pause_residual_scaled": _scaled,
     "pause_residual_hiss": _hissy,
