@@ -1233,6 +1233,10 @@ default since 2026-10-11): dsp always, plus the family of each ranking
 entry, learned veto and gate. `tata_v3` thus skips the stems family, a
 BS-RoFormer separation of every output that took about 74 of SOTI's 113
 scoring minutes in the APL v6 speech round while the grid read none of it.
+The learned vetoes' families then run in a second stage, only on the
+incumbent and the candidates that qualify without the vetoes
+(`<slug>.learned.score.json`); the verdicts are the ones one pass over every
+family gives, since a veto can only take a qualification away.
 
 ### The loop's v3 guards
 

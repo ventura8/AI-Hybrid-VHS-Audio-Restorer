@@ -1040,9 +1040,8 @@ that threshold is measured, re-run the pre-check with it as `--heard-db`.
 
 ### Not built yet
 
-- In the loop (plan 1.5): two-stage scoring (the learned families on the
-  best four candidates and the incumbent only) and inertness from each
-  tape's material.
+- In the loop (plan 1.5): inertness from each tape's material (two-stage
+  scoring is built, 2026-10-11).
 - From calibration v3: the hard dropout gate on `file.dropouts` instead of
   the window tail of `dsp.dropouts`, and R0 naming a mains only when its
   fundamental stands about 10 dB out (after the IA and noise clips confirm
@@ -1128,8 +1127,15 @@ entry, learned veto and gate name, so `tata_v3` scores dsp, speech and mos
 and `music_v3` dsp, stems and mos. The stems family separates every output
 with BS-RoFormer and took about 74 of SOTI's 113 scoring minutes in the
 APL v6 speech round, which ranks and vetoes on none of it; the rounds before
-2026-10-11 paid for it on speech. A named `--families` list is scored as
-given.
+2026-10-11 paid for it on speech. Scoring then runs in two stages (plan 1.5,
+`scripts/autotune_scoring.py`): the families the ranking and the gates read
+on every candidate, the learned vetoes' families (speech and mos on
+`tata_v3`, mos on `music_v3`) only on the incumbent and the candidates that
+qualify without the vetoes, kept in `<slug>.learned.score.json`. A veto can
+only take a qualification away, so the verdicts equal one pass over every
+family; only contenders can carry a "vetoed" mark now, and a plateau round
+runs no learned model at all. A named `--families` list runs in the same two
+stages; a candidate scored on every family at once is not scored again.
 
 Knobs must be the live ones: on the Tata tapes the scanner reads a spectral
 flatness of 0.022, under `apl_tonal_flatness_max` 0.035, so APL takes its

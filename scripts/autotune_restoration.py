@@ -92,13 +92,9 @@ sibilant guard, pause floor, expanders, loudness range) replays the incumbent's 
 output instead of rendering them. Each candidate's `timing.json` records the hits and misses
 its `run.log` reports. cathar never uses the cache. Off by default.
 
-`--families auto` (the default) scores only the families the grid reads: dsp always (every gate
-and listener flag reads it, and the file.*, listener.* and src.* readings come from that pass),
-plus the family of every ranking entry, learned veto and gate name. `tata_v3` reads dsp, speech
-and mos; `music_v3` dsp, stems and mos. The stems family separates every output with BS-RoFormer
-and was the dearest part of a speech round while `tata_v3` reads none of it: about 74 of the 113
-minutes SOTI's scorer took in the APL v6 round (2026-10-10, 29 outputs). A named list
-(`--families dsp,stems,speech,mos`, the old default) is scored as given.
+`--families auto` (the default) scores only the families the grid reads, and in two stages: the
+learned vetoes' families run only on the incumbent and the candidates that already qualify
+(`scripts/autotune_scoring.py` holds the scorers, the families and the stages).
 
 Not built yet (plan 1.5, design 5.1): inertness from each tape's material. The `cathar_music_*`
 keys and `apl_music_neural_model` are dead on a tape the scanner reads below the music
@@ -123,7 +119,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -144,14 +139,15 @@ audio_io = import_module("scripts.restoration_quality.audio_io")
 guards_mod = import_module("scripts.autotune_guards")
 cathar = import_module("modules.cathar")
 stage_cache = import_module("modules.stage_cache")
+scoring = import_module("scripts.autotune_scoring")
+# Called through this module, so a test can stand in for the scorer.
+score_round = scoring.score_round
+SCORER_PARALLEL = scoring.SCORER_PARALLEL
 
 ENV_PREFIX = "env:"
 ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 ROFORMER_AGGR = "denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt"
-SCORER_PARALLEL = 2
 LOG_MD = "log.md"
-# `--families auto`: the families the grid reads (`grid_families`).
-AUTO_FAMILIES = "auto"
 HASH_SIDECAR_SUFFIX = ".audio_sha256.json"
 HASH_BLOCK_FRAMES = 1 << 20
 # Recorded in every sidecar: a sidecar written by another hash function (the harness's DC-blind one) is never trusted.
@@ -279,7 +275,7 @@ ENGINES = {
     "cathar": {"process_mode": "cathar", "suffix": "_Cathar_Cleaned"},
     "apl": {"process_mode": "auto_pure_linear", "suffix": "_PureLinear_Cleaned"},
 }
-PYTHON = str(REPO / ".venv" / "Scripts" / "python.exe") if (REPO / ".venv" / "Scripts" / "python.exe").exists() else sys.executable
+PYTHON = scoring.PYTHON
 
 
 # ----------------------------------------------------------------------------- candidates
@@ -743,147 +739,6 @@ def _with_set_aside(verdicts, inert, ties, refused):
     return verdicts
 
 
-# ----------------------------------------------------------------------------- scoring
-
-
-def score_round(candidates, tapes, out_dir, families, gates, language, parallel=SCORER_PARALLEL):
-    """Scores every candidate on every tape, at most `parallel` tape processes at once; returns `{cid: {slug: flat}}`.
-
-    A scorer holds about 4 GB of RAM with every model resident; two engines tuning at
-    once with four scorers each ran a 62 GB machine out of memory, so the default is two.
-    """
-    (out_dir / "rounds").mkdir(parents=True, exist_ok=True)
-    pending = _unscored(candidates, tapes, out_dir)
-    step = max(1, parallel)
-    for start in range(0, len(pending), step):
-        stop = start + step
-        _score_batch(pending[start:stop], out_dir, (families, gates, language))
-    return _load_scores(candidates, tapes, out_dir)
-
-
-def _score_batch(batch, out_dir, scorer_options):
-    """One scorer per `(slug, tape, cids)` of the batch, all launched before the first is waited for."""
-    procs = [(slug, cids, _launch_scorer(slug, tape, cids, out_dir, *scorer_options)) for slug, tape, cids in batch]
-    for slug, cids, (log, proc) in procs:
-        _harvest(slug, cids, log, proc, out_dir)
-
-
-def _load_scores(candidates, tapes, out_dir):
-    """`{cid: {slug: flat}}` read back from the score files."""
-    return {cid: {slug: json.loads(_score_path(out_dir, cid, slug).read_text(encoding="utf-8")) for slug in tapes} for cid in candidates}
-
-
-def _unscored_ids(candidates, out_dir, slug):
-    return [cid for cid in candidates if not _score_path(out_dir, cid, slug).exists()]
-
-
-def _unscored(candidates, tapes, out_dir):
-    """`[(slug, tape, cids)]` for every tape that still has candidates without a score on it."""
-    pending = [(slug, tape, _unscored_ids(candidates, out_dir, slug)) for slug, tape in tapes.items()]
-    return [row for row in pending if row[2]]
-
-
-def _harvest(slug, cids, log, proc, out_dir):
-    proc.wait()
-    log.close()
-    if proc.returncode != 0:
-        raise SystemExit(f"scoring {slug} failed (see {out_dir / 'rounds' / f'score_{slug}.log'})")
-    report = json.loads((out_dir / "rounds" / f"score_{slug}.json").read_text(encoding="utf-8"))
-    for cid in cids:
-        flat = tune.runner.aggregates_for_tuning(report, cid)
-        _score_path(out_dir, cid, slug).write_text(json.dumps(flat, indent=1), encoding="utf-8")
-        _drop_cache_entries(out_dir, cid, slug)
-
-
-def _drop_cache_entries(out_dir, cid, slug):
-    """The scorer's cache entries for a scored output (its resampled arrays, its DC-free copy), which nothing reads again.
-
-    A candidate output is scored once; its entries (three rates, ~1 GB per hour of tape) only
-    fill the disk afterwards: two loops on full tapes grew 250 GB of them in three days and
-    ran the machine out of space. The source side of the cache stays, every round reuses it.
-    """
-    wav = out_dir / "cands" / cid / f"{slug}.wav"
-    if not wav.exists():
-        return
-    for entry in (out_dir / "cache").glob(f"{audio_io.file_key(wav)}_*"):
-        entry.unlink()
-
-
-def _score_path(out_dir, cid, slug):
-    return out_dir / "cands" / cid / f"{slug}.score.json"
-
-
-LANGUAGE_RE = re.compile(r"^[a-z]{2,3}$")
-
-
-def _existing_path(value, what):
-    """A command-line path resolved and checked to exist; a value shaped like an option is refused."""
-    text = str(value)
-    if text.startswith("-"):
-        raise SystemExit(f"{what} looks like an option, not a path: {text}")
-    resolved = Path(text).resolve()
-    if not resolved.exists():
-        raise SystemExit(f"{what} does not exist: {resolved}")
-    return resolved
-
-
-def _scorer_arguments(slug, tape, cids, out_dir, families, gates, language):
-    """The scorer's argument list from checked inputs: the tape and the gates must exist, the language is a code."""
-    if not LANGUAGE_RE.match(language):
-        raise SystemExit(f"--language must be a two- or three-letter code: {language!r}")
-    unknown = set(families) - set(tune.runner.ALL_FAMILIES)
-    if unknown:
-        raise SystemExit(f"unknown metric families: {sorted(unknown)}")
-    out_dir = _existing_path(out_dir, "--out")
-    args = [PYTHON, str(REPO / "scripts" / "validate_restoration.py"), str(_existing_path(tape, "tape"))]
-    args += [f"{cid}={out_dir / 'cands' / cid / f'{slug}.wav'}" for cid in cids]
-    args += ["--metrics", ",".join(families), "--language", language, "--cache-dir", str(out_dir / "cache")]
-    args += ["--report", str(out_dir / "rounds" / f"score_{slug}.json")]
-    if gates:
-        args += ["--gates", str(_existing_path(gates, "--gates"))]
-    return args
-
-
-def _scorer_env(tape):
-    """The scorer's environment: the tape's folder joins AI_RESTORE_DATA_ROOTS, since the scorer confines its paths."""
-    roots = [entry for entry in os.environ.get("AI_RESTORE_DATA_ROOTS", "").split(os.pathsep) if entry]
-    return {**os.environ, "PYTHONIOENCODING": "utf-8", "AI_RESTORE_DATA_ROOTS": os.pathsep.join([*roots, str(Path(tape).resolve().parent)])}
-
-
-def _launch_scorer(slug, tape, cids, out_dir, families, gates, language):
-    args = _scorer_arguments(slug, tape, cids, out_dir, families, gates, language)
-    log = open(out_dir / "rounds" / f"score_{slug}.log", "a", encoding="utf-8")
-    proc = subprocess.Popen(args, cwd=str(REPO), stdout=log, stderr=subprocess.STDOUT, env=_scorer_env(tape))
-    return log, proc
-
-
-def reading_family(key):
-    """The scorer family that produces reading `key`: its prefix when that names a family, else dsp (file.*, listener.*, src.*)."""
-    prefix = str(key).split(".", 1)[0]
-    return prefix if prefix in tune.runner.ALL_FAMILIES else "dsp"
-
-
-def grid_families(grid, gate_names=()):
-    """The scorer families a grid reads, in scoring order: dsp always, plus each ranking entry's, veto's and gate's family."""
-    keys = [*grid.get("ranking", {}), *(grid.get("vetoes") or {}), *gate_names]
-    wanted = {"dsp", *map(reading_family, keys)}
-    return tuple(name for name in tune.runner.ALL_FAMILIES if name in wanted)
-
-
-def _gate_names(gates):
-    """The gate names of a gates file (`{name: {threshold, ...}}`); none without one."""
-    if gates is None:
-        return ()
-    return tuple(json.loads(_existing_path(gates, "--gates").read_text(encoding="utf-8")))
-
-
-def resolve_families(families, grid, gates):
-    """`--families` as given, or for `auto` the families the grid and the gates file read."""
-    if tuple(families) != (AUTO_FAMILIES,):
-        return tuple(families)
-    return grid_families(grid, _gate_names(gates))
-
-
 # ----------------------------------------------------------------------------- judging
 
 
@@ -899,19 +754,27 @@ def _ranks_per_tape(scores, ranking):
     return {slug: rank_on_tape({cid: scores[cid][slug] for cid in scores}, ranking) for slug in tapes}
 
 
-def judge(scores, incumbent_id, ranking, vetoes=None):
+def judge(scores, incumbent_id, ranking, vetoes=None, veto_ids=None):
     """`{cid: {"mean_rank", "wins", "failures", "per_tape", "qualifies"}}` against the incumbent across tapes.
 
     With `vetoes` (`{reading: reward.Veto}`, a v3 grid's learned judges) a candidate whose
-    median moved past a veto on some tape also carries `vetoed` and cannot qualify.
+    median moved past a veto on some tape also carries `vetoed` and cannot qualify. `veto_ids`
+    limits the veto to those candidates (the two-stage scoring reads the learned judges on the
+    contenders only); None checks every candidate.
     """
     per_tape = _ranks_per_tape(scores, ranking)
     verdicts = {cid: _verdict(cid, scores[cid], per_tape, incumbent_id) for cid in scores}
+    for cid in scores if veto_ids is None else veto_ids:
+        guards_mod.mark_vetoes(verdicts[cid], scores[cid], scores[incumbent_id], vetoes)
+    _qualify(verdicts, incumbent_id, len(per_tape))
+    return verdicts
+
+
+def _qualify(verdicts, incumbent_id, n_tapes):
+    """Sets `qualifies`: not the incumbent, beats it and passes the guards."""
     base = verdicts[incumbent_id]
     for cid, verdict in verdicts.items():
-        guards_mod.mark_vetoes(verdict, scores[cid], scores[incumbent_id], vetoes)
-        verdict["qualifies"] = cid != incumbent_id and _beats(verdict, base, len(per_tape)) and guards_mod.allowed(verdict, base)
-    return verdicts
+        verdict["qualifies"] = cid != incumbent_id and _beats(verdict, base, n_tapes) and guards_mod.allowed(verdict, base)
 
 
 def _total(tape_scores, key):
@@ -1024,9 +887,30 @@ def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, inc
     incumbent_id = candidate_id(incumbent)
     live, inert = _split_inert(rendered, incumbent_id, tapes, out_dir)
     ties = guards_mod.find_ties(live, incumbent_id, tapes, out_dir, guards.audibility_offset_db)
-    scores = score_round(_without(live, ties), tapes, out_dir, args.families, args.gates, args.language, args.parallel)
-    verdicts = judge(scores, incumbent_id, ranking, guards.vetoes)
+    verdicts = score_and_judge(args, _without(live, ties), (tapes, out_dir), ranking, incumbent_id, guards.vetoes)
     return _with_set_aside(verdicts, inert, ties, refused)
+
+
+def score_and_judge(args, scorable, where, ranking, incumbent_id, vetoes):
+    """Two-stage scoring (plan 1.5), exact: the families the ranking and the gates read on every candidate, a judgement
+    without the learned vetoes, then the other families on the incumbent and the candidates that qualified so far,
+    and the final judgement with the vetoes on those contenders. A veto can only take a qualification away, so
+    the verdicts are the ones a single pass over every family gives."""
+    tapes, out_dir = where
+    ranked, rest = scoring.split_families(args.families, ranking, scoring.gate_names(args.gates))
+    options = (args.gates, args.language, args.parallel)
+    scores = score_round(scorable, tapes, out_dir, ranked, *options)
+    contenders = [cid for cid, verdict in judge(scores, incumbent_id, ranking).items() if verdict["qualifies"]]
+    missing = scoring.lacking(scores, [incumbent_id, *contenders], rest) if contenders else []
+    if missing:
+        learned = score_round(_only(scorable, missing), tapes, out_dir, rest, *options, scoring.LEARNED_STAGE)
+        scoring.merge_families(scores, learned, rest)
+    return judge(scores, incumbent_id, ranking, vetoes, veto_ids=contenders)
+
+
+def _only(candidates, ids):
+    """`candidates` restricted to `ids`."""
+    return {cid: candidates[cid] for cid in ids}
 
 
 def _cells(verdict, n_tapes):
@@ -1076,7 +960,7 @@ def _parse_args(argv):
     parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v2.yaml"))
     # The loop stops at a plateau (user: "stop only when no more improvements are possible"); the cap is a safety net.
     parser.add_argument("--rounds", type=int, default=20)
-    parser.add_argument("--families", default=AUTO_FAMILIES, help="auto (the families the grid reads) or a list")
+    parser.add_argument("--families", default=scoring.AUTO_FAMILIES, help="auto (the families the grid reads) or a list")
     parser.add_argument("--start", default="{}", help="JSON overrides to start from")
     parser.add_argument("--start-file", type=Path, default=None, help="a final.json of an earlier run to start from (wins over --start)")
     parser.add_argument("--language", default="ro")
@@ -1099,7 +983,7 @@ def _parse_args(argv):
 
 def _noise_floors(path):
     """`{reading: floor}` from a `scripts/reward_noise_floor.py` report, or {} without one."""
-    return guards_mod.noise_floors(_existing_path(path, "--noise-floors") if path else None)
+    return guards_mod.noise_floors(scoring.existing_path(path, "--noise-floors") if path else None)
 
 
 def _resume(args, out_dir):
@@ -1122,7 +1006,7 @@ def main(argv=None):
     ranking = grid["ranking"]
     args.guards = guards_mod.loop_guards(grid, _noise_floors(args.noise_floors), ALL_KNOBS)
     print(f"guards: {guards_mod.describe_guards(args.guards)}", flush=True)
-    args.families = resolve_families(args.families, grid, args.gates)
+    args.families = scoring.resolve_families(args.families, grid, args.gates)
     print(f"scoring families: {','.join(args.families)}", flush=True)
     args.durations = tape_durations(tapes)
     print(f"tape lengths (s): {json.dumps(args.durations)}", flush=True)

@@ -62,6 +62,9 @@ the Antigravity agent system.
     plan 3.2a's pre-check on finished loop rounds, the per-tape oracle
     against the single best candidate, each pick through the audibility
     check and the listener's unheard level (`--heard-db`);
+  - `scripts/autotune_scoring.py` (a module of the self-driving loop, not a
+    script): the families a grid reads (`--families auto`), the scorer
+    processes, and the two-stage scoring (learned vetoes on contenders only);
   - `scripts/autotune_guards.py` (a module of the self-driving loop, not a
     script): the v3 grids' guards, the verdict-reversal refusal, the
     audibility tie (stored verdicts keyed on `auditory.VERDICT_RULE`) and

@@ -7,27 +7,33 @@ from unittest.mock import Mock
 import pytest
 
 from scripts import autotune_restoration as at
+from scripts import autotune_scoring as scoring
 from scripts import tune_restoration as tune
 
-GRIDS = Path(at.__file__).resolve().parent / "tune_grids"
+GRIDS = Path(scoring.__file__).resolve().parent / "tune_grids"
 
 
 def test_a_reading_belongs_to_its_prefix_family_or_to_the_dsp_pass():
     """file.*, listener.*, src.* and bare names come from the dsp pass; the four scorer families from themselves."""
-    assert [at.reading_family(key) for key in ("mos.x", "speech.cer", "stems.mert_dist", "dsp.lkr")] == ["mos", "speech", "stems", "dsp"]
-    assert {at.reading_family(key) for key in ("file.gain_ride_lu.output.median", "listener.hiss", "src.capture", "m")} == {"dsp"}
+    assert [scoring.reading_family(key) for key in ("mos.x", "speech.cer", "stems.mert_dist", "dsp.lkr")] == [
+        "mos",
+        "speech",
+        "stems",
+        "dsp",
+    ]
+    assert {scoring.reading_family(key) for key in ("file.gain_ride_lu.output.median", "listener.hiss", "src.capture", "m")} == {"dsp"}
 
 
 def test_the_speech_grid_skips_the_stems_family_and_the_music_grid_skips_speech():
     """tata_v3 ranks dsp and file readings and vetoes on speech and mos; music_v3 ranks stems and vetoes on stems and mos."""
-    assert at.grid_families(tune.load_grid(GRIDS / "tata_v3.yaml")) == ("dsp", "speech", "mos")
-    assert at.grid_families(tune.load_grid(GRIDS / "music_v3.yaml")) == ("dsp", "stems", "mos")
+    assert scoring.grid_families(tune.load_grid(GRIDS / "tata_v3.yaml")) == ("dsp", "speech", "mos")
+    assert scoring.grid_families(tune.load_grid(GRIDS / "music_v3.yaml")) == ("dsp", "stems", "mos")
 
 
 def test_dsp_is_always_scored_and_a_gate_adds_its_family():
     """An empty grid still scores dsp (every gate reads it); a learned gate brings its family in, in scoring order."""
-    assert at.grid_families({}) == ("dsp",)
-    assert at.grid_families({"ranking": {"m": "up"}, "vetoes": None}, ["mos.dnsmos", "listener.hiss"]) == ("dsp", "mos")
+    assert scoring.grid_families({}) == ("dsp",)
+    assert scoring.grid_families({"ranking": {"m": "up"}, "vetoes": None}, ["mos.dnsmos", "listener.hiss"]) == ("dsp", "mos")
 
 
 def test_auto_reads_the_gates_file_and_a_named_list_is_kept(tmp_path):
@@ -35,15 +41,15 @@ def test_auto_reads_the_gates_file_and_a_named_list_is_kept(tmp_path):
     gates = tmp_path / "gates.json"
     gates.write_text(json.dumps({"dsp.hum": {}, "speech.cer": {}}), encoding="utf-8")
     grid = {"ranking": {"dsp.lkr.delta.median": "down"}}
-    assert at.resolve_families(("auto",), grid, gates) == ("dsp", "speech")
-    assert at.resolve_families(("auto",), grid, None) == ("dsp",)
-    assert at.resolve_families(("dsp", "stems", "speech", "mos"), grid, gates) == ("dsp", "stems", "speech", "mos")
+    assert scoring.resolve_families(("auto",), grid, gates) == ("dsp", "speech")
+    assert scoring.resolve_families(("auto",), grid, None) == ("dsp",)
+    assert scoring.resolve_families(("dsp", "stems", "speech", "mos"), grid, gates) == ("dsp", "stems", "speech", "mos")
 
 
 def test_a_missing_gates_file_stops_auto_with_its_name(tmp_path):
     """The gates path is checked where `auto` reads it."""
     with pytest.raises(SystemExit, match="--gates does not exist"):
-        at.resolve_families(("auto",), {}, tmp_path / "missing.json")
+        scoring.resolve_families(("auto",), {}, tmp_path / "missing.json")
 
 
 def _cli(tmp_path, *extra):

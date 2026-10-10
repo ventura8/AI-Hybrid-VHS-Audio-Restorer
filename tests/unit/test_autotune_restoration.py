@@ -1,6 +1,7 @@
 """Pure logic of the self-driving tuner: candidate ids, neighbours, combinations, the verdict, inert switches."""
 
 from scripts import autotune_restoration as at
+from scripts import autotune_scoring as scoring
 
 
 def test_candidate_id_ignores_none_values_and_key_order():
@@ -84,27 +85,27 @@ def test_score_round_launches_at_most_parallel_scorers_at_once(tmp_path):
 
     launched, alive = [], []
 
-    def fake_launch(slug, tape, cids, out_dir, families, gates, language):
+    def fake_launch(slug, tape, cids, out_dir, families, gates, language, stage=""):
         launched.append(slug)
         alive.append(slug)
         return None, None
 
-    def fake_harvest(slug, cids, log, proc, out_dir):
+    def fake_harvest(slug, cids, log, proc, out_dir, stage=""):
         alive.remove(slug)
         for cid in cids:
-            at._score_path(out_dir, cid, slug).parent.mkdir(parents=True, exist_ok=True)
-            at._score_path(out_dir, cid, slug).write_text('{"x": 1.0}', encoding="utf-8")
+            scoring._score_path(out_dir, cid, slug).parent.mkdir(parents=True, exist_ok=True)
+            scoring._score_path(out_dir, cid, slug).write_text('{"x": 1.0}', encoding="utf-8")
 
     peak = []
     original = fake_launch
 
-    def counting_launch(*args):
-        result = original(*args)
+    def counting_launch(*args, **kwargs):
+        result = original(*args, **kwargs)
         peak.append(len(alive))
         return result
 
     tapes = {"a": "a.mov", "b": "b.mov", "c": "c.mov"}
-    with patch.object(at, "_launch_scorer", counting_launch), patch.object(at, "_harvest", fake_harvest):
+    with patch.object(scoring, "_launch_scorer", counting_launch), patch.object(scoring, "_harvest", fake_harvest):
         scores = at.score_round({"c1": {}, "c2": {}}, tapes, tmp_path, ("dsp",), None, "ro", parallel=2)
     assert launched == ["a", "b", "c"]
     assert max(peak) <= 2
@@ -122,8 +123,8 @@ def test_drop_cache_entries_removes_the_scored_outputs_entries_and_keeps_the_sou
     output_key, source_key = audio_io.file_key(wav), "0123456789abcdef"
     for name in (f"{output_key}_219_16000.npy", f"{output_key}_dcfree.wav", f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"):
         (cache / name).write_bytes(b"x")
-    at._drop_cache_entries(tmp_path, "abc", "soti")
-    at._drop_cache_entries(tmp_path, "missing", "soti")
+    scoring._drop_cache_entries(tmp_path, "abc", "soti")
+    scoring._drop_cache_entries(tmp_path, "missing", "soti")
     assert sorted(p.name for p in cache.iterdir()) == [f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"]
 
 
@@ -147,5 +148,5 @@ def test_the_scorer_environment_adds_the_tape_folder_to_the_data_roots(tmp_path,
 
     corpus = str(tmp_path / "corpus")
     monkeypatch.setenv("AI_RESTORE_DATA_ROOTS", corpus)
-    env = at._scorer_env(tmp_path / "tapes" / "tape.mov")
+    env = scoring._scorer_env(tmp_path / "tapes" / "tape.mov")
     assert env["AI_RESTORE_DATA_ROOTS"].split(os.pathsep) == [corpus, str((tmp_path / "tapes").resolve())]
