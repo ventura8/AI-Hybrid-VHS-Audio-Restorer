@@ -91,7 +91,7 @@ the programme bandwidth is read on the loud, voiced frames, and no 's' frame is 
 brickwall at or above 12 kHz, or none (the Tata tapes: Tele7abc 18.9 kHz, SOTI 15.4 kHz,
 Vaccin none), leaves the band at 12 kHz, so the uncapped floor above applies. The texture is
 scored all the same: two-sided around 0 in the `tata_v3` grid, where that floor sits inside
-the 1.75 dB dead zone, and "lower is better" in the scorecard, whose tail and listening
+the 2.0 dB dead zone, and "lower is better" in the scorecard, whose tail and listening
 picks (`listening.DEFAULT_PICK_METRICS`) rank a denoiser that clears hiss above the
 programme band 0.1-0.2 dB better than one that leaves it.
 
