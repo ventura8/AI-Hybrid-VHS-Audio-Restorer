@@ -894,6 +894,26 @@ Bradley-Terry head on the user's pairwise answers (regularised logistic,
 leave one tape out) and picks the next pair to ask; it sets the grids'
 weights and checks them, and is never the loop's objective.
 
+#### The variation pre-check (plan 3.2a)
+
+A per-tape settings policy (the GRPO plan) can only help when a per-tape
+choice sounds different from the single best setting.
+`python -m scripts.variation_precheck STATE.json ...` reads finished loop
+rounds without rendering: per round, the single best candidate (lowest mean
+rank) and the per-tape oracle (lowest rank on each tape), then
+`auditory.compare_files` between each oracle pick and the best on that
+tape. A pick is `selectable` when it is called audible and its difference
+stands above `--heard-db` (default -17.6 dB, the largest restoration
+difference not heard blind in Session 0), `below_heard` when it is smaller,
+and a `tie` when the check cannot tell it apart; the ties' rank gains show
+the ranking noise. Selectable picks go to an ABX before any training.
+
+```powershell
+$env:AI_RESTORE_DATA_ROOTS = 'D:\ai_restore_work'
+.\.venv\Scripts\python.exe -m scripts.variation_precheck `
+  D:\ai_restore_work\autotune_v6_music\apl\state.json --json precheck.json
+```
+
 ### Calibrating the output-quality metrics
 
 None of the models saw VHS degradation or Romanian, so before the harness

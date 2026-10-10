@@ -999,28 +999,58 @@ the air reversal guard:
 The tied and plateaued rounds match Session 0: the knob moves the loops can
 make on speech are below what this listener hears.
 
+### Variation pre-check (plan 3.2a, 2026-10-11)
+
+`python -m scripts.variation_precheck STATE.json ...` asks of finished loop
+rounds whether a per-tape settings policy (plan 3.2b, GRPO) has anything
+audible to choose, without rendering: per round, the single best candidate
+and the per-tape oracle (each tape's lowest rank), every oracle pick
+through `auditory.compare_files` against the best's render, `selectable`
+only when audible and above `--heard-db` (default -17.6 dB, Session 0's
+unheard control). Run on the five v6/v7 loops (report
+`D:i_restore_workariation_precheck_2026-10-11.json`):
+
+- Speech (APL and cathar, `tata_v3`): the shipped settings rank first on
+  every tape, oracle gain 0. Partly by construction: the v3 targets were
+  read on those same accepted files.
+- Music: the oracle picks another candidate on 7-11 of 12 clips for 3.1-4.4
+  ranks, but six picks the check calls trusted ties (down to -94 dB) gained
+  3.3-7.3 ranks: the per-clip oracle gain is the loop's ranking noise (a rank
+  turns any reading difference outside its dead zone into a whole step).
+  Most other picks are audible by the check but -20 to -52 dB, under what
+  was not heard.
+- Selectable: only `apl_music_stem_path` on, on three clips (APL music
+  round 2: `m_wbbddanceswithwolves` -7.9 dB, `m_vid-20220730-091707` -9.4,
+  `x_vid-20230606-121054` -14.4), the switch the 2026-09-25 listener round
+  did not accept and MERT / Audiobox vetoed in round A6.
+
+So the GRPO policy stays parked (and its Optuna baseline with it) until
+one blind block shows the stem path, the largest restoration difference
+the loops produce, is heard: Session 1 Block 2 in
+`experiments/session1/README.md` (ABX on `m_wbbddanceswithwolves`, shipped
+against stem path on), after Block 1, the listener's blend threshold. When
+that threshold is measured, re-run the pre-check with it as `--heard-db`.
+
 ### Not built yet
 
 - In the loop (plan 1.5): two-stage scoring (the learned families on the
   best four candidates and the incumbent only) and inertness from each
   tape's material.
 - From calibration v3: the hard dropout gate on `file.dropouts` instead of
-  the window tail of `dsp.dropouts` (after Round 0 is re-scored), and R0
-  naming a mains only when its fundamental stands about 10 dB out (after
-  the IA and noise clips confirm it).
+  the window tail of `dsp.dropouts`, and R0 naming a mains only when its
+  fundamental stands about 10 dB out (after the IA and noise clips confirm
+  it).
 - R3's harness coverage reading, `scripts/replay_post_neural.py` (it would
   rebuild a stage-cache entry's input and replay only the post-neural
   stages; the entry's manifest records the input's sample hash for that),
   the fidelity ladder, `known_ordering_v3.json`, and a gate on
   `file.gain_ride_lu`. The stage cache itself is built (see "The
   self-driving loop").
-- Before any v3 tuning round (Round 0 is done): Session 0 with the user (ABX
-  of +1 against +2 dB air, ABX of alpha 2 on 0.7.3 against 0.7.5 on pauses,
-  and the pause-depth continuum against the shipped pause floor); the
-  calibration with a Vaccin excerpt (the R1 air assertion); and learned
-  veto floors measured on inaudible pairs, since the noise-floor report
-  the v3 grids' vetoes read gives limits too tight (see "Round 0"): the
-  `--benign-pair` mode is built, its run on Session 0's pairs is not.
+- The listener's blind threshold (Session 0 left it unmeasured; Session 1
+  Block 1 is prepared), and `audibility_check.py` recalibrated on it.
+- Plan 3.2b (GRPO) and its Optuna baseline wait on the variation pre-check
+  above; plan 3.3 (the Mel-RoFormer fine-tune in `tools/msst/`) is not
+  started.
 
 ### The user's decisions (2026-10-08)
 
@@ -1031,10 +1061,10 @@ make on speech are below what this listener hears.
 - No generative engines, and no audio-LLM or cloud judge.
 - The user's ear is asked in short A/B batches (10-20 picks) through
   `listen_ab.py`, and no default ships without a listening session.
-- Approved installs, not provisioned as of 2026-10-09: cathar 0.8.0 (into
-  `experiments/cathar-0.8.0/`, behind `AI_RESTORE_CATHAR_BIN`, identity check
-  first), silero-vad, zimtohrli, optuna (dev group) and the `tools/msst/`
-  venv. MERT's CC-BY-NC-4.0 weights stay (research use).
+- Approved installs: cathar 0.8.0 (provisioned 2026-10-09, identical on
+  every stage this app calls, the installers pin it); not provisioned yet:
+  silero-vad, zimtohrli, optuna (dev group) and the `tools/msst/` venv.
+  MERT's CC-BY-NC-4.0 weights stay (research use).
 
 ## Tuning on real tapes
 

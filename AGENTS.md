@@ -397,8 +397,9 @@ The repository defines the following modular skills in `.agents/skills/`.
   on real tapes, and the self-driving loop that asks the user only at its
   plateau; ear v3's readings, the audibility check
   (`scripts/audibility_check.py`), the verdict ledger and the listening tool
-  (`scripts/listen_ab.py`), and the reward pieces
-  (`scripts/reward_noise_floor.py`).
+  (`scripts/listen_ab.py`), the reward pieces
+  (`scripts/reward_noise_floor.py`), and the variation pre-check that gates
+  the settings policy (`scripts/variation_precheck.py`).
 - [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
   SonarQube Cloud on this repository: the CI scan, reading and fixing its
   findings without suppressions, project settings on sonarcloud.io, and the
