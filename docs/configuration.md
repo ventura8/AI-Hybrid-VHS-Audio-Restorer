@@ -396,6 +396,50 @@ session decides otherwise:
   pre-conditioning would apply as a delay. A pair at r -0.3 or below is
   always logged as inverted; with the key on, no skew is read from it.
 
+## cathar Declip and Dehum
+
+Two `cathar` keys added on 2026-10-10 for round C4, both defaulting to what
+every earlier release ran (`tests/unit/test_cathar_round_c4.py` pins HEAD
+549705a's command lines), so every output keeps its bytes until the C3
+listening session decides otherwise:
+
+- `cathar_declip_mode` (`always`, or `detected`): `always` runs cathar's
+  `declip` on every tape. `detected` runs it only on a tape the scanner
+  flagged as clipped (`profile.has_clipping_any_channel`: 20 or more
+  samples at `|x| >= 0.985` counted over every channel of the minutes the
+  scan reads, the first 60 s of a tape under 4 minutes or four spread 60 s
+  blocks of a longer one). The count is per channel, not in the mono mix:
+  on a tape with one dead channel, half of a 21-tape library, the mix
+  halves the live side so it never reaches 0.985, while the
+  pre-conditioning mirrors that side to full scale before cathar runs.
+  Wherever the mix reaches the threshold one channel does too, so the count
+  never misses a tape the mix flags. The mono-mix verdict
+  (`profile.has_clipping`) still switches the pre-conditioning `adeclip`
+  and `auto_pure_linear`'s own declip, unchanged. A scan that left no
+  verdict (unreadable audio, so the scanner's fallback strategy, or a
+  caller with no strategy) runs declip as on `always` and logs a WARNING;
+  only a verdict of no clipping skips it. Clipping outside the scanned
+  minutes can go unflagged. cathar 0.8.0's declip gave a
+  synthetic file peaking at 0.5 back sample for sample and reshaped every
+  sample above `cathar_declip_threshold` (0.95) on unclipped files peaking
+  at 0.97 and 1.0, so the two modes differ on tapes whose peaks pass 0.95
+  without being flagged; `detected` also saves the stage's runtime (5.29 s
+  on an 8 s fixture). `cathar_enable_declip` false runs no declip in either
+  mode.
+- `cathar_dehum_freq` (`scanner`, or `0`): `scanner` gives `dehum --freq`
+  the scanner's mains family (`notch_hz` 50 or 100 gives 50, 60 or 120
+  gives 60; `notch_freq` when the strategy carries no reading) and runs no
+  dehum on a tape the scan read as hum-free; the scanner votes on the first
+  32768 samples, about 0.7 s. `0` runs `dehum --freq 0` on every tape, so
+  cathar 0.8.0 detects the family from the recording itself. With
+  `cathar_dehum_adaptive` (true) the tracker also picks 50 against 60 and
+  passes a file without hum through unchanged: on synthetic files
+  `--freq 0`, `50` and `60` gave identical output on 50 Hz hum, and a
+  hum-free file came back sample for sample. The change therefore shows on
+  tapes the scanner read as hum-free. `auto_pure_linear`'s own dehum
+  (`apl_enable_dehum`, off) keeps the frequency it reads from the recording
+  and never reads this key.
+
 ## Event Log
 
 `AI_RESTORE_EVENT_LOG=<dir>` in the environment (not a `config.yaml` key)

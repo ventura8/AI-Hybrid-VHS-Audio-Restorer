@@ -3,8 +3,9 @@
 Orchestrates multi-stage deterministic DSP filtering using the Cathar engine:
 - Pre-conditioning: dewind, GCC-PHAT azimuth alignment, sub-bass mono-maker,
   AR declick, surface decrackle, AR dropout inpaint, deplosive.
-- Analog Repair: SPADE declip, adaptive I/Q tracking dehum, transient repair,
-  dewow, and WPE dereverberation.
+- Analog Repair: SPADE declip (every tape, or the scanner's clipping verdict),
+  adaptive I/Q tracking dehum (the scanned mains family, or cathar's own
+  detection), transient repair, dewow, and WPE dereverberation.
 - Denoising: empirical noiseprint learning and phase-coherent spectral subtraction.
 - Polish: multiband adaptive sibilance de-esser and SBR harmonic synthesis.
 """
@@ -31,12 +32,14 @@ from .config import (
     CATHAR_AZIMUTH_METHOD,
     CATHAR_BETA,
     CATHAR_DECLICK_THRESHOLD,
+    CATHAR_DECLIP_MODE,
     CATHAR_DECLIP_THRESHOLD,
     CATHAR_DECRACKLE_SENSITIVITY,
     CATHAR_DEESSER_BANDS,
     CATHAR_DEESSER_FREQ,
     CATHAR_DEESSER_THRESHOLD,
     CATHAR_DEHUM_ADAPTIVE,
+    CATHAR_DEHUM_FREQ,
     CATHAR_DEHUM_HARMONICS,
     CATHAR_DENOISE_METHOD,
     CATHAR_DEPLOSIVE_STRENGTH,
@@ -232,6 +235,27 @@ def _cathar_declip_step(input_wav, output_dir, threshold=CATHAR_DECLIP_THRESHOLD
 
 
 MAINS_FUNDAMENTAL_BY_HARMONIC = {100.0: 50.0, 120.0: 60.0}
+# `dehum --freq 0`: cathar 0.8.0 detects the mains family from the recording itself.
+DEHUM_AUTODETECT_FREQ = "0"
+
+
+def _mains_family(freq):
+    """50 or 60: the mains family a notch frequency belongs to (a 100 or 120 Hz harmonic reads as its fundamental)."""
+    freq = MAINS_FUNDAMENTAL_BY_HARMONIC.get(float(freq), float(freq))
+    return 50 if abs(freq - 50.0) < abs(freq - 60.0) else 60
+
+
+def _dehum_freq_arg(freq, autodetect):
+    """`dehum --freq`'s value: "0" when cathar detects the mains itself, else the family of `freq`; None skips the stage.
+
+    Without autodetect a missing or non-positive `freq` skips the stage, as it always has: the
+    scanner found no hum, or a caller (auto_pure_linear's tonal cleanup) asked for none.
+    """
+    if autodetect:
+        return DEHUM_AUTODETECT_FREQ
+    if freq is None or freq <= 0:
+        return None
+    return str(_mains_family(freq))
 
 
 def _cathar_dehum_step(
@@ -241,13 +265,13 @@ def _cathar_dehum_step(
     adaptive=CATHAR_DEHUM_ADAPTIVE,
     harmonics=CATHAR_DEHUM_HARMONICS,
     total_duration=None,
+    autodetect=False,
 ):
-    if freq is None or freq <= 0:
+    freq_arg = _dehum_freq_arg(freq, autodetect)
+    if freq_arg is None:
         return input_wav
-    freq = MAINS_FUNDAMENTAL_BY_HARMONIC.get(float(freq), float(freq))
     output_wav = output_dir / f"dehummed_{input_wav.name}"
-    base_freq = 50.0 if abs(freq - 50.0) < abs(freq - 60.0) else 60.0
-    cmd = ["dehum", "--freq", str(int(base_freq)), "--harmonics", str(harmonics)]
+    cmd = ["dehum", "--freq", freq_arg, "--harmonics", str(harmonics)]
     if adaptive:
         cmd.append("--adaptive")
     return _run_cathar_step(cmd, input_wav, output_wav, "Adaptive Mains Buzz Dehum", "Cathar Dehum", total_duration)
@@ -582,20 +606,67 @@ def _repair_wanted(repair):
     return CATHAR_ENABLE_REPAIR if repair is None else bool(repair)
 
 
-def _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None, repair=None):
-    """Executes analog clipping reconstruction, mains dehum, and spectral glitch repair (the material's switch)."""
-    if CATHAR_ENABLE_DECLIP:
+def _clipping_verdict(strategy):
+    """The scanner's clipping verdict over every channel (`profile.has_clipping_any_channel`): True, False, or None.
+
+    The scanner counts samples at |x| >= 0.985 over every channel of the minutes it reads
+    (20 or more is clipped). The mono-mix reading (`has_clipping`, which switches the
+    pre-conditioning adeclip and auto_pure_linear's declip) halves a tape with one dead
+    channel, which the pre-conditioning then mirrors to full scale, so it is not read here.
+    None is no verdict: no strategy or profile (a failed scan's fallback strategy, a direct
+    caller), the key missing, or a value that is not a bool.
+    """
+    profile = strategy.get("profile") if isinstance(strategy, dict) else None
+    verdict = profile.get("has_clipping_any_channel") if isinstance(profile, dict) else None
+    return verdict if isinstance(verdict, bool) else None
+
+
+def _declip_on_verdict(verdict):
+    """'detected': declip on a clipped tape, none on a clean one, and as on 'always' (with a WARNING) without a verdict."""
+    if verdict is None:
+        log_msg(
+            "    [Cathar] cathar_declip_mode detected: no clipping verdict in the scan; running Peak Saturation Declip as on 'always'",
+            level="WARNING",
+        )
+        return True
+    if not verdict:
+        log_msg("    [Cathar] Skipping Peak Saturation Declip (cathar_declip_mode detected: the scan found no clipping on any channel)")
+    return verdict
+
+
+def _declip_wanted(strategy):
+    """Whether the chain runs cathar's declip: switched on, and on 'detected' by the scanner's clipping verdict."""
+    if not CATHAR_ENABLE_DECLIP or CATHAR_DECLIP_MODE != "detected":
+        return CATHAR_ENABLE_DECLIP
+    return _declip_on_verdict(_clipping_verdict(strategy))
+
+
+def _dehum_autodetect():
+    """Whether cathar picks the mains family itself (`cathar_dehum_freq` 0) instead of taking the scanner's."""
+    return CATHAR_DEHUM_FREQ == 0
+
+
+def _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None, repair=None, declip=None):
+    """Executes analog clipping reconstruction, mains dehum, and spectral glitch repair (the material's switch).
+
+    `declip` is the chain's decision (`_declip_wanted`); None keeps the configured switch.
+    """
+    if CATHAR_ENABLE_DECLIP if declip is None else declip:
         current_wav = _cathar_declip_step(current_wav, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_DEHUM:
-        current_wav = _cathar_dehum_step(current_wav, work_dir, freq=notch_freq, total_duration=total_duration)
+        current_wav = _cathar_dehum_step(
+            current_wav, work_dir, freq=notch_freq, total_duration=total_duration, autodetect=_dehum_autodetect()
+        )
     if _repair_wanted(repair):
         current_wav = _cathar_repair_step(current_wav, work_dir, total_duration=total_duration)
     return current_wav
 
 
-def _cathar_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None, repair=None):
+def _cathar_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None, repair=None, declip=None):
     """Executes clipping repair, mains dehum, glitch repair, dewow, and dereverb."""
-    current = _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=repair)
+    current = _cathar_analog_repair_pass(
+        current_wav, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=repair, declip=declip
+    )
     if CATHAR_ENABLE_DEWOW:
         current = _cathar_dewow_step(current, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_DEREVERB:
@@ -779,7 +850,9 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
     current = _cathar_precondition_pass(
         original_wav, work_dir, total_duration=total_duration, deplosive=settings["deplosive"], dewind_cutoff=settings["dewind_cutoff"]
     )
-    current = _cathar_repair_pass(current, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=settings["repair"])
+    current = _cathar_repair_pass(
+        current, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=settings["repair"], declip=_declip_wanted(strategy)
+    )
     np_path = None
     if settings["noiseprint"]:
         probe_s = _probe_duration_s(total_duration, current)

@@ -310,7 +310,9 @@ def test_filter_cathar_vhs_pipeline(tmp_path):
         deplosive=cathar.CATHAR_ENABLE_DEPLOSIVE,
         dewind_cutoff=cathar.CATHAR_DEWIND_CUTOFF,
     )
-    mock_rep.assert_called_once_with(original_wav, work_dir, notch_freq=50.0, total_duration=None, repair=cathar.CATHAR_ENABLE_REPAIR)
+    mock_rep.assert_called_once_with(
+        original_wav, work_dir, notch_freq=50.0, total_duration=None, repair=cathar.CATHAR_ENABLE_REPAIR, declip=cathar.CATHAR_ENABLE_DECLIP
+    )
     mock_np.assert_called_once()
     mock_den.assert_called_once_with(
         original_wav,
