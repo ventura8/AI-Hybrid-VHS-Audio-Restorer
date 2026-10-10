@@ -58,14 +58,21 @@ def test_the_learned_families_run_only_on_the_incumbent_and_the_contenders(monke
 
 
 def test_the_two_stages_give_the_single_pass_verdict(monkeypatch):
-    """Same qualifications as judging every family on every candidate; only contenders can carry a veto mark."""
+    """Same qualifications as judging every family on every candidate."""
     score, _calls = _scorer()
     two_stage = _judge(monkeypatch, score)
     full = {cid: {"t1": {**FIRST[cid], **SECOND[cid]}} for cid in FIRST}
     single = at.judge(full, "inc", RANKING, VETOES)
     assert {cid: v["qualifies"] for cid, v in two_stage.items()} == {cid: v["qualifies"] for cid, v in single.items()}
     assert [cid for cid, v in two_stage.items() if v["qualifies"]] == ["good"]
-    assert two_stage["vetoed"]["vetoed"] and "vetoed" not in two_stage["worse"]
+
+
+def test_only_a_contender_carries_a_veto_mark(monkeypatch):
+    """The vetoed contender is marked; `worse`, whose learned readings were never scored, is not."""
+    score, _calls = _scorer()
+    two_stage = _judge(monkeypatch, score)
+    assert two_stage["vetoed"]["vetoed"]
+    assert "vetoed" not in two_stage["worse"]
 
 
 def test_without_a_contender_the_learned_families_never_run(monkeypatch):

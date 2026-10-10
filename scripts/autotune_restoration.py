@@ -148,6 +148,8 @@ ENV_PREFIX = "env:"
 ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 ROFORMER_AGGR = "denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt"
 LOG_MD = "log.md"
+# Each candidate's render log: the app's output, with the stage-cache hits and the scanner's readings.
+RUN_LOG = "run.log"
 HASH_SIDECAR_SUFFIX = ".audio_sha256.json"
 HASH_BLOCK_FRAMES = 1 << 20
 # Recorded in every sidecar: a sidecar written by another hash function (the harness's DC-blind one) is never trusted.
@@ -600,7 +602,7 @@ def run_candidate(engine, overrides, tapes, out_dir):
     started = time.time()
     _restore(cand_dir, tapes, extra_env)
     _collect_outputs(cid, tapes, spec["suffix"], wavs)
-    timing = {"wall_s": time.time() - started, "stage_cache": stage_cache_counts(cand_dir / "run.log")}
+    timing = {"wall_s": time.time() - started, "stage_cache": stage_cache_counts(cand_dir / RUN_LOG)}
     (cand_dir / "timing.json").write_text(json.dumps(timing), encoding="utf-8")
     return wavs
 
@@ -646,7 +648,7 @@ def _prepare_candidate(cid, cand_dir, spec, overrides):
 
 def _restore(cand_dir, tapes, extra_env):
     """Runs the app on every tape in a fresh interpreter launched in the candidate's folder."""
-    with open(cand_dir / "run.log", "w", encoding="utf-8") as log:
+    with open(cand_dir / RUN_LOG, "w", encoding="utf-8") as log:
         subprocess.run(
             [PYTHON, str(REPO / "restore_audio_hybrid.py"), *(str(Path(p)) for p in tapes.values())],
             cwd=str(cand_dir),
@@ -867,7 +869,7 @@ def _incumbent_readings(engine, tapes, out_dir, incumbent):
     """The tapes' held partials from the incumbent's render log, rendering the incumbent first when it is new; logs when
     they make the music knobs dead."""
     run_candidate(engine, incumbent, tapes, out_dir)
-    readings = material.held_partials(out_dir / "cands" / candidate_id(incumbent) / "run.log", len(tapes))
+    readings = material.held_partials(out_dir / "cands" / candidate_id(incumbent) / RUN_LOG, len(tapes))
     note = material.speech_note(engine, incumbent, readings)
     if note:
         print(note, flush=True)
