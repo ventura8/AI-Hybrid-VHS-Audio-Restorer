@@ -265,7 +265,8 @@ def test_a_round_proposes_with_the_tape_lengths_it_was_given(tmp_path, monkeypat
     """run_round hands args.durations to propose, so a dead print-length move is never rendered."""
     seen = []
     monkeypatch.setattr(at, "propose", lambda *args: seen.append(args) or {})
+    monkeypatch.setattr(at, "run_candidate", lambda *_args: None)
     state = {"incumbent": {"a": 1}, "rounds": [], "candidates": {}}
     args = SimpleNamespace(families=("dsp",), gates=None, language="ro", parallel=1, durations={"t1": 61.0})
     assert not at.run_round(args, "cathar", {"t1": "t1.mov"}, tmp_path, state, {"m": "up"}, 1)
-    assert seen == [("cathar", {"a": 1}, {"t1": 61.0})]
+    assert seen == [("cathar", {"a": 1}, {"t1": 61.0}, None)]

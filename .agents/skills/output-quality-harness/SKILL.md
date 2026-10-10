@@ -1040,8 +1040,6 @@ that threshold is measured, re-run the pre-check with it as `--heard-db`.
 
 ### Not built yet
 
-- In the loop (plan 1.5): inertness from each tape's material (two-stage
-  scoring is built, 2026-10-11).
 - From calibration v3: the hard dropout gate on `file.dropouts` instead of
   the window tail of `dsp.dropouts`, and R0 naming a mains only when its
   fundamental stands about 10 dB out (after the IA and noise clips confirm
@@ -1136,6 +1134,17 @@ only take a qualification away, so the verdicts equal one pass over every
 family; only contenders can carry a "vetoed" mark now, and a plateau round
 runs no learned model at all. A named `--families` list runs in the same two
 stages; a candidate scored on every family at once is not scored again.
+
+Each round renders the incumbent first and reads the held partials (the
+tonal persistence both engines' music settings key on) that the app's
+scanner printed for every tape in its `run.log`
+(`scripts/autotune_material.py`). When no tape reaches the incumbent's
+music floor, the music-only knobs are left out before rendering (cathar's
+11 `cathar_music_*` keys; APL's music model, stem path and background
+floor), and so is a floor move no tape crosses. On the speech tapes the
+readings are 0.0004-0.0055, so the floor's 0.005 move stays live:
+Gaudeamus 5 would cross it. Before this, round C4 rendered every music key
+on the speech tapes (about 3 minutes each) for the hash to discard.
 
 Knobs must be the live ones: on the Tata tapes the scanner reads a spectral
 flatness of 0.022, under `apl_tonal_flatness_max` 0.035, so APL takes its

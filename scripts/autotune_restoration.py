@@ -96,13 +96,12 @@ its `run.log` reports. cathar never uses the cache. Off by default.
 learned vetoes' families run only on the incumbent and the candidates that already qualify
 (`scripts/autotune_scoring.py` holds the scorers, the families and the stages).
 
-Not built yet (plan 1.5, design 5.1): inertness from each tape's material. The `cathar_music_*`
-keys and `apl_music_neural_model` are dead on a tape the scanner reads below the music
-persistence floor (`modules/tonal_persistence.py`), and cathar's speech keys on a clip that
-takes the music profile; telling them apart before the render needs the scanner's tonal
-persistence per tape (the R0 / scanner reading), which the loop does not read yet. Until it
-does, a speech-only tape set pays a render for each of those moves every round (~205 s per APL
-candidate on four tapes) and only the hash keeps them from being scored.
+Inertness from the tapes' material (plan 1.5, design 5.1; `scripts/autotune_material.py`): each
+round renders the incumbent first and reads the held partials the app's scanner printed for
+every tape in its `run.log`. When no tape reaches the incumbent's music floor, the music-only
+knobs (the `cathar_music_*` keys; `apl_music_neural_model`, `apl_music_stem_path`,
+`apl_music_bg_floor_db`) are left out, and a move of the floor itself is left out when no tape
+crosses it. Cathar's speech keys on a clip set that is all music are still left to the hash.
 
 usage:
   autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
@@ -140,6 +139,7 @@ guards_mod = import_module("scripts.autotune_guards")
 cathar = import_module("modules.cathar")
 stage_cache = import_module("modules.stage_cache")
 scoring = import_module("scripts.autotune_scoring")
+material = import_module("scripts.autotune_material")
 # Called through this module, so a test can stand in for the scorer.
 score_round = scoring.score_round
 SCORER_PARALLEL = scoring.SCORER_PARALLEL
@@ -359,9 +359,8 @@ def _matching_value(seen, values):
 # each. The switches stay knobs, so the loop can still turn the stage back on and then move
 # them. Values absent from the incumbent read as the app's defaults (SWITCH_DEFAULTS: what the
 # repository's config.yaml resolves to). An entry is written only from every code path that
-# reads the knob; a knob dead on some material only (a music key on a speech tape) is left to
-# the audio hash until the loop reads the material (see the module docstring), so a live knob
-# is never hidden.
+# reads the knob; a knob dead on some material only (a music key on a speech tape) is decided
+# from the incumbent's render log instead (`autotune_material`), so a live knob is never hidden.
 # Read only inside spectral_denoise, behind apl_enable_spectral_denoise. apl_noiseprint_tonal_s is
 # not here: the stem path's background suppressor reads it too (its own entry below).
 SUBTRACTION_KNOBS = (
@@ -469,13 +468,15 @@ def _switch_value(incumbent, switch):
     return SWITCH_DEFAULTS[switch] if value is None else value
 
 
-def inert_knobs(engine, incumbent, durations=None):
-    """The knobs that cannot move this engine's audio under the incumbent's switches and, given `durations`, on these tapes."""
+def inert_knobs(engine, incumbent, durations=None, readings=None):
+    """The knobs that cannot move this engine's audio under the incumbent's switches and, given `durations` and the
+    tapes' held-partials `readings` (`autotune_material`), on these tapes."""
     inert = set(NEVER_READ.get(engine, ()))
     for when, knobs in INERT_WHEN.get(engine, ()):
         if all(_switch_value(incumbent, switch) == value for switch, value in when.items()):
             inert.update(knobs)
     inert.update(_dead_on_these_tapes(engine, incumbent, durations))
+    inert.update(material.material_inert(engine, incumbent, readings))
     return inert
 
 
@@ -534,24 +535,34 @@ def _neighbours(values, current):
     return [v for v in values if v != current]
 
 
-def neighbour_moves(engine, incumbent, durations=None):
+def neighbour_moves(engine, incumbent, durations=None, readings=None):
     """`[(knob, value)]`: the values adjacent to each knob's current value (or every value when unset).
 
     Knobs the incumbent's switches make inert are left out (see INERT_WHEN), and so is a move
-    the tapes' lengths make dead (see DURATION_BOUND; `durations` is `{slug: seconds}`).
+    the tapes' lengths make dead (see DURATION_BOUND; `durations` is `{slug: seconds}`) or their
+    material makes dead (`readings`, the held partials of the incumbent's render; see
+    `autotune_material`).
     """
     moves = []
-    inert = inert_knobs(engine, incumbent, durations)
+    inert = inert_knobs(engine, incumbent, durations, readings)
     for knob, values in KNOBS[engine].items():
         if knob not in inert:
-            moves += [(knob, v) for v in _neighbours(values, incumbent.get(knob)) if not dead_move(knob, v, incumbent, durations)]
+            moves += [
+                (knob, v) for v in _neighbours(values, incumbent.get(knob)) if _live(engine, knob, v, incumbent, (durations, readings))
+            ]
     return moves
 
 
-def propose(engine, incumbent, durations=None):
+def _live(engine, knob, value, incumbent, tapes):
+    """Whether the move can change some tape: neither its length nor its material makes it dead."""
+    durations, readings = tapes
+    return not (dead_move(knob, value, incumbent, durations) or material.dead_floor_move(engine, knob, value, incumbent, readings))
+
+
+def propose(engine, incumbent, durations=None, readings=None):
     """`{id: overrides}` for every single-knob neighbour of the incumbent that can change the audio on these tapes."""
     proposals = {}
-    for knob, value in neighbour_moves(engine, incumbent, durations):
+    for knob, value in neighbour_moves(engine, incumbent, durations, readings):
         overrides = {**incumbent, knob: value}
         proposals[candidate_id(overrides)] = overrides
     proposals.pop(candidate_id(incumbent), None)
@@ -836,7 +847,7 @@ def save_state(out_dir, state):
 def run_round(args, engine, tapes, out_dir, state, ranking, number):
     """One round: neighbours, runs, scores, the combination of the winners, the verdict; True when the incumbent moved."""
     incumbent = state["incumbent"]
-    proposals = propose(engine, incumbent, getattr(args, "durations", None))
+    proposals = propose(engine, incumbent, getattr(args, "durations", None), _incumbent_readings(engine, tapes, out_dir, incumbent))
     if not proposals:
         return False
     everything = {candidate_id(incumbent): incumbent, **proposals}
@@ -850,6 +861,17 @@ def run_round(args, engine, tapes, out_dir, state, ranking, number):
     _report_round(out_dir, state["rounds"][-1], incumbent, everything, len(tapes))
     save_state(out_dir, state)
     return accepted is not None
+
+
+def _incumbent_readings(engine, tapes, out_dir, incumbent):
+    """The tapes' held partials from the incumbent's render log, rendering the incumbent first when it is new; logs when
+    they make the music knobs dead."""
+    run_candidate(engine, incumbent, tapes, out_dir)
+    readings = material.held_partials(out_dir / "cands" / candidate_id(incumbent) / "run.log", len(tapes))
+    note = material.speech_note(engine, incumbent, readings)
+    if note:
+        print(note, flush=True)
+    return readings
 
 
 def _ordered(verdicts):

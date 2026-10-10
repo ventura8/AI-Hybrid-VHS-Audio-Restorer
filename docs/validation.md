@@ -1226,7 +1226,10 @@ is hashed per tape, exactly and with its DC offset kept, into
 `cands/<cid>/<slug>.audio_sha256.json`; a candidate that sounds byte for
 byte like the incumbent or an earlier candidate on every tape is logged as
 `inert` with a "knob-table finding" line in `log.md` and never scored. Inert
-renders had cost about 30% of a round.
+renders had cost about 30% of a round. Since 2026-10-11 the material decides
+too: the incumbent renders first, and when the held partials its scanner
+printed for every tape stay under the music floor, the music-only knobs are
+not proposed (`scripts/autotune_material.py`).
 
 The scorer runs only the families the grid reads (`--families auto`, the
 default since 2026-10-11): dsp always, plus the family of each ranking
