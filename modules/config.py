@@ -654,6 +654,15 @@ VALID_CATHAR_ENHANCE_METHODS = {"replicate", "interpolate"}
 # rides the gain (dynamic mode, today), 'gain_limiter' applies one gain and the mux's sample-peak
 # limiter (-1 dBFS), which can leave intersample overs (see modules/mastering.py).
 VALID_LOUDNORM_LINEAR_FALLBACKS = {"ffmpeg", "gain_limiter"}
+# Round C4 (cathar's declip and dehum). 'always' runs cathar's `declip` on every tape, as every
+# release has; 'detected' only on a tape the scanner flagged as clipped, counted over every channel
+# (profile.has_clipping_any_channel, so a one-channel tape is not halved by the mono mix), and as on
+# 'always', with a WARNING, when the scan left no verdict (cathar._clipping_verdict).
+VALID_CATHAR_DECLIP_MODES = {"always", "detected"}
+# cathar_dehum_freq: 'scanner' gives `dehum --freq` the scanner's mains family (50 or 60) and runs
+# no dehum when the scan found no hum, as every release has; 0 runs `dehum --freq 0` on every tape,
+# so cathar picks the family from the recording itself (cathar 0.8.0's help).
+CATHAR_DEHUM_FREQ_SCANNER = "scanner"
 
 
 def _reject_config_value(param_name, raw_value, default):
@@ -683,6 +692,32 @@ def _normalize_cathar_enhance_method(raw_value):
 
 def _normalize_loudnorm_linear_fallback(raw_value):
     return _normalize_choice(raw_value, VALID_LOUDNORM_LINEAR_FALLBACKS, "loudnorm_linear_fallback", "ffmpeg")
+
+
+def _normalize_cathar_declip_mode(raw_value):
+    return _normalize_choice(raw_value, VALID_CATHAR_DECLIP_MODES, "cathar_declip_mode", "always")
+
+
+def _is_zero(raw_value):
+    """A number equal to 0, quoted or not; a bool is never one, since False would otherwise read as 0.
+
+    `math.isclose` against 0 with no absolute tolerance is exact: only 0 (or -0) passes.
+    """
+    if raw_value is None or isinstance(raw_value, bool):
+        return False
+    try:
+        return math.isclose(float(raw_value), 0.0)
+    except (TypeError, ValueError):
+        return False
+
+
+def _normalize_cathar_dehum_freq(raw_value):
+    """'scanner' (the scanned mains family) or 0 (cathar's own detection); anything else warns and keeps 'scanner'."""
+    if isinstance(raw_value, str) and raw_value.strip().lower() == CATHAR_DEHUM_FREQ_SCANNER:
+        return CATHAR_DEHUM_FREQ_SCANNER
+    if _is_zero(raw_value):
+        return 0
+    return _reject_config_value("cathar_dehum_freq", raw_value, CATHAR_DEHUM_FREQ_SCANNER)
 
 
 def _is_bad_number(val):
@@ -784,6 +819,8 @@ def _apply_user_config(defaults, user_config):
     defaults["cathar_azimuth_method"] = _normalize_cathar_azimuth_method(defaults.get("cathar_azimuth_method"))
     defaults["cathar_enhance_method"] = _normalize_cathar_enhance_method(defaults.get("cathar_enhance_method"))
     defaults["loudnorm_linear_fallback"] = _normalize_loudnorm_linear_fallback(defaults.get("loudnorm_linear_fallback"))
+    defaults["cathar_declip_mode"] = _normalize_cathar_declip_mode(defaults.get("cathar_declip_mode"))
+    defaults["cathar_dehum_freq"] = _normalize_cathar_dehum_freq(defaults.get("cathar_dehum_freq"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -821,6 +858,12 @@ def load_config():
         # 'ffmpeg' keeps that and every output's bytes; 'gain_limiter'
         # (VALID_LOUDNORM_LINEAR_FALLBACKS) is for the pause-texture round to judge.
         "loudnorm_linear_fallback": "ffmpeg",
+        # Round C4: cathar's declip on every tape ('always') or on the scanner's clipping verdict
+        # ('detected'); cathar's dehum at the scanner's mains family ('scanner') or at cathar's own
+        # detection (0, `dehum --freq 0`). Both defaults are what every release has run, so every
+        # output keeps its bytes; the C3 listening session judges the other values.
+        "cathar_declip_mode": "always",
+        "cathar_dehum_freq": CATHAR_DEHUM_FREQ_SCANNER,
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -935,9 +978,11 @@ CATHAR_INPAINT_MAX_GAP_MS = int(CONFIG.get("cathar_inpaint_max_gap_ms", 50))
 CATHAR_INPAINT_ITERATIONS = int(CONFIG.get("cathar_inpaint_iterations", 3))
 CATHAR_ENABLE_DECLIP = bool(CONFIG.get("cathar_enable_declip", True))
 CATHAR_DECLIP_THRESHOLD = float(CONFIG.get("cathar_declip_threshold", 0.95))
+CATHAR_DECLIP_MODE = str(CONFIG.get("cathar_declip_mode", "always"))
 CATHAR_ENABLE_DEHUM = bool(CONFIG.get("cathar_enable_dehum", True))
 CATHAR_DEHUM_ADAPTIVE = bool(CONFIG.get("cathar_dehum_adaptive", True))
 CATHAR_DEHUM_HARMONICS = int(CONFIG.get("cathar_dehum_harmonics", 8))
+CATHAR_DEHUM_FREQ = CONFIG.get("cathar_dehum_freq", CATHAR_DEHUM_FREQ_SCANNER)
 CATHAR_ENABLE_REPAIR = bool(CONFIG.get("cathar_enable_repair", True))
 CATHAR_REPAIR_STRENGTH = int(CONFIG.get("cathar_repair_strength", 2))
 CATHAR_ENABLE_DEWOW = bool(CONFIG.get("cathar_enable_dewow", False))

@@ -144,6 +144,14 @@ The engine supports 10 execution modes configured in `config.yaml`:
     no longer reach music; the defaults (0.02, on, 80 Hz) keep music's
     command lines, and so its output, unchanged
     (`tests/unit/test_cathar_music_round_c3.py`).
+  - Round C4 (2026-10-10): `cathar_declip_mode` runs declip on every tape
+    (`always`) or only on the scanner's clipping verdict counted over every
+    channel (`detected`; a scan with no verdict declips with a WARNING), and
+    `cathar_dehum_freq` gives dehum the scanner's mains family, skipping a
+    tape it read as hum-free (`scanner`), or lets cathar detect it on every
+    tape (`0`, `dehum --freq 0`). The defaults keep HEAD 549705a's command
+    lines (`tests/unit/test_cathar_round_c4.py`); the other values go to the
+    C3 listening session.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

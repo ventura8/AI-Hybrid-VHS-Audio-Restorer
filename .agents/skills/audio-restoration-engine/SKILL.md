@@ -315,6 +315,51 @@ audio alignment, or FFmpeg multiplexing.
   stays, so 40 or 60 Hz gives bass back only down to the scanner's cut. APL
   never reads the music keys: `spectral_denoise` calls the dewind and
   denoise steps with their speech defaults.
+- **cathar declip and dehum (round C4, 2026-10-10)**: until then the chain
+  ran `declip --method spade --threshold 0.95` on every tape and gave
+  `dehum --freq` the scanner's mains family: `_resolve_notch_freq` reads
+  `precondition_filters.notch_hz` (`config.notch_freq`, 50, only when the
+  strategy carries no `notch_hz`), `_mains_family` maps 100 to 50 and 120
+  to 60 and rounds to the nearer of 50 / 60 (55 gives 60), and a `notch_hz`
+  of 0 (the scan found no hum) runs no dehum at all. The scanner's hum vote
+  (`filters._detect_mains_buzz_notch`) reads only the first 32768 samples of
+  the analysed audio, about 0.7 s. `cathar_declip_mode: detected` gates the
+  declip on `profile.has_clipping_any_channel`, which
+  `auto_scanner._detect_clipping_any_channel` sets by running
+  `filters._detect_analog_clipping` on the multichannel array: 20 or more
+  samples at `|x| >= 0.985` counted over every channel of the scanned
+  minutes (the first 60 s of a tape under 4 minutes, else four spread 60 s
+  blocks), the count vhs_native's own scan takes. The mono-mix reading
+  (`has_clipping`) could not serve: on a tape with one dead channel (half
+  the 21-tape library) the mix halves the live side, so it never reaches
+  0.985, while the pre-conditioning mirrors that side to full scale before
+  cathar runs (a 10 s file with 95,592 clipped samples on its live side
+  scanned `has_clipping` False). Wherever the mix reaches the threshold one
+  channel does too, so the count never misses a tape the mix flags.
+  `has_clipping` is left alone: it still switches the pre-conditioning
+  `adeclip` and `physical_repair._stage_plan`'s declip. `_clipping_verdict`
+  is three-way: the bool, or None when there is no strategy, profile or
+  bool (the scanner's fallback strategy on unreadable audio carries no
+  reading); `_declip_on_verdict` declips on True, logs the skip at INFO on
+  False, and on None declips as on `always` with a WARNING, so a failed
+  detection never silently drops the stage. The remaining blind spots:
+  clipping outside the scanned minutes, and peaks between cathar's 0.95 and
+  the detector's 0.985. `cathar_dehum_freq: 0`
+  passes `dehum --freq 0` on every tape (0.8.0: "`0` auto-detects from the
+  recording"); `_cathar_dehum_step(autodetect=True)` ignores `freq`, and
+  without it a missing or non-positive `freq` still skips the stage, which
+  `spectral_denoise._dehum` relies on. Probed on synthetic files with 0.8.0:
+  declip gave a file peaking at 0.5 back sample for sample and reshaped every
+  sample over 0.95 on unclipped files peaking at 0.97 and 1.0 (peaks to 0.96
+  and 0.99; a clipped file's peaks went to 1.6); `dehum --adaptive` gave
+  identical output at `--freq` 0, 50 and 60 on 50 Hz hum and returned a
+  hum-free file unchanged, while without `--adaptive` `--freq 0` notched the
+  60 Hz series on the hum-free file. So with the shipped `--adaptive` the
+  dehum key shows only on tapes the scanner read as hum-free. Both keys
+  default to the old behaviour (`tests/unit/test_cathar_round_c4.py` pins
+  HEAD 549705a's command lines for ten strategies and APL's two calls); APL
+  never reads them: its physical repair keeps its own `has_clipping` plan
+  and its tonal cleanup calls the dehum step without `autodetect`.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

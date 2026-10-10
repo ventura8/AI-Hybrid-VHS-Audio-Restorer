@@ -247,14 +247,23 @@ def known_config_fields():
     for name, _default in config_mod._BOOL_CONFIG_FIELDS:
         fields[name] = (bool, None, None)
     fields["cathar_denoise_method"] = (set(config_mod.VALID_CATHAR_DENOISE_METHODS), None, None)
+    fields["cathar_declip_mode"] = (set(config_mod.VALID_CATHAR_DECLIP_MODES), None, None)
+    fields["cathar_dehum_freq"] = ({config_mod.CATHAR_DEHUM_FREQ_SCANNER, 0}, None, None)
     fields["apl_neural_model"] = (str, None, None)
     return fields
+
+
+def _choice_problem(name, value, choices):
+    """A choice outside the set; a bool is never one (False == 0 would pass cathar_dehum_freq's {'scanner', 0})."""
+    if value in choices and not isinstance(value, bool):
+        return None
+    return f"{name}: {value!r} is not one of {sorted(choices, key=str)}"
 
 
 def _problem(name, value, spec):
     kind, low, high = spec
     if isinstance(kind, set):
-        return None if value in kind else f"{name}: {value!r} is not one of {sorted(kind)}"
+        return _choice_problem(name, value, kind)
     if kind is bool:
         return None if isinstance(value, bool) else f"{name}: expected true/false, got {value!r}"
     if kind is str:

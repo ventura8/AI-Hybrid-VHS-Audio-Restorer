@@ -75,6 +75,15 @@ Knob-table facts the tables below rest on (2026-10-09, read from the code paths)
   same filter strings. The shelf is APL's alone (cathar's polish runs without air); the
   expander timing is shared, since cathar's mode runs the same polish expander
   (`modes/cathar.py` -> `processing._polish_full_audio_step`).
+- cathar's `declip` ran on every tape and its `dehum` took the scanner's mains family (none when
+  the scan found no hum); since 2026-10-10 `cathar_declip_mode` ('always' | 'detected') and
+  `cathar_dehum_freq` ('scanner' | 0) are knobs (round C4), whose defaults issue the same
+  command lines. Both stages run on speech and music alike, so neither is a music key; each is
+  dead with its stage switch off. cathar 0.8.0's declip returned a synthetic file peaking at
+  0.5 sample for sample, and reshaped every sample over its 0.95 threshold on unclipped files
+  peaking at 0.97 and 1.0 (peaks to 0.96 and 0.99), so on tapes that peak under
+  `cathar_declip_threshold` 'detected' should render the same audio and the hash then marks it
+  inert.
 
 `--stage-cache DIR` (plan 1.5) points every candidate's render at one neural-stage cache
 (`AI_RESTORE_STAGE_CACHE`, `modules/stage_cache.py`; `--stage-cache-gb` caps it, 50 GB by
@@ -198,6 +207,11 @@ KNOBS = {
         "cathar_music_beta": [0.005, 0.01, 0.02, 0.04],
         "cathar_music_enable_repair": [True, False],
         "cathar_music_dewind_cutoff": [40, 60, 80],
+        # Round C4 (plan Part 2): declip on every tape (every release) or only on the scanner's clipping
+        # verdict, and dehum at the scanner's mains family (every release; none when the scan found no
+        # hum) or at cathar's own detection (`dehum --freq 0`, on every tape). Both apply to speech and music.
+        "cathar_declip_mode": ["always", "detected"],
+        "cathar_dehum_freq": ["scanner", 0],
         # Split-band subtraction (modules/split_band.py): the highs get their own factor.
         "cathar_split_band_hz": [0, 4000, 6000, 8000],
         "cathar_alpha_high": [0.5, 1.0, 1.5, 2.0, 3.0],
@@ -412,6 +426,9 @@ INERT_WHEN = {
         ({"cathar_music_profile": False}, _CATHAR_MUSIC_KEYS),
         ({"enable_pause_floor": False}, ("pause_floor_fill_db",)),
         ({"enable_dynamic_expander": False}, ("expander_depth_db", "cathar_music_expander_depth_db") + EXPANDER_SHAPE_KNOBS),
+        # cathar._cathar_analog_repair_pass runs no declip or dehum with its switch off, whatever the mode or frequency.
+        ({"cathar_enable_declip": False}, ("cathar_declip_mode",)),
+        ({"cathar_enable_dehum": False}, ("cathar_dehum_freq",)),
     ),
 }
 # Knobs an engine never reads: auto_pure_linear takes apl_expander_depth_db, not the shared depth.
@@ -436,6 +453,8 @@ SWITCH_DEFAULTS = {
     "cathar_enable_dewind": True,
     "cathar_enable_repair": True,
     "cathar_music_enable_repair": True,
+    "cathar_enable_declip": True,
+    "cathar_enable_dehum": True,
 }
 
 

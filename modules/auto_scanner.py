@@ -619,6 +619,22 @@ def evaluate_restoration_strategy(profile):
     }
 
 
+def _detect_clipping_any_channel(stereo_signal, mono_clipping):
+    """Clipping counted over every channel (`has_clipping_any_channel`, cathar's 'detected' declip gate).
+
+    `_detect_analog_clipping` on the multichannel array counts the samples at |x| >= 0.985 of
+    every channel together, as vhs_native's own scan does. Wherever the mono mix reaches the
+    threshold one channel does too, so the count never falls below the mono mix's, while a
+    tape with one dead channel (half the 21-tape library) is no longer halved out of it: the
+    pre-conditioning mirrors its live side to full scale before cathar runs. `has_clipping`,
+    the mono-mix reading, keeps switching the pre-conditioning adeclip and auto_pure_linear's
+    declip. Without the channels the mono reading stands.
+    """
+    if stereo_signal is None:
+        return mono_clipping
+    return _detect_analog_clipping(stereo_signal)
+
+
 def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
     """Extracts all acoustic metrics from audio signal."""
     speech_ratio = _estimate_speech_presence_ratio(mono_signal, sr)
@@ -635,6 +651,7 @@ def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
     clicks = _detect_click_density(mono_signal)
     has_drift = _detect_flutter_or_pitch_drift(mono_signal, sr)
     has_clip = _detect_analog_clipping(mono_signal)
+    has_clip_any = _detect_clipping_any_channel(stereo_signal, has_clip)
     azimuth_ms = _detect_stereo_azimuth_skew(stereo_signal, sr) if stereo_signal is not None else 0.0
     has_dc = _detect_dc_offset_bias(mono_signal)
     bal_db = _detect_stereo_balance_imbalance(stereo_signal) if stereo_signal is not None else 0.0
@@ -655,6 +672,7 @@ def _extract_profile_from_signal(mono_signal, sr, stereo_signal=None):
         "highpass_hz": hp_freq,
         "has_clicks": clicks,
         "has_clipping": has_clip,
+        "has_clipping_any_channel": has_clip_any,
         "azimuth_delay_ms": azimuth_ms,
         "has_dc_offset": has_dc,
         "balance_db": bal_db,

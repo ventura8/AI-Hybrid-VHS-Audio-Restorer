@@ -1128,6 +1128,26 @@ the incumbent. The knob tables were re-read from the code paths on
   readings, the MERT and stems vetoes, and the listener. A paired form (the
   candidate against the incumbent's R11 on the same clip, like the paired
   `hf_8k16k` air check) would see it; the loop has no paired entries yet.
+- Round C4 (2026-10-10, declip and dehum): `cathar_declip_mode`
+  `["always", "detected"]` and `cathar_dehum_freq` `["scanner", 0]`, seeded
+  from the app at `always` / `scanner` (every release's behaviour), so each
+  proposes its one alternative. Both stages run on speech and music, so
+  neither joins `_CATHAR_MUSIC_KEYS`; each is inert with its stage switch
+  off (`cathar_enable_declip`, `cathar_enable_dehum`, both now in
+  `SWITCH_DEFAULTS`, true). `tune_restoration.known_config_fields` types
+  them as choice sets, and `_choice_problem` refuses a bool (False equals
+  zero) and sorts a mixed set by `str`. Expect inert renders: cathar 0.8.0's
+  declip returned a synthetic file peaking at 0.5 unchanged, so on tapes
+  peaking under 0.95 `detected` should hash equal to the incumbent, and
+  with `--adaptive` on, `--freq 0` matched `--freq 50` on synthetic 50 Hz
+  hum, so `0` moves only tapes the scanner read as hum-free (its vote reads
+  the first 0.7 s). `detected` reads the clip count over every channel
+  (`profile.has_clipping_any_channel`), so the dead-channel tapes, whose
+  mono mix never reaches 0.985, are judged on their live side; a render
+  whose scan left no verdict declips as `always` and logs a WARNING.
+  Default changes: they go to the C3 listening session. Tests:
+  `tests/unit/test_autotune_cathar_c4_knobs.py`,
+  `tests/unit/test_cathar_round_c4.py`.
 - `apl_neural_model` was `[None, ROFORMER, ROFORMER_AGGR]`: once the
   Mel-RoFormer became the app's default, None and ROFORMER named one
   setting, so a run from the defaults rendered the default every round
