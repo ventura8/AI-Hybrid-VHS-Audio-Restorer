@@ -986,7 +986,15 @@ the air reversal guard:
   path. Still running; no default moves before a plateau, an audibility check
   against what the user heard, a blind block and the realistic-v2 plus
   IA-corpus confirmations.
-- cathar on music: running.
+- cathar on music: plateau after 4 rounds, the shipped defaults plus
+  `expander_knee_offset_db` 0 and `expander_attack_s` 0.02 (shared polish keys);
+  the audibility check calls 5 of 12 clips audible at -32 to -57 dB.
+- cathar round C3 (music profile, from that plateau): plateau after round 2,
+  `cathar_music_beta` 0.02 -> 0.01; music repair off ranked well (9 of 12
+  wins) and was vetoed both rounds on MERT distance.
+- The music plateaus differ from what the user approved by far less than
+  Session 0's -15 dB control pair the user could not hear; none is adopted
+  without a blind block.
 
 The tied and plateaued rounds match Session 0: the knob moves the loops can
 make on speech are below what this listener hears.
