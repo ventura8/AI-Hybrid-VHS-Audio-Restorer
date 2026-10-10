@@ -655,7 +655,26 @@ Tele7abc's "light hiss" on the single 4 s probe passes the v2 hiss flag, so
 on Round 0's reports after Session 0, `music_v3` on presence only; every
 value is still an unblinded hypothesis and its comment says what it stands
 on, which accepted files it still charges and which rankings tie or
-reverse. Speech-side readings weigh 1.5 (the P.835 SIG/BAK prior,
+reverse. On the calibration v3 re-score (2026-10-10; pre-fix reports in
+`experiments/tata_listen/scores_v3_precal`) `tata_v3` re-derived the entries
+whose readings moved under a file that set them or broke the rule:
+`sib_abs_level_db` 3.7 to 3.4, texture 1.75 to 2.0, `gap_spread_db` 3.0 to 6.85,
+`gap_lsd_db` 3.5 to 9.05 (the old pair reversed Vaccin's "alpha 2 sounds better"
+over `apl__baseline`) and island kurtosis 1.8 to 1.85 (Round 0 had kept it under
+the one-unit margin); the slope and modulation keep 2.1 / 10.0, modulation as
+the one known margin exception (eight accepted files inside by under one scale
+unit, 1.2; the rule's 14.3 would tie Soti's known ranking). The tests hold the
+eight entries the rule sets outright (all but texture's midpoint, pause depth's
+band, the slope and modulation) to the smallest 0.05 step that admits the
+furthest accepted file by one scale unit. It reverses 15 round-one pairs (20
+before), each from a charge the comments name; two are new, Vaccin's known
+single4s and stitched over `cathar075` (pause depth's mixed-route aggregate, no
+longer masked by the old spread and LSD charge on `cathar075`), and the tests
+pin them until a speech-only pause-depth aggregate exists. It ties every
+round-two and round-three preference (`docs/ear_v3_round0.md`, "The grid after
+calibration v3"). A re-derivation re-runs `check_verdicts.py --scores` on every
+set and sums the grid over every judged file, ranking by ranking, before it is
+written. Speech-side readings weigh 1.5 (the P.835 SIG/BAK prior,
 speculative). Not ranked: `hf_4k8k` and `hf_8k16k` (backstop gates),
 residual noise, `lkr`, `balance_top_db`, `gap_pause_s` and the sync; on
 `tata_v3` also `balance_air_db` and `sib_centroid_hz` (dropped: unread on
@@ -759,7 +778,10 @@ hold; `r2` fails 9 checks (exit 1), the v2 `sibilance_thin` missing "APL's
 `dull`, `attack` and `sibilance_thin` firing on six accepted music outputs.
 The report, with every number, is `docs/ear_v3_round0.md`. No gate or flag
 is adopted; after Session 0 `tata_v3` and `music_v3` took the grid notes
-(the report's "What the grids took"). The facts that will decide defaults:
+(the report's "What the grids took"), and `tata_v3` was re-derived on the
+calibration v3 re-score, whose `check_verdicts.py` results match the pre-fix
+reports set by set ("The grid after calibration v3"). The facts that will
+decide defaults:
 
 - R1, clipped to the programme band, cannot see the 7.5 kHz shelf on
   linear-track tapes: between +2 / +1 dB / off presence moves 0.03-0.05 dB
