@@ -1064,9 +1064,17 @@ the incumbent. The knob tables were re-read from the code paths on
   the round's other knobs. R11 (`dsp.lf_programme_db`) is the reading built
   for the low end these move, but no grid ranks it yet: `music_v3.yaml` and
   `tata_v3.yaml` hold no R11 entry, and their readings cannot see 40-200 Hz.
-  Add `dsp.lf_programme_db.delta.median` to `music_v3.yaml`'s ranking
-  (two-sided, its target read on the accepted file) before the round runs,
-  or the dewind cutoff and repair moves are judged blind.
+  It was read on round two's accepted files (2026-10-10, the r2 set scored
+  from this branch): the 12 music clips and four speech tapes span -10.5 to
+  +0.6 dB, most -4 to +0.6, with `m_wbbddanceswithwolves` at -10.5 (APL) and
+  -9.2 (cathar), both "music fine". A two-sided dead zone admitting every
+  accepted file would be about 5.7 dB wide, while the dewind cutoff moves R11
+  by about 1 dB (calibration: -0.10 / -0.43 / -1.05 dB at 40 / 60 / 80 Hz), so
+  ranked it could not see the round's own knob. R11 therefore stays
+  display-only in `music_v3`; C3's low end is judged by the existing music
+  readings, the MERT and stems vetoes, and the listener. A paired form (the
+  candidate against the incumbent's R11 on the same clip, like the paired
+  `hf_8k16k` air check) would see it; the loop has no paired entries yet.
 - `apl_neural_model` was `[None, ROFORMER, ROFORMER_AGGR]`: once the
   Mel-RoFormer became the app's default, None and ROFORMER named one
   setting, so a run from the defaults rendered the default every round
