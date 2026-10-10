@@ -329,7 +329,7 @@ def apply_when_needed(source_wav, audio_dir, total_duration=None):
     try:
         subtracted = _subtract(source_wav, output_dir, total_duration)
     except (OSError, RuntimeError) as exc:
-        log_msg(f"    [Spectral Denoise] Skipped after failure: {exc}")
+        log_msg(f"    [Spectral Denoise] Skipped after failure: {exc}", level="WARNING")
         return source_wav
     if subtracted is None:
         log_msg("    [Spectral Denoise] No engine could run; leaving the neural stage to work alone.")
@@ -457,5 +457,5 @@ def apply_tonal_cleanup(source_wav, audio_dir, strategy=None, total_duration=Non
     try:
         return _run_tonal_stages(source_wav, output_dir, targets, total_duration)
     except (OSError, RuntimeError) as exc:
-        log_msg(f"    [Tonal Cleanup] Skipped after failure: {exc}")
+        log_msg(f"    [Tonal Cleanup] Skipped after failure: {exc}", level="WARNING")
         return source_wav

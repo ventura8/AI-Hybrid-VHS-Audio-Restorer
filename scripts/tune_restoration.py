@@ -17,10 +17,19 @@ are rank-aggregated per metric. The scoreboard names the best variant per engine
 the best engine per tape, and prints the exact commands for a confirmation run on the
 full tapes. Layout: experiments/tune_<name>/{manifest.json, excerpts/, runs/<variant>/,
 scoreboard.json, scoreboard.md, listen/}.
+
+A grid's `ranking` entry is a direction (`metric.side.stat: up | down`, the v1/v2 grids) or,
+from ear v3 on (`tune_grids/tata_v3.yaml`, `music_v3.yaml`), a reading spec
+`{target, family, dead_zone, scale, weight}` that `scripts/restoration_quality/reward.py`
+reads too: such an entry ranks on its two-sided distance `max(0, |x - target| - dead_zone) /
+scale` (lower first, so everything inside the dead zone ties) and weighs its rank by
+`weight` in the mean rank.
 """
 
 import argparse
+import dataclasses
 import hashlib
+import importlib
 import json
 import os
 import shutil
@@ -45,6 +54,8 @@ from scripts.measure_tradeoff import _extract  # noqa: E402
 from scripts.restoration_quality import gates as gates_mod  # noqa: E402
 from scripts.restoration_quality import listening, runner  # noqa: E402
 
+# The v3 reading specs are parsed and measured by the reward module, loaded like the scorer above.
+REWARD = importlib.import_module("scripts.restoration_quality.reward")
 FFPROBE_BIN = str(Path(FFMPEG_BIN).with_name("ffprobe" + Path(FFMPEG_BIN).suffix)) if Path(FFMPEG_BIN).suffix else "ffprobe"
 VIDEO_EXTENSIONS = (".mov", ".mp4", ".mkv", ".avi")
 CUT_ARGS = [
@@ -219,6 +230,11 @@ def build_manifest(tapes_dir, grid, out_dir, limit=0, catalog=None, whole=False)
 
 
 def load_grid(path):
+    """The whole grid file: what this driver reads (`ranking:`, `variants:`, ...) and the loop's guard sections.
+
+    An ear v3 grid's `vetoes:`, `reversals:` and `audibility:` sections are returned as they
+    stand; `autotune_restoration` applies them (`scripts/autotune_guards.py`), this driver does not.
+    """
     with open(path, "r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
 
@@ -561,17 +577,58 @@ def _ranks(values, direction):
     return ranks
 
 
+def ranked_values(key, values, spec):
+    """`(values, direction, weight)` one ranking entry ranks on: a direction ("up" | "down") as it stands, weight 1;
+    a v3 reading spec as its two-sided distance, lower first (None ranks last), with its weight. A bad spec raises
+    ValueError naming `key` (`reward.parse_grid`)."""
+    if not isinstance(spec, dict):
+        return values, spec, 1.0
+    reading = REWARD.parse_grid({key: spec})[key]
+    unit = dataclasses.replace(reading, weight=1.0)
+    return [unit.distance(value) for value in values], "down", reading.weight
+
+
+def _unread(values):
+    return all(value is None for value in values)
+
+
+def _entry_ranks(per_label, key, spec, skip_unread):
+    """`[(rank, weight)]` in label order for one ranking entry; nothing when `skip_unread` and no label read it."""
+    values = [metrics.get(key) for metrics in per_label.values()]
+    if skip_unread and _unread(values):
+        return []
+    ranked, direction, weight = ranked_values(key, values, spec)
+    return [(rank, weight) for rank in _ranks(ranked, direction)]
+
+
+def _rank_table(per_label, ranking, skip_unread):
+    """`{label: [(rank, weight), ...]}` over the ranking's entries for `{label: {key: value}}`."""
+    table = {label: [] for label in per_label}
+    for key, spec in ranking.items():
+        for label, ranked in zip(per_label, _entry_ranks(per_label, key, spec, skip_unread)):
+            table[label].append(ranked)
+    return table
+
+
+def _weighted_mean(ranked):
+    """The weight-averaged rank of `[(rank, weight)]`, None with nothing ranked."""
+    if not ranked:
+        return None
+    ranks, weights = zip(*ranked)
+    return float(np.average(ranks, weights=weights))
+
+
+def _medians(summary):
+    return {key: entry.get("median") for key, entry in summary["metrics"].items()}
+
+
 def rank_variants(summaries, ranking):
-    """`{variant: rank_score}` = mean rank over the ranked metrics (lower is better) for every variant; the veto is applied later."""
-    labels = list(summaries)
-    scores = {label: [] for label in labels}
-    for key, direction in ranking.items():
-        values = [summaries[label]["metrics"].get(key, {}).get("median") for label in labels]
-        if all(v is None for v in values):
-            continue
-        for label, rank in zip(labels, _ranks(values, direction)):
-            scores[label].append(rank)
-    return {label: float(np.mean(r)) if r else None for label, r in scores.items()}
+    """`{variant: rank_score}` = weighted mean rank over the ranked metrics (lower is better); the veto is applied later.
+
+    A metric no variant read is left out, so it cannot tie everyone; a variant with nothing ranked scores None.
+    """
+    table = _rank_table({label: _medians(summary) for label, summary in summaries.items()}, ranking, skip_unread=True)
+    return {label: _weighted_mean(ranked) for label, ranked in table.items()}
 
 
 def best_engine_per_tape(summaries, ranking):
@@ -590,13 +647,7 @@ def best_engine_per_tape(summaries, ranking):
 
 
 def _best_on_tape(per_label, ranking):
-    labels = list(per_label)
-    totals = {label: [] for label in labels}
-    for key, direction in ranking.items():
-        values = [per_label[label].get(key) for label in labels]
-        for label, rank in zip(labels, _ranks(values, direction)):
-            totals[label].append(rank)
-    scored = {label: float(np.mean(r)) for label, r in totals.items()}
+    scored = {label: _weighted_mean(ranked) for label, ranked in _rank_table(per_label, ranking, skip_unread=False).items()}
     best = min(scored, key=scored.get)
     return {"variant": best, "engine": best.split("__")[0], "rank_score": scored[best]}
 
@@ -854,7 +905,18 @@ def _pairs_for(variant_dir, label, manifest, gates=None):
     return pairs
 
 
-LISTEN_METRICS = ("mos.sigmos_col", "mos.sigmos_disc", "speech.cer", "dsp.hf_8k16k")
+# One pick per metric per variant; ear v3 adds the timbre (R1), the 's' (R2) and the pause residual (R4),
+# two-sided readings picked where they moved furthest either way.
+LISTEN_METRICS = (
+    "mos.sigmos_col",
+    "mos.sigmos_disc",
+    "speech.cer",
+    "dsp.hf_8k16k",
+    "dsp.balance_top_db",
+    "dsp.sib_abs_level_db",
+    "dsp.sib_texture_db",
+    "dsp.gap_hf_excess_db",
+)
 
 
 def _listen_variants(out_dir, grid, args):

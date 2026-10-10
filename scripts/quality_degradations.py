@@ -5,6 +5,104 @@ and returns the damaged version, at a level the calibration sweeps. The table at
 bottom names, for every failure, which metric must move and which way, so
 `scripts/calibrate_quality_metrics.py` can prove each metric responds before the harness
 is trusted to rank restorations.
+
+Ear v3 (plan 1.3) adds the failures the v2 harness could not see and pre-registers, per
+degradation, which readings must move and which must NOT (`Expectation.direction` "flat",
+with a tolerance or an absolute twin, and "match" for a source condition). The generators
+live in `scripts/degradations_v3.py`; their measured effect on the realistic-v2 fixtures
+(read with the reading functions directly, 2026-10-09; the calibration re-measures it):
+
+- `air_shelf_*` (the app's own `treble=g:f=7500` at +-0.5 / 1 / 2 dB): on the en speech
+  fixture R2's absolute 's' level reads +0.10 / +0.20 / +0.40 (fr +0.60 / +1.21 at 1 / 2
+  dB), the net level reading +0.08 / +0.16 / +0.25, the texture under 0.05. R1 reads no air
+  on any fixture the way the runner reads it, clipped to R0's programme band: R1's layout
+  gets its first air band under a 5292 Hz band (`balance_metrics.readable_from_hz`), and R0
+  reads 1.1-5.0 kHz on the five speech targets (the Italian one 5040 Hz) and 1414 Hz on the
+  five music beds, and reads the beds right: their programme ends under 1.6 kHz (the 1.6
+  kHz band sits 84-94 dB under the loudest, every band from 2 kHz up 106+ dB). Unclipped,
+  R1 read the bed's air +0.48 / +0.95 / +1.91 (en): the shelf's own gain on residue 135-138
+  dB under the loudest band. Chosen 2026-10-09 (review finding 12, of asserting R1 air
+  where a band carries it or demoting the music entry's check to blind): both entries
+  assert R1 air, non-blind. On every fixture the check reports "unscored", reason "clipped"
+  (`calibration_checks.why_unscored`), and the run names it; with `--excerpts` the speech
+  entry runs on the tape cuts (`on_tape`) and asserts where R0's band reaches 5292 Hz: of
+  the Tata tapes Vaccin (7127 Hz; SOTI 5040 and Tele7abc 4490 Hz clip it). Read the way the
+  runner reads it (R0 clip, mute guard) on the whole cached Vaccin source, this shelf reads
+  R1 air +0.135 / +0.27 / +0.54 dB and the cut the mirror, on 30 of 61 windows, with the
+  speech benign set's floor at 0.0001 dB: the check passes there. A failing assertion makes
+  the run exit 1. (The user's own air shelf read +0.43 / +0.17 / -0.05 for +2 / +1 / off on
+  Vaccin, `scripts/tune_grids/tata_v3.yaml`.)
+- `air_corner` (the same shelf at +1.5 dB, round A1's top gain, its corner at 9000 / 7500 /
+  6000 Hz, A1's corners; `linear_air_freq_hz` made the corner a knob on 2026-10-09, and the
+  `air_shelf_*` rows hold it at 7500 Hz): read with the runner's dsp family on the en / fr
+  fixtures, R2's absolute 's' level +0.140 / +0.301 / +0.603 (fr +0.607 / +0.906 / +1.189),
+  `dsp.hf_4k8k` +0.129 / +0.280 / +0.570 (fr +0.180 / +0.348 / +0.610) and `dsp.hf_8k16k`
+  +0.936 / +1.182 / +1.358 (fr +0.803 / +1.106 / +1.327), the net level under the absolute one
+  at every corner, the texture under 0.01, lkr 0, R1 air clipped as on `air_shelf_*`. The
+  rejected +2 dB at 7500 Hz reads R2 +0.402 / hf_4k8k +0.375 on en (fr +1.211 / +0.469): the
+  6000 Hz corner at +1.5 dB passes it on both readings, at +1.0 dB it equals it on en (+0.401 /
+  +0.379). So the loop's verdict-reversal guard judges the corner with the gain
+  (`autotune_guards.ledger_air_gain`): it refuses the first and leaves the second to the ear.
+- `spectral_tilt_*` (+-0.5 / 1 / 2 dB/oct above 1 kHz): R1's tilt reads 0.50 / 1.00 / 1.99
+  on en speech (de 0.51 / 1.02 / 2.05), presence 0.53 / 1.07 / 2.13, R2's absolute level
+  1.07 / 2.13 / 4.27 against the net 0.21 / 0.35 / 0.69.
+- `lf_shelf_boost_music` / `lf_shelf_cut_music` (FFmpeg's `bass` shelf at 100 Hz, +-1.5 / 3 / 6
+  dB) and `lf_highpass_music` / `lf_highpass` (FFmpeg's `highpass` at round C3's 40 / 60 / 80 Hz
+  dewind corners), R11's entries (`lf_metrics`), both magnitudes applied zero-phase: read with the
+  runner's dsp family (2026-10-10, R11's band STFT) the shelf reads R11 +0.56 / +1.15 / +2.41 on
+  the en music bed (fr +0.62 / +1.27 / +2.66) and the cut the mirror; the high pass -0.12 / -0.47
+  / -1.09 on the bed (fr -0.15 / -0.57 / -1.27) and -0.014 / -0.073 / -0.224 on the speech target
+  (fr -0.042 / -0.140 / -0.317), over a benign floor of 8.4e-6. R1's body follows on fr's bed
+  (+0.07 / +0.13 / +0.28 for the boost; en's bed reads none) and is reported; lkr stays under
+  1e-6 and R1's tilt under 1e-4 where it reads (unread on the beds: R0 reads 1414 Hz there). Run causally, the
+  high pass turned `align_pair`'s lag on the beds (up to 101 samples on fr at 80 Hz) and lkr
+  read 0.20-0.26 (`degradations_v3`). R11 also holds still where it must: hum at R0's mains
+  moves it 0.022 at most (asserted), and it reports the oracle of `linear_bandwidth` (-0.10 en,
+  the fixture noise's low end removed; fr +0.03) and the spectral tilt's opposite sign (the gain
+  match takes in 1-3 kHz).
+- `pause_residual_*` (the source's own pauses replaced by a transformed copy at -12 dB,
+  speech untouched): on the fr fixture the scaled copy reads attenuation 5.9 / 11.9 / 17.9
+  dB with every shape reading 0.00; the +2 / 4 / 6 dB/oct hiss residual slope 1.06 / 2.12 /
+  3.17; the low-passed residual (6 / 4 / 3 kHz) HF excess -18.2 / -38.8 / -48.0 on es; the
+  islands (30 / 10 / 3 % of cells kept) island kurtosis 0.12 / 0.22 / 0.48 and modulation
+  5.3 / 6.2 / 9.6. Lower cut-offs pin the attenuation at R4's 60 dB floor and flatten the
+  slope (1 kHz: -7.6 against -12.3 at 2 kHz), and a keep share of 50 % reads the island
+  kurtosis negative (-0.09). The en and de fixtures hold no 200 ms non-speech run R4 reads.
+  On the tape cuts the hiss residual's slope and LSD failed only the effect rule (calibration
+  v3): the dither lifted Vaccin's notched top band, see `pause_metrics.above_dither`.
+- `hifi_compander_mistrack` (3 / 6 / 10 dB): pause depth +2.0 / +4.2 / +7.2 dB, pumping
+  +0.30 / +0.70 / +1.33, R4 attenuation +2.4 / +4.9 / +8.4 (es); R1's tilt moves too (es
+  +0.30 / +0.61 / +1.02 dB/oct: the sidechain pre-emphasis gives the 's' frames more gain),
+  so it is reported, not asserted either way.
+- `loudnorm_ride` (30 / 60 / 90 % of the 3 s level swing removed): R7's p95 ride 0.32 /
+  0.65 / 0.99 LU (en), 0.35 / 0.70 / 1.06 (fr), sync drift under 0.03 ms. R1 moves on en
+  (tilt +0.18 / +0.36 / +0.53: a 15 s window holds frames the rider treats differently), so
+  only R2's level and the sync are asserted flat. On the tape cuts R2 read the ride itself
+  (Vaccin +0.19 / +0.37 / +0.56 dB, calibration v3) until it matched the gain around each 's'
+  (`sibilance.frame_gains_db`): 0.045 dB at most, inside the 0.05 tolerance.
+- `phasey_resynth` (STFT phases moved by 15 / 40 / 100 % of +-pi): magnitudes are kept per
+  frame, yet the overlap-add of incoherent frames reads as dulling on R1 at full
+  randomisation (tilt -0.83 en, -1.15 fr) and read 56-59 holes in `dsp.dropouts` until the
+  count was re-centred on the programme frames' median drop (en 1 now); at 15-40 % R1 moves
+  under 0.15. Phasiness can pass for a timbre change; the learned judges
+  (vetoes) and the speaker cosine carry it.
+- `linear_bandwidth` (source low-passed at 10 / 8 / 5 kHz, output an oracle that removed the
+  hiss by 20 dB): R1 moves under 0.03 dB. R0 reads the fixtures' own programme band at
+  0.7-4.5 kHz (speech and music beds alike), below every cut-off, so on them the check only
+  confirms a cut cannot raise the reading; the Tata excerpts (`--excerpts`; PAL linear, about
+  8 kHz) carry the real test at 5 kHz, their output the cut capture itself.
+- `treble_dropouts` (d = 0.5 / 1 / 2 um): `file.dropouts` reads 0 on en and the tape cuts,
+  a hole taking the 100-1000 Hz body too (broadband alone SOTI read 10 at 2 um). R1 reads
+  0.00 (the events are sparse for a window median), R2's texture rises on fr (0.08 / 0.18 /
+  0.52). R9's flicker reading, which these are for, is not built yet (P1).
+- `dropouts` and `words_muted` assert `file.dropouts`, the count over the whole aligned pair
+  (`runner.dropout_entry`): one hole sits in at most two of a 300 s cut's 40 windows, so the
+  window median `dsp.dropouts` read 0 on every tape case (calibration v3). `dropouts` draws
+  nested, resolvable holes (`degradations_v3.holes`): 3 / 6 / 12 on en and every cut;
+  `words_muted` 2 / 3 / 4 (en, Tele7abc), 1 / 2 / 3 (Vaccin), 2 / 3 / 5 (SOTI); benign 0.
+- `sibilant_islands` and `sync_drift` (the R2 and R7 owners' requests) and the R2 readings on
+  the v2 `sibilants_*` pair: measured beside their table entries.
+- `--excerpts` in the calibration runs `on_tape()`, the degradations a real excerpt can carry.
 """
 
 import contextlib
@@ -14,13 +112,32 @@ import numpy as np
 import scipy.ndimage
 import scipy.signal
 
+from scripts import degradations_v3 as v3
 from scripts import realistic_defects as defects
-from scripts.restoration_quality import audio_io, sibilance
+from scripts.restoration_quality import audio_io, source_profile
 
 WHISTLE_HZ = 15625.0
+# Where R0 names no mains on a hum case's base: the runner's own fallback (`runner.DEFAULT_MAINS_HZ`).
+DEFAULT_MAINS_HZ = 50.0
 QUIET_SHARE = 0.2
 SIGMOS_NOISE = "mos.sigmos_noise"
 SIGMOS_DISC = "mos.sigmos_disc"
+DROPOUTS = "file.dropouts"
+# The readings more than one expectation names (`scripts/restoration_quality` keys).
+HF_TOP = "dsp.hf_8k16k"
+SIGMOS_COL = "mos.sigmos_col"
+UTMOS = "speech.utmos"
+SPEAKER_COS = "speech.speaker_cos"
+LKR = "dsp.lkr"
+SIB_BODY = "dsp.sib_body_db"
+SIB_ABS = "dsp.sib_abs_level_db"
+SIB_TEXTURE = "dsp.sib_texture_db"
+BALANCE_AIR = "dsp.balance_air_db"
+GAP_ATTEN = "dsp.gap_atten_db"
+GAP_SLOPE = "dsp.gap_slope_db_oct"
+GAP_LSD = "dsp.gap_lsd_db"
+GAP_ISLAND_KURT = "dsp.gap_island_kurt"
+GAP_MOD_DIST = "dsp.gap_mod_dist_db"
 COMPRESS_ATTACK_S = 0.01
 COMPRESS_RELEASE_S = 0.1
 MUTE_SPACING_S = 1.0
@@ -60,8 +177,19 @@ def hiss(clean, noise, margin_db, rng):
     return defects.inject_tape_noise(clean, noise, margin_db, rng=rng).astype(np.float32)
 
 
-def hum(clean, rate, level, rng):
-    return defects.inject_mains_hum(clean, rate, level=level, rng=rng).astype(np.float32)
+def hum(clean, rate, level, rng, mains_hz=DEFAULT_MAINS_HZ):
+    """A drifting harmonic hum series at `mains_hz` (`inject_mains_hum`), `level` its fundamental's amplitude."""
+    return defects.inject_mains_hum(clean, rate, base_hz=mains_hz, level=level, rng=rng).astype(np.float32)
+
+
+def capture_mains_hz(base, rate):
+    """The mains R0 names on `base` (`source_profile.capture_profile`), or the runner's 50 Hz fallback when it names none.
+
+    `dsp.hum_excess_db` reads the series R0 names on the case's source, which is `base`: a hum
+    case must put its hum there, or the reading looks at the other series (module docstring).
+    """
+    mains = source_profile.capture_profile(base, rate)["mains_hz"]
+    return DEFAULT_MAINS_HZ if mains is None else float(mains)
 
 
 def lowpass(clean, rate, cutoff_hz):
@@ -112,23 +240,11 @@ def _loudest_frames(mono, rate, frame_s=0.1):
     return frame, np.argsort(level)[::-1]
 
 
-def _spaced_starts(order, frame, count, spacing):
-    """The first `count` frame starts in `order` that lie at least `spacing` samples apart."""
-    starts = []
-    for index in order:
-        start = int(index) * frame
-        if all(abs(start - other) >= spacing for other in starts):
-            starts.append(start)
-        if len(starts) == count:
-            break
-    return starts
-
-
 def mute_segment(clean, rate, seconds, count):
     """Words removed: `count` spans of `seconds` zeroed at the loudest, mutually distant frames."""
     frame, order = _loudest_frames(clean, rate)
     out = np.asarray(clean, dtype=np.float32).copy()
-    starts = _spaced_starts(order, frame, count, MUTE_SPACING_S * rate)
+    starts = v3.spaced_starts(order, frame, count, MUTE_SPACING_S * rate)
     for start in starts:
         out[start:][: int(seconds * rate)] = 0.0
     return out, [start / rate for start in starts]
@@ -159,9 +275,9 @@ def crackle(clean, rate, per_second, rng):
         return defects.inject_crackle(clean, rate, rng).astype(np.float32)
 
 
-def dropouts(clean, rate, count, rng):
-    with _patched(defects, DROPOUT_COUNT=(int(count), int(count) + 1)):
-        return defects.inject_dropouts(clean, rate, rng).astype(np.float32)
+def dropouts(clean, rate, count):
+    """Head-contact loss the count resolves: `count` nested holes of 30-50 ms on programme frames (`degradations_v3.holes`)."""
+    return v3.holes(clean, rate, int(count))
 
 
 def whistle(clean, rate, level_db, rng):
@@ -261,9 +377,13 @@ def _bandpass(mono, rate, band):
 
 
 def fricative_ramp(mono, rate):
-    """The fricative frames of `mono` as a 0..1 weight with 5 ms edges; exactly 0 away from the 's' bursts."""
+    """The fricative frames of `mono` as a 0..1 weight with 5 ms edges; exactly 0 away from the 's' bursts.
+
+    The frames are the union of what each runner window calls fricative
+    (`degradations_v3.window_fricatives`), so a degradation reaches the frames R2 reads.
+    """
     size = max(1, int(SIB_RAMP_S * rate))
-    return np.convolve(sibilance.fricative_mask(mono, rate).astype(np.float64), np.ones(size) / size, mode="same")
+    return np.convolve(v3.window_fricatives(mono, rate).astype(np.float64), np.ones(size) / size, mode="same")
 
 
 def _band_lowered(mono, rate, band, depth_db, weight):
@@ -312,11 +432,18 @@ def transient_smear(mono, rate, smear_ms):
 
 @dataclass(frozen=True)
 class Expectation:
-    """`metric` must move `direction` ("up" | "down") on this failure; `blind` pairs are reported, never asserted."""
+    """What `metric` must do on this failure; `blind` pairs are reported, never asserted.
+
+    `direction` is "up" or "down" (it must move that way), "flat" (it must not move: within
+    `tolerance` or three benign floors, or strictly under the move of its absolute `twin`),
+    or "match" (a source reading within `tolerance` octaves of the level the condition built).
+    """
 
     metric: str
     direction: str
     blind: bool = False
+    tolerance: float | None = None
+    twin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -334,23 +461,49 @@ DEGRADATIONS = {
         (40.0, 30.0, 20.0),
         (Expectation("dsp.residual_noise_db", "up"), Expectation(SIGMOS_NOISE, "down"), Expectation("mos.dnsmos_bak", "down", True)),
     ),
-    "hum": Degradation("speech", (0.003, 0.01, 0.03), (Expectation("dsp.hum_excess_db", "up"), Expectation(SIGMOS_NOISE, "down", True))),
+    # The hum sits on the mains R0 names on the base (`capture_mains_hz`), the one the runner reads: R0
+    # names 60 Hz on the hum-free en / es / it Piper targets, where 50 Hz hum read -0.38 at 0.03 (en,
+    # calibration v3). At R0's mains en reads +0.02 / +0.27 / +2.35; es and it order too. R11 leaves
+    # R0's mains lines out of its band, so hum is no low end to it: en -0.000 / -0.000 / +0.022, fr
+    # +0.000 / +0.001 / +0.005 (2026-10-10, R11's band STFT; the 8192-sample frame read up to 0.048);
+    # the 0.1 dB allowance covers the 6th-8th harmonics in the gain band.
+    "hum": Degradation(
+        "speech",
+        (0.003, 0.01, 0.03),
+        (
+            Expectation("dsp.hum_excess_db", "up"),
+            Expectation(SIGMOS_NOISE, "down", True),
+            Expectation("dsp.lf_programme_db", "flat", tolerance=0.1),
+        ),
+    ),
     "underwater": Degradation(
         "speech",
         (8000.0, 6000.0, 4000.0),
         (
             Expectation("dsp.hf_4k8k", "down"),
-            Expectation("dsp.hf_8k16k", "down"),
-            Expectation("mos.sigmos_col", "down"),
-            Expectation("speech.utmos", "down"),
+            Expectation(HF_TOP, "down"),
+            Expectation(SIGMOS_COL, "down"),
+            Expectation(UTMOS, "down"),
             Expectation("mos.audiobox_pq", "down", True),
         ),
     ),
-    "musical_noise": Degradation("vhs", (2.0, 4.0, 8.0), (Expectation("dsp.lkr", "up"), Expectation(SIGMOS_DISC, "down", True))),
+    # Ear v3: R4's island and modulation readings are reported here too. On the fr fixture they
+    # do not order the levels (island kurtosis 0.61 / 0.52 / 0.02, modulation 8.7 / 7.4 / 15.2):
+    # at alpha 8 the pauses empty to R4's 60 dB floor. The pause_residual islands carry R4.
+    "musical_noise": Degradation(
+        "vhs",
+        (2.0, 4.0, 8.0),
+        (
+            Expectation(LKR, "up"),
+            Expectation(SIGMOS_DISC, "down", True),
+            Expectation(GAP_ISLAND_KURT, "up", True),
+            Expectation(GAP_MOD_DIST, "up", True),
+        ),
+    ),
     "robotic": Degradation(
         "speech",
         (32, 8, 2),
-        (Expectation("speech.utmos", "down"), Expectation("mos.sigmos_col", "down"), Expectation("speech.speaker_cos", "down")),
+        (Expectation(UTMOS, "down"), Expectation(SIGMOS_COL, "down"), Expectation(SPEAKER_COS, "down")),
     ),
     "words_muted": Degradation(
         "speech",
@@ -358,13 +511,11 @@ DEGRADATIONS = {
         (
             Expectation("speech.cer", "up"),
             Expectation("speech.wer", "up"),
-            Expectation("dsp.dropouts", "up"),
+            Expectation(DROPOUTS, "up"),
             Expectation(SIGMOS_DISC, "down", True),
         ),
     ),
-    "words_spliced": Degradation(
-        "speech", (0.5, 1.0, 2.0), (Expectation("speech.cer", "up"), Expectation("speech.speaker_cos", "down", True))
-    ),
+    "words_spliced": Degradation("speech", (0.5, 1.0, 2.0), (Expectation("speech.cer", "up"), Expectation(SPEAKER_COS, "down", True))),
     "background_stripped": Degradation(
         "music",
         (-6.0, -12.0, -24.0),
@@ -375,7 +526,7 @@ DEGRADATIONS = {
         ),
     ),
     "clicks": Degradation("speech", (2.0, 8.0, 20.0), (Expectation("dsp.clicks_per_s", "up"), Expectation(SIGMOS_DISC, "down", True))),
-    "dropouts": Degradation("speech", (3, 6, 12), (Expectation("dsp.dropouts", "up"), Expectation(SIGMOS_DISC, "down", True))),
+    "dropouts": Degradation("speech", (3, 6, 12), (Expectation(DROPOUTS, "up"), Expectation(SIGMOS_DISC, "down", True))),
     "whistle": Degradation("speech", (-50.0, -40.0, -30.0), (Expectation("dsp.whistle_db", "up"),)),
     "gain": Degradation("speech", (-3.0, -6.0, -12.0), (Expectation("file.lufs", "down"),)),
     "compression": Degradation("speech", (4.0, 8.0, 20.0), (Expectation("file.lra", "down", True),)),
@@ -390,21 +541,53 @@ DEGRADATIONS = {
             Expectation(SIGMOS_DISC, "down", True),
         ),
     ),
+    # R4's true-pause attenuation asserts the hiss; gap_air is blind here (calibration v3b, 2026-10-10). The hiss lands
+    # where the expander's gain is closed, but gap_air reads the source's p15-p40 frames, 60 % (en) and 71 % (fr) of them
+    # inside the speech mask at unity gain (mean closed gain 0.10 / 0.15 there, 0.70 / 0.69 on the deep frames). In the
+    # median gap frame the added 3-10 kHz hiss sits 51 / 41 / 31 dB (en) and 73 / 63 / 53 dB (fr) under the frame's own
+    # air (fr's gap frames are fricative-heavy: source gap_air +0.8 dB, en -3.5), so what moves the reading is an
+    # order-statistic step: fr +0.0027 / +0.0027 / +0.0010 at margins 30 / 20 / 10, unordered (en +0.024 / +0.025 /
+    # +0.086: hundredths of a dB, no detection either). R4 reads the true pauses (0.62 s en, 0.78 s fr): -33.9 / -43.9 /
+    # -53.8 (en) and -41.0 / -51.0 / -60.9 (fr), 10 dB a step, about 4700x its 0.0079 floor at the mildest margin.
+    # No counted gate loses its calibration: gap_air "up" backs only `listener.hiss` (display, R4 decides); its "down"
+    # side, `listener.dead_air`, stays asserted by `gated_pauses`. The unit speech's 0.58 s pauses put its p15-p40 class
+    # in the pauses, which is why gap_air orders there.
     "hiss_in_pauses": Degradation(
         "speech",
         (30.0, 20.0, 10.0),
-        (Expectation("dsp.gap_air_db", "up"), Expectation("dsp.residual_noise_db", "up"), Expectation(SIGMOS_NOISE, "down", True)),
+        (
+            Expectation(GAP_ATTEN, "down"),
+            Expectation("dsp.residual_noise_db", "up"),
+            Expectation("dsp.gap_air_db", "up", True),
+            Expectation(SIGMOS_NOISE, "down", True),
+        ),
     ),
     # The centroid is blind here: the synthetic fricatives carry too little body for removing
     # it to move them (a few hertz), while on tape the same removal read +370..+620 Hz.
+    # Ear v3 (R2): a thinned 's' keeps its top, so the absolute level barely moves (en fixture
+    # -0.12 / -0.20 / -0.29 dB, fr and it under 0.03) while the body ratio carries it (+2.5 / +4.8
+    # / +8.6); a dulled 's' loses its top on both (fr -2.9 / -5.7 / -10.7, en -0.6 / -1.0 / -1.5).
     "sibilants_thinned": Degradation(
-        "speech", (3.0, 6.0, 12.0), (Expectation("dsp.sib_centroid_hz", "up", True), Expectation("dsp.sib_body_db", "up"))
+        "speech",
+        (3.0, 6.0, 12.0),
+        (
+            Expectation("dsp.sib_centroid_hz", "up", True),
+            Expectation(SIB_BODY, "up"),
+            Expectation(SIB_ABS, "flat", twin=SIB_BODY),
+        ),
     ),
     "sibilants_dulled": Degradation(
         "speech",
         (3.0, 6.0, 12.0),
-        (Expectation("dsp.sib_centroid_hz", "down"), Expectation("dsp.sib_body_db", "down"), Expectation("dsp.hf_8k16k", "down", True)),
+        (
+            Expectation("dsp.sib_centroid_hz", "down"),
+            Expectation(SIB_BODY, "down"),
+            Expectation(HF_TOP, "down", True),
+            Expectation(SIB_ABS, "down"),
+        ),
     ),
+    # `dsp.attack_db` is paired on the source's onsets since calibration v3b (`transient_metrics.paired_attack_db`): the
+    # difference of two medians read fr's 20 ms smear +0.085 and set the benign floor at 0.0027 from one dither draw.
     "transient_smear": Degradation(
         "music",
         (20.0, 50.0, 120.0),
@@ -416,9 +599,287 @@ DEGRADATIONS = {
     ),
 }
 
+# --- ear v3 (plan 1.3): the degradations the v2 harness could not see -------------------------
+
+SIB_NET = "dsp.sib_level_db"
+TILT = "dsp.balance_tilt_db_oct"
+# A static filter leaves the texture of the 's' alone: under 0.05 dB on 44 speech fixtures.
+TEXTURE_TOLERANCE_DB = 0.05
+# A reading the transform cannot touch (speech left bit-identical, or a level kept).
+UNTOUCHED_DB = 0.05
+SHAPE_TOLERANCE_DB = 0.1
+# The plan's benign bound for R1 under oracle hiss removal.
+BALANCE_BENIGN_DB = 0.3
+# R0's bandwidth rule resolves 1/6 octave on a steep cut (source_profile).
+BANDWIDTH_OCTAVES = 1.0 / 6.0
+# A 2 um lift may take one hole's worth of an 's' (its body band falls 4.7 dB at 1 kHz, short of a hole's 10 dB).
+DROPOUT_COUNT_TOLERANCE = 1.0
+# The sync reading on a pair with no time shift: a full phase randomisation smears the envelope
+# peak by up to 0.8 ms (en fixture), the compander by 0.08; the sync gates sit at 40 ms.
+SYNC_TOLERANCE_MS = 2.0
+SYNC_FLAT = Expectation("file.sync_drift_ms", "flat", tolerance=SYNC_TOLERANCE_MS)
+# A static filter makes no musical noise: the shelf reads lkr under 1e-4 on every speech and music fixture measured.
+NO_ISLANDS = Expectation(LKR, "flat", tolerance=UNTOUCHED_DB)
+AIR_LEVELS = (0.5, 1.0, 2.0)
+# Round A1's corners (linear_air_freq_hz), mild to severe: a lower corner lifts every band more. At A1's top gain.
+AIR_CORNERS_HZ = (9000.0, 7500.0, 6000.0)
+AIR_CORNER_GAIN_DB = 1.5
+TILT_LEVELS = (0.5, 1.0, 2.0)
+ORACLE_REMOVED_DB = -20.0
+# R11 (`lf_metrics`): FFmpeg's `bass` shelf at 100 Hz (-6 / -3 / +3 dB among the levels) and round C3's dewind corners.
+LF_PROGRAMME = "dsp.lf_programme_db"
+LF_SHELF_LEVELS = (1.5, 3.0, 6.0)
+LF_HIGHPASS_HZ = (40.0, 60.0, 80.0)
+
+
+def _negated(levels):
+    return tuple(-level for level in levels)
+
+
+def _air_speech(direction):
+    """The shelf on speech: R2's absolute level reads it, the net level lags it, the texture stays, R1's air reads it.
+
+    R1's air asserts wherever R0's programme band leaves it a band (5292 Hz up): on the
+    `--excerpts` cuts (Vaccin 7127 Hz), not on a fixture, where it reports "clipped".
+    """
+    return (
+        Expectation(SIB_ABS, direction),
+        Expectation(SIB_NET, "flat", twin=SIB_ABS),
+        Expectation(SIB_TEXTURE, "flat", tolerance=TEXTURE_TOLERANCE_DB),
+        NO_ISLANDS,
+        Expectation("dsp.balance_top_db", direction, True),
+        Expectation(BALANCE_AIR, direction),
+    )
+
+
+def _air_corner():
+    """The shelf's corner moved down at a fixed gain: R2's absolute level and both HF bands read it, as the gain's do.
+
+    The readings round A1 is judged by (R2, the paired `hf_8k16k` bright check) were calibrated on the 7500 Hz shelf
+    only; this row asks them to follow A1's corners too. R1's air asserts where R0's band carries it, as above.
+    """
+    return (
+        Expectation(SIB_ABS, "up"),
+        Expectation(SIB_NET, "flat", twin=SIB_ABS),
+        Expectation(SIB_TEXTURE, "flat", tolerance=TEXTURE_TOLERANCE_DB),
+        NO_ISLANDS,
+        Expectation("dsp.hf_4k8k", "up"),
+        Expectation(HF_TOP, "up"),
+        Expectation("dsp.balance_top_db", "up", True),
+        Expectation(BALANCE_AIR, "up"),
+    )
+
+
+def _air_music(direction):
+    """The shelf on the music bed: R1's air must read it, and no islands appear.
+
+    The realistic-v2 beds end under 1.6 kHz, so under the runner's R0 clip the air check reads
+    nothing there and reports why ("clipped"), as the speech entry's does on the fixtures; it
+    asserts on a bed whose band holds air.
+    """
+    return (Expectation(BALANCE_AIR, direction), NO_ISLANDS, Expectation(TILT, direction, True))
+
+
+def _tilt(direction, opposite):
+    """A tilt above 1 kHz: R1's tilt and presence and R2's absolute level read it, the net level lags.
+
+    R1's body and R11 report the other way: their gain match takes in 1-3 kHz, which the tilt moves.
+    """
+    return (
+        Expectation(TILT, direction),
+        Expectation("dsp.balance_presence_db", direction),
+        Expectation(SIB_ABS, direction),
+        Expectation(SIB_NET, "flat", twin=SIB_ABS),
+        Expectation("dsp.balance_body_db", opposite, True),
+        Expectation(LF_PROGRAMME, opposite, True),
+    )
+
+
+def _low_end(direction):
+    """A low-end change (100 Hz shelf, 40-80 Hz high pass): R11 reads it, R1's body follows where it reads, nothing above 1 kHz moves."""
+    return (
+        Expectation(LF_PROGRAMME, direction),
+        Expectation("dsp.balance_body_db", direction, True),
+        Expectation(TILT, "flat", tolerance=UNTOUCHED_DB),
+        NO_ISLANDS,
+    )
+
+
+def _speech_untouched():
+    """The pause residuals leave the speech bit-identical: R1 and R2 must read nothing."""
+    return (Expectation(TILT, "flat", tolerance=UNTOUCHED_DB), Expectation(SIB_ABS, "flat", tolerance=UNTOUCHED_DB))
+
+
+def _shape_kept():
+    """The scaled residual keeps the source floor's shape and texture: R4's shape readings must read nothing."""
+    names = (GAP_SLOPE, "dsp.gap_spread_db", GAP_LSD, GAP_MOD_DIST, GAP_ISLAND_KURT)
+    return tuple(Expectation(name, "flat", tolerance=SHAPE_TOLERANCE_DB) for name in names)
+
+
+def _residual(moving, kurt_tolerance=UNTOUCHED_DB):
+    """A shaped pause residual: what must move, the island texture kept, the speech untouched."""
+    return (*moving, Expectation(GAP_ISLAND_KURT, "flat", tolerance=kurt_tolerance), *_speech_untouched())
+
+
+V3_DEGRADATIONS = {
+    "air_shelf_boost": Degradation("speech", AIR_LEVELS, _air_speech("up")),
+    "air_shelf_cut": Degradation("speech", _negated(AIR_LEVELS), _air_speech("down")),
+    "air_shelf_boost_music": Degradation("music", AIR_LEVELS, _air_music("up")),
+    "air_shelf_cut_music": Degradation("music", _negated(AIR_LEVELS), _air_music("down")),
+    "air_corner": Degradation("speech", AIR_CORNERS_HZ, _air_corner()),
+    "lf_shelf_boost_music": Degradation("music", LF_SHELF_LEVELS, _low_end("up")),
+    "lf_shelf_cut_music": Degradation("music", _negated(LF_SHELF_LEVELS), _low_end("down")),
+    "lf_highpass_music": Degradation("music", LF_HIGHPASS_HZ, _low_end("down")),
+    "lf_highpass": Degradation("speech", LF_HIGHPASS_HZ, _low_end("down")),
+    "spectral_tilt_up": Degradation("speech", TILT_LEVELS, _tilt("up", "down")),
+    "spectral_tilt_down": Degradation("speech", _negated(TILT_LEVELS), _tilt("down", "up")),
+    "pause_residual_scaled": Degradation("vhs", (-6.0, -12.0, -18.0), (Expectation(GAP_ATTEN, "up"), *_shape_kept(), *_speech_untouched())),
+    "pause_residual_hiss": Degradation(
+        "vhs",
+        (2.0, 4.0, 6.0),
+        _residual((Expectation(GAP_SLOPE, "up"), Expectation("dsp.gap_hf_excess_db", "up"), Expectation(GAP_LSD, "up"))),
+    ),
+    "pause_residual_dull": Degradation(
+        "vhs",
+        (6000.0, 4000.0, 3000.0),
+        _residual(
+            (
+                Expectation("dsp.gap_hf_excess_db", "down"),
+                Expectation(GAP_SLOPE, "down"),
+                Expectation(GAP_LSD, "up"),
+            ),
+            SHAPE_TOLERANCE_DB,
+        ),
+    ),
+    "pause_residual_islands": Degradation(
+        "vhs",
+        (0.3, 0.1, 0.03),
+        (Expectation(GAP_ISLAND_KURT, "up"), Expectation(GAP_MOD_DIST, "up"), *_speech_untouched()),
+    ),
+    "hifi_compander_mistrack": Degradation(
+        "vhs",
+        (3.0, 6.0, 10.0),
+        (
+            Expectation("dsp.pause_depth_db", "up"),
+            Expectation("dsp.pause_pumping_db", "up"),
+            Expectation(GAP_ATTEN, "up"),
+            Expectation(GAP_MOD_DIST, "up", True),
+            Expectation(TILT, "up", True),
+            SYNC_FLAT,
+        ),
+    ),
+    "loudnorm_ride": Degradation(
+        "speech",
+        (0.3, 0.6, 0.9),
+        (
+            Expectation("file.gain_ride_lu", "up"),
+            Expectation("file.gain_ride_std_lu", "up"),
+            Expectation("file.lra", "down", True),
+            SYNC_FLAT,
+            Expectation(SIB_ABS, "flat", tolerance=UNTOUCHED_DB),
+        ),
+    ),
+    "phasey_resynth": Degradation(
+        "speech",
+        (0.15, 0.4, 1.0),
+        (
+            Expectation(SPEAKER_COS, "down"),
+            Expectation("dsp.zimtohrli_loud", "up"),
+            Expectation(SIGMOS_COL, "down", True),
+            Expectation(UTMOS, "down", True),
+            Expectation(LKR, "up", True),
+            Expectation(TILT, "down", True),
+            SYNC_FLAT,
+        ),
+    ),
+    "linear_bandwidth": Degradation(
+        "vhs",
+        (10000.0, 8000.0, 5000.0),
+        (
+            Expectation("meta.prog_bandwidth_hz", "match", tolerance=BANDWIDTH_OCTAVES),
+            Expectation(TILT, "flat", tolerance=BALANCE_BENIGN_DB),
+            Expectation("dsp.balance_presence_db", "flat", tolerance=BALANCE_BENIGN_DB),
+            Expectation(BALANCE_AIR, "flat", tolerance=BALANCE_BENIGN_DB),
+            Expectation(LF_PROGRAMME, "flat", True, tolerance=BALANCE_BENIGN_DB),
+        ),
+    ),
+    "treble_dropouts": Degradation(
+        "speech",
+        (0.5, 1.0, 2.0),
+        (
+            Expectation(DROPOUTS, "flat", tolerance=DROPOUT_COUNT_TOLERANCE),
+            Expectation(TILT, "flat", tolerance=SHAPE_TOLERANCE_DB),
+            Expectation("dsp.hf_flicker_db", "up", True),
+            Expectation(SIB_TEXTURE, "up", True),
+        ),
+    ),
+    # The round-1 "distorted s" hypothesis: a fluctuating mask on the 's' (15 / 30 / 50 % of its 4-12 kHz
+    # cells). en's one readable window holds 10 fricative frames, where the spread is noise (the order
+    # failed, calibration v3): the texture needs 30 (`sibilance.TEXTURE_MIN_FRAMES`), so it rests on fr
+    # 0.16 / 0.22 / 0.62, SOTI 0.13 / 0.31 / 0.64 and Tele7abc 0.16 / 0.32 / 0.59 (en and Vaccin unread),
+    # and the calibration runs fr beside en. The overlap-add loses level (abs -0.1..-1.6 dB): reported.
+    "sibilant_islands": Degradation(
+        "speech",
+        (0.15, 0.3, 0.5),
+        (
+            Expectation(SIB_TEXTURE, "up"),
+            Expectation(SIB_ABS, "down", True),
+            Expectation(TILT, "flat", tolerance=UNTOUCHED_DB),
+        ),
+    ),
+    # A speed error the sync stage missed (the file_metrics sync gate, 40 ms): 0.05 / 0.1 / 0.2 %
+    # slow reads drift 5.1 / 10.1 / 19.9 ms and offset 6.3 / 12.5 / 24.8 on 15 s fixtures. R1 reads
+    # it as dulling (tilt -0.1 / -0.4 / -0.6 dB/oct en and fr): one lag per 15 s window cannot
+    # follow 30 ms of drift, and the fast-moving highs decorrelate first. On the 300 s tape cuts (146-587
+    # ms of drift) R7 read the drift as a ride (calibration v3) until it read along the sync's lag track
+    # (`file_metrics.lag_track`): 0.032 LU at most against the 0.1 allowed.
+    "sync_drift": Degradation(
+        "speech",
+        (0.05, 0.1, 0.2),
+        (
+            Expectation("file.sync_drift_ms", "up"),
+            Expectation("file.sync_offset_ms", "up", True),
+            Expectation("file.gain_ride_lu", "flat", tolerance=SHAPE_TOLERANCE_DB),
+            Expectation("file.sync_unmatched", "flat", tolerance=0.0),
+            Expectation(TILT, "down", True),
+        ),
+    ),
+}
+DEGRADATIONS.update(V3_DEGRADATIONS)
+# Planned readings a v3 degradation pre-registers before they exist (R9's flicker is P1).
+UNBUILT_READINGS = ("dsp.hf_flicker_db",)
+
+
 LISTENER = ("gated_pauses", "hiss_in_pauses", "sibilants_thinned", "sibilants_dulled", "transient_smear")
 # `identity_music` gives the stem and transient readings a benign floor of their own.
 BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music")
+# A shift is benign to every lag-aligned reading, not to the raw pair's: `file_metrics` reads the
+# sync on the raw pair, so its lags and offset read the shift itself (5.0 / 30.0 / 60.0 ms), the
+# fault the 40 ms `file.sync_offset` gate stands for. The drift (one constant lag) stays benign.
+SHIFT_PREFIX = "shift_"
+SHIFT_READINGS = ("file.sync_offset_ms", "file.sync_lag_start_ms", "file.sync_lag_middle_ms", "file.sync_lag_end_ms")
+
+
+def benign_changes(name):
+    """The readings a benign transform moves by construction, kept out of the benign floor: a shift's raw-pair lags."""
+    return SHIFT_READINGS if name.startswith(SHIFT_PREFIX) else ()
+
+
+# Degradations a real tape excerpt cannot carry: they need the fixture's own recorded noise, a
+# second voice or a separate music bed, which only the fixtures have (`linear_bandwidth` runs
+# on a tape with the cut capture as its output: R0's reading of the cut is what it tests there).
+NEEDS_REFERENCE = ("hiss", "hiss_in_pauses", "words_spliced", "background_stripped")
+TAPE_BASES = ("speech", "vhs")
+
+
+def on_tape():
+    """The degradations a real excerpt (the Tata tapes) can carry: speech or capture based, no reference needed."""
+    return tuple(name for name, spec in DEGRADATIONS.items() if spec.base in TAPE_BASES and name not in NEEDS_REFERENCE)
+
+
+def on_tape_benign():
+    """The benign transforms of the speech set, for a real excerpt."""
+    return tuple(name for name in BENIGN if benign_base(name) == "speech")
 
 
 def benign_base(name):
@@ -426,16 +887,144 @@ def benign_base(name):
     return "music" if name.endswith("_music") else "speech"
 
 
+def _pause_pair(base, rate, residual):
+    """`base` and `base` with `residual` in its pauses (speech bit-identical)."""
+    return base, v3.in_pauses(base, v3.pause_weight(speech_mask(base, rate), rate), residual)
+
+
+def _oracle(materials):
+    """The fixture's clean programme with its own noise 20 dB down; a real excerpt has no reference, so its capture stands."""
+    if "clean" not in materials or "noise" not in materials:
+        return materials["vhs"]
+    return np.asarray(materials["clean"], dtype=np.float64) + np.asarray(materials["noise"], dtype=np.float64) * 10.0 ** (
+        ORACLE_REMOVED_DB / 20.0
+    )
+
+
+def _band_limited_pair(cutoff_hz, rate, materials):
+    """The linear-track source condition: the hissy capture and an oracle that took the hiss 20 dB down, both low-passed.
+
+    On a real excerpt the output is the cut capture itself: there only R0's reading of the
+    cut (the "match" check) says anything, the balance checks read an identity.
+    """
+    return v3.band_limited(materials["vhs"], rate, cutoff_hz), v3.band_limited(_oracle(materials), rate, cutoff_hz)
+
+
+def _air(level, base, rate, _materials, _rng):
+    return base, v3.air_shelf(base, rate, level)
+
+
+def _cornered(level, base, rate, _materials, _rng):
+    """The air shelf at round A1's top gain with its corner at `level` Hz."""
+    return base, v3.air_shelf(base, rate, AIR_CORNER_GAIN_DB, level)
+
+
+def _low_shelved(level, base, rate, _materials, _rng):
+    return base, v3.lf_shelf(base, rate, level)
+
+
+def _high_passed(level, base, rate, _materials, _rng):
+    return base, v3.lf_highpass(base, rate, level)
+
+
+def _tilted(level, base, rate, _materials, _rng):
+    return base, v3.spectral_tilt(base, rate, level)
+
+
+def _scaled(level, base, rate, _materials, _rng):
+    return _pause_pair(base, rate, v3.scaled_residual(base, level))
+
+
+def _hissy(level, base, rate, _materials, _rng):
+    return _pause_pair(base, rate, v3.hiss_residual(base, rate, level))
+
+
+def _dull(level, base, rate, _materials, _rng):
+    return _pause_pair(base, rate, v3.dull_residual(base, rate, level))
+
+
+def _islands(level, base, rate, _materials, rng):
+    return _pause_pair(base, rate, v3.island_residual(base, rate, level, rng))
+
+
+def _mistracked(level, base, rate, _materials, _rng):
+    return base, v3.compander_mistrack(base, rate, level)
+
+
+def _ridden(level, base, rate, _materials, _rng):
+    return base, v3.loudnorm_ride(base, rate, level)
+
+
+def _phasey(level, base, rate, _materials, rng):
+    return base, v3.phasey_resynth(base, rate, level, rng)
+
+
+def _bandwidth(level, _base, rate, materials, _rng):
+    return _band_limited_pair(level, rate, materials)
+
+
+def _lifted(level, base, rate, _materials, rng):
+    return base, v3.treble_dropouts(base, rate, level, rng)
+
+
+def _sib_islands(level, base, rate, _materials, rng):
+    return base, v3.sibilant_islands(base, rate, level, fricative_ramp(base, rate), rng)
+
+
+def _drifting(level, base, _rate, _materials, _rng):
+    """The slow output cut to the source's length, as the mux keeps it beside the picture."""
+    return base, v3.speed_drift(base, level)[: len(base)]
+
+
+# Builder per ear v3 family; a degradation's name starts with its family (`air_shelf_cut_music`).
+V3_BUILDERS = {
+    "air_shelf": _air,
+    "air_corner": _cornered,
+    "lf_shelf": _low_shelved,
+    "lf_highpass": _high_passed,
+    "spectral_tilt": _tilted,
+    "pause_residual_scaled": _scaled,
+    "pause_residual_hiss": _hissy,
+    "pause_residual_dull": _dull,
+    "pause_residual_islands": _islands,
+    "hifi_compander_mistrack": _mistracked,
+    "loudnorm_ride": _ridden,
+    "phasey_resynth": _phasey,
+    "linear_bandwidth": _bandwidth,
+    "treble_dropouts": _lifted,
+    "sibilant_islands": _sib_islands,
+    "sync_drift": _drifting,
+}
+
+
+def v3_builder(name):
+    """The builder of an ear v3 degradation: the family its name starts with."""
+    return next(builder for family, builder in V3_BUILDERS.items() if name.startswith(family))
+
+
+def _hissed(level, base, _rate, materials, rng):
+    return base, hiss(base, materials["noise"], level, rng)
+
+
+def _hummed(level, base, rate, _materials, rng):
+    return base, hum(base, rate, level, rng, capture_mains_hz(base, rate))
+
+
+def _underwater(level, base, rate, _materials, _rng):
+    return base, lowpass(base, rate, level)
+
+
+V1_BUILDERS = {"hiss": _hissed, "hum": _hummed, "underwater": _underwater}
+
+
 def apply(name, level, base, rate, materials, rng):
     """The (source, output) pair for one degradation at one level."""
+    if name in V3_DEGRADATIONS:
+        return v3_builder(name)(level, base, rate, materials, rng)
     if name in LISTENER:
         return _apply_listener(name, level, base, rate, materials, rng)
-    if name == "hiss":
-        return base, hiss(base, materials["noise"], level, rng)
-    if name == "hum":
-        return base, hum(base, rate, level, rng)
-    if name == "underwater":
-        return base, lowpass(base, rate, level)
+    if name in V1_BUILDERS:
+        return V1_BUILDERS[name](level, base, rate, materials, rng)
     return _apply_rest(name, level, base, rate, materials, rng)
 
 
@@ -469,7 +1058,7 @@ def _apply_defects(name, level, base, rate, materials, rng):
     if name == "clicks":
         return base, crackle(base, rate, level, rng)
     if name == "dropouts":
-        return base, dropouts(base, rate, level, rng)
+        return base, dropouts(base, rate, level)
     if name == "whistle":
         return base, whistle(base, rate, level, rng)
     return _apply_level(name, level, base, rate)

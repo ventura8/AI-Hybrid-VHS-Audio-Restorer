@@ -264,3 +264,39 @@ def test_model_filename_rejects_paths(capsys, value):
 @pytest.mark.parametrize("value, expected", [("UVR-DeNoise.pth", "UVR-DeNoise.pth"), ("  x.ckpt ", "x.ckpt"), ("", "d"), (None, "d")])
 def test_model_filename_accepts_bare_names(value, expected):
     assert modules.config._model_filename("denoise_model", value, "d") == expected
+
+
+def _loaded(user_config):
+    """The configuration load_config resolves from a config.yaml holding `user_config`."""
+    mock_yaml = MagicMock()
+    mock_yaml.safe_load.return_value = user_config
+    with patch("modules.config.Path.exists", return_value=True), patch.object(modules.config, "yaml", mock_yaml):
+        with patch("builtins.open", MagicMock()), patch("builtins.print") as warn:
+            conf, _ = modules.config.load_config()
+    return conf, warn
+
+
+def test_the_engine_fix_keys_default_to_todays_behaviour():
+    """No config.yaml entry: ffmpeg's own fallback in the mux and no inverted-pair refusal in the azimuth scan."""
+    conf, warn = _loaded({"process_mode": "cathar"})
+    assert conf["loudnorm_linear_fallback"] == "ffmpeg"
+    assert conf["azimuth_reject_inverted_pair"] is False
+    warn.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "raw, expected, warned", [(" Gain_Limiter ", "gain_limiter", False), ("ffmpeg", "ffmpeg", False), ("ride", "ffmpeg", True)]
+)
+def test_the_loudnorm_fallback_is_a_choice(raw, expected, warned):
+    """Case and spaces are forgiven; an unknown value warns and keeps ffmpeg's."""
+    conf, warn = _loaded({"loudnorm_linear_fallback": raw})
+    assert conf["loudnorm_linear_fallback"] == expected
+    assert warn.called is warned
+
+
+@pytest.mark.parametrize("raw, expected, warned", [("yes", True, False), ("off", False, False), ("sometimes", False, True)])
+def test_the_inverted_pair_switch_parses_like_every_boolean(raw, expected, warned):
+    """A quoted 'yes' is on and 'off' is off; anything else warns and keeps today's reading."""
+    conf, warn = _loaded({"azimuth_reject_inverted_pair": raw})
+    assert conf["azimuth_reject_inverted_pair"] is expected
+    assert warn.called is warned

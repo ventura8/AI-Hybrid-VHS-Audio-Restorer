@@ -40,6 +40,11 @@ DROPOUT_DROP_DB = -10.0
 DROPOUT_MIN_FRAMES = 2
 # A frame carries programme when it sits within 6 dB of the source's loud level (p70).
 DROPOUT_PROGRAMME_SHARE = 0.5
+# A hole takes the 100-1000 Hz body with it; a 2 um treble lift costs that band 2.3-4.7 dB, a hole all of it.
+DROPOUT_BODY_HZ = (100.0, 1000.0)
+# The count reads 60 s at a time; the body band's zero-phase filter sees 0.5 s more either side.
+DROPOUT_CHUNK_S = 60.0
+DROPOUT_CONTEXT_S = 0.5
 WHISTLE_HZ = 15625.0
 WHISTLE_CORE_HZ = 30.0
 WHISTLE_NEIGHBOURHOOD_HZ = 500.0
@@ -233,17 +238,68 @@ def _count_events(hits, refractory):
 
 
 def dropout_count(source, output, rate):
-    """New holes: runs of >= 2 frames (100 ms) where the output fell > 10 dB under a source frame that carried programme."""
+    """New holes: runs of >= 2 frames (20 ms) where the output fell > 10 dB under a source frame that carried programme.
+
+    Each frame's drop is read against the median drop of the programme frames (a hole is
+    local, a level offset is not), broadband and in the 100-1000 Hz body alike (a loss of the
+    treble alone is no hole). Read in 60 s chunks, so a whole tape needs no float64 copy.
+    """
     frame = int(DROPOUT_FRAME_S * rate)
-    src = frame_levels(source, frame)
-    out = frame_levels(output, frame)
-    count = min(len(src), len(out))
+    count = min(len(source), len(output)) // frame
     if count == 0:
         return 0
-    src, out = src[:count], out[:count]
-    drop = 20.0 * np.log10((out + 1e-9) / (src + 1e-9))
-    programme = src >= DROPOUT_PROGRAMME_SHARE * np.percentile(src, LOUD_PERCENTILE)
-    return _count_runs((drop < DROPOUT_DROP_DB) & programme, DROPOUT_MIN_FRAMES)
+    source, output = source[: count * frame], output[: count * frame]
+    src = chunk_levels(source, rate, frame)
+    programme = programme_frames(src)
+    broadband = recentred(drop_db(src, chunk_levels(output, rate, frame)), programme)
+    body = recentred(band_frame_drops_db(source, output, rate, frame), programme)
+    return _count_runs((broadband < DROPOUT_DROP_DB) & (body < DROPOUT_DROP_DB) & programme, DROPOUT_MIN_FRAMES)
+
+
+def programme_frames(levels):
+    """The frames that carry programme: within 6 dB of the loud level (half the p70 frame RMS)."""
+    return levels >= DROPOUT_PROGRAMME_SHARE * np.percentile(levels, LOUD_PERCENTILE)
+
+
+def drop_db(src, out):
+    """Per frame, the output's level under the source's, in dB (negative = quieter)."""
+    return 20.0 * np.log10((out + 1e-9) / (src + 1e-9))
+
+
+def recentred(drop, programme):
+    """`drop` less its median over the programme frames: what a gain match left over is not a hole."""
+    return drop - np.median(drop[programme]) if programme.any() else drop
+
+
+def band_frame_drops_db(source, output, rate, frame):
+    """Per frame, the output's 100-1000 Hz level under the source's, in dB (`drop_db` on the body band)."""
+    band = (DROPOUT_BODY_HZ[0], min(DROPOUT_BODY_HZ[1], 0.45 * rate))
+    sos = scipy.signal.butter(4, band, btype="bandpass", fs=rate, output="sos")
+    return drop_db(chunk_levels(source, rate, frame, sos), chunk_levels(output, rate, frame, sos))
+
+
+def chunk_levels(mono, rate, frame, sos=None):
+    """RMS of each whole `frame` of `mono` (through `sos` when given), read 60 s at a time: never a float64 copy of a tape."""
+    count = len(mono) // frame
+    step = max(1, int(DROPOUT_CHUNK_S * rate) // frame)
+    levels = np.zeros(count)
+    for first in range(0, count, step):
+        last = min(count, first + step)
+        levels[first:last] = _chunk_rms(mono, (first, last), frame, sos, int(DROPOUT_CONTEXT_S * rate))
+    return levels
+
+
+def _chunk_rms(mono, frames, frame, sos, context):
+    """Frame RMS over frames `first`..`last`; filtered zero-phase over `context` samples more either side, then trimmed."""
+    first, last = frames
+    pad = 0 if sos is None else context
+    lo, hi = max(0, first * frame - pad), min(len(mono), last * frame + pad)
+    data = np.asarray(mono[lo:hi], dtype=np.float64)
+    if sos is not None:
+        data = scipy.signal.sosfiltfilt(sos, data)
+    offset, size = first * frame - lo, (last - first) * frame
+    core = data[offset:][:size]
+    return np.sqrt(np.mean(core.reshape(last - first, frame) ** 2, axis=1))
 
 
 def _count_runs(mask, min_length):

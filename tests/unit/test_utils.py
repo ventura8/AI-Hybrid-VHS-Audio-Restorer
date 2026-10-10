@@ -180,6 +180,18 @@ def test_log_msg_suppresses_debug_and_silent_output(tmp_path, capsys, monkeypatc
     assert "Silent" not in captured.out
 
 
+def test_problem_count_moves_on_warnings_and_errors_only(tmp_path, monkeypatch):
+    """The stage cache stores nothing rendered while this count moved."""
+    monkeypatch.setattr(modules.utils, "LOG_FILE", tmp_path / "test_log.txt")
+    before = modules.utils.problem_count()
+    modules.utils.log_msg("plain", console=False)
+    modules.utils.log_msg("detail", level="DEBUG")
+    assert modules.utils.problem_count() == before
+    modules.utils.log_msg("fell back", level="WARNING", console=False)
+    modules.utils.log_msg("failed", is_error=True, console=False)
+    assert modules.utils.problem_count() == before + 2
+
+
 def test_log_msg_file_error(tmp_path, capsys, monkeypatch):
     """Test log_msg handles file write errors gracefully."""
     # Set LOG_FILE to an existing directory so file write fails deterministically.

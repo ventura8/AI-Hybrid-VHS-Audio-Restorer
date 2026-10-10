@@ -4,7 +4,8 @@ Provides filter graph generation, model path resolution, character escaping,
 and robust process execution for VHS native DSP restoration and pre-conditioning:
 - Stage 1: Hardware DC Offset Bias Removal (2 Hz sub-audible highpass filter).
 - Stage 2: Stereo Channel Balance Auto-Leveling (Left/Right channel RMS balancing).
-- Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay).
+- Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay;
+  a polarity-inverted pair is logged, and read as no skew behind azimuth_reject_inverted_pair).
 - Stage 4: Analog Preamp De-Clipping (peak clipping threshold reconstruction via adeclip).
 - Stage 5: Impulsive Pop/Click Suppression (adeclick) and Motor Rumble Highpass (45-75 Hz).
 - Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters).
@@ -15,6 +16,7 @@ and robust process execution for VHS native DSP restoration and pre-conditioning
 
 import hashlib
 import http.client
+import math
 import urllib.parse
 from pathlib import Path
 
@@ -36,13 +38,17 @@ from .config import (
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
+    AZIMUTH_REJECT_INVERTED_PAIR,
     CRT_NOTCH_Q,
     ENABLE_ADECLICK,
     ENABLE_DYNAMIC_EXPANDER,
     ENABLE_LINEAR_AIR,
+    EXPANDER_ATTACK_S,
+    EXPANDER_DECAY_S,
     EXPANDER_DEPTH_DB,
     EXPANDER_KNEE_OFFSET_DB,
     HIGHPASS_FREQ,
+    LINEAR_AIR_FREQ_HZ,
     LINEAR_AIR_GAIN_DB,
     NOTCH_FREQ,
 )
@@ -712,14 +718,55 @@ def _is_valid_stereo(stereo_audio):
 AZIMUTH_MIN_CORRELATION = 0.3
 
 
-def _channel_correlation(left, right):
-    """Absolute Pearson correlation between two channels; 0.0 if either is silent."""
+def signed_channel_correlation(left, right):
+    """Pearson correlation between two channels with its sign; 0.0 if either is silent.
+
+    A pair wired or captured with one channel's polarity inverted reads near -1: the same
+    content, upside down.
+    """
     left_centred = left - np.mean(left)
     right_centred = right - np.mean(right)
     denom = float(np.sqrt(np.sum(left_centred**2) * np.sum(right_centred**2)))
     if denom <= 0.0:
         return 0.0
-    return abs(float(np.sum(left_centred * right_centred) / denom))
+    return float(np.sum(left_centred * right_centred) / denom)
+
+
+def _channel_correlation(left, right):
+    """Absolute Pearson correlation between two channels; 0.0 if either is silent."""
+    return abs(signed_channel_correlation(left, right))
+
+
+def _refuses_inverted_pair(correlation):
+    """Flags a polarity-inverted pair in the log; True when the configuration refuses to read a lag from one.
+
+    The gate reads |r|, so an inverted pair (r near -1) passes it, and the lag the
+    cross-correlation's maximum then gives is not the skew: for L and -L the maximum is where
+    the programme's own autocorrelation is most negative, half a period of its strongest
+    partial. Measured with this detector on L/-L pairs at 44.1 kHz: a 1 kHz tone reads
+    -0.50 ms, a 2 kHz tone -0.25 ms, noise low-passed at 3 kHz -0.23 ms, each of which the
+    pre-conditioning would "correct" with a delay; a 200 Hz-led voice (half period 2.5 ms,
+    outside the 1 ms window) and white noise read 0. `azimuth_reject_inverted_pair` (off by
+    default, so every output stays the same bytes) returns no skew for such a pair instead.
+    """
+    refused = bool(AZIMUTH_REJECT_INVERTED_PAIR)
+    action = "no azimuth delay read from it" if refused else "the azimuth delay read from it is unreliable"
+    log_msg(f"    [Auto-Scan] Channels are polarity-inverted (r={correlation:.2f}); {action}.")
+    return refused
+
+
+def _azimuth_pair_usable(left, right):
+    """Whether a lag read between two channels can be an azimuth skew: they share content, and in phase unless allowed.
+
+    Only a correlation at or under -AZIMUTH_MIN_CORRELATION is an inverted pair; everything
+    else meets the |r| gate as before. A NaN correlation (a channel holding NaN samples)
+    fails every comparison, so the gate has always let it through; it still does, and it
+    is not flagged as inverted.
+    """
+    correlation = signed_channel_correlation(left, right)
+    if correlation <= -AZIMUTH_MIN_CORRELATION:
+        return not _refuses_inverted_pair(correlation)
+    return math.isnan(correlation) or abs(correlation) >= AZIMUTH_MIN_CORRELATION
 
 
 def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
@@ -737,7 +784,7 @@ def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
         return 0.0
     left = stereo_audio[:32768, 0]
     right = stereo_audio[:32768, 1]
-    if _channel_correlation(left, right) < AZIMUTH_MIN_CORRELATION:
+    if not _azimuth_pair_usable(left, right):
         return 0.0
 
     corr = np.correlate(left - np.mean(left), right - np.mean(right), mode="full")
@@ -788,7 +835,14 @@ def _read_stereo_audio_for_analysis(wav_path):
     try:
         audio_info = sf.info(str(wav_path))
         return _read_analysis_audio(wav_path, audio_info), audio_info.samplerate
-    except Exception:
+    except Exception as exc:
+        # Every "unreadable" a stage reports (hum, tones, plosives, the subtraction's margin and
+        # tonality, the repair's gate) comes from here: a WARNING keeps a render that read
+        # nothing out of the stage cache, since a fresh render may read it.
+        log_msg(
+            f"    [Analysis] {Path(wav_path).name} could not be read ({type(exc).__name__}: {exc}); measured as unreadable.",
+            level="WARNING",
+        )
         return None, None
 
 
@@ -1120,23 +1174,30 @@ def _build_full_audio_expander_filter(noise_floor_db=None, depth_db=None, knee_o
     The curve pushes what sits under the knee (`noise_floor + knee_offset`, clamped to -60..-35
     dBFS) down by `depth_db` more, and maps -90 dBFS to -100: this is the stage that turns a
     denoised pause into dead air. `expander_depth_db` / `expander_knee_offset_db` in the config
-    move it (7 / +4 are the shipped curve); the tuning loop searches them.
+    move it (7 dB / +8 dB are the shipped curve, +4 dB was v1.3.2's knee); the tuning loop searches
+    them. `expander_attack_s` / `expander_decay_s` time its level follower (0.04 / 0.18 s, the
+    shipped `attacks=0.04:decays=0.18`).
     """
     depth = EXPANDER_DEPTH_DB if depth_db is None else float(depth_db)
     offset = EXPANDER_KNEE_OFFSET_DB if knee_offset_db is None else float(knee_offset_db)
+    timing = f"compand=attacks={float(EXPANDER_ATTACK_S):g}:decays={float(EXPANDER_DECAY_S):g}"
     if noise_floor_db is None:
-        return f"compand=attacks=0.04:decays=0.18:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
+        return f"{timing}:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
     knee = max(-60.0, min(-35.0, float(noise_floor_db) + offset))
     mid = round((knee - 90.0) / 2.0, 1)
-    return f"compand=attacks=0.04:decays=0.18:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
+    return f"{timing}:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
 
 
 def _build_linear_air_filter(gain_db=None):
-    """Constructs a gentle high-shelf presence curve compensating for tape head loss."""
+    """Constructs a gentle high-shelf presence curve compensating for tape head loss.
+
+    The shelf sits at `linear_air_freq_hz` (7500 Hz, the shipped `f=7500`), `gain_db` high
+    (`linear_air_gain_db` when None).
+    """
     gain_db = LINEAR_AIR_GAIN_DB if gain_db is None else gain_db
     if not ENABLE_LINEAR_AIR or gain_db <= 0.0:
         return None
-    return f"treble=g={gain_db:.1f}:f=7500"
+    return f"treble=g={gain_db:.1f}:f={float(LINEAR_AIR_FREQ_HZ):g}"
 
 
 def _append_linear_air_stage(stages, apply_air):

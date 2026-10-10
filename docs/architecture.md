@@ -191,9 +191,12 @@ flowchart TD
     S2(["Aligned background stem"]) --> MIX
     MIX --> LN{"Loudness enabled?"}:::gate
     LN -->|yes| P1["Pass 1: measure programme loudness"]:::step
-    P1 --> P2["Pass 2: loudnorm with measured values<br/>linear, targets -16 LUFS"]:::step
+    P1 --> FB{"True peak alone rules out linear<br/>and loudnorm_linear_fallback is gain_limiter?"}:::gate
+    FB -->|no, the default| P2["Pass 2: loudnorm with measured values, -16 LUFS<br/>linear while ffmpeg's rule holds, else dynamic"]:::step
+    FB -->|yes| VOL["Pass 2: volume, one gain to -16 LUFS"]:::step
     P2 --> RS["aresample to 44.1 kHz<br/>loudnorm leaves the graph at 96 kHz"]:::step
-    RS --> LIM["True-peak limiter, -1.0 dBTP"]:::step
+    VOL --> RS
+    RS --> LIM["Sample-peak limiter<br/>alimiter, -1 dBFS"]:::step
     LN -->|no| ENC
     LIM --> ENC["Container-dependent encode<br/>AAC, MP2, or PCM"]:::step
     ENC --> MUX["Mux with -c:v copy"]:::step
@@ -204,6 +207,13 @@ flowchart TD
 
 If the measurement pass fails or returns an incomplete block, the pipeline logs
 a warning and falls back to single-pass normalization rather than aborting.
+
+Pass 2 asks loudnorm for its linear mode, which ffmpeg grants only while the
+true peak after the gain, the measured range and a set measurement allow it,
+and always on a programme under 3 s; otherwise loudnorm rides the gain. The
+limiter holds sample peaks, not true peaks. `docs/pipeline_logic.md`
+("Mastering chain") gives the rule, the peaks measured in each mode, and the
+`loudnorm_linear_fallback` key behind the `volume` branch.
 
 Single-track modes share this chain. They carry one processed stream instead of
 two stems, so the graph starts at `[1:a]` rather than an `amix`, but the
@@ -253,7 +263,7 @@ flowchart TD
     B --> N["Pass 6: noise-profile subtraction\n4 s probe, learned per-bin blend"]
     N --> D["Pass 7: UVR-DeNoise on the full mix"]
     D --> Y["Pass 8: shift or DTW alignment"]
-    Y --> M["Single-track EBU R128 mastering\ntrue-peak limiter and 44.1 kHz resample"]
+    Y --> M["Single-track EBU R128 mastering\n44.1 kHz resample and sample-peak limiter"]
     M --> O(["*_PureLinear_Cleaned\nvideo stream copied"])
 ```
 

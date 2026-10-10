@@ -170,7 +170,7 @@ def _cancelled(source_wav, audio_dir, lines):
     try:
         produced = cancel_tones(source_wav, output_dir / f"tonecancel_{Path(source_wav).name}", lines)
     except STAGE_FAILURES as exc:
-        log_msg(f"    [Tone Cancel] Skipped after failure: {exc}")
+        log_msg(f"    [Tone Cancel] Skipped after failure: {exc}", level="WARNING")
         return None
     if produced is None:
         log_msg("    [Tone Cancel] Skipped: too short to track.")

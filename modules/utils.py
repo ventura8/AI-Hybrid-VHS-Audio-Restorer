@@ -125,6 +125,16 @@ if added_any:
 
 _venv_scripts_missing = not scripts_dirs
 
+# How many lines this process logged at each level. The stage cache reads the WARNING and
+# ERROR count around a render: a stage that fell back after a failure logs one, and a
+# fallback is never frozen into the cache (modules/stage_cache.py).
+_LEVEL_COUNTS = collections.Counter()
+
+
+def problem_count():
+    """The WARNING and ERROR lines this process has logged so far."""
+    return _LEVEL_COUNTS["WARNING"] + _LEVEL_COUNTS["ERROR"]
+
 
 def _resolve_log_level(is_error, level):
     if is_error:
@@ -208,6 +218,7 @@ def log_msg(message, is_error=False, console=True, level="INFO"):
         level: Log level - 'INFO', 'DEBUG', or 'ERROR'. DEBUG never prints to console.
     """
     effective_level = _resolve_log_level(is_error, level)
+    _LEVEL_COUNTS[effective_level] += 1
     should_print = _should_print_log(console, effective_level)
 
     if should_print:

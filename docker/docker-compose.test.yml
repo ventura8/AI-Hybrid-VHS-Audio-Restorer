@@ -27,7 +27,7 @@ services:
       - ../:/shared
 
   windows_test:
-    image: dockurr/windows@sha256:0cff9eb0e7aee9953e55bc682852ca4fdca233145a58ae1ec94f0b0c01a2ed30
+    image: dockurr/windows@sha256:16fd7c39a3e48bb946d29c59dc6015942e5b900a1fa5d7e5552053bfc48ee2ea
     container_name: vhs_restorer_windows_test
     environment:
       VERSION: "win11"

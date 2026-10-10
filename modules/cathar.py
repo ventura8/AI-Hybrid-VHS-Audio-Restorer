@@ -65,11 +65,14 @@ from .config import (
     CATHAR_MONO_BELOW_HZ,
     CATHAR_MUSIC_ALPHA,
     CATHAR_MUSIC_ALPHA_HIGH,
+    CATHAR_MUSIC_BETA,
     CATHAR_MUSIC_CRT_NOTCH_Q,
+    CATHAR_MUSIC_DEWIND_CUTOFF,
     CATHAR_MUSIC_ENABLE_COHERENT,
     CATHAR_MUSIC_ENABLE_DEESSER,
     CATHAR_MUSIC_ENABLE_DEPLOSIVE,
     CATHAR_MUSIC_ENABLE_NOISEPRINT,
+    CATHAR_MUSIC_ENABLE_REPAIR,
     CATHAR_MUSIC_EXPANDER_DEPTH_DB,
     CATHAR_MUSIC_PERSISTENCE_MIN,
     CATHAR_MUSIC_PROFILE,
@@ -343,7 +346,8 @@ def _find_quiet_window(wav_path, duration_s=0.75):
         if len(mono) <= win:
             return 0.0
         return (source_start + _evaluate_quiet_probes(mono, win)) / sr
-    except Exception:
+    except Exception as exc:
+        log_msg(f"    [Cathar] Quiet-window search failed ({exc}); the noise print is taken from the start.", level="WARNING")
         return 0.0
 
 
@@ -490,7 +494,7 @@ def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_
     try:
         return _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json)
     except Exception as exc:
-        log_msg(f"    [Cathar] Noiseprint extraction bypassed: {exc}")
+        log_msg(f"    [Cathar] Noiseprint extraction bypassed: {exc}", level="WARNING")
         return None
     finally:
         if slice_wav.exists():
@@ -545,10 +549,14 @@ def _cathar_clean_transients(current_wav, work_dir, total_duration=None):
     return current_wav
 
 
-def _cathar_precondition_pass(current_wav, work_dir, total_duration=None, deplosive=None):
-    """Executes initial sub-audible, azimuth, and impulse noise suppression stages."""
+def _cathar_precondition_pass(current_wav, work_dir, total_duration=None, deplosive=None, dewind_cutoff=None):
+    """Executes initial sub-audible, azimuth, and impulse noise suppression stages.
+
+    `deplosive` and `dewind_cutoff` are the material's (`_material_settings`); None keeps the
+    configured speech defaults.
+    """
     if CATHAR_ENABLE_DEWIND:
-        current_wav = _cathar_dewind_step(current_wav, work_dir, total_duration=total_duration)
+        current_wav = _cathar_dewind_step(current_wav, work_dir, cutoff=_dewind_cutoff(dewind_cutoff), total_duration=total_duration)
     if CATHAR_ENABLE_AZIMUTH:
         current_wav = _cathar_azimuth_step(current_wav, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_MONO_BELOW:
@@ -564,20 +572,30 @@ def _deplosive_wanted(deplosive):
     return CATHAR_ENABLE_DEPLOSIVE if deplosive is None else bool(deplosive)
 
 
-def _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None):
-    """Executes analog clipping reconstruction, mains dehum, and spectral glitch repair."""
+def _dewind_cutoff(cutoff):
+    """The material's dewind cutoff in Hz when the pipeline passed one, else the configured default."""
+    return CATHAR_DEWIND_CUTOFF if cutoff is None else int(cutoff)
+
+
+def _repair_wanted(repair):
+    """The material's spike-repair switch when the pipeline passed one, else the configured default."""
+    return CATHAR_ENABLE_REPAIR if repair is None else bool(repair)
+
+
+def _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None, repair=None):
+    """Executes analog clipping reconstruction, mains dehum, and spectral glitch repair (the material's switch)."""
     if CATHAR_ENABLE_DECLIP:
         current_wav = _cathar_declip_step(current_wav, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_DEHUM:
         current_wav = _cathar_dehum_step(current_wav, work_dir, freq=notch_freq, total_duration=total_duration)
-    if CATHAR_ENABLE_REPAIR:
+    if _repair_wanted(repair):
         current_wav = _cathar_repair_step(current_wav, work_dir, total_duration=total_duration)
     return current_wav
 
 
-def _cathar_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None):
+def _cathar_repair_pass(current_wav, work_dir, notch_freq=60.0, total_duration=None, repair=None):
     """Executes clipping repair, mains dehum, glitch repair, dewow, and dereverb."""
-    current = _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=notch_freq, total_duration=total_duration)
+    current = _cathar_analog_repair_pass(current_wav, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=repair)
     if CATHAR_ENABLE_DEWOW:
         current = _cathar_dewow_step(current, work_dir, total_duration=total_duration)
     if CATHAR_ENABLE_DEREVERB:
@@ -669,11 +687,17 @@ def _log_music_profile(strategy, settings):
     switches = ", ".join(f"{name} {'on' if settings[key] else 'off'}" for name, key in _MUSIC_SWITCH_NAMES)
     log_msg(
         f"    [Cathar] Music profile: held partials {strategy['profile']['tonal_persistence']:.4f}; "
-        f"subtracting at {settings['alpha']:g}, {switches}."
+        f"subtracting at {settings['alpha']:g} (floor {settings['beta']:g}), dewind at {settings['dewind_cutoff']} Hz, {switches}."
     )
 
 
-_MUSIC_SWITCH_NAMES = (("learned print", "noiseprint"), ("coherent", "coherent"), ("deplosive", "deplosive"), ("de-esser", "deesser"))
+_MUSIC_SWITCH_NAMES = (
+    ("learned print", "noiseprint"),
+    ("coherent", "coherent"),
+    ("deplosive", "deplosive"),
+    ("de-esser", "deesser"),
+    ("spike repair", "repair"),
+)
 
 
 def _material_settings(strategy):
@@ -685,21 +709,28 @@ def _material_settings(strategy):
     return {
         "alpha": CATHAR_ALPHA,
         "alpha_high": CATHAR_ALPHA_HIGH,
+        "beta": CATHAR_BETA,
         "noiseprint": CATHAR_ENABLE_NOISEPRINT,
         "coherent": CATHAR_ENABLE_COHERENT,
         "deplosive": CATHAR_ENABLE_DEPLOSIVE,
         "deesser": CATHAR_ENABLE_DEESSER,
+        "repair": CATHAR_ENABLE_REPAIR,
+        "dewind_cutoff": CATHAR_DEWIND_CUTOFF,
     }
 
 
 def _music_settings():
+    """The music profile; the floor, the spike-repair switch and the dewind cutoff default to what music ran before round C3."""
     return {
         "alpha": CATHAR_MUSIC_ALPHA,
         "alpha_high": CATHAR_MUSIC_ALPHA_HIGH,
+        "beta": CATHAR_MUSIC_BETA,
         "noiseprint": CATHAR_MUSIC_ENABLE_NOISEPRINT,
         "coherent": CATHAR_MUSIC_ENABLE_COHERENT,
         "deplosive": CATHAR_MUSIC_ENABLE_DEPLOSIVE,
         "deesser": CATHAR_MUSIC_ENABLE_DEESSER,
+        "repair": CATHAR_MUSIC_ENABLE_REPAIR,
+        "dewind_cutoff": CATHAR_MUSIC_DEWIND_CUTOFF,
     }
 
 
@@ -717,7 +748,13 @@ def _cathar_denoise_split(current, work_dir, settings, np_path, total_duration):
     from . import split_band
 
     low = _cathar_denoise_step(
-        current, work_dir, alpha=settings["alpha"], coherent=settings["coherent"], noiseprint_path=np_path, total_duration=total_duration
+        current,
+        work_dir,
+        alpha=settings["alpha"],
+        beta=settings["beta"],
+        coherent=settings["coherent"],
+        noiseprint_path=np_path,
+        total_duration=total_duration,
     )
     high_dir = work_dir / "split_high"
     high_dir.mkdir(parents=True, exist_ok=True)
@@ -725,6 +762,7 @@ def _cathar_denoise_split(current, work_dir, settings, np_path, total_duration):
         current,
         high_dir,
         alpha=settings["alpha_high"],
+        beta=settings["beta"],
         coherent=settings["coherent"],
         noiseprint_path=np_path,
         total_duration=total_duration,
@@ -738,8 +776,10 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
     _require_cathar_binary()
     notch_freq = _resolve_notch_freq(strategy)
     settings = _material_settings(strategy)
-    current = _cathar_precondition_pass(original_wav, work_dir, total_duration=total_duration, deplosive=settings["deplosive"])
-    current = _cathar_repair_pass(current, work_dir, notch_freq=notch_freq, total_duration=total_duration)
+    current = _cathar_precondition_pass(
+        original_wav, work_dir, total_duration=total_duration, deplosive=settings["deplosive"], dewind_cutoff=settings["dewind_cutoff"]
+    )
+    current = _cathar_repair_pass(current, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=settings["repair"])
     np_path = None
     if settings["noiseprint"]:
         probe_s = _probe_duration_s(total_duration, current)
@@ -751,6 +791,7 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
             current,
             work_dir,
             alpha=settings["alpha"],
+            beta=settings["beta"],
             coherent=settings["coherent"],
             noiseprint_path=np_path,
             total_duration=total_duration,

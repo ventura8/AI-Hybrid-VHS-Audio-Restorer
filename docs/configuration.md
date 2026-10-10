@@ -177,8 +177,13 @@
   Hz below the threshold, the most tonal third of the corpus -- subtraction
   runs at the gentler factor. At 3.0 that material deviated 0.49 dB against
   cathar's 0.32; at 2.0 it is 0.33 with noise removal still ahead. The gate
-  fires on none of the noisier material. - `auto_cathar_tonal` (default
-  **true**), `auto_cathar_flatness_max` (default 0.04) and
+  fires on none of the noisier material. The threshold also decides
+  whether the plosive tamer runs and how long the hum canceller's series
+  is, so it stays live with `apl_enable_spectral_denoise` off: the Tata
+  tapes read 0.022, and the tuned finals' 0.01 ran the tamer and the
+  40-harmonic series where the shipped 0.035 does not. -
+  `auto_cathar_tonal` (default **true**), `auto_cathar_flatness_max`
+  (default 0.04) and
   `auto_cathar_probe_similarity` (default 0.9). Where `auto` prefers
   `cathar`'s fidelity: sustained tonal programme with no silence for
   `auto_pure_linear`'s 4 s noise probe to learn from. The tape reads as
@@ -212,8 +217,9 @@
   `*_Cathar_Cleaned`. - The binary is the one beside the interpreter (the
   venv), then `~/.cargo/bin`; `AI_RESTORE_CATHAR_BIN` in the environment
   names another build, so an upgrade can be measured on the tuning excerpts
-  before it replaces the validated binary; the installers provision 0.7.6,
-  the build the listener round tuned on. - Speech settings since the listener
+  before it replaces the validated binary; the installers provision 0.8.0,
+  bit-identical to 0.7.6 (the build the listener round tuned on) on every
+  stage the app calls. - Speech settings since the listener
   round of 2026-09-25 (the self-driving loop on the four full Tata tapes,
   judging on the listener readings; `docs/validation.md`): `cathar_alpha` 1.0
   (from 2.0), `cathar_beta` 0.02, `cathar_repair_strength` 2,
@@ -232,7 +238,17 @@
     loop of the listener round (four rounds on 12 clips, hard-gate failures 31
     to 27) also switches the de-esser off (`cathar_music_enable_deesser`,
     false), sets the polish expander to 4 dB (`cathar_music_expander_depth_db`)
-    and narrows the CRT notch to Q 60 (`cathar_music_crt_notch_q`);
+    and narrows the CRT notch to Q 60 (`cathar_music_crt_notch_q`). Round C3
+    gives music its own subtraction floor (`cathar_music_beta`, 0.02), spike
+    repair switch (`cathar_music_enable_repair`, true) and dewind cutoff
+    (`cathar_music_dewind_cutoff`, 80 Hz) in place of `cathar_beta`,
+    `cathar_enable_repair` and `cathar_dewind_cutoff`, which music ran until
+    2026-10-09, so the defaults keep every output's bytes; none is judged by
+    ear yet. A cathar tape is high-passed twice: the pre-conditioning graph's
+    `highpass` at the scanner's rumble pick (0, 45, 60 or 75 Hz; 80 when the
+    scan fails), then cathar's `dewind`, a high-pass at its cutoff (80 Hz, the
+    higher of the two). The music cutoff replaces the dewind's only, so a tape
+    the scanner cut at 60 or 75 Hz keeps that cut under a lower dewind.
     `cathar_music_profile` false keeps the speech settings everywhere. - `auto`
     (default): - Intelligent
     acoustic profile scan
@@ -300,7 +316,8 @@ overrides them is `D:\Tata\New folder\variants\v2`):
 
 - `loudnorm_target_lra` (20.0, from 11.0): the mux's loudness-range target;
   above it ffmpeg's loudnorm turns dynamic and rides the gain between words.
-  All four loops accepted 20.
+  All four loops accepted 20. The range is one half of ffmpeg's rule; the
+  true peak is the other (see `loudnorm_linear_fallback` below).
 
 - `crt_notch_q` (30.0): the CRT line-whistle notch's Q in the pre-conditioning
   graph; `cathar_music_crt_notch_q` (60.0) on music.
@@ -312,16 +329,178 @@ overrides them is `D:\Tata\New folder\variants\v2`):
   reads thin at it.
 
 - `linear_air_gain_db` (1.0, from 2.0): `auto_pure_linear`'s presence shelf
-  at 7.5 kHz (`enable_linear_air`). Set by ear on 2026-10-08: at +2 dB the
-  user heard the 's' as thin; in an A/B of +2 dB, +1 dB and off on the four
-  Tata tapes they chose +1 dB. The shelf is what brightens the 's' (the
-  denoiser leaves fricatives within 1 dB of the other speech in every band);
-  the harness's loops kept +2 dB because it does not read the brighter top as
-  a fault.
+  at `linear_air_freq_hz` (7500 Hz by default; `enable_linear_air`). Set by
+  ear on 2026-10-08, every shelf at 7500 Hz: at +2 dB the user heard the 's'
+  as thin; in an A/B of +2 dB, +1 dB and off on the four Tata tapes they
+  chose +1 dB. The shelf is what brightens the 's' (the
+  denoiser leaves fricatives within 1 dB of the other speech in every band;
+  the +2 dB shelf lifts the whole output about 1.6 dB above 4 kHz). Each of
+  the 16 rounds of the four APL loops scored a +1 dB candidate and none
+  accepted it: it ranked behind the +2 dB incumbent in 15 and lost to
+  another move in the 16th, under grids that rank
+  `dsp.hf_4k8k.delta.median` up beside HF gates that only bound a loss.
+  Ear v3 reads the tilt two-sided (`docs/validation.md`, "Ear v3").
+
+- `linear_air_freq_hz` (7500.0), `expander_attack_s` (0.04) and
+  `expander_decay_s` (0.18): added on 2026-10-09 for rounds A1 (brightness)
+  and A3 (pause texture), at the values `modules/filters.py` hard-coded
+  until then, so every output keeps its bytes (a unit test pins the default
+  polish graphs). The first is the air shelf's corner (`treble=f`,
+  1000-16000 Hz), `auto_pure_linear`'s alone: cathar's polish runs without
+  the shelf. The other two are the polish expander's `compand` attack and
+  decay in seconds (0.001-1.0 and 0.001-5.0), how fast its level follower
+  rises into a word and lets go after it; `cathar`, `auto_pure_linear` and
+  `denoise_only` share that expander. None is judged by ear yet. The tuning
+  loop judges a corner with its gain against round 3's +2 dB verdict, heard
+  at 7500 Hz: +1.5 dB at 6000 Hz lifts 4-8 kHz more than that shelf and is
+  refused (`scripts/autotune_guards.py`).
 
 A tuning result that carries a knob an accepted switch made inert (the
 subtraction's factor, probe and native suppressor once
 `apl_enable_spectral_denoise` is off) leaves that knob at its shipped value.
+
+## Mastering and Pre-Conditioning Switches
+
+Two keys added with ear v3 (2026-10-09), both defaulting to what every
+earlier release did, so every output keeps its bytes until a listening
+session decides otherwise:
+
+- `loudnorm_linear_fallback` (`ffmpeg`, or `gain_limiter`): what the mux
+  does when ffmpeg's loudnorm would leave its linear mode only because of
+  the true-peak rule. Linear mode (one gain for the whole programme) holds
+  only while the measured true peak plus the gain to -16 LUFS stays at or
+  under -1 dBTP, the measured range stays within `loudnorm_target_lra`, and
+  the measurement is set (I and LRA not 0, TP not 99, threshold not -70);
+  otherwise loudnorm rides the gain and lifts the pause floors after the
+  engine has finished. A programme under 3 s, shorter than loudnorm's frame
+  buffer, runs linear whatever was measured. The run log used to check the
+  range half only: of the 616 distinct decisions it logged as "linear" in
+  the repository's run logs on 2026-10-09, 229 (37%) broke the true-peak
+  half and ran dynamic. The log now applies the rule (`linear_mode_blockers`
+  in `modules/mastering.py`, with the short-programme case taken from the
+  duration the mux knows), which reproduced ffmpeg 8.0.1's own decision in
+  all nine synthetic cases checked and its 3 s boundary (linear at 2.9 s,
+  dynamic at 3.0 s). `ffmpeg` keeps the dynamic ride. `gain_limiter`
+  applies one gain to the target and the mux's existing limiter instead; a
+  range over its target still goes to loudnorm. That limiter is `alimiter`
+  at -1 dBFS on the samples, not a true-peak limiter: on three synthetic
+  programmes with clicks the render peaked at up to +0.24 dBTP where
+  loudnorm's dynamic mode held -1.8 to -1.9. The pause-texture round judges
+  it by ear.
+- `azimuth_reject_inverted_pair` (false): the pre-conditioning's azimuth
+  delay in every mode, cathar included. The gate that admits a channel pair
+  read |r|, so a pair with one channel's polarity inverted passed it, and
+  the lag it then reads is half a period of the programme's strongest
+  partial, not a skew: on L/-L pairs a 1 kHz tone reads -0.50 ms, a 2 kHz
+  tone -0.25 ms and noise low-passed at 3 kHz -0.23 ms, each of which the
+  pre-conditioning would apply as a delay. A pair at r -0.3 or below is
+  always logged as inverted; with the key on, no skew is read from it.
+
+## Event Log
+
+`AI_RESTORE_EVENT_LOG=<dir>` in the environment (not a `config.yaml` key)
+makes the event-gated stages write what they found into that folder, one
+JSON record each, `<stage>__<recording>__<mode>__<track>.json`: the
+sibilant guard and the plosive tamer (the spans they detected, on the
+pre-neural audio's timeline, with their thresholds), the pause floor keeper
+(the pauses it found and the frames it filled, on the restored file's
+timeline), and the mux's loudness stage (the measured values, the mode
+ffmpeg's rule predicts, the fallback, and what the applied pass reported,
+`normalization_type` included; also written beside the track it masters).
+A stage that did not look records why (switched off, refused material, or
+`failed: <error>`). Unset, nothing is written, no extra pass runs, and the
+audio is the same either way. The records are written for the
+output-quality harness's coverage reading (ear v3's R3,
+`meta.fricative_coverage`), which will measure how many events a stage
+reaches; that reading is not built yet, so until then compare a stage's
+`events_s` with the harness's own locator by hand
+(`.agent/workflows/tune_on_real_tapes.md`). Two runs in the same mode share
+record names, so give each its own folder.
+
+## Stage Cache
+
+`AI_RESTORE_STAGE_CACHE=<absolute folder>` in the environment (not a
+`config.yaml` key) keeps what `auto_pure_linear`'s and `denoise_only`'s
+neural stage hands on (everything up to and including the neural denoiser:
+the surgical notch, the deterministic chain and the model) and replays it
+when the stage runs again on the same input under the same settings. The
+self-driving loop sets it with `--stage-cache`
+(`scripts/autotune_restoration.py`), so a candidate whose knobs all act after
+the denoiser skips the chain and the model. Unset (the default), the cache is
+one environment read and every output keeps its bytes; a relative path leaves
+it off, with a warning, because each candidate runs in its own working folder.
+
+- An entry, `<folder>/v1/<key>/`, holds the chain's output (the sibilant
+  guard's reference) and the neural output, restored on a hit at the paths
+  the stage wrote them at under its folder, with a manifest of their sizes
+  and SHA-256 digests and the full key document (`key.json`, for diffing a
+  miss). A hit checks every digest while it copies; an entry that does not
+  read back is discarded and the stage renders afresh, while a replay that
+  fails with the entry still intact (the work folder's disk full, a file
+  there locked) keeps the entry. A cache folder that cannot be read is a
+  miss, with a warning: no cache problem ends a restoration. Final outputs
+  are never cached.
+- The key covers the input by its decoded samples (a soundfile WAV carries a
+  PEAK chunk with a write timestamp, so two writes of the same samples differ
+  in their bytes), its name and layout; every argument of the stage, the
+  scanner's whole strategy and the seven stage switches included; the
+  resolved configuration minus the keys below; the sources of every module
+  but `sibilant_guard`, `pause_floor`, `mastering` and `sync`, what importing
+  those four runs (their import-time code, without the bodies of the
+  functions import never calls) and `restore_audio_hybrid.py`, read when the
+  process starts; ffmpeg (content and `-version` output) and cathar
+  (content), which the chain runs; the model files the stage can load (name,
+  size, modification time) in the folder audio-separator loads them from
+  (`AUDIO_SEPARATOR_MODEL_DIR` when set, else `models/`);
+  `assets/blend_weights.npz`; the interpreter, the installed packages (read
+  at start-up too), torch, the GPU and its driver, the CPU and the
+  denoiser's chunk length; and, deny by default, every environment variable
+  whose name starts with `AI_RESTORE_`, `AUDIO_SEPARATOR_`, `CUDA`,
+  `CUBLAS`, `CUDNN`, `NVIDIA_`, `TORCH`, `PYTORCH_`, `OMP_`, `KMP_`, `MKL_`,
+  `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
+  `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
+  own two and `AI_RESTORE_EVENT_LOG`.
+- The 22 keys left out of the key, each read only after the denoiser
+  (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
+  code by `tests/unit/test_stage_cache_allowlist.py` and
+  `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
+  `linear_air_gain_db`, `linear_air_freq_hz`, `enable_dynamic_expander`,
+  `expander_depth_db`, `expander_knee_offset_db`, `expander_attack_s`,
+  `expander_decay_s`, `apl_expander_depth_db`,
+  `apl_enable_sibilant_guard`, `apl_sibilant_mix`, `apl_sibilant_guard_hz`,
+  `apl_sibilant_hf_share_min`, `enable_pause_floor`, `pause_floor_fill_db`,
+  `pause_floor_quiet_percentile`, `enable_loudnorm`, `loudnorm_target_lra`,
+  `loudnorm_linear_fallback`, `preserve_original_audio_track`,
+  `dtw_resolution` and `apl_music_bg_floor_db`. Every other key, one the code
+  does not know included, is in the key; the `cathar_*` keys among them,
+  because the chain's repair and subtraction run cathar's stages at those
+  settings.
+- Nothing is stored from a render during which a stage logged a warning or
+  an error (a fallback after a failure is never frozen), audio-separator's
+  own included (it logs through Python logging; the line
+  `Using soundfile for writing.`, logged at WARNING on every render, and its
+  note on inputs under 10 s do not count); from a stage folder that already
+  held files (a resumed work folder, whose stages reuse what they find);
+  when a module source was written after the process started, or the
+  sources or the installed
+  packages no longer hash as they did then (an edit or an install while a
+  candidate renders); when an output lies outside the stage folder; or when
+  the entry would put the cache over its cap or leave under 20 GB free on
+  the volume, both read again from the disk once eviction ran.
+  `apl_use_deepfilternet` and `apl_use_resemble_denoise` (weights outside
+  `models/`) and `AI_RESTORE_EVENT_LOG` (the plosive tamer records before the
+  cached stage) bypass the cache.
+- `AI_RESTORE_STAGE_CACHE_MAX_GB` (50) is the cap; the least recently used
+  entries go first, a hit counts as a use, and the entries other processes
+  are still building count toward it. An entry takes about 42 MB per minute
+  of stereo tape, 2.5 GB per hour. Only folders named like a key (64 hex
+  digits) or like an entry in progress (`tmp-<12 hex digits>-<pid>`) are
+  counted, evicted or swept: anything else under `v1/` is left alone.
+- cathar never uses it. On the music stem path only the vocal stem's neural
+  stage is cached; the separation still runs.
+- The run log says `[Stage Cache] Miss`, `Stored` (the entry's size, the
+  render time it saves and the cache's total), `Hit`, `Evicted`, `Bypassed`
+  and `Not stored` with the reason.
 
 ## Model Files
 

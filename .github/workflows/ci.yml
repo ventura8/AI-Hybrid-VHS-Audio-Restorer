@@ -42,12 +42,10 @@ jobs:
         shell: bash
         run: |
           poetry config virtualenvs.in-project true
-      # Verify the committed lock, never regenerate it. `poetry lock` re-resolved from
-      # scratch on every run: the torch/torchvision/torchaudio multiple-constraint
-      # dependencies span the cu130 index and a separate Darwin branch, and resolving that
-      # explosion outran GitHub's 6-hour job ceiling -- three runs were killed at 6h0m19s
-      # having never reached step 7. It was also self-defeating: regenerating the lock meant
-      # CI validated a lock nobody ships, while the committed one went untested.
+      # Verify the committed lock, never regenerate it: CI tests the lock that ships, not one
+      # it made itself. Regenerating here once outran GitHub's 6-hour job ceiling (three runs
+      # killed at 6h0m19s). The cause was the torch markers in pyproject.toml, fixed in v1.4.0
+      # (see the comment above the torch pins); `poetry lock` now takes seconds.
       - name: Verify Poetry Lockfile
         shell: bash
         run: |

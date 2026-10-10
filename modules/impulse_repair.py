@@ -177,12 +177,13 @@ def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=Non
     try:
         audio, rate = sf.read(str(input_wav), dtype="float32", always_2d=True)
         repaired, total = _repaired_channels(audio, threshold)
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError, ValueError) as exc:
+        log_msg(f"    [Repair] depop skipped after failure: {exc}", level="WARNING")
         return None
     except MemoryError:
         # A capture the host cannot hold twice over is left unrepaired rather than ending
         # the restoration.
-        log_msg("    [Repair] depop skipped: not enough memory for this capture.")
+        log_msg("    [Repair] depop skipped: not enough memory for this capture.", level="WARNING")
         return None
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

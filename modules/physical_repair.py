@@ -191,7 +191,7 @@ def _run_one(step, name, current, output_dir, total_duration):
     try:
         produced = step(current, output_dir, total_duration=total_duration)
     except STAGE_FAILURES as exc:
-        log_msg(f"    [Repair] {name} bypassed: {exc}")
+        log_msg(f"    [Repair] {name} bypassed: {exc}", level="WARNING")
         return current
     if produced and Path(produced).is_file():
         log_msg(f"    [Repair] {name} applied.")
