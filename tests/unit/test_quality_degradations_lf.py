@@ -41,7 +41,8 @@ def test_the_bass_shelf_applies_ffmpegs_magnitude_with_no_phase_and_keeps_the_le
     out = v3.lf_shelf(source, RATE, -3.0)
     b, a = v3.bass_coefficients(-3.0, RATE)
     probes = np.array([45.0, 90.0, 135.0, 450.0])
-    assert out.dtype == np.float32 and len(out) == len(source)
+    assert out.dtype == np.float32
+    assert len(out) == len(source)
     assert np.allclose(_spectrum_ratio_db(source, out, probes), _response_db(b, a, probes), atol=1e-3)
     assert audio_io.align_pair(source, out)[2] == 0
 

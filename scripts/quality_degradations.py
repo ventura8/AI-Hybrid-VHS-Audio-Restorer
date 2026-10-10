@@ -133,6 +133,7 @@ SIB_BODY = "dsp.sib_body_db"
 SIB_ABS = "dsp.sib_abs_level_db"
 SIB_TEXTURE = "dsp.sib_texture_db"
 BALANCE_AIR = "dsp.balance_air_db"
+GAP_ATTEN = "dsp.gap_atten_db"
 GAP_SLOPE = "dsp.gap_slope_db_oct"
 GAP_LSD = "dsp.gap_lsd_db"
 GAP_ISLAND_KURT = "dsp.gap_island_kurt"
@@ -555,7 +556,7 @@ DEGRADATIONS = {
         "speech",
         (30.0, 20.0, 10.0),
         (
-            Expectation("dsp.gap_atten_db", "down"),
+            Expectation(GAP_ATTEN, "down"),
             Expectation("dsp.residual_noise_db", "up"),
             Expectation("dsp.gap_air_db", "up", True),
             Expectation(SIGMOS_NOISE, "down", True),
@@ -732,9 +733,7 @@ V3_DEGRADATIONS = {
     "lf_highpass": Degradation("speech", LF_HIGHPASS_HZ, _low_end("down")),
     "spectral_tilt_up": Degradation("speech", TILT_LEVELS, _tilt("up", "down")),
     "spectral_tilt_down": Degradation("speech", _negated(TILT_LEVELS), _tilt("down", "up")),
-    "pause_residual_scaled": Degradation(
-        "vhs", (-6.0, -12.0, -18.0), (Expectation("dsp.gap_atten_db", "up"), *_shape_kept(), *_speech_untouched())
-    ),
+    "pause_residual_scaled": Degradation("vhs", (-6.0, -12.0, -18.0), (Expectation(GAP_ATTEN, "up"), *_shape_kept(), *_speech_untouched())),
     "pause_residual_hiss": Degradation(
         "vhs",
         (2.0, 4.0, 6.0),
@@ -763,7 +762,7 @@ V3_DEGRADATIONS = {
         (
             Expectation("dsp.pause_depth_db", "up"),
             Expectation("dsp.pause_pumping_db", "up"),
-            Expectation("dsp.gap_atten_db", "up"),
+            Expectation(GAP_ATTEN, "up"),
             Expectation(GAP_MOD_DIST, "up", True),
             Expectation(TILT, "up", True),
             SYNC_FLAT,
