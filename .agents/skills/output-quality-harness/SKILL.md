@@ -849,6 +849,37 @@ Tele7abc (diff -17.6 dB, 97% of frames over the mask; 8/16). The listener:
   model's playback level (`PLAYBACK_SPL_LOUD_FRAMES`) is meaningless
   without them.
 
+### Overnight rounds v6 (2026-10-09/10)
+
+`experiments/run_autotune_v6.cmd apl|cathar|apl_music|cathar_music` (output
+in `D:\ai_restore_work\autotune_v6` and `autotune_v6_music`; APL with
+`--stage-cache`), each from the shipped defaults, `tata_v3` on the four
+speech tapes and `music_v3` on the 12 music clips plus Gaudeamus 1, with the
+learned vetoes at 1x the Session 0 benign-pair floors, the audibility tie and
+the air reversal guard:
+
+- APL on speech (rounds A1/A2 and every other knob): plateau after round 1,
+  the shipped defaults stay. 3 candidates hashed inert (music-only knobs on
+  speech tapes), 1 audibility tie (`apl_sibilant_mix` 0.9), 2 learned vetoes
+  (subtraction on: SCOREQ / SIGMOS down; pause floor off: SIGMOS DISC down),
+  the rest 0 of 4 wins. The plateau is what the user heard, so nothing was
+  asked.
+- cathar on speech (rounds C1/C2): plateau after round 1, the shipped defaults
+  stay. 8 learned vetoes (alpha 0.5 and 1.5, noise print off, repair strength
+  4, split band 4 kHz, one de-esser band, pause floor off, fill 18 dB), the
+  music-profile knobs hashed inert on the speech tapes, the rest 0 of 4 wins.
+- APL on music (round A6): round 1 found a winner, `expander_decay_s` 0.12
+  with `crt_notch_q` 60 (mean rank 12.53 against 16.07, ahead on 11 of 12
+  clips, hard failures 28 against 31); MERT and Audiobox vetoed pause floor
+  off, fill 18, expander depth 18, attack 0.02, subtraction on and the stem
+  path. Still running; no default moves before a plateau, an audibility check
+  against what the user heard, a blind block and the realistic-v2 plus
+  IA-corpus confirmations.
+- cathar on music: running.
+
+The tied and plateaued rounds match Session 0: the knob moves the loops can
+make on speech are below what this listener hears.
+
 ### Not built yet
 
 - In the loop (plan 1.5): two-stage scoring (the learned families on the
