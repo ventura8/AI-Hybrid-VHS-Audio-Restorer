@@ -388,6 +388,53 @@ their module docstrings hold the full measurements.
   and offset at most 40 ms (one PAL video frame), no unmatched anchor. The
   32 v2 final pairs read lags of 4.7-5.4 ms, drift 0.02-0.26 ms, none
   unmatched.
+- **R11, the programme's low end** (`lf_metrics.py`: `dsp.lf_programme_db`;
+  complaints: thin bass, rumble left; built 2026-10-10 for round C3, the
+  cathar music profile's dewind cutoff and repair). The output's 40-200 Hz
+  power over the source's, summed over the source's loud frames, less R1's
+  programme gain match (`matched_gain_db`: the median over
+  `balance_metrics.guarded_cells` in 300-3000 Hz), with +-2 bins round each
+  harmonic of the mains R0 names left out (none where R0 names none; no
+  50 Hz fallback). Two STFTs: the gain match on 8192/2048, whose 0.19 s
+  frames see the floor between notes its noise guard needs, and the band on
+  a frame that follows the rate to hold about 1.35 Hz bins
+  (`lf_metrics.frame_length`: 32768 at 44.1 and 48 kHz, quarter-frame hop),
+  so a mains line takes +-2.7 Hz out. On the 8192 frame the same +-2 bins
+  took 39-61 Hz out round 50 Hz, the band the dewind corners move: 40-60 Hz
+  20 dB down read -0.007 dB on a bass-led bed (-0.99 on the band frame), the
+  dewind corners leaned on the skirt above 61 Hz, and at 96 kHz 1 of 14
+  band bins was left. The band keeps about 100 bins at any rate and reads
+  None under 8. One frame for both failed: 0.74 s frames straddle the notes,
+  and a bed gated 0.5 s on, 0.5 s off kept no guarded cell. Power, not R1's
+  per-cell median: music's bass never falls to a floor in 15 s, so R1's body
+  read 6 of 150 realistic-v2 music windows, and the per-cell median moved
+  p90 1.3-1.4 dB on music under the oracle against the power's 0.35-0.47.
+  Two-sided, target 0; noise in the band counts, so rumble left reads nearer
+  0 than rumble removed and the accepted file's reading decides. None under
+  100 guarded gain cells (two realistic-v2 beds ending at 1.3 kHz had 78,
+  half of them hiss, and read +18.9 and +12.0 dB; the 12 such windows of 784
+  moved p90 11.7 dB, the 20 at 100-200 cells 0.3 at most), under a 1/10000
+  share of the core's power in the band, on a dead render, and where R1's
+  mute guard skips (`_dsp_window` decides the mute once for R1 and R11).
+  Calibration on the band frame (en / fr, floor 8.4e-6): FFmpeg's `bass` at
+  100 Hz +1.5 / 3 / 6 dB reads +0.56 / +1.15 / +2.41 on the en bed (fr +0.62
+  / +1.27 / +2.66), the cut the mirror; `highpass` 40 / 60 / 80 Hz -0.12 /
+  -0.47 / -1.09 on the bed (fr -0.15 / -0.57 / -1.27), -0.014 / -0.073 /
+  -0.224 on speech; hum at R0's mains 0.022 at most; a tilt above 1 kHz
+  reads the other way (the gain match takes in 1-3 kHz); the 8192 frame read
+  every row within 0.16 dB. Oracle removal of the 200 tape-noise-only
+  fixtures' low-heavy noise (7 dB more per hertz at 40-200 Hz than at
+  300-3000 Hz), 20 dB down: beds p90 0.15 dB (max 0.40), speech over a bed
+  0.61 (max 3.5), speech 1.04 (max 2.5), against 0.17 / 0.77 / 0.70 on the
+  8192 frame, so on speech R11 is shown, not ranked. Read on the 8192 frame
+  and not again since: the 12-clip music listening set, APL median -0.50 dB,
+  cathar music profile -0.68, cathar speech settings -1.28 (to -16.8);
+  gaudeamus5's music windows, cathar round-one baseline -3.9, APL -0.74, the
+  plateau finals -1.55 and -0.98. In no grid, gate or listening pick yet,
+  and out of the stand-in grid `calibration_ordering.default_grid` builds
+  without `--grid` (`RANKING_EXCLUDED`): there it would add every variant's
+  low-end noise removal to its score, speech tapes included. The round's
+  orchestrator decides.
 
 Also changed: the scorecard's direction "two-sided" (its tail is whichever
 of p10 and p90 sits further from the neutral target), counts report `max`
@@ -734,11 +781,75 @@ loosened:
   most; a track that moves no window by half a 1 ms step leaves the old
   reading exactly.
 
-`SCORE_SCHEMA` is 4, so every cached v3 score is read again. Cases are
-written once and reused, so a rerun deletes the cases these changes rebuild
-(`hum`, `dropouts`, `sibilant_islands`, `sibilants_*`; `dropouts` no longer
-draws from the shared generator, so every later rng-driven case of a
-language changes on a fresh build: delete `cases/` to reproduce).
+`SCORE_SCHEMA` is 6 (2026-10-10: 5 added R11, which a schema-4 score lacks
+and the benign cases would give no floor; 6 moved R11's band to its own STFT
+and paired `dsp.attack_db` on the onsets), so every cached v3 score is read
+again. Cases are written once and reused, so a rerun deletes the cases these
+changes rebuild (`hum`, `dropouts`, `sibilant_islands`, `sibilants_*`;
+`dropouts` no longer draws from the shared generator, so every later
+rng-driven case of a language changes on a fresh build: delete `cases/` to
+reproduce).
+
+R11's entries (2026-10-10): `lf_shelf_boost_music`, `lf_shelf_cut_music`,
+`lf_highpass_music` and `lf_highpass` (speech, so it also runs on the tape
+cuts) assert R11, hold `dsp.lkr` and R1's tilt flat and report R1's body;
+`hum` asserts R11 flat (0.1 dB), `linear_bandwidth` and the tilts report it.
+The generators (`degradations_v3.lf_shelf`, `lf_highpass`) apply the
+magnitude of FFmpeg's `bass` and `highpass` zero-phase: run causally on a
+bass-led bed the high pass turned `align_pair`'s lag by up to 101 samples
+and lkr read 0.20-0.26, failing its flat check. None draws from the shared
+generator. A subset run (en, fr, dsp) passed every R11 check on the 8192
+frame; on the band frame the same rows, read through the runner's dsp family
+on freshly built cases, order on both languages and clear the floor (the
+`lf_highpass` mild level at least 1700x), and hum stays within 0.022 of 0.
+
+### Calibration v3b, en and fr (2026-10-10)
+
+Adding fr beside en failed two checks that had passed on en alone. Neither
+was a code regression (en read bit-identical in v3 and v3b), and neither
+degradation runs on the tape cuts (`hiss_in_pauses` needs the fixture's
+noise, `transient_smear` the music bed), so in v3 both were en-only checks.
+With two languages the median is their mean and the monotonic share is 0,
+0.5 or 1.
+
+- `hiss_in_pauses` on `dsp.gap_air_db` (monotonic share 0.5): the
+  expectation was wrong for this material. The hiss lands where the
+  expander's gain is closed, but gap_air reads the source's p15-p40 frames,
+  60 % (en) and 71 % (fr) of them inside the speech mask at unity gain. In
+  the median gap frame the added 3-10 kHz hiss sits 51 / 41 / 31 dB (en)
+  and 73 / 63 / 53 dB (fr) under the frame's own air, so the reading moved
+  by an order-statistic step: fr +0.0027 / +0.0027 / +0.0010, unordered; en
+  +0.024 / +0.025 / +0.086, no real detection either. R4's true-pause
+  attenuation reads the same cases -33.9 / -43.9 / -53.8 (en) and -41.0 /
+  -51.0 / -60.9 (fr), 10 dB a step, about 4700x its 0.0079 floor. The entry
+  now asserts `dsp.gap_atten_db` "down", keeps `dsp.residual_noise_db` "up"
+  and reports gap_air (blind). No counted gate loses its calibration:
+  gap_air "up" backs only the display-only `listener.hiss`, and its "down"
+  side (`listener.dead_air`) stays asserted by `gated_pauses`. The unit
+  speech's 0.58 s pauses put its p15-p40 class in the pauses, which is why
+  gap_air orders there; a dense-speech unit case records the blindness.
+- `transient_smear` on `dsp.attack_db` (mild level -10.6x the floor): a
+  reading defect. The attack was the difference of the two sides' median
+  rises, not a paired change: a 20 ms smear lowers 59-68 % of the onsets and
+  lifts the rest a little (the HPSS re-estimates), so the medians landed on
+  different onsets (fr +0.085, en windows -0.572 and +0.516). Paired
+  (`transient_metrics.paired_attack_db`: the source's median rise, and that
+  plus the median per-onset change) every 20 ms window reads negative and
+  the levels order on both languages (en -0.17 / -1.90 / -4.15, fr -0.10 /
+  -2.13 / -4.24). The same defect set the floor: SOTI's requantise read
+  +0.00603 unpaired, -0.00014 paired, and that one dither draw is why the
+  floor rose from 0.00032 (v3) to 0.0027 (v3b), the shared tape generator
+  drawing differently since 1d644fb changed what the cases consume. On
+  Gaudeamus1 and 5's round-2 finals the paired window values move about
+  0.3 dB in the median and flip sign on 14-20 % of the windows, while the
+  p10 tail `listener.attack` reads stays positive (+0.15..+0.59 paired,
+  +0.06..+0.66 unpaired): its verdicts at -4 dB hold. The planning numbers
+  (cathar 4.3-4.6 dB, APL 2.0) were read unpaired; re-check `music_v3`'s
+  attack entry on a Round 0 music re-score before trusting its dead zone.
+
+Still open: seed each case's generator from (language, name, level) in
+`build_cases` / `build_tape_cases`, so the benign floors stop moving when
+the degradation table changes.
 
 ### Round 0 (2026-10-09)
 
@@ -942,6 +1053,20 @@ the incumbent. The knob tables were re-read from the code paths on
   `cathar_deesser_freq` `[4000, 5000, 6000]` and `cathar_deesser_bands`
   `[1, 3]` beside the threshold; all three are inert only when neither speech
   nor music runs the de-esser.
+- Round C3 (2026-10-09, music profile): `cathar_music_beta`
+  `[0.005, 0.01, 0.02, 0.04]`, `cathar_music_enable_repair` `[True, False]`
+  and `cathar_music_dewind_cutoff` `[40, 60, 80]`, seeded at music's old
+  values (0.02, on, 80 Hz: it ran `cathar_beta`, `cathar_enable_repair` and
+  `cathar_dewind_cutoff`). All three join `_CATHAR_MUSIC_KEYS` (inert with
+  `cathar_music_profile` false); the floor is inert under Wiener, the cutoff
+  with `cathar_enable_dewind` false, and `cathar_repair_strength` now with
+  both repair switches false. The profile's expander depth and CRT Q stay
+  the round's other knobs. R11 (`dsp.lf_programme_db`) is the reading built
+  for the low end these move, but no grid ranks it yet: `music_v3.yaml` and
+  `tata_v3.yaml` hold no R11 entry, and their readings cannot see 40-200 Hz.
+  Add `dsp.lf_programme_db.delta.median` to `music_v3.yaml`'s ranking
+  (two-sided, its target read on the accepted file) before the round runs,
+  or the dewind cutoff and repair moves are judged blind.
 - `apl_neural_model` was `[None, ROFORMER, ROFORMER_AGGR]`: once the
   Mel-RoFormer became the app's default, None and ROFORMER named one
   setting, so a run from the defaults rendered the default every round

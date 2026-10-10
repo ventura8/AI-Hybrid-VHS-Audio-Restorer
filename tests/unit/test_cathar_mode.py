@@ -303,13 +303,20 @@ def test_filter_cathar_vhs_pipeline(tmp_path):
         strategy = {"precondition_filters": {"notch_hz": 50.0}}
         result = cathar.filter_cathar_vhs_pipeline(original_wav, work_dir, strategy=strategy)
     assert result == original_wav
-    mock_pre.assert_called_once_with(original_wav, work_dir, total_duration=None, deplosive=cathar.CATHAR_ENABLE_DEPLOSIVE)
-    mock_rep.assert_called_once_with(original_wav, work_dir, notch_freq=50.0, total_duration=None)
+    mock_pre.assert_called_once_with(
+        original_wav,
+        work_dir,
+        total_duration=None,
+        deplosive=cathar.CATHAR_ENABLE_DEPLOSIVE,
+        dewind_cutoff=cathar.CATHAR_DEWIND_CUTOFF,
+    )
+    mock_rep.assert_called_once_with(original_wav, work_dir, notch_freq=50.0, total_duration=None, repair=cathar.CATHAR_ENABLE_REPAIR)
     mock_np.assert_called_once()
     mock_den.assert_called_once_with(
         original_wav,
         work_dir,
         alpha=cathar.CATHAR_ALPHA,
+        beta=cathar.CATHAR_BETA,
         coherent=cathar.CATHAR_ENABLE_COHERENT,
         noiseprint_path=work_dir / "noise.np.json",
         total_duration=None,

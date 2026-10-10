@@ -14,6 +14,20 @@ The split is a median-filter HPSS on a 2048/512 STFT: the harmonic estimate is t
 magnitude median-filtered along time, the percussive estimate the same along frequency,
 combined as power (p = 2) soft masks. The onsets are found on the SOURCE and reused on the
 output at the same positions, like every paired reading in the harness.
+
+The attack is paired on those onsets (`paired_attack_db`, 2026-10-10): the source side is the
+median rise, the output side that plus the median of the per-onset change, so the runner's
+delta is the median change of one onset, not a difference of two medians. Unpaired, a 20 ms
+smear (which lowers 59-68 % of the onsets and lifts the rest a little through the HPSS)
+read +0.085 dB on fr's calibration bed and +0.516 on one en window, because the two medians
+landed on different onsets; paired every 20 ms window reads negative (en -0.25 / -0.10, fr
+-0.06 / -0.15) and the levels order on both languages (en -0.17 / -1.90 / -4.15, fr -0.10 /
+-2.13 / -4.24 at 20 / 50 / 120 ms). The benign floor fell with it: SOTI's requantise read
++0.00603 unpaired against -0.00014 paired. The Gaudeamus planning numbers above (cathar
+4.3-4.6 dB, APL 2.0) were read unpaired; on Gaudeamus1 and 5's round-2 finals the paired
+window values move about 0.3 dB in the median and flip sign on 14-20 % of the windows, while
+the tail `listener.attack` reads (p10: unpaired +0.06..+0.66, paired +0.15..+0.59) keeps its
+verdicts at -4 dB.
 """
 
 from typing import NamedTuple
@@ -130,8 +144,17 @@ def _side(mono, rate):
     return _Side(onset_strength(_power_frames(percussive, rate)), envelope_db(percussive, rate), float(share))
 
 
-def _median(values):
-    return None if len(values) == 0 else float(np.median(values))
+def paired_attack_db(src_env, out_env, onsets, rate, hop=STFT_HOP):
+    """`(source, output)` attack on the source's onsets: the median source rise, and that plus the median per-onset change.
+
+    `(None, None)` when no onset has its full 30 ms before and 50 ms after inside the window.
+    Both sides measure the same onsets (equal-length envelopes), so the change is paired.
+    """
+    src = attack_rise_db(src_env, onsets, rate, hop)
+    if len(src) == 0:
+        return None, None
+    centre = float(np.median(src))
+    return centre, centre + float(np.median(attack_rise_db(out_env, onsets, rate, hop) - src))
 
 
 def transient_readings(source, output, rate):
@@ -144,10 +167,7 @@ def transient_readings(source, output, rate):
     if len(onsets) < MIN_ONSETS:
         return {name: (None, None) for name in NAMES}
     return {
-        "attack_db": (
-            _median(attack_rise_db(src.env_db, onsets, rate, STFT_HOP)),
-            _median(attack_rise_db(out.env_db, onsets, rate, STFT_HOP)),
-        ),
+        "attack_db": paired_attack_db(src.env_db, out.env_db, onsets, rate),
         "onset_corr": (0.0, _pearson(src.strength, out.strength)),
         "percussive_share_db": (src.share_db, out.share_db),
     }

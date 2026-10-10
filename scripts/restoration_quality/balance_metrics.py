@@ -191,6 +191,15 @@ def band_profile(source, output, rate, bandwidth_hz=None):
     return _centres_hz(edges), levels
 
 
+def guarded_cells(src_power):
+    """Step 2's programme cells on any STFT: `auditory.programme_cells` that also stand guard (a)'s noise margin.
+
+    `band_profile` matches its gain on these; R11 (`lf_metrics`) takes the same gain match on
+    its own frames.
+    """
+    return auditory.programme_cells(src_power) & _over_noise(src_power)
+
+
 def _spectra(source, output, rate):
     """`(freqs, src_power, out_power)` over the live frames of the common length, or None when the pair cannot be read.
 

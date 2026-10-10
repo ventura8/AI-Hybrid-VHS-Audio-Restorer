@@ -576,7 +576,12 @@ native-rate DSP on the source's own frame classes, reproduce the verdicts
   mixed windows): the attacks' rise on the source's onsets (median-filter
   HPSS, level-normalised) and how the onset curve survived; both engines
   soften Gaudeamus's attacks (cathar -4.5 dB tail, APL -2.0).
-  `listener.attack` flags a tail under -4 dB.
+  `listener.attack` flags a tail under -4 dB. The attack is paired on the
+  onsets (2026-10-10): the change is the median per-onset change, where it
+  was the difference of two medians, which read a 20 ms smear +0.085 dB on
+  fr's calibration bed. The Gaudeamus numbers above were read unpaired;
+  paired, the window values move about 0.3 dB in the median and the tail's
+  verdicts at -4 dB hold on Gaudeamus1 and 5.
 - `dsp.output_silent`: a window with programme whose output routes as
   silence (the output is routed too); a hard gate.
 
@@ -740,6 +745,38 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   and end of the raw pair, which every window reading aligns away. Hard
   gates at one PAL video frame (40 ms) and no unmatched anchor; the 32 v2
   final pairs read 4.7-5.4 ms of constant lag and under 0.3 ms of drift.
+- **The programme's low end (R11)**, `lf_metrics.py`: `dsp.lf_programme_db`,
+  the output's 40-200 Hz power over the source's on the source's loud frames,
+  less R1's programme gain match (300-3000 Hz), with each mains line R0 names
+  left out of the band (dehum is not a thinner bass; where R0 names none,
+  nothing is left out: unlike the hum reading, R11 takes no 50 Hz fallback).
+  Built for round C3, the cathar music profile (the dewind cutoff, repair on
+  music): R1's body starts at 100 Hz and read 6 of 150 realistic-v2 music
+  windows, because music's bass never falls to a floor inside a window. The
+  gain match runs on an 8192/2048 STFT, the band on one whose frame follows
+  the rate to hold about 1.35 Hz bins (32768 samples at 44.1 and 48 kHz), so
+  a mains line takes +-2.7 Hz out of the band. On the 8192 frame the same
+  exclusion took 39-61 Hz out round 50 Hz, the band the 40 / 60 / 80 Hz
+  dewind corners move, and read 40-60 Hz 20 dB down as -0.007 dB (-0.99 on
+  the band frame); at 96 kHz it left 1 band bin of 14. Two-sided: negative
+  is a thinner low end, positive more low end than the source; noise in the
+  band counts, so rumble left reads nearer 0 than rumble removed, and the
+  accepted file's reading is the target. Read on every programme route,
+  skipped where R1's mute guard skips, and None where the gain match has
+  under 100 programme cells (78 cells, half of them hiss, read +18.9 dB on a
+  realistic-v2 bed) or the band keeps under 8 bins. FFmpeg's `bass` shelf at
+  100 Hz (+1.5 / 3 / 6 dB) reads +0.56 / +1.15 / +2.41 on the en music bed,
+  its high pass at 40 / 60 / 80 Hz -0.12 / -0.47 / -1.09, over a benign
+  floor of 8.4e-6 dB; hum added at R0's mains moves it 0.022 at most. Oracle
+  removal of the fixtures' own noise, which is heavy in the low end, moves
+  it p90 0.15 dB on the music beds but 1.0 dB on speech, whose band holds
+  little programme: on speech R11 is shown, not ranked. On the 12-clip
+  music listening set (read on the 8192 frame) APL reads a median -0.50 dB,
+  cathar's music profile -0.68 and its speech settings -1.28; on
+  gaudeamus5's music windows cathar's round-one baseline reads -3.9 against
+  APL's -0.74. No grid ranks it yet, and the calibration's stand-in grid
+  (`calibration_ordering.default_grid`, used without `--grid`) leaves it out
+  (`RANKING_EXCLUDED`); round C3 needs it in `music_v3.yaml` before it runs.
 
 The engine side of the coverage check is built: with
 `AI_RESTORE_EVENT_LOG=<dir>` set, the sibilant guard, the plosive tamer,
@@ -942,7 +979,11 @@ move and which must not. Building them showed that FFmpeg's
 `treble=g:f=7500` is the RBJ shelf at Q 1/sqrt(2), that this shelf moves
 the net sibilance reading by a median 53% of the absolute one (so the net
 reading is asserted to stay under its absolute twin, not to stay still),
-and that full phase scrambling reads as a -0.8 to -1.2 dB/oct tilt.
+and that full phase scrambling reads as a -0.8 to -1.2 dB/oct tilt. R11's
+entries apply the magnitude of FFmpeg's `bass` shelf (100 Hz) and `highpass`
+(round C3's 40 / 60 / 80 Hz corners) zero-phase: run causally on a bass-led
+bed, the high pass turned the alignment by up to 101 samples and moved
+`dsp.lkr` 0.20-0.26.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\calibrate_quality_metrics.py `
@@ -1028,9 +1069,24 @@ expectation (the numbers are in the output-quality-harness skill):
 - `sync_drift` read as a gain ride on the 300 s cuts (up to 1.34 LU); read
   along the sync's lag track it reads 0.032 LU at most.
 
-The score cache's schema is 4, so every v3 score is read again; cases are
-built once and reused, so delete the cases a change rebuilds (or all of
-`cases/`, since `dropouts` no longer draws from the shared generator).
+With fr beside en (calibration v3b, 2026-10-10) two more checks failed, each
+traced to its cause:
+
+- `hiss_in_pauses` did not order gap_air on fr: the hiss lands where the
+  expander's gain is closed, while gap_air reads the p15-p40 frames, 60-71 %
+  of them inside the speech, where the hiss sits 31-73 dB under the frame's
+  own air. The entry asserts R4's true-pause attenuation instead (-33.9 /
+  -43.9 / -53.8 dB on en, -41.0 / -51.0 / -60.9 on fr, about 4700x its
+  floor) and reports gap_air.
+- `transient_smear` read fr's 20 ms smear +0.085 dB on `dsp.attack_db`,
+  a difference of two medians that landed on different onsets. Paired on
+  the onsets it reads every window negative and orders on both languages.
+
+The score cache's schema is 6 (R11 is new and reads its band on its own
+STFT, and the attack is paired, 2026-10-10), so every v3 score is read
+again; cases are built once and reused, so delete the cases a change
+rebuilds (or all of `cases/`, since `dropouts` no longer draws from the
+shared generator).
 
 The calibration writes its gate files under `--out`; the tuning drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`,

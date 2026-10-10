@@ -191,6 +191,13 @@ KNOBS = {
         "cathar_music_expander_depth_db": [4.0, 7.0, 12.0],
         "cathar_music_crt_notch_q": [30.0, 60.0, 120.0],
         "cathar_music_persistence_min": [0.005, 0.02, 0.05],
+        # Round C3 (plan Part 2, music profile): music took cathar_beta, cathar_enable_repair and
+        # cathar_dewind_cutoff until 2026-10-09, so these start at 0.02, on and 80 Hz. The floor list
+        # brackets 0.02 (cathar reads 0.0-0.1, higher keeps more floor); the dewind is cathar's second
+        # high-pass, after the pre-conditioning graph's scanned one (modules/config.py).
+        "cathar_music_beta": [0.005, 0.01, 0.02, 0.04],
+        "cathar_music_enable_repair": [True, False],
+        "cathar_music_dewind_cutoff": [40, 60, 80],
         # Split-band subtraction (modules/split_band.py): the highs get their own factor.
         "cathar_split_band_hz": [0, 4000, 6000, 8000],
         "cathar_alpha_high": [0.5, 1.0, 1.5, 2.0, 3.0],
@@ -353,6 +360,9 @@ _CATHAR_MUSIC_KEYS = (
     "cathar_music_crt_notch_q",
     "cathar_music_persistence_min",
     "cathar_music_alpha_high",
+    "cathar_music_beta",
+    "cathar_music_enable_repair",
+    "cathar_music_dewind_cutoff",
 )
 # The polish expander's knee and compand timing (filters._build_full_audio_expander_filter), shared by both engines.
 EXPANDER_SHAPE_KNOBS = ("expander_knee_offset_db", "expander_attack_s", "expander_decay_s")
@@ -379,8 +389,20 @@ INERT_WHEN = {
         # `denoise --wiener` takes no alpha or beta, and the split band needs a factor to split.
         (
             {"cathar_denoise_method": "wiener"},
-            ("cathar_alpha", "cathar_beta", "cathar_music_alpha", "cathar_split_band_hz", "cathar_alpha_high", "cathar_music_alpha_high"),
+            (
+                "cathar_alpha",
+                "cathar_beta",
+                "cathar_music_alpha",
+                "cathar_music_beta",
+                "cathar_split_band_hz",
+                "cathar_alpha_high",
+                "cathar_music_alpha_high",
+            ),
         ),
+        # cathar._cathar_precondition_pass runs no dewind with the switch off, whatever the material's cutoff.
+        ({"cathar_enable_dewind": False}, ("cathar_music_dewind_cutoff",)),
+        # Speech takes cathar_enable_repair, music cathar_music_enable_repair: the strength is dead only with both off.
+        ({"cathar_enable_repair": False, "cathar_music_enable_repair": False}, ("cathar_repair_strength",)),
         # Speech takes cathar_enable_deesser, music cathar_music_enable_deesser: dead only with both off.
         (
             {"cathar_enable_deesser": False, "cathar_music_enable_deesser": False},
@@ -411,6 +433,9 @@ SWITCH_DEFAULTS = {
     "cathar_enable_noiseprint": True,
     "cathar_music_enable_noiseprint": False,
     "cathar_music_profile": True,
+    "cathar_enable_dewind": True,
+    "cathar_enable_repair": True,
+    "cathar_music_enable_repair": True,
 }
 
 

@@ -137,7 +137,13 @@ The engine supports 10 execution modes configured in `config.yaml`:
     music 0.064-0.225, speech over a bed under 0.033) reaches
     `cathar_music_persistence_min`, the denoise runs at `cathar_music_alpha`
     with the `cathar_music_enable_*` switches; the band ratios read every
-    music clip as dialogue, so they cannot make this call.
+    music clip as dialogue, so they cannot make this call. Since round C3
+    (2026-10-09) the profile also takes `cathar_music_beta` (the floor),
+    `cathar_music_enable_repair` and `cathar_music_dewind_cutoff` in place of
+    `cathar_beta`, `cathar_enable_repair` and `cathar_dewind_cutoff`, which
+    no longer reach music; the defaults (0.02, on, 80 Hz) keep music's
+    command lines, and so its output, unchanged
+    (`tests/unit/test_cathar_music_round_c3.py`).
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

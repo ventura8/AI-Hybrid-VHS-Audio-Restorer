@@ -14,6 +14,19 @@ a mono float signal and returns a float32 array of the same length.
   7500 Hz (`linear_air_freq_hz`'s default, a knob since 2026-10-09); `freq_hz` takes another,
   and `quality_degradations`' `air_corner` row sweeps round A1's 9000 / 7500 / 6000 Hz.
 - `spectral_tilt`: a zero-phase FFT gain of `slope` dB per octave above 1 kHz, flat below.
+- `lf_shelf` and `lf_highpass`: the low end R11 (`lf_metrics`) reads, as the magnitude of FFmpeg's
+  own filters applied zero-phase (`fft_filter`). `lf_shelf` is `bass=g=G:f=100`, the RBJ cookbook
+  low shelf at Q = 1/sqrt(2) (`bass_coefficients`, the mirror of `treble_coefficients`);
+  `lf_highpass` is `highpass=f=F` (2 poles, Q 1/sqrt(2)), a 2nd-order Butterworth.
+  `scipy.signal.lfilter` on those coefficients matches FFmpeg 8.0.1 to 4e-5 (shelf, g = -6 /
+  -1.5 / +3 / +6 dB) and 8e-5 (high pass at 40 / 60 / 80 Hz) on white noise at 0.1 RMS, 44.1 and
+  48 kHz (measured 2026-10-10; FFmpeg filters float input in single precision, which at a corner
+  this low costs that much; Q = 0.5 misses the shelf by 5e-3). Run causally, the high pass also
+  turned the bass's phase, and on the bass-led music beds the runner's alignment follows the
+  bass: `align_pair` read lags of -7 to -10 samples at 40-60 Hz and +101 at 80 Hz (fr), and the
+  misaligned pair moved `dsp.lkr` 0.20-0.26 at 80 Hz, a second change where the table wants one;
+  zero-phase, every lag reads 0 and lkr 0. The corners are round C3's
+  `cathar_music_dewind_cutoff` values.
 - The pause residuals: the source's own pauses replaced by a transformed copy of the source,
   speech left bit-identical. A residual the runner's least-squares gain match could absorb (a
   uniform gain over the whole file) would read nothing, so the transform reaches the pauses
@@ -84,6 +97,9 @@ from scripts.restoration_quality import audio_io, dsp_metrics, sibilance
 # The shipped shelf corner (linear_air_freq_hz's default); air_shelf's freq_hz takes another.
 AIR_SHELF_HZ = 7500.0
 TREBLE_Q = 1.0 / np.sqrt(2.0)
+# FFmpeg's `bass` default corner, and `highpass`'s two poles.
+LF_SHELF_HZ = 100.0
+LF_HIGHPASS_ORDER = 2
 TILT_PIVOT_HZ = 1000.0
 # The pause residuals.
 PAUSE_HANGOVER_S = 0.04
@@ -162,6 +178,35 @@ def air_shelf(mono, rate, gain_db, freq_hz=AIR_SHELF_HZ):
     """`mono` through the app's presence shelf at `gain_db` (positive lifts the top, negative cuts it)."""
     b, a = treble_coefficients(gain_db, rate, freq_hz)
     return scipy.signal.lfilter(b, a, _float(mono)).astype(np.float32)
+
+
+def bass_coefficients(gain_db, rate, freq_hz=LF_SHELF_HZ, q=TREBLE_Q):
+    """`(b, a)` of FFmpeg's `bass=g=gain_db:f=freq_hz` (RBJ low shelf), normalised so `a[0]` is 1."""
+    amplitude = 10.0 ** (gain_db / 40.0)
+    omega = 2.0 * np.pi * freq_hz / rate
+    cosine, shelf = np.cos(omega), 2.0 * np.sqrt(amplitude) * np.sin(omega) / (2.0 * q)
+    up, down = amplitude + 1.0, amplitude - 1.0
+    b = amplitude * np.array([up - down * cosine + shelf, 2.0 * (down - up * cosine), up - down * cosine - shelf])
+    a = np.array([up + down * cosine + shelf, -2.0 * (down + up * cosine), up + down * cosine - shelf])
+    return b / a[0], a / a[0]
+
+
+def response_db(b, a, freqs, rate):
+    """The magnitude response in dB of the filter `(b, a)` at `freqs` (Hz)."""
+    _w, response = scipy.signal.freqz(b, a, worN=np.asarray(freqs, dtype=np.float64), fs=rate)
+    return 20.0 * np.log10(np.maximum(np.abs(response), EPS))
+
+
+def lf_shelf(mono, rate, gain_db, freq_hz=LF_SHELF_HZ):
+    """`mono` through the magnitude of FFmpeg's `bass` shelf at `gain_db`, zero phase (negative thins the low end)."""
+    b, a = bass_coefficients(gain_db, rate, freq_hz)
+    return fft_filter(mono, rate, lambda freqs: response_db(b, a, freqs, rate))
+
+
+def lf_highpass(mono, rate, cutoff_hz):
+    """`mono` through the magnitude of FFmpeg's `highpass=f=cutoff_hz` (2nd-order Butterworth), zero phase."""
+    b, a = scipy.signal.butter(LF_HIGHPASS_ORDER, cutoff_hz, btype="highpass", fs=rate)
+    return fft_filter(mono, rate, lambda freqs: response_db(b, a, freqs, rate))
 
 
 def tilt_gain_db(freqs, slope_db_oct, pivot_hz=TILT_PIVOT_HZ):

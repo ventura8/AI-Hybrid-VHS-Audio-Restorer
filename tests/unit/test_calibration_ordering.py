@@ -62,6 +62,13 @@ def test_the_default_grid_holds_two_sided_dsp_readings_with_a_floor_dead_zone():
     assert "dsp.hf_4k8k.delta.median" not in grid
 
 
+def test_the_default_grid_leaves_r11_out_until_a_verdict_ranks_it():
+    """R11 is a two-sided dsp reading, but on speech it reads the low end's noise removed: the stand-in grid does not rank it."""
+    assert co.METRICS["dsp.lf_programme_db"].better == co.TWO_SIDED
+    assert not any(key.startswith("dsp.lf_programme_db") for key in co.default_grid({}))
+    assert co.FAMILY_BY_PREFIX["dsp.lf_"] == "timbre"
+
+
 def test_flat_readings_carry_the_tuning_grid_names():
     """Flat readings carry the tuning grid names."""
     flat = co.flat_readings(_variant(readings={AIR: 1.5}))

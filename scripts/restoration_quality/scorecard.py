@@ -115,6 +115,10 @@ METRICS = {
         MetricSpec("dsp.balance_air_db", "dsp", TWO_SIDED, "dB"),
         MetricSpec("dsp.balance_body_db", "dsp", TWO_SIDED, "dB"),
         MetricSpec("dsp.balance_top_db", "dsp", TWO_SIDED, "dB", SPEECH_ROUTES),
+        # R11 (lf_metrics.py): the programme's 40-200 Hz against its mids on the loud frames, the
+        # mains lines left out: a thinner bass on one side, low end (rumble) left on the other.
+        # Read on every programme route; built for round C3's music dewind cutoff and repair, in no grid yet.
+        MetricSpec("dsp.lf_programme_db", "dsp", TWO_SIDED, "dB"),
         # R2 (sibilance.py): the level of the 's' after R1's gain match, not net of the plain
         # frames, and the roughness of its spectrum (the round-one "distorted s").
         MetricSpec("dsp.sib_abs_level_db", "dsp", TWO_SIDED, "dB", SPEECH_ROUTES),

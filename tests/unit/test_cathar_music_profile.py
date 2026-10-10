@@ -46,11 +46,19 @@ def test_material_settings_are_the_speech_defaults_or_the_music_profile():
         patch("modules.cathar.CATHAR_MUSIC_ALPHA_HIGH", 0.25),
         patch("modules.cathar.CATHAR_ENABLE_DEESSER", True),
         patch("modules.cathar.CATHAR_MUSIC_ENABLE_DEESSER", False),
+        patch("modules.cathar.CATHAR_BETA", 0.02),
+        patch("modules.cathar.CATHAR_MUSIC_BETA", 0.01),
+        patch("modules.cathar.CATHAR_ENABLE_REPAIR", True),
+        patch("modules.cathar.CATHAR_MUSIC_ENABLE_REPAIR", False),
+        patch("modules.cathar.CATHAR_DEWIND_CUTOFF", 80),
+        patch("modules.cathar.CATHAR_MUSIC_DEWIND_CUTOFF", 60),
     ):
         speech = cathar._material_settings(_strategy(0.001))
         music = cathar._material_settings(_strategy(0.2))
-    assert speech == {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True, "deesser": True}
-    assert music == {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False, "deesser": False}
+    shared = {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True, "deesser": True}
+    assert speech == {**shared, "beta": 0.02, "repair": True, "dewind_cutoff": 80}
+    profile = {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False, "deesser": False}
+    assert music == {**profile, "beta": 0.01, "repair": False, "dewind_cutoff": 60}
 
 
 def test_the_music_profile_has_its_own_expander_depth_and_notch_width():
