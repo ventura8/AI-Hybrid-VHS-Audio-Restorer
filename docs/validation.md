@@ -1228,6 +1228,12 @@ byte like the incumbent or an earlier candidate on every tape is logged as
 `inert` with a "knob-table finding" line in `log.md` and never scored. Inert
 renders had cost about 30% of a round.
 
+The scorer runs only the families the grid reads (`--families auto`, the
+default since 2026-10-11): dsp always, plus the family of each ranking
+entry, learned veto and gate. `tata_v3` thus skips the stems family, a
+BS-RoFormer separation of every output that took about 74 of SOTI's 113
+scoring minutes in the APL v6 speech round while the grid read none of it.
+
 ### The loop's v3 guards
 
 An ear v3 grid adds three sections the loop applies (plan 1.5,

@@ -92,6 +92,14 @@ sibilant guard, pause floor, expanders, loudness range) replays the incumbent's 
 output instead of rendering them. Each candidate's `timing.json` records the hits and misses
 its `run.log` reports. cathar never uses the cache. Off by default.
 
+`--families auto` (the default) scores only the families the grid reads: dsp always (every gate
+and listener flag reads it, and the file.*, listener.* and src.* readings come from that pass),
+plus the family of every ranking entry, learned veto and gate name. `tata_v3` reads dsp, speech
+and mos; `music_v3` dsp, stems and mos. The stems family separates every output with BS-RoFormer
+and was the dearest part of a speech round while `tata_v3` reads none of it: about 74 of the 113
+minutes SOTI's scorer took in the APL v6 round (2026-10-10, 29 outputs). A named list
+(`--families dsp,stems,speech,mos`, the old default) is scored as given.
+
 Not built yet (plan 1.5, design 5.1): inertness from each tape's material. The `cathar_music_*`
 keys and `apl_music_neural_model` are dead on a tape the scanner reads below the music
 persistence floor (`modules/tonal_persistence.py`), and cathar's speech keys on a clip that
@@ -102,7 +110,7 @@ candidate on four tapes) and only the hash keeps them from being scored.
 
 usage:
   autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
-                          [--grid scripts/tune_grids/tata_v1.yaml] [--families dsp,stems,speech,mos]
+                          [--grid scripts/tune_grids/tata_v1.yaml] [--families auto|dsp,stems,speech,mos]
                           [--start '{"cathar_alpha": 2.0}' | --start-file final.json] [--language ro] [--gates gates.json]
                           [--parallel 2] [--noise-floors experiments/reward/noise_floor_benign.json]
                           [--stage-cache experiments/autotune/stage_cache] [--stage-cache-gb 50]
@@ -142,6 +150,8 @@ ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 ROFORMER_AGGR = "denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt"
 SCORER_PARALLEL = 2
 LOG_MD = "log.md"
+# `--families auto`: the families the grid reads (`grid_families`).
+AUTO_FAMILIES = "auto"
 HASH_SIDECAR_SUFFIX = ".audio_sha256.json"
 HASH_BLOCK_FRAMES = 1 << 20
 # Recorded in every sidecar: a sidecar written by another hash function (the harness's DC-blind one) is never trusted.
@@ -847,6 +857,33 @@ def _launch_scorer(slug, tape, cids, out_dir, families, gates, language):
     return log, proc
 
 
+def reading_family(key):
+    """The scorer family that produces reading `key`: its prefix when that names a family, else dsp (file.*, listener.*, src.*)."""
+    prefix = str(key).split(".", 1)[0]
+    return prefix if prefix in tune.runner.ALL_FAMILIES else "dsp"
+
+
+def grid_families(grid, gate_names=()):
+    """The scorer families a grid reads, in scoring order: dsp always, plus each ranking entry's, veto's and gate's family."""
+    keys = [*grid.get("ranking", {}), *(grid.get("vetoes") or {}), *gate_names]
+    wanted = {"dsp", *map(reading_family, keys)}
+    return tuple(name for name in tune.runner.ALL_FAMILIES if name in wanted)
+
+
+def _gate_names(gates):
+    """The gate names of a gates file (`{name: {threshold, ...}}`); none without one."""
+    if gates is None:
+        return ()
+    return tuple(json.loads(_existing_path(gates, "--gates").read_text(encoding="utf-8")))
+
+
+def resolve_families(families, grid, gates):
+    """`--families` as given, or for `auto` the families the grid and the gates file read."""
+    if tuple(families) != (AUTO_FAMILIES,):
+        return tuple(families)
+    return grid_families(grid, _gate_names(gates))
+
+
 # ----------------------------------------------------------------------------- judging
 
 
@@ -1039,7 +1076,7 @@ def _parse_args(argv):
     parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v2.yaml"))
     # The loop stops at a plateau (user: "stop only when no more improvements are possible"); the cap is a safety net.
     parser.add_argument("--rounds", type=int, default=20)
-    parser.add_argument("--families", default="dsp,stems,speech,mos")
+    parser.add_argument("--families", default=AUTO_FAMILIES, help="auto (the families the grid reads) or a list")
     parser.add_argument("--start", default="{}", help="JSON overrides to start from")
     parser.add_argument("--start-file", type=Path, default=None, help="a final.json of an earlier run to start from (wins over --start)")
     parser.add_argument("--language", default="ro")
@@ -1085,6 +1122,8 @@ def main(argv=None):
     ranking = grid["ranking"]
     args.guards = guards_mod.loop_guards(grid, _noise_floors(args.noise_floors), ALL_KNOBS)
     print(f"guards: {guards_mod.describe_guards(args.guards)}", flush=True)
+    args.families = resolve_families(args.families, grid, args.gates)
+    print(f"scoring families: {','.join(args.families)}", flush=True)
     args.durations = tape_durations(tapes)
     print(f"tape lengths (s): {json.dumps(args.durations)}", flush=True)
     state = _resume(args, out_dir)

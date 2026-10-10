@@ -1122,6 +1122,15 @@ only on different source paths: the app's work directory is
 `.temp_work_<stem>` beside the source, so APL runs on NTFS hardlinks of the
 tapes (`experiments/autotune/tapes_apl.json`).
 
+The loop scores only the families its grid reads (`--families auto`, the
+default since 2026-10-11): dsp always, plus the family of every ranking
+entry, learned veto and gate name, so `tata_v3` scores dsp, speech and mos
+and `music_v3` dsp, stems and mos. The stems family separates every output
+with BS-RoFormer and took about 74 of SOTI's 113 scoring minutes in the
+APL v6 speech round, which ranks and vetoes on none of it; the rounds before
+2026-10-11 paid for it on speech. A named `--families` list is scored as
+given.
+
 Knobs must be the live ones: on the Tata tapes the scanner reads a spectral
 flatness of 0.022, under `apl_tonal_flatness_max` 0.035, so APL takes its
 tonal path (`apl_spectral_alpha_tonal`, `apl_noiseprint_tonal_s`, plosive
