@@ -868,8 +868,9 @@ block ends.
 #### The reward and the preference head
 
 The loop uses the constraints and the noise floors below (see "The loop's
-v3 guards"); the group reward and the preference head are built for the
-training plan and not used by the loop yet.
+v3 guards") and, since 2026-10-11, the group reward's tie band per reading
+(see "The loop's judging resolution"); the group reward and the preference
+head are built for the training plan and not used by the loop yet.
 `python -m scripts.reward_noise_floor SOURCE=OUTPUT ... --out FILE.json`
 (as a module from the repository root) scores each output, then
 near-copies of it (one sample of delay, 16-bit requantisation, an opt-in
@@ -927,7 +928,19 @@ attenuated, crackle, dropouts, the line whistle, gain and compression) and
 asks, per metric and failure: does the delta point the expected way at the
 severest level, is it monotonic across the levels, and does the mildest level
 clear three times the benign floor (identity, 16-bit requantisation, a
-resample round trip, 5-60 ms shifts)? A second set is the user's own tapes
+resample round trip, 5-60 ms shifts, and since 2026-10-11 the same-percept
+transforms: a fresh realisation of the fixture's own noise, 2nd-order
+all-pass filters at 200 Hz and 2 kHz, a 0.37-sample delay, +-0.1 dB of gain
+and TPDF dither, each seeded from its language and name)? The same-percept
+cases feed only that sensitivity check (`check_floor` in the report); the
+gates, the known-ordering stand-in grid and the report's benign floor keep
+the older set, and no tuning grid reads either. Read with the dsp family on
+realistic-v2 en and fr they widen the floors under `dsp.gap_atten_db` from
+0.13 to 1.68 dB, `dsp.residual_noise_db` from 0.0002 to 1.34,
+`dsp.pause_depth_db` from 0.0004 to 0.40 and `dsp.gap_mod_dist_db` from
+1.89 to 2.66: the 200 Hz all-pass, a phase change, moves residual noise
+1.7-3.1 dB and gap attenuation 1.9-3.2 dB, and the dither moves fr's gap
+modulation 3.2 dB. A second set is the user's own tapes
 with this week's outputs judged by ear: the de-esser bug must be flagged
 muffled, the single 4 s probe must lose to the stitched one on coloration and
 highs while reading at least as quiet, and APL must not read as altered.
@@ -1270,13 +1283,24 @@ them:
   `auditory.VERDICT_RULE`, the two files and the offset, so a verdict an older
   rule wrote is read again; bump `VERDICT_RULE` with any change to what
   `compare_files` calls audible.
-- `vetoes:`, the learned median veto: a candidate whose median of a listed
-  learned judge moved the `worse` way from the incumbent's, on some tape, by
-  more than `floor_multiple` times that reading's benign floor, or lost a
-  reading the incumbent has, cannot win (`reward.gate_constraints` with
-  `learned_veto`). The floors come from `--noise-floors`, a `reward_noise_floor`
-  report (default `experiments\reward\noise_floor_benign.json`, the Session 0
-  benign pairs; both v3 grids set `floor_multiple` to 1).
+- `vetoes:`, the learned median veto, family-wise since 2026-10-11
+  (`autotune_judging.familywise_vetoes`). Per listed learned judge, the
+  candidate's median against the incumbent's counts per tape as worse or
+  better when it moves past the scorer's jitter floor (`--jitter-floors`);
+  an exact one-sided sign test across the tapes, Holm-corrected over the
+  grid's veto readings at 0.05, must find worse outnumbering better, and at
+  least a third of the tapes must have moved the `worse` way by more than
+  `floor_multiple` times that reading's benign floor (a reading the
+  incumbent has and the candidate lost counts as such a move). Under seven
+  tapes no outcome can reach the Holm threshold, so on the four speech
+  tapes every tape must move the worse way instead. Such a candidate cannot
+  win (`reward.gate_constraints` with `learned_veto`). Until then one tape
+  past the limit vetoed: in the cathar music loop 37 of 54 vetoes stood on
+  one tape-reading. The floors come from `--noise-floors`, a
+  `reward_noise_floor` report (default
+  `experiments\reward\noise_floor_benign.json`, the Session 0 benign pairs;
+  both v3 grids set `floor_multiple` to 1); a hiss reading's limit takes its
+  jitter floor instead.
   A veto with no floor stops the loop before the first render, so a v3 grid does
   not run unguarded. A floor of 0 stops it the same way: CER read at
   `--repeats 1` can have a p95 deviation of exactly 0, and a limit of 0 would
@@ -1321,9 +1345,68 @@ weigh each veto's `floor_multiple` against them.
 
 `log.md` shows a refused candidate as `refused (verdict reversal)`, a tie as
 `tie (inaudible on every tape)` and a vetoed one as `vetoed`, each with a
-line naming the reason (the boundary and its ledger verdict, or the tape,
-the reading and its move). Two-stage scoring (the learned families on the
-best four only) and inertness from each tape's material are not built.
+line naming the reason (the boundary and its ledger verdict, or the
+reading, how many tapes moved which way and the test that tripped).
+
+### The loop's judging resolution
+
+`scripts/autotune_judging.py` (2026-10-11) gives the loop's ranking the tie
+band `reward.py` uses. Per reading, two candidates tie when their two-sided
+distances differ by no more than the larger side's share
+`min(floor, max(0, |x - target| + floor - dead_zone)) / scale`, with
+`floor` the reading's Session 0 benign-pair floor (`--noise-floors`), and
+every dead zone is bounded from below by that floor. A candidate's rank on
+a reading is one plus every candidate ahead beyond the band plus half of
+every tie, which without floors is exactly the old average rank: with no
+report the loop warns and judges as before. A tape counts as a win only
+when the candidate out-ranks the incumbent and is not level with it on
+every reading there, so a third candidate cannot carry a tie into a win.
+Why: the v6 APL speech round tied 25 renders whose spread on each ranked
+reading sat under the floors, and with narrower zones and exact ranks
+`expander_attack_s` 0.08 won all four tapes on moves of 0.002-0.1 dB.
+
+Readings of hiss or residual noise (every `dsp.hiss_*`,
+`dsp.residual_noise_db`, every `dsp.gap_*`, `dsp.pause_depth_db`,
+`dsp.hf_8k16k`, `mos.sigmos_noise`, and on the same rule the other pause
+readings, `file.noise_removed_db` and `mos.dnsmos_bak`) never take a floor
+from the benign pairs, which differed grossly there (residual noise 16.4 dB,
+pause depth 5.8 dB): the user's rule of 2026-10-11 that the ear be very
+critical of VHS hiss. Their tie band, dead-zone floor and veto limit come
+from `--jitter-floors` (default `experiments\reward\noise_floor.json`, the
+reference repeat, `shift_1` and `requantise_16`); a report holding a benign
+pair is refused there.
+
+`log.md` gains, per round, a table of every scored candidate's distance per
+reading and tape, the floor and its source under each reading, and a `*`
+where a reading moved past its band against the incumbent. A round in which
+every scored candidate stayed level with the incumbent and nothing else
+held one back ends
+`every move below the Session 0 benign-pair floor (N readings unmoved)`;
+otherwise it is a plateau, with how many candidates were level, moved and
+lost, or were held back by a veto, a gate or a reversal.
+
+`python -m scripts.rejudge_autotune` (command below) re-judges stored
+rounds from their score files four ways (old, band only, family-wise veto
+only, both) and simulates the vetoes' null: the incumbent moved by noise of
+the jitter or the benign-pair size, and every candidate's tape deltas given
+random signs. Run on the v6 and v7 loops (2026-10-11), the old rule
+reproduced every stored decision; on speech nothing changed (vetoes 2 to 1
+on APL, 8 to 3 on cathar); on music the band alone refuses every accepted
+move (each moved the benign-floored readings by a median across clips of a
+tenth of their floor or less), and with both changes the APL round accepts
+`pause_floor_fill_db` 8 and the C3 round `cathar_music_dewind_cutoff` 60,
+both winning on the stems readings, which carry jitter floors only. The
+any-tape rule vetoed 44-68% of benign-size null candidates and 10-55% of
+sign-flipped ones, the family-wise rule 0-1.5%. Nothing ships from this: an
+accepted move still needs a blind block.
+
+```powershell
+$env:AI_RESTORE_DATA_ROOTS = 'D:\ai_restore_work'
+.\.venv\Scripts\python.exe -m scripts.rejudge_autotune `
+  D:\ai_restore_work\autotune_v6_music\apl --grid scripts\tune_grids\music_v3.yaml `
+  --noise-floors experiments\reward\noise_floor_benign.json `
+  --jitter-floors experiments\reward\noise_floor.json --null-draws 400
+```
 
 ## CI Parity
 

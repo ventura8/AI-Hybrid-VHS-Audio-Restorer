@@ -48,7 +48,9 @@ the Antigravity agent system.
     verdict ledger `assets/quality_calibration/verdicts.jsonl`;
   - `scripts/reward_noise_floor.py` (`python -m scripts.reward_noise_floor`):
     the test-retest noise floor of every reading, which the group reward
-    (`restoration_quality/reward.py`) uses as its tie band. A v3 round needs
+    (`restoration_quality/reward.py`) uses as its tie band and the loop as
+    its hiss readings' floor and the vetoes' move threshold
+    (`--jitter-floors`). A v3 round needs
     its report on the shipped outputs first
     (`experiments/reward/noise_floor.json`, every family the grid's vetoes
     name, `--repeats 2`): the loop refuses to start when a veto has no
@@ -71,7 +73,17 @@ the Antigravity agent system.
   - `scripts/autotune_guards.py` (a module of the self-driving loop, not a
     script): the v3 grids' guards, the verdict-reversal refusal, the
     audibility tie (stored verdicts keyed on `auditory.VERDICT_RULE`) and
-    the learned median veto.
+    the learned median veto;
+  - `scripts/autotune_judging.py` (a module of the self-driving loop): the
+    judging resolution, the tie band and the dead zones' floor from the
+    Session 0 benign pairs, the hiss exemption (hiss readings take only
+    the scorer's jitter floor, `--jitter-floors`), the per-reading distance
+    table and the round's label in `log.md`, and the family-wise learned
+    veto (sign test across tapes, Holm across readings);
+  - `scripts/rejudge_autotune.py` (`python -m scripts.rejudge_autotune`):
+    the stored rounds of finished loops re-judged offline from their score
+    files, old rule against new, with the vetoes' null simulation
+    (`--null-draws`); CPU only, decides nothing by itself.
 - [sonarqube-quality-gate/SKILL.md](sonarqube-quality-gate/SKILL.md): SonarQube
   Cloud on this repository: the CI scan, reading and fixing findings without
   suppressions, project settings on sonarcloud.io, failure triage.
