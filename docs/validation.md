@@ -929,7 +929,8 @@ asks, per metric and failure: does the delta point the expected way at the
 severest level, is it monotonic across the levels, and does the mildest level
 clear three times the benign floor (identity, 16-bit requantisation, a
 resample round trip, 5-60 ms shifts, and since 2026-10-11 the same-percept
-transforms: a fresh realisation of the fixture's own noise, 2nd-order
+transforms: a fresh realisation of the fixture's own noise that keeps its
+level wander, 2nd-order
 all-pass filters at 200 Hz and 2 kHz, a 0.37-sample delay, +-0.1 dB of gain
 and TPDF dither, each seeded from its language and name)? The same-percept
 cases feed only that sensitivity check (`check_floor` in the report); the
@@ -937,7 +938,7 @@ gates, the known-ordering stand-in grid and the report's benign floor keep
 the older set, and no tuning grid reads either. Read with the dsp family on
 realistic-v2 en and fr they widen the floors under `dsp.gap_atten_db` from
 0.13 to 1.68 dB, `dsp.residual_noise_db` from 0.0002 to 1.34,
-`dsp.pause_depth_db` from 0.0004 to 0.40 and `dsp.gap_mod_dist_db` from
+`dsp.pause_depth_db` from 0.0004 to 0.20 and `dsp.gap_mod_dist_db` from
 1.89 to 2.66: the 200 Hz all-pass, a phase change, moves residual noise
 1.7-3.1 dB and gap attenuation 1.9-3.2 dB, and the dither moves fr's gap
 modulation 3.2 dB. A second set is the user's own tapes
@@ -1359,8 +1360,10 @@ every dead zone is bounded from below by that floor. A candidate's rank on
 a reading is one plus every candidate ahead beyond the band plus half of
 every tie, which without floors is exactly the old average rank: with no
 report the loop warns and judges as before. A tape counts as a win only
-when the candidate out-ranks the incumbent and is not level with it on
-every reading there, so a third candidate cannot carry a tie into a win.
+when the candidate out-ranks the incumbent and moved past the band the
+better way on at least one reading there, so third candidates cannot carry
+a tie, or a sub-floor gain beside a real loss, into a win (without floors
+this adds nothing: out-ranking needs some reading strictly better).
 Why: the v6 APL speech round tied 25 renders whose spread on each ranked
 reading sat under the floors, and with narrower zones and exact ranks
 `expander_attack_s` 0.08 won all four tapes on moves of 0.002-0.1 dB.

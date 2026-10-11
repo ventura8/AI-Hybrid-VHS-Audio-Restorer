@@ -741,9 +741,11 @@ a v3 round passes `--gates experiments/quality_calibration_v3/gates.json`.
 
 Same-percept transforms (2026-10-11, backlog E2 part c,
 `quality_degradations.SAME_PERCEPT`): `fresh_noise` (the fixture's
-recorded noise against its phase surrogate, the same power spectrum
-exactly; on a tape cut, which has no recorded noise, two noises shaped
-like its quietest frames), `allpass_200hz`, `allpass_2khz`,
+recorded noise against a fresh realisation of it, `fresh_realisation`:
+the phase surrogate of the noise with its 50 ms level trajectory divided
+out, under that trajectory again; on a tape cut, which has no recorded
+noise, two noises shaped like its quietest frames), `allpass_200hz`,
+`allpass_2khz`,
 `frac_delay_0p37`, `gain_up_0p1db`, `gain_down_0p1db` and `tpdf_dither`
 join `BENIGN`, each on a generator seeded from (language, name, level)
 (`benign_rng`), so every older case stays bit-identical. Their floor reaches
@@ -751,19 +753,24 @@ only the sensitivity checks (`check_floor` in `report.json` and its own
 table in `report.md`); the gates, the known-ordering stand-in grid, the
 route floors and the report's benign floor leave them out, and no tuning
 grid reads either. A frame-wise STFT re-synthesis of the noise lost about
-6 dB to the incoherent overlap-add, hence the whole-signal surrogate.
+6 dB to the incoherent overlap-add, hence the whole-signal surrogate. The
+recorded noise is not steady (realistic-v2's +-3 dB wobble at 0.3-1 Hz on
+top of the tape's own wander): over 100 ms frames it spreads 8.5 / 8.7 dB
+p5-p95 on en / fr, a plain surrogate 1.9 / 1.6 dB (a steadier hiss, which
+moved pause depth -0.47 / -0.73 dB and `hf_8k16k` -2.44 dB on en), the
+envelope-kept realisation 8.5 / 8.9 dB (reviewer, 2026-10-11).
 Measured with the dsp family on realistic-v2 en and fr (CPU, 2026-10-11,
 the benign cases only): the check floor of `dsp.gap_atten_db` goes 0.13 ->
 1.68 dB, `dsp.residual_noise_db` 0.0002 -> 1.34, `dsp.pause_depth_db`
-0.0004 -> 0.40, `dsp.gap_mod_dist_db` 1.89 -> 2.66, `dsp.gap_hf_excess_db`
-0.36 -> 0.41, `dsp.hf_8k16k` 0.005 -> 0.024, R1's tilt 0.0000 -> 0.005. The
+0.0004 -> 0.20, `dsp.gap_mod_dist_db` 1.89 -> 2.66, `dsp.gap_hf_excess_db`
+0.36 -> 0.41, `dsp.hf_8k16k` 0.005 -> 0.014, R1's tilt 0.0000 -> 0.005. The
 200 Hz all-pass, a phase change nobody hears, moves residual noise
 -3.1 / -1.7 dB and gap attenuation +3.2 / +1.9 dB (en / fr: both read the
 aligned waveform difference); the dither moves fr's gap modulation 3.2 dB;
 the fresh noise leaves the gap family unread on both (its noise fills the
-source pauses R4 needs) and moves pause depth -0.47 / -0.73 dB and
-`hf_8k16k` -2.44 / -0.03 dB. A full calibration run with them has not been
-made (the GPU families wait for the hunt).
+source pauses R4 needs) and moves pause depth -0.08 / +0.23 dB, residual
+noise -0.25 / -0.29 dB and `hf_8k16k` -0.54 / +0.01 dB. A full calibration
+run with them has not been made (the GPU families wait for the hunt).
 
 ### Calibration v3 with the Tata cuts (2026-10-09)
 
@@ -1421,9 +1428,15 @@ every dead zone is bounded from below by that floor. A rank is one plus
 every candidate ahead beyond the band plus half of every tie, which with no
 floors is exactly `tune_restoration._ranks`' average rank: without the
 report the loop warns and judges as before. A tape is a win only when the
-candidate out-ranks the incumbent and is not level with it on every reading
-(a rank among a group can otherwise carry a tie into a win through a third
-candidate). An incumbent sitting less than a floor outside a zone reads as
+candidate out-ranks the incumbent and moved past the band the better way on
+at least one reading there (`TapeTable.better`): a rank among a group can
+otherwise carry a tie, or a sub-floor gain beside a real loss, into a win
+through third candidates (reviewer probe, 2026-10-11: tilt 0.7 dB/oct nearer
+under its 0.85 floor, body 1.5 dB further past its 1.2, ten candidates in
+the incumbent's band, two tapes won and accepted). Without floors this adds
+nothing, since out-ranking on exact ranks needs some reading strictly
+better; on the stored v6 and v7 rounds it changed no win. An incumbent
+sitting less than a floor outside a zone reads as
 inside it within noise, so a candidate pulling it into the zone ties.
 
 The hiss exemption (the user's rule, 2026-10-11: the ear must be very
