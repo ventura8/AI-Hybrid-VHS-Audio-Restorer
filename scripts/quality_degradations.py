@@ -109,9 +109,13 @@ listener hears as the same sound, which the identity, requantisation, resample a
 under-state. The calibration's v3b floor under `dsp.gap_hf_excess_db` was 0.0080 dB where a
 fresh hiss realisation reads 0.67 (`pause_metrics`), so an effect could clear "three floors"
 on a difference no listener would call a change. They are: `fresh_noise` (the fixture's own
-recorded noise, `vhs - clean`, against its phase surrogate: the whole-signal magnitude spectrum
-with new phases, the same power spectrum exactly; on a real excerpt, which has no recorded noise,
-two noises shaped like its quietest frames added at their power), the 2nd-order all-pass filters
+recorded noise, `vhs - clean`, against a fresh realisation of it: the noise divided by its
+`NOISE_ENVELOPE_S` level trajectory, given new phases over the whole signal, and multiplied by
+that trajectory again, so the spectrum and the level wander both stay; the recorded noise wanders
+8.5-8.7 dB p5-p95 over 100 ms frames on en and fr, realistic-v2's +-3 dB wobble included, and a
+plain phase surrogate flattened that to 1.6-1.9 dB, a steadier hiss than the source's; on a real
+excerpt, which has no recorded noise, two noises shaped like its quietest frames added at their
+power), the 2nd-order all-pass filters
 at 200 Hz and 2 kHz, a 0.37-sample fractional delay, gain of +-0.1 dB and TPDF dither at 16-bit
 LSB without re-quantising (`requantise` also rounds). Each draws from its own generator seeded
 from (language, name, level) (`benign_rng`), so adding them left every other case bit-identical.
@@ -181,6 +185,8 @@ FRACTIONAL_DELAY_SAMPLES = 0.37
 FRACTIONAL_DELAY_PAD = 4096
 # The frame an excerpt's own noise floor is read on when it carries no recorded noise.
 NOISE_FRAME = 1024
+# The frame a recorded noise's level trajectory is read on: a fresh realisation keeps the wander slower than this.
+NOISE_ENVELOPE_S = 0.05
 
 
 @contextlib.contextmanager
@@ -362,13 +368,32 @@ def benign_rng(language, name, level=None):
 
 
 def resynthesised_noise(noise, rng):
-    """The noise's whole-signal magnitude spectrum with new phases (a phase surrogate): its power spectrum exactly, a fresh
-    realisation. A frame-wise STFT re-synthesis loses about 6 dB to the incoherent overlap-add, so the whole signal is used;
-    the recorded tape noise is stationary (realistic-v2 adds it after the gain control)."""
+    """The noise's whole-signal magnitude spectrum with new phases (a phase surrogate): its power spectrum exactly, and a
+    steady level. A frame-wise STFT re-synthesis loses about 6 dB to the incoherent overlap-add, so the whole signal is
+    used; `fresh_realisation` puts a recorded noise's level wander back."""
     spectrum = np.fft.rfft(np.asarray(noise, dtype=np.float64))
     phases = rng.uniform(-np.pi, np.pi, len(spectrum))
     phases[[0, -1]] = 0.0
     return np.fft.irfft(np.abs(spectrum) * np.exp(1j * phases), len(noise))
+
+
+def noise_envelope(noise, rate):
+    """`noise`'s level trajectory: the RMS of `NOISE_ENVELOPE_S` frames, interpolated to every sample, never 0."""
+    data = np.asarray(noise, dtype=np.float64)
+    size = max(int(rate * NOISE_ENVELOPE_S), 1)
+    count = max(len(data) // size, 1)
+    rms = np.sqrt(np.mean(np.resize(data, count * size).reshape(count, size) ** 2, axis=1))
+    rms = np.maximum(rms, max(float(np.max(rms)) * 1e-6, 1e-12))
+    return np.interp(np.arange(len(data)), (np.arange(count) + 0.5) * size, rms)
+
+
+def fresh_realisation(noise, rate, rng):
+    """A fresh realisation of a recorded noise: the phase surrogate of the noise with its level trajectory divided out,
+    under that same trajectory (`noise_envelope`). The recorded tape noise is not steady: realistic-v2 wobbles it +-3 dB
+    at 0.3-1 Hz on top of the tape's own wander (8.5-8.7 dB p5-p95 over 100 ms frames on en and fr), and a plain
+    surrogate held it within 1.6-1.9 dB, a different hiss."""
+    envelope = noise_envelope(noise, rate)
+    return resynthesised_noise(np.asarray(noise, dtype=np.float64) / envelope, rng) * envelope
 
 
 def floor_noise(mono, rng):
@@ -386,16 +411,16 @@ def floor_noise(mono, rng):
 def fresh_noise(mono, rate, rng, noise=None):
     """`(source, output)`: the programme under its recorded noise and under a fresh realisation of it.
 
-    Without a recorded noise (a real excerpt) both sides add their own noise shaped like the
-    excerpt's quietest frames, at that level: two realisations of the same added hiss. `rate` is
-    unused (the re-synthesis works on samples) and kept so every same-percept case is called alike.
+    With one, the output carries `fresh_realisation` of it: its spectrum and its level wander,
+    new fine structure. Without a recorded noise (a real excerpt) both sides add their own noise
+    shaped like the excerpt's quietest frames, at that level: two realisations of the same added
+    hiss.
     """
-    del rate
     base = np.asarray(mono, dtype=np.float64)
     if noise is None:
         return (base + floor_noise(base, rng)).astype(np.float32), (base + floor_noise(base, rng)).astype(np.float32)
     recorded = np.resize(np.asarray(noise, dtype=np.float64), len(base))
-    return (base + recorded).astype(np.float32), (base + resynthesised_noise(recorded, rng)).astype(np.float32)
+    return (base + recorded).astype(np.float32), (base + fresh_realisation(recorded, rate, rng)).astype(np.float32)
 
 
 def allpass(mono, rate, frequency_hz, q=None):

@@ -57,6 +57,36 @@ def test_fresh_noise_keeps_the_recorded_noise_on_one_side_and_its_spectrum_on_th
     assert abs(np.corrcoef(fresh, noise)[0, 1]) < 0.2
 
 
+def _wobbling_noise(seconds=4.0, seed=2):
+    """White noise under a +-6 dB wobble at 0.5 Hz: a tape floor that wanders, as realistic-v2's does."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    return (_noise(seconds, seed) * 10 ** (6.0 * np.sin(2 * np.pi * 0.5 * t) / 20)).astype(np.float32)
+
+
+def _frame_db(signal, seconds=0.1):
+    size = int(RATE * seconds)
+    frames = np.asarray(signal[: len(signal) // size * size], dtype=np.float64).reshape(-1, size)
+    return 10 * np.log10(np.mean(frames**2, axis=1))
+
+
+def test_fresh_noise_keeps_the_recorded_noises_level_wander_frame_by_frame():
+    """The fresh realisation follows the wobble within a decibel or so and is new noise; a plain phase surrogate is steady."""
+    noise = _wobbling_noise()
+    fresh = deg.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))
+    assert np.max(np.abs(_frame_db(fresh) - _frame_db(noise))) < 1.5
+    assert abs(np.corrcoef(fresh, noise)[0, 1]) < 0.2
+    assert np.max(np.abs(_band_db(fresh) - _band_db(noise))) < 1.0
+    steady = deg.resynthesised_noise(noise, deg.benign_rng("en", "fresh_noise"))
+    assert np.ptp(_frame_db(steady)) < 0.5 * np.ptp(_frame_db(noise))
+
+
+def test_a_silent_or_short_recorded_noise_gives_a_finite_realisation():
+    for noise in (np.zeros(RATE), _noise(0.01)):
+        envelope = deg.noise_envelope(noise, RATE)
+        assert envelope.shape == noise.shape and np.all(envelope > 0.0)
+        assert np.all(np.isfinite(deg.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))))
+
+
 def test_without_a_recorded_noise_two_realisations_of_the_excerpts_own_floor_are_added():
     voice = _voice() + _noise(seed=4)
     source, output = deg.fresh_noise(voice, RATE, deg.benign_rng("ro-cut", "fresh_noise"))
