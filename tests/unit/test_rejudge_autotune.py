@@ -93,15 +93,20 @@ def test_set_aside_and_unscored_candidates_are_left_out_and_named(rejudged):
 def test_a_round_whose_incumbent_was_not_scored_is_skipped(rejudged):
     reports, out, _json = rejudged
     assert reports[0]["rounds"][1]["rules"] == {}
-    assert "apl round 2: incumbent not scored, skipped" in out
+    assert "autotune/apl round 2: incumbent not scored, skipped" in out
 
 
 def test_one_line_per_round_and_per_null_reaches_the_console_and_the_report_the_json(rejudged):
     reports, out, written = rejudged
-    assert "apl round 1 (stored small, 3 scored): old small, band -, familywise vetoed_once, new vetoed_once" in out
+    assert "autotune/apl round 1 (stored small, 3 scored): old small, band -, familywise vetoed_once, new vetoed_once" in out
     assert "changed under ['band', 'familywise', 'new']" in out
-    assert "apl round 1 null: jitter any-tape" in out
+    assert "autotune/apl round 1 null: jitter any-tape" in out
     assert written[0]["rounds"][0]["rules"]["new"]["accepted"] == reports[0]["rounds"][0]["rules"]["new"]["accepted"]
+
+
+def test_a_loop_is_named_by_its_run_and_engine_so_two_runs_of_one_engine_stay_apart():
+    assert rj.loop_name("D:/work/autotune_v6/cathar") == "autotune_v6/cathar"
+    assert rj.loop_name("D:/work/autotune_v7/cathar") == "autotune_v7/cathar"
 
 
 def test_the_null_simulation_rates_both_rules_on_every_null(rejudged):

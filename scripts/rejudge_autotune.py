@@ -284,6 +284,12 @@ def _name(cid):
     return cid or "-"
 
 
+def loop_name(loop):
+    """`<run>/<engine>` of a loop directory: the engine alone repeats across runs (autotune_v6/cathar, autotune_v7/cathar)."""
+    path = Path(loop)
+    return f"{path.parent.name}/{path.name}"
+
+
 def _decisions(rules):
     """`old <cid>, band <cid>, ...`: what each rule accepted."""
     return ", ".join(f"{rule} {_name(rules[rule]['accepted'])}" for rule in RULES)
@@ -329,9 +335,9 @@ def main(argv=None):
         report = rejudge_loop(cli_paths.confined_path(loop, "loop", must_exist=True), context)
         reports.append(report)
         for item in report["rounds"]:
-            print(round_line(Path(loop).name, item))
+            print(round_line(loop_name(loop), item))
             if item.get("null"):
-                print(null_line(Path(loop).name, item))
+                print(null_line(loop_name(loop), item))
     if args.json is not None:
         target = cli_paths.confined_path(args.json, "--json")
         target.parent.mkdir(parents=True, exist_ok=True)
