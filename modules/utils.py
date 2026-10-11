@@ -25,6 +25,7 @@ except ImportError:
 
 # Import config constants
 from .config import DEBUG_LOGGING, LOG_FILE, PROCESS_MODE
+from .ffmpeg_failures import is_deterministic_failure
 from .hardware import get_nvidia_paths, prepare_runtime_library_paths
 
 VENV_DIR_NAME = ".venv"
@@ -750,7 +751,8 @@ def _finish_command(process, cmd, description, start_time, duration, output_buff
     for err_line in output_buffer:
         log_msg(f"  > {err_line.strip()}", is_error=True)
 
-    raise subprocess.CalledProcessError(process.returncode, cmd)
+    # The tail rides on the error so a retry can tell a deterministic failure from a lack of memory.
+    raise subprocess.CalledProcessError(process.returncode, cmd, output="".join(output_buffer))
 
 
 def run_command_with_progress(cmd, env=None, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
@@ -819,10 +821,22 @@ def _replace_with_valid_audio(temp_path, final_path):
     return True
 
 
+def _retry_with_fewer_threads(error, threads):
+    """Whether a failed CPU run is worth another try on fewer threads; a deterministic failure (ffmpeg_failures) is not."""
+    if threads <= 1:
+        return False
+    if is_deterministic_failure(error):
+        log_msg("    [Error] The command failed for a reason fewer threads cannot change; not retrying.", is_error=True)
+        return False
+    return True
+
+
 def attempt_cpu_run_with_retry(command_builder_func, initial_threads, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
     """
     Retries a CPU-bound command with reduced threads on RAM OOM.
     command_builder_func: Accepts 'threads' (int), returns [cmd, args...].
+    A failure whose output names a deterministic cause (a missing stream, an unreadable input,
+    an unknown filter; modules/ffmpeg_failures.py) is raised at once.
     """
     current_threads = initial_threads
 
@@ -838,16 +852,15 @@ def attempt_cpu_run_with_retry(command_builder_func, initial_threads, descriptio
             return True  # Success
 
         except subprocess.CalledProcessError as e:
-            if current_threads > 1:
-                log_msg("    [Warning] CPU failed. Retrying with fewer threads...", is_error=True)
-                current_threads = max(1, current_threads // 2)
-
-                # Cleanup RAM
-                import gc
-
-                gc.collect()
-            else:
+            if not _retry_with_fewer_threads(e, current_threads):
                 raise e
+            log_msg("    [Warning] CPU failed. Retrying with fewer threads...", is_error=True)
+            current_threads = max(1, current_threads // 2)
+
+            # Cleanup RAM
+            import gc
+
+            gc.collect()
 
 
 def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):

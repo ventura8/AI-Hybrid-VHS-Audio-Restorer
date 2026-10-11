@@ -37,6 +37,7 @@ from . import enhance_chunking as _chunking
 from . import mastering as _mastering
 from . import mux_format as _mux_format
 from . import resemble_denoise as _resemble
+from . import source_checks as _source_checks
 from . import spectral_denoise as _spectral_denoise
 from . import stage_cache as _stage_cache
 from . import stage_cache_key as _stage_cache_key
@@ -158,6 +159,9 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
     if original_wav.exists():
         original_wav.unlink()
 
+    # A source without an audio stream is a skip, decided before ffmpeg runs: the extraction
+    # used to fail on it and retry on fewer threads six times (modules/source_checks.py).
+    _source_checks.require_audio_stream(video_path)
     log_msg("  [System] Extracting Audio Stream...")
 
     # Extract to .tmp first to maintain atomic guarantees
@@ -181,13 +185,21 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
         ]
 
     attempt_cpu_run_with_retry(build_extract_cmd, CPU_THREADS, description="Extracting Audio", total_duration=total_duration)
+    _publish_extraction(tmp_wav, original_wav)
 
+
+def _publish_extraction(tmp_wav, original_wav):
+    """Moves a valid extraction into place; a decode with no samples is a skip, anything else invalid a failure.
+
+    ffmpeg exits 0 on a stream whose packets an edit list hides (hunt v3: Pooh, Powerpuff,
+    Rocky), leaving a 92-byte WAV header with no samples; that is the source, not the run.
+    """
     if is_valid_audio(tmp_wav):
         tmp_wav.rename(original_wav)
-    else:
-        if tmp_wav.exists():
-            tmp_wav.unlink()
-        raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")  # pragma: no cover
+        return
+    _source_checks.reject_empty_decode(tmp_wav)
+    tmp_wav.unlink(missing_ok=True)
+    raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")
 
 
 # audio-separator labels stems per model, not to one convention: BS-Roformer emits
@@ -823,6 +835,8 @@ def _final_mix_step(
 
     tmp_output = _staged_output_path(final_output_video, aligned_vocals.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
+    # Both stems start where the source's audio started and are encoded at the rate the
+    # container keeps (modules/mux_format.py); an unreadable source gives today's command.
     plan = _mux_format.plan_for(video_path, final_output_video.suffix)
     loudnorm_args = _resolve_loudnorm_args(
         video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration, sample_rate=plan.sample_rate
@@ -911,6 +925,8 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
 
     tmp_output = _staged_output_path(final_output_video, processed_audio_wav.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
+    # The track starts where the source's audio started, at the rate the container keeps
+    # (modules/mux_format.py); an unreadable source gives today's command.
     plan = _mux_format.plan_for(video_path, final_output_video.suffix)
     loudnorm_args = _resolve_single_track_loudnorm_args(
         video_path, processed_audio_wav, total_duration=duration, sample_rate=plan.sample_rate
@@ -1598,6 +1614,10 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
 
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True
+
+    except _source_checks.SourceSkipped as skip:
+        log_msg(f"  [Skip] {video_path.name}: {skip}", is_error=True)
+        return False
 
     except Exception as e:
         log_msg(f"  [Error] Processing failed: {e}", is_error=True)
