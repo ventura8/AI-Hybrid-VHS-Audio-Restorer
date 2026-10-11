@@ -1,4 +1,4 @@
-"""Listening cuts: aligned (lag and polarity), speech-level matched within bounds, picked where outputs differ audibly."""
+"""Listening cuts: aligned (lag and polarity), brought to one speech level, picked where outputs differ audibly."""
 
 import io
 import tempfile
@@ -92,18 +92,19 @@ def _quieter_delayed_copy(tmp_path):
 
 
 def test_prepare_cuts_aligns_and_matches_the_speech_level(tmp_path):
-    """A quieter, delayed copy comes back aligned, 12 dB up, as stereo cuts of the requested length."""
+    """A quieter, delayed copy comes back aligned, given 12 dB more than the reference, as stereo cuts of the requested length."""
     cuts, info = _quieter_delayed_copy(tmp_path)
     assert cuts["ref"].shape == cuts["out"].shape == (8 * RATE, 2)
-    assert info["gains_db"]["out"] == pytest.approx(12.04, abs=0.05)
+    assert info["gains_db"]["out"] - info["gains_db"]["ref"] == pytest.approx(12.04, abs=0.05)
     assert np.corrcoef(cuts["ref"][:, 0], cuts["out"][:, 0])[0, 1] > 0.999
 
 
-def test_a_level_matched_copy_is_neither_clamped_nor_silent(tmp_path):
-    """The 12 dB the quieter copy needs lies inside the gain bounds, and both cuts carry speech."""
+def test_a_level_matched_copy_is_neither_unlevelled_nor_silent(tmp_path):
+    """The voice fits under the peak ceiling at the target, and both cuts carry speech."""
     _cuts, info = _quieter_delayed_copy(tmp_path)
-    assert not info["clamped"]
+    assert not info["unlevelled"]
     assert not info["silent"]
+    assert info["fits_at_dbfs"] > listen_cuts.TARGET_ACTIVE_DBFS
 
 
 def test_an_inverted_copy_is_turned_back_and_blends_without_cancelling(tmp_path):
@@ -122,15 +123,14 @@ def test_the_level_match_ignores_the_pauses(tmp_path):
     gated = (source * (gate > 0.5)).astype(np.float32)
     paths = {"ref": _wav(tmp_path / "ref.wav", source), "gated": _wav(tmp_path / "gated.wav", gated)}
     cuts, info = listen_cuts.prepare_cuts(paths, 0.0, 8.0, tmp_path / "work")
-    assert info["gains_db"]["gated"] == pytest.approx(0.0, abs=0.1)
+    assert info["gains_db"]["gated"] == pytest.approx(info["gains_db"]["ref"], abs=0.1)
     assert np.sqrt(np.mean(cuts["gated"] ** 2)) < np.sqrt(np.mean(cuts["ref"] ** 2))
 
 
-def test_gains_are_bounded_and_silence_is_named():
-    """A gain beyond +-20 dB is held at the bound and named; a level under the silence floor marks the cut silent."""
-    gains, clamped = listen_cuts.matching_gains_db({"ref": -20.0, "quiet": -45.0, "loud": 5.0, "near": -30.0}, "ref")
-    assert gains == {"ref": 0.0, "quiet": 20.0, "loud": -20.0, "near": 10.0}
-    assert clamped == ["loud", "quiet"]
+def test_gains_reach_the_target_without_a_bound_and_silence_is_named():
+    """Each gain brings its cut to the target however far it is (no +-20 dB clamp); a silent cut keeps 0 dB and is named."""
+    gains = listen_cuts.target_gains_db({"ref": -20.0, "quiet": -45.0, "loud": 5.0, "gone": -240.0}, -23.0)
+    assert gains == {"ref": -3.0, "quiet": 22.0, "loud": -28.0, "gone": 0.0}
     assert listen_cuts.silent_labels({"ref": -20.0, "gone": -240.0, "edge": -50.0}) == ["gone"]
 
 
@@ -154,14 +154,13 @@ def test_prepare_cuts_leaves_nothing_in_the_temp_directory(tmp_path, monkeypatch
     assert not list((tmp_path / "tmp").iterdir())
 
 
-def test_finish_cuts_share_one_gain_under_the_peak_ceiling():
-    """The loudest cut is brought under the ceiling and the others keep their ratio to it; the edges fade in and out."""
+def test_finish_cuts_apply_each_gain_and_fade_the_edges():
+    """Each cut takes its own gain, nothing more (the target decides the level); the edges fade in and out."""
     cuts = {"a": np.full((RATE, 2), 0.5, dtype=np.float32), "b": np.full((RATE, 2), 0.25, dtype=np.float32)}
-    finished = listen_cuts.finish_cuts(cuts, {"a": 4.0, "b": 4.0})
-    assert np.max(np.abs(finished["a"])) == pytest.approx(listen_cuts.PEAK_MAX, rel=1e-6)
-    assert finished["b"][RATE // 2, 0] == pytest.approx(finished["a"][RATE // 2, 0] / 2.0)
-    assert finished["a"][0, 0] == 0.0
-    assert finished["a"][-1, 0] == 0.0
+    finished = listen_cuts.finish_cuts(cuts, {"a": 0.5, "b": 2.0})
+    middle = (finished["a"][RATE // 2, 0], finished["b"][RATE // 2, 0])
+    assert middle == (pytest.approx(0.25), pytest.approx(0.5))
+    assert (finished["a"].dtype, finished["a"][0, 0], finished["a"][-1, 0]) == (np.float32, 0.0, 0.0)
 
 
 def test_speech_active_falls_back_to_every_frame():

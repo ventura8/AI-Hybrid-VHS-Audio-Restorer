@@ -10,14 +10,31 @@ cuts differ in nothing but the restoration, so:
   segment (cut plus margins, within +-4096 samples) and multiplied by the polarity it returns.
   The lag alone is not enough: an inverted candidate mixed into the incumbent at x = 0.5 on the
   blend continuum would cancel, and the listener would hear an artefact neither output holds;
-- the cuts are loudness-matched on speech-active frames (20 ms frames of the reference cut at or
+- every cut is brought to one speech-active level, `TARGET_ACTIVE_DBFS` (-23 dBFS) unless the
+  session names another, read on speech-active frames (20 ms frames of the reference cut at or
   above its median level and -50 dBFS), not on integrated loudness: an output that deepens the
   pauses would otherwise play louder in its speech, and level is the first difference a listener
-  hears. A gain is kept within +-20 dB (`MAX_GAIN_DB`); a stimulus that needs more is reported as
-  clamped, and one whose level on those frames is under -50 dBFS (`audio_io.SILENCE_DBFS`: a
-  start past the end of the file, a wrong or empty file) is reported as silent, so the block is
-  refused instead of played. One common gain then keeps every cut's peak at -0.2 dBFS or below,
-  and 10 ms fades keep the cut edges from clicking;
+  hears. One level for every block makes the session's volume setting, and the threshold run's
+  dBFS-to-sensation-level map (`listen_threshold`), hold for all of them. Until 2026-10-12 the
+  cuts were matched to the first stimulus within +-20 dB and the block played at that
+  stimulus's level: Session 0's sanity block held the shipped APL at -20 dB against the raw
+  tape, and Session 1 Block 1 (APL first) would have held the tape at +20 dB where it needs
+  +21.5. A stimulus whose level on those frames is under -50 dBFS (`audio_io.SILENCE_DBFS`: a
+  start past the end of the file, a wrong or empty file) is reported as silent and one whose
+  peak would pass -0.18 dBFS (`PEAK_MAX`) at the target as unlevelled; either refuses the
+  block instead of playing it (`info["fits_at_dbfs"]` names the highest target every stimulus
+  fits). 10 ms fades keep the cut edges from clicking. Measured 2026-10-12 on the Session 0
+  and Session 1 stimuli (10 s cuts): the restorations' speech-active level is -13.8 to -19.0
+  dBFS with peaks at -1.0 to -5.5 dBFS (crest 12.8-17.7 dB), the raw Tele7abc tape at 80 s
+  -36.1 dBFS with its peak 20.0 dB above it, so -23 dBFS leaves that tape 2.9 dB of headroom
+  and plays the restorations 4-9 dB quieter than Session 0 did at the same volume setting;
+- the catch trials' stimuli (`catch_cuts`, scored apart, `listen_protocol`): the reference cut
+  through a +6 dB high shelf at 7.5 kHz (the app's air-shelf corner) brought back to the
+  target on the same frames, and, with a raw tape, half reference and half raw tape; the
+  familiarisation's (`familiar_cuts`): the first stimulus and the difference to the second
+  stimulus scaled up (`EXAGGERATION`), never part of a scored trial;
+- `quietest_span` offers the page a loop over the quietest 2 s of the reference cut, where a
+  pause or hiss question is answered;
 - without a chosen start, the cut goes where the first two stimuli differ most audibly. Both are
   decoded whole as mono at 32 kHz (`PICK_RATE`, which keeps the NMR's bands up to 16 kHz) into a
   temporary directory, each WAV deleted as soon as it is read (a 30-minute tape is ~230 MB
@@ -41,12 +58,14 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import scipy.signal
 import soundfile as sf
 
 from modules.utils import FFMPEG_BIN
 from scripts import cli_paths
 from scripts.restoration_quality import audio_io, auditory
 from scripts.restoration_quality.dsp_metrics import frame_levels, framed_psd
+from scripts.restoration_quality.listen_modes import CATCH_AIR, CATCH_RAW, FAMILIAR_A, FAMILIAR_B
 
 RATE = audio_io.NATIVE_RATE
 PICK_RATE = 32000
@@ -56,8 +75,14 @@ FRAME_S = 0.02
 ACTIVE_PERCENTILE = 50.0
 MIN_ACTIVE_FRAMES = 10
 PEAK_MAX = 0.98
-MAX_GAIN_DB = 20.0
+PEAK_MAX_DBFS = 20.0 * float(np.log10(PEAK_MAX))
+TARGET_ACTIVE_DBFS = -23.0
 LEVEL_FLOOR = 1e-12
+LOOP_SECONDS = 2.0
+AIR_CORNER_HZ = 7500.0
+AIR_CATCH_DB = 6.0
+RAW_CATCH_SHARE = 0.5
+EXAGGERATION = {"abx": 2.0, "blend": 1.0}
 PICK_FRAME = 4096
 PICK_FLOOR_DBFS = -70.0
 THIRD_OCTAVES_HZ = 100.0 * 2.0 ** (np.arange(0, 23) / 3.0)
@@ -158,11 +183,19 @@ def active_levels_db(cuts, reference):
     return {label: 20.0 * float(np.log10(max(_active_rms(audio_io.to_mono(cut), active), LEVEL_FLOOR))) for label, cut in cuts.items()}
 
 
-def matching_gains_db(levels_db, reference):
-    """`(gains_db, clamped)`: each cut's gain to the reference's level, within +-MAX_GAIN_DB, and the labels held at the bound."""
-    wanted = {label: levels_db[reference] - level for label, level in levels_db.items()}
-    gains = {label: float(np.clip(gain, -MAX_GAIN_DB, MAX_GAIN_DB)) for label, gain in wanted.items()}
-    return gains, sorted(label for label, gain in gains.items() if gain != wanted[label])
+def target_gains_db(levels_db, target_dbfs=TARGET_ACTIVE_DBFS):
+    """Each cut's gain to `target_dbfs`; 0 dB for a silent cut, which refuses the block anyway."""
+    return {label: 0.0 if level < audio_io.SILENCE_DBFS else target_dbfs - level for label, level in levels_db.items()}
+
+
+def peak_dbfs(cut):
+    """The cut's sample peak in dBFS."""
+    return 20.0 * float(np.log10(max(float(np.max(np.abs(cut), initial=0.0)), LEVEL_FLOOR)))
+
+
+def unlevelled_labels(peaks_db):
+    """The cuts whose peak passes PEAK_MAX at the target level."""
+    return sorted(label for label, peak in peaks_db.items() if peak > PEAK_MAX_DBFS)
 
 
 def silent_labels(levels_db):
@@ -180,29 +213,97 @@ def _faded(cut):
 
 
 def finish_cuts(cuts, gains):
-    """Gain-matched (linear `gains`), faded cuts under one common gain that keeps the loudest peak at PEAK_MAX or below."""
-    faded = {label: _faded(cut * gains[label]) for label, cut in cuts.items()}
-    peak = max(float(np.max(np.abs(cut))) for cut in faded.values())
-    scale = min(1.0, PEAK_MAX / max(peak, 1e-9))
-    return {label: (cut * scale).astype(np.float32) for label, cut in faded.items()}
+    """Cuts at their linear `gains`, faded in and out, as float32."""
+    return {label: _faded(cut * np.float32(gains[label])).astype(np.float32) for label, cut in cuts.items()}
 
 
-def prepare_cuts(paths, start_s, seconds, work_dir=None):
-    """`(cuts, info)`: every stimulus cut at the first one's window, aligned, faded and loudness-matched.
+def prepare_cuts(paths, start_s, seconds, work_dir=None, target_dbfs=TARGET_ACTIVE_DBFS):
+    """`(cuts, info)`: every stimulus cut at the first one's window, aligned, faded and brought to `target_dbfs`.
 
-    `info` holds `levels_dbfs` (speech-active level before the gain), `gains_db`, `clamped` (labels
-    whose gain hit +-MAX_GAIN_DB) and `silent` (labels under the silence floor: do not play them).
+    `info` holds `target_dbfs`, `levels_dbfs` (speech-active level before the gain, on the first
+    cut's frames), `gains_db`, `peaks_dbfs` (after the gain), `silent` (labels under the silence
+    floor), `unlevelled` (labels whose peak passes PEAK_MAX at the target) and `fits_at_dbfs`,
+    the highest target every stimulus fits at. Play neither a silent nor an unlevelled block.
     """
+    cuts, reference = aligned_cuts(paths, start_s, seconds, work_dir)
+    return levelled_cuts(cuts, reference, target_dbfs)
+
+
+def aligned_cuts(paths, start_s, seconds, work_dir=None):
+    """`(cuts, reference label)`: every stimulus cut at the first one's window and aligned to it (lag and polarity)."""
     lead = min(MARGIN_S, start_s)
     raw = _segments(paths, start_s - lead, seconds + lead + MARGIN_S, work_dir)
     reference = next(iter(raw))
     offset, length = int(round(lead * RATE)), int(round(seconds * RATE))
-    cuts = {label: _aligned_window(raw[reference], audio, offset, length) for label, audio in raw.items()}
+    return {label: _aligned_window(raw[reference], audio, offset, length) for label, audio in raw.items()}, reference
+
+
+def levelled_cuts(cuts, reference, target_dbfs=TARGET_ACTIVE_DBFS):
+    """`(cuts, info)` of `prepare_cuts`: the aligned cuts brought to `target_dbfs` on the reference's speech frames, faded."""
     levels = active_levels_db(cuts, reference)
-    gains_db, clamped = matching_gains_db(levels, reference)
-    linear = {label: 10.0 ** (gain / 20.0) for label, gain in gains_db.items()}
-    info = {"levels_dbfs": levels, "gains_db": gains_db, "clamped": clamped, "silent": silent_labels(levels)}
-    return finish_cuts(cuts, linear), info
+    gains_db = target_gains_db(levels, target_dbfs)
+    finished = finish_cuts(cuts, {label: 10.0 ** (gain / 20.0) for label, gain in gains_db.items()})
+    peaks = {label: peak_dbfs(cut) for label, cut in finished.items()}
+    info = {"target_dbfs": float(target_dbfs), "levels_dbfs": levels, "gains_db": gains_db, "peaks_dbfs": peaks}
+    info.update(silent=silent_labels(levels), unlevelled=unlevelled_labels(peaks))
+    info["fits_at_dbfs"] = float(target_dbfs) + PEAK_MAX_DBFS - max(peaks.values())
+    return finished, info
+
+
+def quietest_span(cut, seconds=LOOP_SECONDS):
+    """`[start_s, end_s]` of the quietest `seconds` of `cut` (20 ms frames): where a pause or hiss loop plays."""
+    power = frame_levels(audio_io.to_mono(cut), int(FRAME_S * RATE)) ** 2
+    width = max(1, min(len(power), int(round(seconds / FRAME_S))))
+    sums = np.convolve(power, np.ones(width), mode="valid")
+    start = int(np.argmin(sums)) * FRAME_S
+    return [round(start, 3), round(start + width * FRAME_S, 3)]
+
+
+def high_shelf(audio, gain_db, corner_hz, rate=RATE):
+    """`audio` through an RBJ high shelf (slope 1) of `gain_db` at `corner_hz`, along its first axis."""
+    amp = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * np.pi * corner_hz / rate
+    cos, alpha = np.cos(w0), np.sin(w0) / 2.0 * np.sqrt(2.0)
+    root = 2.0 * np.sqrt(amp) * alpha
+    b = amp * np.array([(amp + 1) + (amp - 1) * cos + root, -2.0 * ((amp - 1) + (amp + 1) * cos), (amp + 1) + (amp - 1) * cos - root])
+    a = np.array([(amp + 1) - (amp - 1) * cos + root, 2.0 * ((amp - 1) - (amp + 1) * cos), (amp + 1) - (amp - 1) * cos - root])
+    return scipy.signal.lfilter(b / a[0], a / a[0], audio, axis=0).astype(np.float32)
+
+
+def _peak(cut):
+    return float(np.max(np.abs(cut), initial=0.0))
+
+
+def _under_peak(cut):
+    """`(cut, gain_db)`: `cut` scaled down just enough to keep its peak at PEAK_MAX (gain 0 when it fits)."""
+    scale = min(1.0, PEAK_MAX / max(_peak(cut), LEVEL_FLOOR))
+    return (cut * np.float32(scale)).astype(np.float32), 20.0 * float(np.log10(scale))
+
+
+def catch_cuts(cuts, reference, raw_label=None):
+    """`(catch stimuli, gains_db)`: the reference with +6 dB air brought back to its speech level, and half raw tape.
+
+    The air catch is levelled on the reference's speech-active frames, so it differs in timbre and
+    not in level, then kept under PEAK_MAX; the raw-tape catch (only with `raw_label`) mixes two
+    levelled cuts, whose peak cannot pass the larger of theirs.
+    """
+    plain = cuts[reference]
+    shelved = high_shelf(plain, AIR_CATCH_DB, AIR_CORNER_HZ)
+    levels = active_levels_db({reference: plain, CATCH_AIR: shelved}, reference)
+    back_db = levels[reference] - levels[CATCH_AIR]
+    air, held_db = _under_peak(shelved * np.float32(10.0 ** (back_db / 20.0)))
+    stimuli, gains = {CATCH_AIR: air}, {CATCH_AIR: back_db + held_db}
+    if raw_label is not None:
+        stimuli[CATCH_RAW] = ((1.0 - RAW_CATCH_SHARE) * plain + RAW_CATCH_SHARE * cuts[raw_label]).astype(np.float32)
+        gains[CATCH_RAW] = 0.0
+    return stimuli, gains
+
+
+def familiar_cuts(first, second, factor):
+    """The familiarisation pair: `first` and `first + factor * (second - first)`, under one gain that keeps both under PEAK_MAX."""
+    exaggerated = first + np.float32(factor) * (second - first)
+    scale = np.float32(min(1.0, PEAK_MAX / max(_peak(exaggerated), _peak(first), LEVEL_FLOOR)))
+    return {FAMILIAR_A: (first * scale).astype(np.float32), FAMILIAR_B: (exaggerated * scale).astype(np.float32)}
 
 
 def _band_matrix(freqs):

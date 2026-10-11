@@ -22,6 +22,16 @@ number of answers can show:
   0.01-2) places the next trial at its median, the first at x = 1 so the listener hears what to
   listen for. The record keeps the x heard 75% of the time and its 90% band; above 1 means even
   the full candidate was not reliably heard.
+
+ABX and blend offer "can't tell" beside A and B (2026-10-12): Session 0's ABX had no such button,
+and the listener, who "chose B every time because they all sounded the same", had no other way to
+say so. A "can't tell" is kept in the record (`ledger.CANT_TELL`) but counts neither in the
+binomial score nor in the QUEST posterior; the prompt still asks for a guess when unsure, since a
+guess carries information and a "can't tell" does not. Each mode also builds the trials
+`listen_protocol` interleaves: a familiarisation trial over the exaggerated pair
+(`FAMILIAR_A` / `FAMILIAR_B`, answered with feedback, never scored) and a catch trial over the
+first stimulus and a positive control (`CATCH_AIR`, `CATCH_RAW`), shaped exactly like a scored
+trial so the listener cannot tell them apart.
 """
 
 import itertools
@@ -39,6 +49,17 @@ QUEST_LAPSE = 0.02
 TARGET_P = 0.75
 BAND_QUANTILES = (0.05, 0.95)
 BLEND_X_MIN = 0.01
+CANT_TELL = ledger.CANT_TELL
+FORCED_CHOICES = ("A", "B", CANT_TELL)
+GUESS_NOTE = " Guess when unsure; 'can't tell' is kept apart and not scored."
+ABX_PROMPT = "Is X the same as A or as B?" + GUESS_NOTE
+PAIR_PROMPT = "Which one sounds better? Choose 'same' when you cannot tell them apart or cannot choose."
+BLEND_PROMPT = "R is the reference. Which of A and B differs from R?" + GUESS_NOTE
+# Labels of the stimuli a block plays besides its own: none of them is a ledger label (a ':' is not allowed there).
+CATCH_AIR = "catch:air"
+CATCH_RAW = "catch:raw"
+FAMILIAR_A = "familiar:a"
+FAMILIAR_B = "familiar:b"
 
 
 def p_correct(x, threshold):
@@ -59,10 +80,37 @@ def chosen(answer):
     return {"A": first, "B": second}.get(answer["choice"], ledger.SAME)
 
 
+def abx_trial(first, second, key):
+    """An ABX trial over two stimulus labels, X being the one `key` names."""
+    x_label = first if key == "A" else second
+    play = [("A", {first: 1.0}), ("B", {second: 1.0}), ("X", {x_label: 1.0})]
+    return {"prompt": ABX_PROMPT, "play": play, "choices": list(FORCED_CHOICES), "key": key, "stimuli": [first, second]}
+
+
+def oddity_trial(plain, odd, key):
+    """R plays `plain`; A and B play `plain` and `odd`, the odd one in the slot `key` names (weights over cut labels)."""
+    pair = [("A", odd), ("B", plain)] if key == "A" else [("A", plain), ("B", odd)]
+    return {"prompt": BLEND_PROMPT, "play": [("R", plain), *pair], "choices": list(FORCED_CHOICES), "key": key}
+
+
+def pair_trial(first, second, replicate=False):
+    """A pair trial: A and B, no right answer."""
+    play = [("A", {first: 1.0}), ("B", {second: 1.0})]
+    return {
+        "prompt": PAIR_PROMPT,
+        "play": play,
+        "choices": ["A", "B", ledger.SAME],
+        "key": None,
+        "stimuli": [first, second],
+        "replicate": replicate,
+    }
+
+
 class Mode:
     """What every mode shares: its stimuli, its trial count, the question text and the answers so far."""
 
     kind = ""
+    keys = ("A", "B")
 
     def __init__(self, labels, total):
         self.labels = list(labels)
@@ -83,9 +131,17 @@ class Mode:
         """The ledger `question` of this block (or of one pair of it)."""
         return {"type": self.kind, "stimuli": list(stimuli or self.labels), "blind": True, "text": self.text}
 
+    def decided(self):
+        """The answers that are not "can't tell": the ones a score counts."""
+        return [answer for answer in self.answers if answer["choice"] != CANT_TELL]
+
     def right_answers(self):
         """How many answers matched their trial's key."""
-        return sum(1 for answer in self.answers if answer["choice"] == answer["key"])
+        return sum(1 for answer in self.decided() if answer["choice"] == answer["key"])
+
+    def scored_choices(self):
+        """Every scored answer's button, in order ("can't tell" included): what tells a one-button block."""
+        return [answer["choice"] for answer in self.answers]
 
 
 class AbxMode(Mode):
@@ -99,25 +155,35 @@ class AbxMode(Mode):
 
     def trial(self, index):
         """Trial `index`: A, B and X, with X's identity as the key."""
-        first, second = self.labels
-        key = "A" if self.x_is_a[index] else "B"
-        x_label = first if key == "A" else second
-        play = [("A", {first: 1.0}), ("B", {second: 1.0}), ("X", {x_label: 1.0})]
-        return {"prompt": "Is X the same as A or as B?", "play": play, "choices": ["A", "B"], "key": key, "stimuli": self.labels}
+        return abx_trial(*self.labels, "A" if self.x_is_a[index] else "B")
+
+    def catch_trial(self, label, key):
+        """A catch trial: the first stimulus as A, the positive control `label` as B."""
+        return abx_trial(self.labels[0], label, key)
+
+    def familiar_trial(self, _index, key):
+        """A familiarisation trial over the exaggerated pair."""
+        return abx_trial(FAMILIAR_A, FAMILIAR_B, key)
 
     def results(self):
-        """One abx record body, with every trial's key and answer."""
-        n_correct, n_trials = self.right_answers(), len(self.answers)
+        """One abx record body, with every trial's key and answer; "can't tell" answers stay out of the score."""
+        n_correct, n_trials = self.right_answers(), len(self.decided())
         p_value = ledger.binomial_p(n_correct, n_trials)
         trials = [[answer["key"], answer["choice"]] for answer in self.answers]
-        answer = {"heard": p_value < ABX_ALPHA, "p_value": p_value, "trials": trials}
+        answer = {"heard": p_value < ABX_ALPHA, "p_value": p_value, "trials": trials, "cant_tell": len(self.answers) - n_trials}
         return [{"question": self.question(), "answer": answer, "n_trials": n_trials, "n_correct": n_correct, "confidence": 1.0 - p_value}]
 
     def summary(self):
         """One line for the page and the terminal."""
         result = self.results()[0]
         verdict = "heard" if result["answer"]["heard"] else "not shown to be heard"
-        return f"{result['n_correct']}/{result['n_trials']} right, p = {result['answer']['p_value']:.3f}: {verdict}"
+        line = f"{result['n_correct']}/{result['n_trials']} right, p = {result['answer']['p_value']:.3f}: {verdict}"
+        return line + cant_tell_note(result["answer"]["cant_tell"])
+
+
+def cant_tell_note(count):
+    """The summary's clause on "can't tell" answers ("" when there were none)."""
+    return f", {count} can't tell (not scored)" if count else ""
 
 
 class PairMode(Mode):
@@ -136,17 +202,12 @@ class PairMode(Mode):
     def trial(self, index):
         """Trial `index`: A and B, no right answer; the last trial is the replicate."""
         first, second = self.order[index]
-        prompt = "Which one sounds better? Choose 'same' when you cannot tell them apart or cannot choose."
-        play = [("A", {first: 1.0}), ("B", {second: 1.0})]
-        replicate = index == len(self.order) - 1
-        return {
-            "prompt": prompt,
-            "play": play,
-            "choices": ["A", "B", ledger.SAME],
-            "key": None,
-            "stimuli": [first, second],
-            "replicate": replicate,
-        }
+        return pair_trial(first, second, replicate=index == len(self.order) - 1)
+
+    def catch_trial(self, label, key):
+        """A catch trial: the first stimulus against the positive control `label`, on the side `key` puts it."""
+        first = self.labels[0]
+        return pair_trial(first, label) if key == "A" else pair_trial(label, first)
 
     def results(self):
         """One pair record body per pair of stimuli: the counts and every trial `[A, B, chosen, replicate]` in the order heard."""
@@ -208,24 +269,33 @@ class BlendMode(Mode):
         """Trial `index`: R, then A and B with the blend in the slot the key names."""
         incumbent, candidate = self.labels
         x = self.next_x()
-        blend, plain = {incumbent: 1.0 - x, candidate: x}, {incumbent: 1.0}
-        key = "A" if self.slots[index] else "B"
-        pair = [("A", blend), ("B", plain)] if key == "A" else [("A", plain), ("B", blend)]
-        prompt = "R is the reference. Which of A and B differs from R?"
-        return {"prompt": prompt, "play": [("R", plain), *pair], "choices": ["A", "B"], "key": key, "x": x, "stimuli": self.labels}
+        trial = oddity_trial({incumbent: 1.0}, {incumbent: 1.0 - x, candidate: x}, "A" if self.slots[index] else "B")
+        return {**trial, "x": x, "stimuli": self.labels}
+
+    def catch_trial(self, label, key):
+        """A catch trial: the positive control `label` as the odd one against the incumbent."""
+        incumbent = self.labels[0]
+        return {**oddity_trial({incumbent: 1.0}, {label: 1.0}, key), "stimuli": [incumbent, label]}
+
+    def familiar_trial(self, _index, key):
+        """A familiarisation trial: the exaggerated candidate as the odd one."""
+        return {**oddity_trial({FAMILIAR_A: 1.0}, {FAMILIAR_B: 1.0}, key), "stimuli": [FAMILIAR_A, FAMILIAR_B]}
 
     def record(self, trial, choice):
-        """Keeps the answer and moves the posterior."""
+        """Keeps the answer and moves the posterior; a "can't tell" leaves the posterior where it was."""
         super().record(trial, choice)
+        if choice == CANT_TELL:
+            return
         right = p_correct(trial["x"], QUEST_GRID)
         self.log_posterior += np.log(right if choice == trial["key"] else 1.0 - right)
 
     def results(self):
-        """One blend record body: the x heard 75% of the time, its 90% band and every response."""
-        responses = [[answer["x"], answer["choice"] == answer["key"]] for answer in self.answers]
+        """One blend record body: the x heard 75% of the time, its 90% band, every response and the "can't tell" levels."""
+        responses = [[answer["x"], answer["choice"] == answer["key"]] for answer in self.decided()]
         threshold = x_at_target(self.quantile(0.5))
         band = [x_at_target(self.quantile(share)) for share in BAND_QUANTILES]
-        answer = {"threshold_x": threshold, "band": band, "heard_at_full": threshold <= 1.0, "responses": responses}
+        cant_tell = [answer["x"] for answer in self.answers if answer["choice"] == CANT_TELL]
+        answer = {"threshold_x": threshold, "band": band, "heard_at_full": threshold <= 1.0, "responses": responses, "cant_tell": cant_tell}
         return [
             {
                 "question": self.question(),
@@ -240,4 +310,5 @@ class BlendMode(Mode):
         """One line: the threshold and its band."""
         answer = self.results()[0]["answer"]
         low, high = answer["band"]
-        return f"heard 75% of the time at x = {answer['threshold_x']:.2f} (90% band {low:.2f}-{high:.2f})"
+        line = f"heard 75% of the time at x = {answer['threshold_x']:.2f} (90% band {low:.2f}-{high:.2f})"
+        return line + cant_tell_note(len(answer["cant_tell"]))

@@ -102,7 +102,11 @@ a tie found before scoring costs nothing. `scripts/audibility_check.py` runs it 
   its identical shortcut only for finite samples. Such a pair now goes through the NMR.
 - the level is an assumption (`PLAYBACK_SPL_LOUD_FRAMES`): the incumbent's loud frames are
   taken to play at 65 dB SPL, which places the threshold in quiet. The harness cannot know
-  the real playback level.
+  the real playback level, unless a listener has measured it: with `AI_RESTORE_LISTENER` set,
+  the constant takes that listener's latest threshold run (`listen_ab threshold`, read by
+  `playback_calibration.selected` at import, as the module reads its other constants), and the
+  run's id joins `VERDICT_RULE`. That level holds only at the run's device and volume, within
+  the 7-10 dB the normal-hearing assumption costs (`listen_threshold`).
 
 One-sided by design: "inaudible" is trusted, "audible" is not. The difference is taken in
 the time domain, so anything a listener might hear moves it, and so does a harmless
@@ -153,7 +157,7 @@ import numpy as np
 import scipy.signal
 from numpy.lib.stride_tricks import sliding_window_view
 
-from scripts.restoration_quality import audio_io
+from scripts.restoration_quality import audio_io, playback_calibration
 
 ERB_SCALE = 21.4
 ERB_CORNER = 4.37 / 1000.0
@@ -166,8 +170,13 @@ EPS = 1e-20
 
 # The playback level the audibility check assumes: the incumbent's loud frames play at
 # 65 dB SPL (conversational speech at a metre). Absolute audibility needs a level; the
-# harness cannot know the listener's volume, so this is a declared assumption.
-PLAYBACK_SPL_LOUD_FRAMES = 65.0
+# harness cannot know the listener's volume, so this is a declared assumption...
+DEFAULT_PLAYBACK_SPL_LOUD_FRAMES = 65.0
+# ... until a listener measured it: $AI_RESTORE_LISTENER selects that listener's latest threshold
+# run (`playback_calibration`), whose level replaces the assumption for every reader of the
+# constant; unset, nothing is read. A named listener without a usable run stops the import.
+PLAYBACK_CALIBRATION = playback_calibration.selected()
+PLAYBACK_SPL_LOUD_FRAMES = playback_calibration.loud_frames_spl(PLAYBACK_CALIBRATION, DEFAULT_PLAYBACK_SPL_LOUD_FRAMES)
 # Masked threshold = spread excitation minus this offset. Published offsets run from ~5 dB
 # (noise masking noise) to 14.5 + z dB on the Bark scale (tone masking noise, Johnston 1988);
 # 24 dB leans towards "audible": a coherent level change of ~0.5 dB in a band reads at the
@@ -219,8 +228,9 @@ FLOOR_RATIO = 10.0 ** (DB_FLOOR / 10.0)
 # wrote is read again, not reused. Bump it with any change to what `compare_files` calls
 # audible: the masking model, the share, the event clause, the length, channel or non-finite
 # flags, the identical shortcut. 2026-10-09: the 5% share, events (2 frames at +6 dB or one at
-# +12 dB) and the head-and-tail length rule.
-VERDICT_RULE = "2026-10-09-head-tail"
+# +12 dB) and the head-and-tail length rule. A listener's playback calibration changes the
+# threshold in quiet, so its id joins the rule (nothing is added without one).
+VERDICT_RULE = "2026-10-09-head-tail" + playback_calibration.rule_suffix(PLAYBACK_CALIBRATION)
 
 
 def erb_number(freq_hz):

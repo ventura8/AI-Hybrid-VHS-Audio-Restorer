@@ -13,10 +13,12 @@ import soundfile as sf
 from scripts import listen_ab
 from scripts.restoration_quality import ledger, listen_cuts
 from scripts.restoration_quality.listen_modes import AbxMode
+from scripts.restoration_quality.listen_threshold import ThresholdMode
 
 PORT = 8765
 HOST = f"127.0.0.1:{PORT}"
 RATE = 44100
+PLAYBACK = ["--device", "SteelSeries Arctis Nova Pro Wireless", "--volume", "40"]
 
 
 def _session(tmp_path):
@@ -119,7 +121,7 @@ def _args(tmp_path, *extra, mode="abx", count=2):
     for label in "abc"[:count]:
         sf.write(str(tmp_path / f"{label}.wav"), np.zeros(RATE, dtype=np.float32), RATE)
     stims = [item for label in "abc"[:count] for item in ("--stim", f"{label}={tmp_path / f'{label}.wav'}")]
-    return listen_ab.parse_args([mode, "--tape", "vaccin", *stims, "--ledger", str(tmp_path / "v.jsonl"), *extra])
+    return listen_ab.parse_args([mode, "--tape", "vaccin", *stims, "--ledger", str(tmp_path / "v.jsonl"), *PLAYBACK, *extra])
 
 
 @pytest.mark.parametrize(
@@ -133,11 +135,20 @@ def _args(tmp_path, *extra, mode="abx", count=2):
         ("abx", 2, ["--trials", "-3"], "--trials must be at least 16 for abx"),
         ("blend", 2, ["--trials", "0"], "--trials must be at least 1 for blend"),
         ("pair", 2, ["--repeats", "0"], "--repeats must be at least 1"),
+        ("abx", 2, ["--device", " "], "--device must name the playback device"),
+        ("abx", 2, ["--volume", ""], "--volume must give the volume setting"),
+        ("abx", 2, ["--level-dbfs", "-10"], "--level-dbfs must lie in -40..-14"),
+        ("abx", 2, ["--catch", "-1"], "--catch must be >= 0"),
+        ("abx", 2, ["--familiar", "-1"], "--familiar must be >= 0"),
+        ("pair", 2, ["--familiar", "2"], "pair has no right answer to practise on"),
+        ("abx", 2, ["--catch-raw", "PLACEHOLDER_RAW", "--stim", "PLACEHOLDER_DUP"], "stimulus labels must be distinct"),
     ],
 )
 def test_argument_problems(tmp_path, mode, count, extra, fragment):
     """Each misuse of the command line is named."""
-    extra = [f"z={tmp_path / 'a.wav'}" if item == "PLACEHOLDER" else item for item in extra]
+    replacements = {"PLACEHOLDER": f"z={tmp_path / 'a.wav'}", "PLACEHOLDER_RAW": str(tmp_path / "a.wav")}
+    replacements["PLACEHOLDER_DUP"] = f"catch_raw={tmp_path / 'a.wav'}"
+    extra = [replacements.get(item, item) for item in extra]
     assert fragment in "; ".join(listen_ab.argument_problems(_args(tmp_path, *extra, mode=mode, count=count)))
 
 
@@ -148,12 +159,14 @@ def test_duplicate_labels_are_a_problem(tmp_path):
 
 
 def test_build_mode_follows_the_mode_and_keeps_the_question(tmp_path):
-    """abx and blend take their default trial counts; pair takes every pair `--repeats` times plus one replicate."""
+    """abx, blend and threshold take their default trial counts; pair takes every pair `--repeats` times plus one replicate."""
     rng = np.random.default_rng(5)
     abx = listen_ab.build_mode(_args(tmp_path, "--question", "is X A?"), ["a", "b"], rng)
     blend = listen_ab.build_mode(_args(tmp_path, mode="blend"), ["a", "b"], rng)
     pair = listen_ab.build_mode(_args(tmp_path, "--repeats", "3", mode="pair", count=3), ["a", "b", "c"], rng)
+    threshold = listen_ab.build_mode(listen_ab.parse_args(["threshold", *PLAYBACK, "--level-dbfs", "-26"]), [], rng)
     assert (abx.total, abx.text, blend.total, pair.total) == (24, "is X A?", 30, 10)
+    assert isinstance(threshold, ThresholdMode) and (threshold.total, threshold.cap) == (60, -36.0)
 
 
 def test_the_pair_replicate_takes_the_anchor(tmp_path):
@@ -178,10 +191,10 @@ def _soundfile_mono(path, _work_dir, rate=listen_cuts.PICK_RATE):
 
 
 def _answering_serve(session, port, open_browser=True):
-    """The stand-in server: answers every trial correctly and hands back the block's summary."""
+    """The stand-in server: answers every presentation correctly and hands back the block's summary."""
     assert port == 9100
     assert not open_browser
-    for index in range(session.mode.total):
+    for index in range(len(session.protocol.order)):
         body = json.dumps({"trial": index, "choice": session.view["trial"]["key"]}).encode("utf-8")
         session.handle("POST", "/api/answer", {"Host": f"127.0.0.1:{port}", "Content-Type": "application/json"}, body)
     return session.view["summary"]
@@ -192,7 +205,7 @@ def _recorded_block(tmp_path, monkeypatch):
     first, second = _voice_file(tmp_path / "a.wav"), _voice_file(tmp_path / "b.wav")
     monkeypatch.setattr(listen_cuts, "decode_mono", _soundfile_mono)
     monkeypatch.setattr(listen_ab, "serve", _answering_serve)
-    argv = ["abx", "--tape", "vaccin", "--stim", f"a={first}", "--stim", f"b={second}", "--seconds", "8", "--trials", "16"]
+    argv = ["abx", "--tape", "vaccin", "--stim", f"a={first}", "--stim", f"b={second}", "--seconds", "8", "--trials", "16", *PLAYBACK]
     code = listen_ab.main([*argv, "--port", "9100", "--no-browser", "--ledger", str(tmp_path / "v.jsonl"), "--seed", "1"])
     return code, ledger.read(tmp_path / "v.jsonl")[0], first
 
@@ -206,23 +219,17 @@ def test_main_cuts_serves_and_records_a_block(tmp_path, monkeypatch, capsys):
     assert set(record["context"]["cut_sha256"]) == {"a", "b"}
 
 
-def test_main_records_the_cut_window_and_no_held_gain(tmp_path, monkeypatch):
-    """The recorded window spans the asked 8 s; two equal-level voices need no gain held at the clamp."""
-    _code, record, _first = _recorded_block(tmp_path, monkeypatch)
-    assert record["windows"][0][1] - record["windows"][0][0] == pytest.approx(8.0)
-    assert record["context"]["gain_clamped"] == []
-
-
 def test_main_refuses_bad_arguments(tmp_path):
     """A misuse stops before anything is cut or served."""
     first = _voice_file(tmp_path / "a.wav")
     with pytest.raises(SystemExit, match="abx takes 2 to 2"):
-        listen_ab.main(["abx", "--tape", "vaccin", "--stim", f"a={first}", "--ledger", str(tmp_path / "v.jsonl")])
+        listen_ab.main(["abx", "--tape", "vaccin", "--stim", f"a={first}", "--ledger", str(tmp_path / "v.jsonl"), *PLAYBACK])
 
 
 def _two_voices(tmp_path, *extra):
     first, second = _voice_file(tmp_path / "a.wav"), _voice_file(tmp_path / "b.wav")
-    return ["abx", "--tape", "vaccin", "--stim", f"a={first}", "--stim", f"b={second}", "--ledger", str(tmp_path / "v.jsonl"), *extra]
+    argv = ["abx", "--tape", "vaccin", "--stim", f"a={first}", "--stim", f"b={second}", "--ledger", str(tmp_path / "v.jsonl")]
+    return [*argv, *PLAYBACK, *extra]
 
 
 def test_main_refuses_a_cut_past_the_end_of_the_files(tmp_path, monkeypatch):
@@ -239,13 +246,7 @@ def test_main_refuses_a_label_the_ledger_gives_another_file(tmp_path, monkeypatc
     older.update(files=[ledger.file_entry("a", "elsewhere.wav"), ledger.file_entry("b", "b2.wav")], n_trials=None, n_correct=None)
     older.update(question={"type": "preference", "stimuli": ["a", "b"]}, answer={"order": [["a"], ["b"]]}, confidence=None)
     ledger.append({**older, "playback": {"device": None, "volume": None}}, tmp_path / "v.jsonl")
-    monkeypatch.setattr(listen_ab.cuts_mod, "prepare_cuts", lambda *_args: pytest.fail("cut before the label check"))
+    monkeypatch.setattr(listen_ab.listen_cuts, "prepare_cuts", lambda *_args, **_kwargs: pytest.fail("cut before the label check"))
     argv = _two_voices(tmp_path, "--start", "1")
     with pytest.raises(SystemExit, match="give it a label of its own"):
         listen_ab.main(argv)
-
-
-def test_clamped_note_names_the_held_gains():
-    """No clamped gain, no note; otherwise the labels and the bound."""
-    assert listen_ab.clamped_note([]) == ""
-    assert listen_ab.clamped_note(["b", "c"]) == " | gain held at +-20 dB for b, c"

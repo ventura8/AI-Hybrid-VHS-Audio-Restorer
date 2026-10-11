@@ -1,4 +1,4 @@
-"""The listening page's server logic: routes, one-time cut names, the request checks and the ledger write at the end."""
+"""The listening page's server logic: routes, one-time cut names, the request checks, the protocol and the write at the end."""
 
 import json
 from types import SimpleNamespace
@@ -54,9 +54,9 @@ def _state(session):
 
 
 def _answer_everything(session, pick):
-    """Answers every trial through the POST route (one pass, so a refused answer cannot loop); returns the last response."""
+    """Answers every presentation through the POST route (one pass, so a refused answer cannot loop); returns the last response."""
     response = None
-    for index in range(session.mode.total):
+    for index in range(len(session.protocol.order)):
         response = _post(session, {"trial": index, "choice": pick(session.view["trial"])})
     return response
 
@@ -72,11 +72,13 @@ def test_the_page_is_html(tmp_path):
     assert b"<title>Listening test</title>" in body
 
 
-def test_the_state_names_the_three_play_buttons_and_the_two_choices(tmp_path):
-    """The state names the trial's three play buttons and the two choices."""
+def test_the_state_names_the_three_play_buttons_and_the_choices(tmp_path):
+    """The state names the trial's three play buttons, A, B and "can't tell", and the test phase's progress."""
     state = _state(_session(tmp_path))
     assert [button["name"] for button in state["buttons"]] == ["A", "B", "X"]
-    assert state["choices"] == ["A", "B"]
+    assert state["choices"] == ["A", "B", ledger.CANT_TELL]
+    assert (state["phase"], state["number"], state["of"]) == ("test", 1, 4)
+    assert state["loops"] == {} and state["autoloop"] is None
 
 
 def test_the_state_names_the_trial(tmp_path):
@@ -151,18 +153,22 @@ def _abx_block(tmp_path):
 
 
 def test_an_abx_block_ends_with_its_summary(tmp_path):
-    """Four right answers: the last response is the summary."""
+    """Four right answers: the last response is the summary, with the block's power and its catch trials."""
     block = _abx_block(tmp_path)
-    assert block.status == 200
-    assert json.loads(block.body) == {"done": True, "summary": block.session.mode.summary()}
+    reply = json.loads(block.body)
+    expected = f"{block.session.mode.summary()} | power 0.00 at a true 75% hit rate over 4 decided trials | no catch trials"
+    assert (block.status, reply) == (200, {"done": True, "summary": expected})
 
 
 def test_an_abx_block_ends_in_the_ledger(tmp_path):
-    """Four right answers: the ledger holds one valid abx record with all four right."""
+    """Four right answers: the ledger holds one valid abx record with all four right, its power and its (empty) catch record."""
     records = _abx_block(tmp_path).records
     assert [record["id"] for record in records] == ["2026-10-09-test-1"]
     assert records[0]["n_correct"] == 4
     assert records[0]["question"] == {"type": "abx", "stimuli": ["a", "b"], "blind": True, "text": ""}
+    context = records[0]["context"]
+    observed = (context["power"]["critical_correct"], context["catch"], context["block_flags"])
+    assert observed == (None, {"trials": [], "caught": 0, "missed": 0}, [])
 
 
 def test_after_reply_closes_the_block_only_when_finished(tmp_path):
