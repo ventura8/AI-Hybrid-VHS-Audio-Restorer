@@ -154,6 +154,14 @@ The engine supports 10 execution modes configured in `config.yaml`:
     C3 listening session. Round C4 on the speech tapes (2026-10-11): plateau
     at the defaults; `detected` rendered the same audio as `always`, and
     `dehum --freq 0` won no tape.
+  - Noise-print mute guard (2026-10-12, `cathar_noiseprint_mute_guard`,
+    off): keeps digital mutes out of the print's pick
+    (`modules/noiseprint_guard.py`). On the 7 IA clips that picked one it
+    added a median 0.42 dB of removal and cost lion-king-dodge 3.4 dB at
+    8-16 kHz. cathar's own estimate without a print also reads the mute, so
+    dropping the print alone changes nothing. Off keeps HEAD bb5fa2a's
+    command lines (`tests/unit/test_cathar_mute_guard.py`); it waits for a
+    blind listening session.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the
