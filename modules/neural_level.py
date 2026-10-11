@@ -4,8 +4,8 @@ The separator peak-normalises what it is given (`WHOLE_FILE_PEAK`, 0.9, in
 `modules/denoise_chunking.py`; a chunked run applies the same rule at the join) and writes
 the denoised audio at that scale. On a hot or declipped source the programme therefore leaves
 the neural stage several decibels under where it entered: on the diagnosis's hunt
-(2026-10-11) the loud-frame level fell 3 dB or more on 10 of 200 clips and 6 dB or more on 5
-(fourstarrevue: declip peak 3.08, neural peak 0.90, -10.5 dB; fun-song -9.95 dB). Every
+(2026-10-11) the loud-frame level fell 3 dB or more on 11 of 235 clips and 6 dB or more on 5
+(fourstarrevue: declip peak 3.08, neural peak 0.90, -10.7 dB; fun-song -10.1 dB). Every
 absolute threshold after it then reads the wrong level: the polish expander's knee (the
 scanner's noise floor +8 dB, in the source's terms) and the pause floor keeper's target, whose
 fill landed +4.4 to +8.9 dB over the source's own pauses on those two clips.

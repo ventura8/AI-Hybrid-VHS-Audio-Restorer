@@ -611,11 +611,16 @@ cathar_dereverb_strength: 2.0
 #     floor under the programme the neural stage left within min_residual_db (6.0) of
 #     the source's, on the 3-16 kHz band median or the 3-4.8 kHz energy. CPU replay on
 #     the diagnosis's work folders: the gate opens on 47 of 235 hunt clips (10 on the
-#     band median alone) and on none of the Tata excerpts or music clips; on the
-#     prototype's 10 it renders the prototype's numbers exactly (floor under the
-#     programme -15.7 dB, loud-frame 8-16 kHz -3.5 dB, musical noise lkr 0.39). Ungated
-#     it ate music's highs. false (Default): every output keeps its bytes; a GPU
-#     render and a listening session judge it.
+#     band median alone) and on none of the Tata excerpts or music clips. Followed by
+#     the prototype's per-frame shelved pause fill it renders the prototype's numbers
+#     exactly (its 10 clips, 9 of which this gate opens on: floor under the programme
+#     -15.7 dB, loud-frame 8-16 kHz -3.5 dB, musical noise lkr 0.39). Followed by
+#     today's pause floor it makes the pauses worse, because the floor refills what
+#     the suppressor lowered with the source's hiss: on the 48 clips the gate opens on
+#     the pause hiss rose on 19 of the 27 with pauses, by 29-81 dB on 7, and the floor
+#     under the programme rose on 6, by up to 19 dB. Ungated it ate music's highs.
+#     false (Default): every output keeps its bytes; a GPU render with the per-frame
+#     pause fill and a listening session judge it.
 #
 # apl_neural_level_restore (auto_pure_linear only):
 #   - The separator peak-normalises to 0.9, so a hot or declipped tape leaves the

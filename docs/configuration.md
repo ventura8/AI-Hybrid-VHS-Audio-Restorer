@@ -481,7 +481,9 @@ programme up to 10.7 dB across the stage on a hot or declipped tape.
   alone. The intermediates are float, so a restored peak over full scale
   reaches the mux's limiter unclipped.
 - `linear_air_gate` (`none`, or `hiss_dominated`): `hiss_dominated` skips
-  the +1 dB air shelf on a tape the hiss gate opens on.
+  the +1 dB air shelf on a tape the hiss gate opens on. With the shelf
+  switched off (`enable_linear_air` false or `linear_air_gain_db` 0) there
+  is nothing to skip, and the gate reads nothing.
 
 CPU replay on the diagnosis's work folders (the stage WAVs it kept, its own
 measurement code, no GPU and no new restoration), against the source:
@@ -500,18 +502,25 @@ measurement code, no GPU and no new restoration), against the source:
 - Suppressor: its output is bit-identical to the prototype's on all 13
   clips, and the chain (suppressor, the shipped polish, the prototype's
   shelved fill) reproduces the prototype's numbers on all 61 clips
-  replayed. On the prototype's 10: the floor under the programme -15.7 dB
-  (band median), `residual_noise_db` -5.3, loud-frame 8-16 kHz -3.5 dB,
-  musical noise (lkr) 0.39.
+  replayed. On the prototype's 10 (the gate opens on 9 of them;
+  commercials-qtq reads a 3.3 dB gap on the pre-conditioned audio, 2.7 dB on
+  the extracted source): the floor under the programme -15.7 dB (band
+  median), `residual_noise_db` -5.3, loud-frame 8-16 kHz -3.5 dB, musical
+  noise (lkr) 0.39.
 - Against today's output at the same point (air shelf, shipped pause floor,
   before the mux), on the 48 clips the gate opens on (median, p10 to p90):
   the floor under the programme -8.9 dB on the band median (-13.8 to +1.4)
   and -8.3 dB at 3-4.8 kHz (-11.5 to -5.7); loud-frame 8-16 kHz -0.6 dB
   (-4.8 to +1.4); programme level -1.1 dB (-1.8 to -0.5); lkr +0.18 (0.0 to
   +0.3). The pauses get worse, +2.0 dB (-0.1 to +54.6): the pause floor's
-  absolute target now sees a deficit and refills it with source hiss. With
-  the prototype's per-frame shelved fill instead, the pauses go -18.0 dB and
-  lkr +0.28, so this stage is judged together with the pause floor.
+  absolute target now sees a deficit and refills it with source hiss. The
+  tails matter: the pause hiss rose on 19 of the 27 clips with true pauses,
+  by 29-81 dB on 7, which end between -16 and +0.3 dB against the source
+  (capture-a-1128202105 -85.7 to -4.3 dB), and the floor under the programme
+  rose on 6, by up to 19 dB (f-1-1980-08-british-gp). With the prototype's
+  per-frame shelved fill instead, the pauses go -18.0 dB and lkr +0.28, so
+  this stage is never switched on with today's pause floor: it is judged
+  together with the per-frame fill.
 - Air gate: -0.35 dB under the programme on the band median (-0.5 to -0.3),
   -0.04 dB at 3-4.8 kHz, -0.67 dB in the loud frames' 8-16 kHz; the pauses do
   not move.
@@ -524,7 +533,11 @@ measurement code, no GPU and no new restoration), against the source:
   `residual_noise_db` goes +6.37 to -0.32 dB, everton's pause 100-1000 Hz
   +6.39 to -0.30, pugwash's pause hiss -5.9 to -11.3. On fourstarrevue the
   pause floor then finds nothing to fill on its quiet cluster and the true
-  pauses stay at the neural stage's -55 dB.
+  pauses stay at the neural stage's -55 dB (their 100-1000 Hz body at
+  -0.7 dB, `gap_air_db` -9.7 dB, clear of the -25 dB dead-air flag). With
+  the expander's knee where it was set, musical noise rose on two hot clips
+  whose floor the neural stage had emptied: chuckle-toons lkr 0.84 to 2.10,
+  hogan-show 0.99 to 1.19; a listening question.
 
 All three act after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only them replays

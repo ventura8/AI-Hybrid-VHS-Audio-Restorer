@@ -22,9 +22,18 @@ halves of the gate:
 
 Ungated, the prototype (P2 on the 235-clip hunt) read like cathar on removal but ate music's
 highs (agatha's loud-frame 8-16 kHz -2.0 to -14.2 dB) and left musical noise (lkr +0.42 at the
-median, up to 1.0); on the 10 clips the band-median gate admits, it took the floor under the
-programme a median -15.7 dB further for -3.5 dB of loud-frame 8-16 kHz and lkr 0.39. Where
-the RoFormer emptied the floor the gate stays shut and the stage costs one reading.
+median, up to 1.0). On the 10 clips the prototype's band-median gate admitted (this gate opens
+on 9 of them), followed by the prototype's per-frame shelved pause fill, the floor under the
+programme went from -1.8 to -15.7 dB under the source's (medians) for loud-frame 8-16 kHz
+from -0.9 to -3.5 dB and lkr from 0.01 to 0.39. Where the RoFormer emptied the floor the gate
+stays shut and the stage costs one reading.
+
+Followed by today's pause floor keeper instead, the stage makes the pauses worse: the floor's
+absolute target sees a deficit once the suppressor has lowered the pauses' room tone and
+refills them with the source's hiss. On the 48 replayed clips the gate opens on, the pause
+hiss rose on 19 of the 27 with true pauses, by 29-81 dB on 7 (ending between -16 and +0.3 dB
+against the source), and the floor under the programme rose on 6 (by up to 19 dB). Judge this
+stage only with the per-frame pause fill.
 
 `linear_air_gate` 'hiss_dominated' skips `auto_pure_linear`'s air shelf on the same verdict:
 the +1 dB shelf at 7.5 kHz lifted that residual 0.3-0.9 dB under the programme.
@@ -46,6 +55,8 @@ from .config import (
     APL_SUPPRESS_DD_ALPHA,
     APL_SUPPRESS_GAIN_FLOOR_DB,
     APL_SUPPRESS_NOISE_BIAS,
+    ENABLE_LINEAR_AIR,
+    LINEAR_AIR_GAIN_DB,
     LINEAR_AIR_GATE,
 )
 from .utils import is_valid_audio, log_msg
@@ -155,11 +166,20 @@ def _record(restored_wav, verdict, suppressed, air):
     event_log.write(STAGE, restored_wav, {**record, "reading": verdict["reading"]})
 
 
+def _shelf_on():
+    """Whether the polish builds an air shelf at all: switched on at a gain above zero, the rule `filters` applies."""
+    return ENABLE_LINEAR_AIR and LINEAR_AIR_GAIN_DB > 0.0
+
+
 def _wanted(stages):
-    """`(suppress, air gate)`: the stages the caller opted in to whose keys are on (the air gate only with a shelf to skip)."""
+    """`(suppress, air gate)`: the stages the caller opted in to whose keys are on (the air gate only with a shelf to skip).
+
+    A shelf the caller asked for but the configuration switched off (`enable_linear_air` false
+    or `linear_air_gain_db` at 0) leaves the gate nothing to skip, so it reads nothing.
+    """
     suppress_wanted = stages.get("post_neural_suppress") and APL_POST_NEURAL_SUPPRESS
     air_gate_wanted = stages.get("air_gate") and stages.get("apply_air") and LINEAR_AIR_GATE == AIR_GATE_HISS
-    return bool(suppress_wanted), bool(air_gate_wanted)
+    return bool(suppress_wanted), bool(air_gate_wanted and _shelf_on())
 
 
 def _air_after(apply_air, gate_air, verdict):

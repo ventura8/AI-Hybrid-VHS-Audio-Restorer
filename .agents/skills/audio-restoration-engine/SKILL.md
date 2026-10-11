@@ -383,17 +383,27 @@ audio alignment, or FFmpeg multiplexing.
   shift). `modules/post_neural_suppress.py` opens the suppressor and the air
   gate on one reading; its output is bit-identical to the prototype P2's
   `p2_suppress.wav` on all 13 diagnosis clips, so the replay's 61-clip match
-  of P2's numbers is exact, not approximate. Two interactions found on
+  of P2's numbers is exact, not approximate (the gate opens on 9 of P2's
+  10; commercials-qtq reads a 3.3 dB gap). Two interactions found on
   replay: the shipped pause floor refills the pauses the suppressor empties
-  (pause hiss +2.0 dB at the median, +54.6 at p90, where its deficit rule
-  switched on), so judge the suppressor with the per-frame fill; and with
-  the level restored the floor's quiet-cluster rule can find nothing to
-  fill (fourstarrevue's true pauses stay at -55 dB). The suppressor reuses
-  `apl_suppress_*` and `apl_noiseprint_duration_s`, which the subtraction
-  stage reads before the cached point, so a loop tuning them misses the
-  stage cache; twins would replay it. On an 8 s synthetic fixture the probe
-  holds programme and the suppressor takes 2 dB, against 8.9 dB on tape:
-  test its effect on real stage WAVs, not on fixtures.
+  (pause hiss +2.0 dB at the median, up on 19 of 27 clips with pauses and
+  by 29-81 dB on 7, where its deficit rule switched on; the floor under
+  the programme up on 6, by up to 19 dB), so never switch the suppressor on
+  with today's pause floor: judge it with the per-frame fill. With the
+  level restored the floor's quiet-cluster rule can find nothing to fill
+  (fourstarrevue's true pauses stay at -55 dB) and the expander's knee
+  lifts musical noise on two hot clips (chuckle-toons lkr 0.84 to 2.10).
+  The adversarial review (2026-10-12) re-ran the replay through
+  `processing._denoise_and_polish_full_audio_step` itself, only the model
+  and the cleanup stood in: the defaults rendered the shipped bytes on all
+  248 work folders, and every number above came back exact. The
+  suppressor reuses `apl_suppress_*` and `apl_noiseprint_duration_s`, which
+  the subtraction stage reads before the cached point, so a loop tuning
+  them misses the stage cache; twins would replay it. On an 8 s synthetic
+  fixture the probe holds programme and the suppressor takes 2 dB, against
+  8.9 dB on tape: test its effect on real stage WAVs, not on fixtures. The
+  air gate reads nothing when `enable_linear_air` is off or
+  `linear_air_gain_db` is 0: there is no shelf to skip.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

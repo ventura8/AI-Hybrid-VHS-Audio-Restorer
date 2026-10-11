@@ -72,6 +72,15 @@ def test_the_air_gate_alone_keeps_the_audio_and_an_absent_shelf_stays_absent(tmp
     read.assert_not_called()
 
 
+@pytest.mark.parametrize("switch, value", [("ENABLE_LINEAR_AIR", False), ("LINEAR_AIR_GAIN_DB", 0.0)])
+def test_a_shelf_the_configuration_switched_off_leaves_the_air_gate_nothing_to_read(tmp_path, keys_on, monkeypatch, switch, value):
+    del keys_on
+    monkeypatch.setattr(post_neural_suppress, switch, value)
+    result, read, _run = _apply(tmp_path, OPEN, apply_air=True, air_gate=True)
+    assert result == (tmp_path / "restored.wav", True)
+    read.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "reading, why",
     [

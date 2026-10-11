@@ -634,13 +634,17 @@ _BOOL_CONFIG_FIELDS = (
     # The hiss the RoFormer passes (diagnosis of 2026-10-11, modules/post_neural_suppress.py): the
     # mode's MMSE-LSA suppressor after the neural stage, gated per file on a hiss-dominated source
     # whose floor the neural stage left within apl_post_neural_suppress_min_residual_db. On the 10
-    # hunt clips the prototype's gate admitted it took the floor under the programme a median
-    # -15.7 dB further (-1.8 to -15.7) for -3.5 dB of loud-frame 8-16 kHz and musical noise at lkr
-    # 0.39 (up to 1.28); ungated it ate music's highs. Off: every output keeps its bytes until a
-    # GPU render and a listening session judge it.
+    # hunt clips the prototype's gate admitted (this gate opens on 9), followed by the prototype's
+    # per-frame shelved pause fill, the floor under the programme went from -1.8 to -15.7 dB under
+    # the source's (medians) for loud-frame 8-16 kHz from -0.9 to -3.5 dB and musical noise from lkr
+    # 0.01 to 0.39 (up to 1.28); ungated it ate music's highs. Followed by today's pause floor it
+    # makes the pauses worse: the floor refills what the suppressor lowered with the source's hiss
+    # (CPU replay, the 48 clips the gate opens on: pause hiss up on 19 of 27, by 29-81 dB on 7; the
+    # floor under the programme up on 6, by up to 19 dB). Off: every output keeps its bytes until a
+    # GPU render with the per-frame pause fill and a listening session judge it.
     ("apl_post_neural_suppress", False),
     # The separator peak-normalises to 0.9, so on a hot or declipped source the programme leaves
-    # the neural stage up to 10.5 dB under its input (fourstarrevue; 10 of 200 hunt clips 3 dB or
+    # the neural stage up to 10.7 dB under its input (fourstarrevue; 11 of 235 hunt clips 3 dB or
     # more) and the expander's knee and the pause floor's target read the wrong level. On, the
     # neural output is scaled back by the loud-frame projection gain (modules/neural_level.py).
     # Off: every output keeps its bytes.

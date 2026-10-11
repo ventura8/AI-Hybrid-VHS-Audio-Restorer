@@ -103,7 +103,10 @@ The engine supports 10 execution modes configured in `config.yaml`:
     separator's peak normalisation (`modules/neural_level.py`);
     `linear_air_gate` `hiss_dominated` skips the air shelf where that gate
     opens. On CPU replay the gate opens on 47 of 235 hunt clips and on no
-    Tata or music clip (`docs/configuration.md`).
+    Tata or music clip (`docs/configuration.md`). The suppressor is never
+    switched on with today's pause floor, which refills what it lowers
+    with source hiss (pauses up 29-81 dB on 7 of 27 gated clips); it is
+    judged with the per-frame pause fill.
 - **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
   - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
     floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the
