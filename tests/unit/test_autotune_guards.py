@@ -150,36 +150,44 @@ def test_a_move_back_from_a_restated_shelf_is_never_refused():
 # ----------------------------------------------------------------------------- the learned median veto
 
 
-def _scores(candidate_cer):
+def _scores(candidate_cer, t1_cer=0.010):
     """The incumbent and one candidate with a better rank on two tapes; the candidate's CER on t2 is `candidate_cer`."""
     incumbent = {"m": 2.0, CER: 0.010}
-    candidate = {"t1": {"m": 1.0, CER: 0.010}, "t2": {"m": 1.0, CER: candidate_cer}}
+    candidate = {"t1": {"m": 1.0, CER: t1_cer}, "t2": {"m": 1.0, CER: candidate_cer}}
     return {"inc": {"t1": incumbent, "t2": incumbent}, "c1": candidate}
 
 
 VETOES = {CER: ag.reward.Veto("up", 0.012)}
+UNANIMOUS = "unanimous (too few clips)"
 
 
-def test_a_better_ranked_candidate_whose_learned_median_moved_past_its_veto_cannot_win():
-    """CER 0.010 -> 0.045 on one tape: under the hard gate (0.05) and better ranked, but 0.035 past a 0.012 veto."""
-    verdicts = at.judge(_scores(0.045), "inc", RANKING, VETOES)
+def test_a_better_ranked_candidate_whose_learned_median_moved_past_its_veto_on_both_tapes_cannot_win():
+    """CER 0.010 -> 0.045 and 0.030: under the hard gate (0.05) and better ranked, but worse on both tapes, past a 0.012 veto."""
+    verdicts = at.judge(_scores(0.045, t1_cer=0.030), "inc", RANKING, VETOES)
     assert not verdicts["c1"]["qualifies"]
-    assert verdicts["c1"]["vetoed"] == [f"t2 {CER} +0.035"]
+    assert verdicts["c1"]["vetoed"] == [f"{CER} worse on 2 of 2 clips (0 better), 2 past the limit; {UNANIMOUS}"]
     assert "vetoed" not in verdicts["inc"]
 
 
+def test_one_tape_past_the_veto_no_longer_vetoes_alone():
+    """0.010 -> 0.045 on t2 only: the family-wise rule needs every tape worse when two tapes cannot reach significance;
+    the any-tape rule it replaced (kept for the offline re-judge) vetoed it."""
+    assert at.judge(_scores(0.045), "inc", RANKING, VETOES)["c1"]["qualifies"]
+    assert ag.learned_vetoes(_scores(0.045)["c1"], _scores(0.045)["inc"], VETOES) == [f"t2 {CER} +0.035"]
+
+
 def test_a_move_inside_the_veto_and_a_v2_judge_leave_the_verdict_as_it_was():
-    """0.010 -> 0.020 stays within the veto; with no vetoes (a v2 grid) the 0.045 candidate wins as it always did."""
-    assert at.judge(_scores(0.020), "inc", RANKING, VETOES)["c1"]["qualifies"]
-    plain = at.judge(_scores(0.045), "inc", RANKING)["c1"]
+    """0.010 -> 0.020 on both tapes stays within the veto; with no vetoes (a v2 grid) the vetoed candidate wins as it always did."""
+    assert at.judge(_scores(0.020, t1_cer=0.020), "inc", RANKING, VETOES)["c1"]["qualifies"]
+    plain = at.judge(_scores(0.045, t1_cer=0.030), "inc", RANKING)["c1"]
     assert plain["qualifies"]
     assert "vetoed" not in plain
 
 
 def test_a_learned_reading_the_candidate_lost_vetoes_it():
-    """The incumbent read CER on t2 and the candidate did not: it cannot win on what was not measured."""
-    verdicts = at.judge(_scores(None), "inc", RANKING, VETOES)
-    assert verdicts["c1"]["vetoed"] == [f"t2 {CER} unread"]
+    """The incumbent read CER on both tapes and the candidate on neither: it cannot win on what was not measured."""
+    verdicts = at.judge(_scores(None, t1_cer=None), "inc", RANKING, VETOES)
+    assert verdicts["c1"]["vetoed"] == [f"{CER} worse on 2 of 2 clips (0 better), 2 past the limit; {UNANIMOUS}"]
     assert not verdicts["c1"]["qualifies"]
 
 
@@ -300,7 +308,7 @@ GUARD_LOG_LINES = (
     "audibility tie: `c_tie`",
     "verdict reversal: `c_air`",
     "r3-air-preference",
-    f'learned veto: `c_veto` {{"k": 2}} cannot win: t1 {CER} +0.49',
+    f'learned veto: `c_veto` {{"k": 2}} cannot win: {CER} worse on 1 of 1 clips (0 better), 1 past the limit; {UNANIMOUS}',
 )
 
 

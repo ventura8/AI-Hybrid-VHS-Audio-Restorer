@@ -23,16 +23,23 @@ applies; a v1 or v2 grid has none of them (`NO_GUARDS`) and its rounds are judge
   pair the check cannot compare (other sample rates) reads audible, so it is scored. The check
   decodes whole files (about 1.3 GB per hour of stereo per copy) while no scorer runs; on
   synthetic stereo it took about 1 s per 2 min of audio.
-- `vetoes:` the learned median veto (principle 7). A candidate whose median of a listed learned
-  judge moved the `worse` way from the incumbent's, on some tape, by more than
-  `floor_multiple` x that reading's benign floor, or lost a reading the incumbent has, cannot
-  win: `reward.gate_constraints(learned_veto=...)` must read "ok" beside `_beats`. The floors
+- `vetoes:` the learned median veto (principle 7), family-wise since 2026-10-11
+  (`autotune_judging.familywise_vetoes`). Per listed learned judge, the candidate's medians
+  against the incumbent's are counted per tape as worse or better when they pass the scorer's
+  jitter floor; a one-sided sign test across the tapes, Holm-corrected over the veto readings,
+  must find worse outnumbering better, and at least a third of the tapes must have moved the
+  `worse` way by more than `floor_multiple` x that reading's benign floor (or lost a reading
+  the incumbent has). On fewer tapes than the test can resolve (seven) every tape must move
+  the worse way. Such a candidate cannot win: `reward.gate_constraints(learned_veto=...)` must
+  read "ok" beside `_beats`. Until then one tape past the limit vetoed (`learned_vetoes`, kept
+  for the offline re-judge). The floors
   come from a `scripts/reward_noise_floor.py` report of the shipped outputs (`--noise-floors`,
   default `DEFAULT_NOISE_FLOORS`); a veto with no floor, or a floor of 0, stops the loop before
   the first render, so a v3 grid never runs unguarded. The refusal says which: a missing floor
   points to `--families` (the report reads only the families it was run with, dsp by
   default), a zero floor to `--repeats 2` or more or `resample_roundtrip`
-  (`reward.NO_FLOOR`, `reward.NO_BENIGN_FLOOR`).
+  (`reward.NO_FLOOR`, `reward.NO_BENIGN_FLOOR`). A hiss reading's veto limit takes its jitter
+  floor instead (`autotune_judging.veto_floors`, the user's rule of 2026-10-11).
 
 Each refused, tied or vetoed candidate gets a cell in the round's table and a line in
 `log.md` with the reason: the boundary and its ledger verdict, or the tape, the reading and
@@ -48,6 +55,7 @@ import numpy as np
 import scipy.optimize
 import scipy.signal
 
+from scripts import autotune_judging as judging
 from scripts import degradations_v3
 from scripts.restoration_quality import audio_io, auditory, reward
 
@@ -282,7 +290,11 @@ def _move(flat, base, reading):
 
 
 def learned_vetoes(tape_scores, incumbent_scores, vetoes):
-    """`["<slug> <reading> <move>", ...]` for every tape and learned reading whose median moved past its veto."""
+    """`["<slug> <reading> <move>", ...]` for every tape and learned reading whose median moved past its veto.
+
+    The any-tape rule the loop judged by until 2026-10-11, kept for the offline re-judge
+    (`scripts/rejudge_autotune.py`); the loop now vetoes family-wise (`mark_vetoes`).
+    """
     found = []
     for slug, flat in tape_scores.items():
         base = incumbent_scores.get(slug) or {}
@@ -290,9 +302,12 @@ def learned_vetoes(tape_scores, incumbent_scores, vetoes):
     return found
 
 
-def mark_vetoes(verdict, tape_scores, incumbent_scores, vetoes):
-    """Adds `vetoed` to a candidate's verdict when a learned judge vetoes it on some tape."""
-    vetoed = learned_vetoes(tape_scores, incumbent_scores, vetoes or {})
+def mark_vetoes(verdict, tape_scores, incumbent_scores, vetoes, floors=None):
+    """Adds `vetoed` to a candidate's verdict when the family-wise rule trips a learned judge across the tapes.
+
+    `floors` (`autotune_judging.Floors`) gives the scorer's jitter floor each tape's move must pass to count.
+    """
+    vetoed = judging.familywise_vetoes(tape_scores, incumbent_scores, vetoes or {}, floors or judging.NO_FLOORS)
     if vetoed:
         verdict["vetoed"] = vetoed
 
