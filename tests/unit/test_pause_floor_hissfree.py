@@ -134,6 +134,41 @@ def test_the_frame_target_leaves_a_floor_the_restoration_kept(tmp_path):
     assert _keep(reference, restored, tmp_path / "cluster") != restored
 
 
+def _two_floor_voice(seconds=8.0, switch_s=4.8, seed=7):
+    """The tape voice's bursts over a hiss floor that drops 8 dB at `switch_s`: two pause levels in one quiet cluster."""
+    rng = np.random.default_rng(seed)
+    count = int(seconds * RATE)
+    t = np.arange(count) / RATE
+    ramp = np.hanning(int(0.02 * RATE))
+    burst = np.convolve(((t % 1.0) < 0.5).astype(np.float64), ramp / ramp.sum(), mode="same")
+    floor = np.where(t < switch_s, 3e-3, 3e-3 * 10.0 ** (-8.0 / 20.0))
+    mono = 0.1 * np.sin(2 * np.pi * 220.0 * t) * burst + floor * rng.standard_normal(count)
+    return np.repeat(mono[:, None], 2, axis=1).astype(np.float32)
+
+
+def _fill_under_own_level_db(added, source, mask):
+    """The fill's level in the masked pauses, in dB against the source's own level there."""
+    return _quiet_db(added, mask) - _quiet_db(source, mask)
+
+
+def test_the_frame_target_fills_each_pause_under_its_own_level(tmp_path):
+    """Two pause floors 8 dB apart, both inside the quiet cluster (defect 1 of the hiss diagnosis).
+
+    'cluster' aims every pause at the cluster's median, the louder floor, so the quieter pauses
+    are filled only about 4 dB under themselves; 'frame' fills each 12 dB under its own level.
+    """
+    source = _two_floor_voice()
+    reference, restored = _pair(tmp_path, _gated(source), source)
+    pauses = _pause_mask(source)
+    at = np.arange(len(pauses)) / RATE
+    loud_floor, quiet_floor = pauses & (at < 4.6), pauses & (at > 5.0)
+    frame = _added(_keep(reference, restored, tmp_path / "frame", target="frame"), restored)
+    cluster = _added(_keep(reference, restored, tmp_path / "cluster"), restored)
+    assert abs(_fill_under_own_level_db(frame, source, loud_floor) + 12.0) < 1.5
+    assert abs(_fill_under_own_level_db(frame, source, quiet_floor) + 12.0) < 1.5
+    assert _fill_under_own_level_db(cluster, source, quiet_floor) > _fill_under_own_level_db(frame, source, quiet_floor) + 5.0
+
+
 def test_the_shaped_fill_keeps_the_body_where_a_hiss_burst_stands_in_the_pause(tmp_path):
     """The restored pauses hold the source's hiss above 3 kHz and nothing under it.
 
