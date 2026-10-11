@@ -86,6 +86,20 @@ def test_a_vr_model_or_no_model_has_no_config(tmp_path, model):
     assert denoise_model.config_path(model, _store(tmp_path)) is None
 
 
+@pytest.mark.parametrize(
+    ("model", "expected"), [(ROFORMER, True), ("X.CKPT", True), (UVR_LITE, False), ("m.onnx", False), (None, False), ("", False)]
+)
+def test_an_mdxc_checkpoint_is_named_by_its_ckpt_suffix(model, expected):
+    assert denoise_model.is_mdxc_checkpoint(model) is expected
+
+
+def test_a_config_is_missing_only_for_a_checkpoint_whose_yaml_is_not_in_the_store(tmp_path):
+    store = _store(tmp_path)
+    assert denoise_model.config_missing(ROFORMER, store) is False
+    assert denoise_model.config_missing("denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt", store) is True
+    assert denoise_model.config_missing(UVR_LITE, store) is False
+
+
 def test_the_shipped_yaml_parses_despite_its_python_tuple_tag(tmp_path):
     data = denoise_model.model_config(ROFORMER, _store(tmp_path))
     assert data["model"]["multi_stft_resolutions_window_sizes"] == [4096, 2048, 1024]

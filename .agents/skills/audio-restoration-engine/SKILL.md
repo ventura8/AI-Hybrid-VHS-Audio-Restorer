@@ -127,6 +127,11 @@ audio alignment, or FFmpeg multiplexing.
      either side, take no anchor, and are written at the whole file's input
      gain (`whole_file_input_gain`). The VR models keep `PATCH_FRAMES`, the
      anchor and the one-stride context.
+   - `_grid_after_fetch` / `processing._model_fetcher`: the yaml reaches the
+     store only with the model's first load (the installers do not provision
+     the RoFormer), so a `.ckpt` model without one is fetched
+     (`download_model_files`, no load) before its chunks are cut; still
+     without a usable yaml it runs on the VR grid with a WARNING.
 1. **`modules/mastering.py`**:
    - `_resolve_loudnorm_args` / `_resolve_single_track_loudnorm_args`:
      two-pass loudnorm to -16 LUFS, -1 dBTP and `loudnorm_target_lra`,
@@ -289,9 +294,12 @@ audio alignment, or FFmpeg multiplexing.
   RoFormer's chunk grid (`grid_for`) reproduced the whole-file render on
   every body sample and at -158 dB at the seams in a CPU replica of its
   overlap-add with a stand-in mask (7.2-minute tape, two 300 s chunks; the
-  VR grid drifted to -47 dB); the real network has not been run chunked yet.
-  The chunk length still rests on UVR's measured 32 GB/h: the MDXC
-  separator's memory per hour is unmeasured.
+  VR grid drifted to -47 dB), and again with audio-separator 0.47.0's own
+  `MDXCSeparator.separate` / `demix` and a stub network driven through
+  `_run_denoise_separator` (synthetic 150 s, three 60 s chunks: body equal,
+  seams -161 dB; VR grid -23 to -33 dB); the real network has not been run
+  chunked yet. The chunk length still rests on UVR's measured 32 GB/h: the
+  MDXC separator's memory per hour is unmeasured.
 - **Video Stream Copy**: Never re-encode the video stream (`-c:v copy`) during
   audio extraction or remuxing.
 - **cathar bit-identity**: after any change under `modules/`, restore the five

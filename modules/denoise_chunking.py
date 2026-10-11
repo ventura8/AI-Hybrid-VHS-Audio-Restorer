@@ -143,9 +143,32 @@ def grid_for(model_name=None):
     """
     window = _denoise_model.mdxc_window(model_name) if model_name else None
     if window is None:
+        _warn_unmatched(model_name)
         return vr_grid()
     size, step = window
     return Grid(step, -(-size // step) * step, anchored=False, peak_matched=True, tag=f"_mdxc{step}")
+
+
+def _warn_unmatched(model_name):
+    """Says so when an MDXC checkpoint has no usable yaml: its chunks then take the VR grid, which its windows miss."""
+    if _denoise_model.is_mdxc_checkpoint(model_name):
+        log_msg(
+            f"    [Warning] No usable config for {model_name} in the model store: its chunks take the VR grid,"
+            " so the join will not match its whole-file output.",
+            level="WARNING",
+        )
+
+
+def _grid_after_fetch(model_name, fetch_model=None):
+    """The model's grid, its files fetched first when its yaml is not in the store yet (a fresh store before the first load).
+
+    `fetch_model()` downloads the model's files the way its first load would; without it, or
+    when the fetch leaves no yaml, the grid falls back to the VR one (`_warn_unmatched`).
+    """
+    if fetch_model is not None and _denoise_model.config_missing(model_name):
+        log_msg(f"    [Neural] Fetching {model_name} before the chunks are cut: its chunk grid is read from its config.")
+        fetch_model()
+    return grid_for(model_name)
 
 
 # Where a container's memory limit is published (cgroup v2, then v1). psutil reports the
@@ -539,18 +562,19 @@ def joined_name(input_wav, chunk_path, chunk_output):
     return Path(input_wav).stem + Path(chunk_output).name[suffix_at:]
 
 
-def run(input_wav, output_dir, denoise_chunk, chunk_seconds=None, model_name=None):
+def run(input_wav, output_dir, denoise_chunk, chunk_seconds=None, model_name=None, *, fetch_model=None):
     """Denoises a long file in overlapping chunks; returns the joined clean track.
 
     `denoise_chunk(chunk_wav, out_dir)` runs the separator on one chunk into `out_dir` and
     returns its clean stem. `model_name` picks the chunk grid (`grid_for`) and the clean
-    stem a previous run left (`denoise_model.clean_stem`). Every chunk output is kept until
-    the join is published, so an interrupted run resumes from the chunks it finished. The
-    chunk directory is named after the plan and the grid, so a changed setting never reuses
-    chunks cut to another grid.
+    stem a previous run left (`denoise_model.clean_stem`); `fetch_model()`, when given,
+    downloads an MDXC model's files before the chunks are cut if its yaml is not in the store
+    yet (`_grid_after_fetch`). Every chunk output is kept until the join is published, so an
+    interrupted run resumes from the chunks it finished. The chunk directory is named after
+    the plan and the grid, so a changed setting never reuses chunks cut to another grid.
     """
     input_wav, output_dir = Path(input_wav), Path(output_dir)
-    grid = grid_for(model_name)
+    grid = _grid_after_fetch(model_name, fetch_model)
     with sf.SoundFile(str(input_wav)) as source:
         ranges = plan(source.frames, source.samplerate, chunk_seconds, stride=grid.stride)
     chunk_dir = output_dir / f"chunks_{len(ranges)}x{ranges[0][1]}{grid.tag}"

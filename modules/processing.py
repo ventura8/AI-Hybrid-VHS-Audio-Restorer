@@ -544,6 +544,11 @@ def _denoise_one_chunk(model_name):
     return denoise_chunk
 
 
+def _model_fetcher(model_name, output_dir):
+    """Downloads a model's files without loading it, as its first load would: a fresh store gets the yaml the chunk grid reads."""
+    return lambda: _build_separator(output_dir).download_model_files(model_name)
+
+
 def _run_denoise_separator(
     input_wav, denoised_output_dir, selected_label, warning_message, error_message, fallback_on_failure=True, denoise_model=None
 ):
@@ -556,7 +561,10 @@ def _run_denoise_separator(
     try:
         model_name = _resolve_override(denoise_model, DENOISE_MODEL)
         if _denoise_chunking.duration_needs_chunking(input_wav):
-            result = _denoise_chunking.run(input_wav, denoised_output_dir, _denoise_one_chunk(model_name), model_name=model_name)
+            fetch = _model_fetcher(model_name, denoised_output_dir)
+            result = _denoise_chunking.run(
+                input_wav, denoised_output_dir, _denoise_one_chunk(model_name), model_name=model_name, fetch_model=fetch
+            )
         else:
             result = _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, fallback_on_failure)
         log_msg(f"    {selected_label}: {result.name}")

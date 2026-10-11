@@ -52,6 +52,10 @@ PYTHON_TUPLE_TAG = "!!python/tuple"
 DEFAULT_MDXC_OVERLAP = 8
 # Keys only a RoFormer's model section carries (the library's own structural markers).
 ROFORMER_MARKERS = ("num_bands", "freqs_per_bands")
+# audio-separator's MDXC checkpoints (the RoFormers, MDX23C) end in '.ckpt'; its VR models end
+# in '.pth' and its MDX models in '.onnx'. The yaml of an MDXC model reaches the store only
+# when the separator first loads the model, so a fresh store has none.
+MDXC_CHECKPOINT_SUFFIX = ".ckpt"
 
 
 def model_store(environ=None):
@@ -67,6 +71,16 @@ def config_path(model_name, store=None):
     stem = Path(str(model_name or "")).stem
     candidates = [store / f"{stem}{suffix}" for suffix in CONFIG_SUFFIXES]
     return next(filter(Path.is_file, candidates), None) if stem else None
+
+
+def is_mdxc_checkpoint(model_name):
+    """Whether the model is named as an MDXC checkpoint ('.ckpt'), whose chunk grid comes from its yaml."""
+    return str(model_name or "").lower().endswith(MDXC_CHECKPOINT_SUFFIX)
+
+
+def config_missing(model_name, store=None):
+    """Whether an MDXC checkpoint has no yaml in the store yet: the separator fetches it on the model's first load."""
+    return is_mdxc_checkpoint(model_name) and config_path(model_name, store) is None
 
 
 @functools.lru_cache(maxsize=32)

@@ -113,6 +113,11 @@ class _FakeMdxc:
             wave = _normalize(_normalize(wave, self.threshold), self.threshold)
             sf.write(str(self.output_dir / f"{Path(path).stem}_({stem})_{MODEL_STEM}.wav"), wave.T, rate, subtype="FLOAT")
 
+    def download_model_files(self, model):
+        """Separator.download_model_files: the checkpoint's yaml lands in the store, as on a first load."""
+        self.calls.append(f"download {model}")
+        (denoise_model.model_store() / f"{Path(model).stem}_config.yaml").write_text(SMALL_YAML, encoding="utf-8")
+
 
 class _FakeVr(_FakeMdxc):
     """A VR denoiser in the same shape: three quarters of the input as '(No Noise)', the rest as '(Noise)'."""
@@ -163,6 +168,23 @@ def test_grid_for_the_shipped_roformer_at_44_1_khz(_small_store):
 def test_a_vr_model_or_none_keeps_the_patch_grid_and_its_anchor(model):
     assert chunking.grid_for(model) == chunking.Grid(OFF_GRID_STRIDE, OFF_GRID_STRIDE)
     assert chunking.grid_for(model).tag == ""
+
+
+def test_a_checkpoint_the_fetch_left_without_a_config_takes_the_vr_grid_and_says_so(_small_store):
+    (_small_store / f"{Path(MODEL).stem}_config.yaml").unlink()
+    fetched = []
+    with patch("modules.denoise_chunking.log_msg") as log:
+        assert chunking._grid_after_fetch(MODEL, lambda: fetched.append(MODEL)) == chunking.vr_grid()
+    assert fetched == [MODEL]
+    assert "No usable config" in log.call_args.args[0]
+    assert log.call_args.kwargs == {"level": "WARNING"}
+
+
+@pytest.mark.parametrize("model", [MODEL, UVR_LITE, None])
+def test_nothing_is_fetched_or_warned_when_the_config_is_there_or_none_is_due(model):
+    with patch("modules.denoise_chunking.log_msg") as log:
+        chunking._grid_after_fetch(model, lambda: pytest.fail("fetched"))
+    assert log.call_count == 0
 
 
 def test_the_plan_of_a_three_hour_capture_lands_on_the_roformer_step():
@@ -229,6 +251,50 @@ def test_cut_to_the_vr_grid_the_same_model_drifts_from_the_whole_file(tmp_path):
     source = _wav(tmp_path / "in.wav", 30, peak=1.3)
     whole, joined, _calls = _whole_and_chunked(tmp_path, source, MODEL, chunk_model=None)
     assert np.abs(_read(joined) - _read(whole)).max() > 1e-3
+
+
+def _through_the_runner(tmp_path, calls):
+    """(chunked join from processing's own runner, as the APL step calls it; the whole-file clean stem) of a hot 30 s file."""
+    source = _wav(tmp_path / "in.wav", 30, peak=1.3)
+    build, load = _separators(_FakeMdxc, calls)
+    with build, load, patch("modules.denoise_chunking.NEURAL_CHUNK_SECONDS", CHUNK_SECONDS):
+        joined = processing._run_denoise_separator(source, tmp_path / "chunked", "Selected", "warn", "err", False, MODEL)
+        whole = processing._denoise_whole(source, tmp_path / "whole", MODEL, "warn", False)
+    return joined, whole
+
+
+def _assert_cut_to_the_mdxc_grid(tmp_path, joined, whole):
+    ranges = chunking.plan(30 * RATE, RATE, CHUNK_SECONDS, stride=STEP)
+    assert (tmp_path / "chunked" / f"chunks_{len(ranges)}x{ranges[0][1]}_mdxc{STEP}").is_dir()
+    assert joined.name == whole.name == f"in_(dry)_{MODEL_STEM}.wav"
+    np.testing.assert_allclose(_read(joined), _read(whole), rtol=0, atol=1e-6)
+
+
+def test_the_denoise_runner_hands_its_model_to_the_chunked_pass(tmp_path):
+    """A track over the chunk length is cut to the model's grid; a store holding its yaml fetches nothing."""
+    calls = []
+    joined, whole = _through_the_runner(tmp_path, calls)
+    _assert_cut_to_the_mdxc_grid(tmp_path, joined, whole)
+    assert not [call for call in calls if call.startswith("download")]
+
+
+def test_a_fresh_store_fetches_the_model_before_its_chunks_are_cut(tmp_path, _small_store):
+    """The yaml arrives with the model's first load; without the fetch a first long tape would be cut to the VR grid."""
+    config = _small_store / f"{Path(MODEL).stem}_config.yaml"
+    config.unlink()
+    calls = []
+    joined, whole = _through_the_runner(tmp_path, calls)
+    assert calls[0] == f"download {MODEL}"
+    assert config.is_file()
+    _assert_cut_to_the_mdxc_grid(tmp_path, joined, whole)
+
+
+def test_the_fetcher_downloads_the_model_files_without_loading_the_model(tmp_path):
+    with patch("modules.processing._build_separator") as build:
+        processing._model_fetcher(MODEL, tmp_path)()
+    build.assert_called_once_with(tmp_path)
+    build.return_value.download_model_files.assert_called_once_with(MODEL)
+    assert build.return_value.load_model.call_count == 0
 
 
 def test_the_chunk_directory_names_the_grid(tmp_path):

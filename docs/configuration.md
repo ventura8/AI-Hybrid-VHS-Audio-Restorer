@@ -677,6 +677,13 @@ UVR (`apl_music_neural_model` is empty), were not affected.
   for bit. The half-scale retry of a chunk whose output reached full scale
   stays as the VR path has it; for the RoFormer it changes the level the
   network sees, so such a chunk is not the whole file's to the bit.
+- The grid is read from the yaml, which the separator downloads with the
+  checkpoint on the model's first load; the installers do not provision it.
+  A fresh model store whose first long speech tape goes straight to the
+  chunked path would have been cut to the VR grid, so the chunked pass first
+  fetches the model's files (`download_model_files`, without loading the
+  model) when a `.ckpt` model's yaml is missing. A `.ckpt` model left without
+  a usable yaml still runs, on the VR grid, with a WARNING in the log.
 
 Checked on the CPU, without the network: a replica of the separator's
 RoFormer overlap-add, with a level- and framing-dependent mask standing in
@@ -684,5 +691,10 @@ for the network, over a 7.2-minute speech tape cut into two 300 s chunks. The
 join equalled the whole-file render on every body sample and stayed within
 -158 dB of the signal at the seams (crossfade rounding), at the tape's own
 level and with its peak pushed to 1.07. The same replica cut to the VR grid
-drifted to -47 dB (-30 dB with the hot input). The real network has not yet
-been run chunked against its whole-file render.
+drifted to -47 dB (-30 dB with the hot input). A second check ran the
+library's own code (audio-separator 0.47.0's `MDXCSeparator.separate` and
+`demix`, with a stub in place of the network) through the app's own denoise
+runner, on a synthetic 150 s stereo file cut into three 60 s chunks: every
+body sample equal to the whole-file render, the seams at -161 dB, at input
+peaks of 0.6 and 1.2; cut to the VR grid it drifted to -33 and -23 dB. The
+real network has not yet been run chunked against its whole-file render.
