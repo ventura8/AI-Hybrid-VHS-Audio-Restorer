@@ -358,3 +358,22 @@ blend continuum from the shipped restoration toward the raw tape (the
 `blend` mode of `listen_ab`), at a recorded device and volume. The percentage
 of raw tape at which the change is heard is the unit every later "audible"
 is judged in.
+
+## After Session 0: the rounds and the variation pre-check (2026-10-11)
+
+The tuning rounds ran anyway, as the user chose ("continue the plan as
+is"): every speech round (APL and cathar, rounds A1-A3 and C1-C4) ended at
+the shipped settings, and the music rounds moved shared polish keys by
+differences of -32 to -57 dB against what the user approved, far under
+the -17.6 dB control above. `scripts/variation_precheck.py` then asked
+whether a per-tape settings policy (the GRPO plan) could choose anything
+audible among the loops' candidates: on speech the shipped settings rank
+first on every tape; on music the per-clip oracle's gain equals what
+identical-sounding renders gain by chance. The only per-clip choice above
+the unheard control is APL's stem path on three music clips (-7.9, -9.4
+and -14.4 dB).
+
+Session 1 is prepared in `experiments/session1/README.md` (local): the
+blend threshold above, then one ABX of the shipped APL against the stem
+path on `m_wbbddanceswithwolves`. Not heard, no per-tape policy has
+anything to select, and the GRPO step stays parked.

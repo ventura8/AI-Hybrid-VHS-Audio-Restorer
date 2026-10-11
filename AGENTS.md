@@ -151,7 +151,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     tape it read as hum-free (`scanner`), or lets cathar detect it on every
     tape (`0`, `dehum --freq 0`). The defaults keep HEAD 549705a's command
     lines (`tests/unit/test_cathar_round_c4.py`); the other values go to the
-    C3 listening session.
+    C3 listening session. Round C4 on the speech tapes (2026-10-11): plateau
+    at the defaults; `detected` rendered the same audio as `always`, and
+    `dehum --freq 0` won no tape.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

@@ -992,6 +992,18 @@ the air reversal guard:
 - cathar round C3 (music profile, from that plateau): plateau after round 2,
   `cathar_music_beta` 0.02 -> 0.01; music repair off ranked well (9 of 12
   wins) and was vetoed both rounds on MERT distance.
+- cathar round C4 (speech tapes, from the shipped defaults, 2026-10-11,
+  `D:\ai_restore_work\autotune_v7`): plateau after round 1, the defaults
+  stay. `cathar_declip_mode` `detected` rendered byte-identical audio to
+  `always` on all four tapes; `cathar_dehum_freq` 0 (cathar's own
+  detection) won no tape. The round was resumed at its scoring step on the
+  new loop code: 30 candidates instead of 44 (the 14 music-only moves left
+  out by material, each byte-identical on every tape in the renders already
+  made), dsp scoring only, and no learned stage since nothing beat the
+  incumbent: about 1.6 h of scoring for 31 outputs on four full tapes.
+  Most candidates tie at one mean rank (15.36) because every reading sits
+  inside its dead zone around the accepted output; the stage-1 readings
+  equal the full-family ones of round v6 for the same audio.
 - The music plateaus differ from what the user approved by far less than
   Session 0's -15 dB control pair the user could not hear; none is adopted
   without a blind block.
