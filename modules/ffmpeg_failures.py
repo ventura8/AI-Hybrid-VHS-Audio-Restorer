@@ -9,13 +9,20 @@ these messages is raised at once. The messages are ffmpeg 9.0.1's for: an output
 stream, a -map matching nothing, an input that is missing or unreadable, a filter, encoder or
 option that does not exist, a filter option out of range. Anything else, an out-of-memory
 abort included, keeps the retry.
+
+An unreadable input is read from ffmpeg's "Error opening input" line, never from the bare
+"Invalid data found when processing input": ffmpeg 9.0.1 prints that phrase for every broken
+frame of a damaged MP2 capture ("Error submitting packet to decoder: Invalid data found when
+processing input", on a run that exits 0), so a long capture that then ran out of memory
+would have lost its retry. A memory message keeps the retry whatever else the tail holds
+("Cannot allocate memory"; "Not enough space", the Windows C runtime's text for ENOMEM).
 """
 
 DETERMINISTIC_MARKERS = (
     "does not contain any stream",
     "matches no streams",
     "no such file or directory",
-    "invalid data found when processing input",
+    "error opening input",
     "no such filter",
     "filter not found",
     "encoder not found",
@@ -24,6 +31,7 @@ DETERMINISTIC_MARKERS = (
     "option not found",
     "error applying option",
 )
+MEMORY_MARKERS = ("cannot allocate memory", "not enough memory", "not enough space", "out of memory")
 
 
 def _output_text(error):
@@ -32,7 +40,12 @@ def _output_text(error):
     return output.decode("utf-8", "replace") if isinstance(output, bytes) else str(output)
 
 
+def _mentions(text, markers):
+    """True when the lower-cased `text` holds any of `markers`."""
+    return any(marker in text for marker in markers)
+
+
 def is_deterministic_failure(error):
-    """True when a CalledProcessError's output names a failure that fewer threads cannot change."""
+    """True when a CalledProcessError's output names a failure that fewer threads cannot change and no lack of memory."""
     text = _output_text(error).lower()
-    return any(marker in text for marker in DETERMINISTIC_MARKERS)
+    return _mentions(text, DETERMINISTIC_MARKERS) and not _mentions(text, MEMORY_MARKERS)

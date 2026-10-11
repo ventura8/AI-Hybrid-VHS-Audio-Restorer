@@ -123,7 +123,11 @@ audio alignment, or FFmpeg multiplexing.
      `source_checks.SourceSkipped`; `process_hybrid_audio` logs `[Skip]`
      and returns False. `utils.attempt_cpu_run_with_retry` raises at once on
      a failure `ffmpeg_failures.is_deterministic_failure` reads from the
-     output's tail (it used to run Everest's extraction six times).
+     output's tail (it used to run Everest's extraction six times). Never
+     key it on the bare "Invalid data found when processing input": ffmpeg
+     9.0.1 prints it for every broken MP2 frame of a damaged capture on a
+     run that exits 0; an unreadable input is its "Error opening input"
+     line, and a memory message always keeps the retry.
 1. **`modules/mastering.py`**:
    - `_resolve_loudnorm_args` / `_resolve_single_track_loudnorm_args`:
      two-pass loudnorm to -16 LUFS, -1 dBTP and `loudnorm_target_lra`,

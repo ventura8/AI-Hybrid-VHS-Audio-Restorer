@@ -25,6 +25,12 @@ EVEREST_TAIL = (
     "Error opening output file original.tmp.wav.\n"
     "Error opening output files: Invalid argument\n"
 )
+# ffmpeg 9.0.1 on an MPEG-PS capture with broken MP2 frames: printed for every bad frame, exit code 0.
+DAMAGED_CAPTURE_TAIL = (
+    "[mp2 @ 000002517436ccc0] Header missing\n"
+    "[aist#0:1/mp2 @ 0000025174365cc0] [dec:mp2 @ 000002517436cb40] Error submitting packet to decoder: "
+    "Invalid data found when processing input\n"
+)
 
 
 def _failure(output):
@@ -47,6 +53,19 @@ def test_bytes_output_is_read_leniently():
 
 def test_the_everest_tail_is_deterministic():
     assert ffmpeg_failures.is_deterministic_failure(_failure(EVEREST_TAIL))
+
+
+def test_an_unreadable_input_is_read_from_the_open_error():
+    tail = "[in#0 @ 0] Error opening input: Invalid data found when processing input\nError opening input file tape.mp4.\n"
+    assert ffmpeg_failures.is_deterministic_failure(_failure(tail))
+
+
+@pytest.mark.parametrize(
+    "tail", [DAMAGED_CAPTURE_TAIL, DAMAGED_CAPTURE_TAIL + "Cannot allocate memory\n", EVEREST_TAIL + "Not enough space\n"]
+)
+def test_a_damaged_capture_or_a_lack_of_memory_keeps_the_retry(tail):
+    """Broken MP2 frames print 'Invalid data found when processing input' on a run that succeeds; memory always retries."""
+    assert not ffmpeg_failures.is_deterministic_failure(_failure(tail))
 
 
 def _child(script):
@@ -226,3 +245,55 @@ def test_a_real_source_whose_audio_decodes_to_nothing_is_skipped(tmp_path, capsy
         processing._extract_audio_step(source, tmp_path / "original.wav", total_duration=1.0)
     assert not list(tmp_path.glob("*.wav"))
     capsys.readouterr()
+
+
+@needs_ffmpeg
+def test_a_real_unreadable_source_runs_ffmpeg_once(tmp_path, capsys):
+    source = tmp_path / "garbage.mp4"
+    source.write_bytes(bytes(range(256)) * 12)
+    calls = []
+    real_run = utils.run_command_with_progress
+
+    def counted(cmd, *args, **kwargs):
+        calls.append(cmd)
+        return real_run(cmd, *args, **kwargs)
+
+    with (
+        patch.object(utils, "run_command_with_progress", side_effect=counted),
+        patch.object(processing, "CPU_THREADS", 8),
+        pytest.raises(subprocess.CalledProcessError) as caught,
+    ):
+        processing._extract_audio_step(source, tmp_path / "original.wav", total_duration=1.0)
+    assert len(calls) == 1
+    assert "error opening input" in caught.value.output.lower()
+    capsys.readouterr()
+
+
+def _damaged_capture(folder):
+    """A 4 s MPEG-PS capture (MPEG-2 video, MP2 audio) with garbage written over packs in its middle."""
+    clean = _make(folder / "clean.mpg", "-f", "lavfi", "-i", "sine=sample_rate=48000:duration=4", "-c:v", "mpeg2video", "-c:a", "mp2")
+    data = bytearray(clean.read_bytes())
+    garbage = bytes((i * 37) & 0xFF for i in range(600))
+    for start in range(len(data) // 3, len(data) // 3 + 120_000, 9000):
+        end = start + len(garbage)
+        data[start:end] = garbage
+    damaged = folder / "damaged.mpg"
+    damaged.write_bytes(bytes(data))
+    return damaged
+
+
+@needs_ffmpeg
+def test_a_real_damaged_capture_does_not_read_as_deterministic(tmp_path):
+    """ffmpeg decodes it (exit 0) while printing 'Invalid data found when processing input'; an OOM after that still retries."""
+    source = _damaged_capture(tmp_path)
+    decoded = subprocess.run(
+        [utils.FFMPEG_BIN, "-hide_banner", "-i", str(source), "-acodec", "pcm_f32le", "-ar", "44100", "-y", str(tmp_path / "o.wav")],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert decoded.returncode == 0
+    assert "invalid data found when processing input" in decoded.stderr.lower()
+    assert not ffmpeg_failures.is_deterministic_failure(_failure(decoded.stderr))
+    assert not ffmpeg_failures.is_deterministic_failure(_failure(decoded.stderr + "Cannot allocate memory\n"))

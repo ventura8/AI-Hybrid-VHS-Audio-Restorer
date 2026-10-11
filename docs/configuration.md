@@ -498,7 +498,11 @@ is a `[Skip]` line with the reason and counts as failed; it used to retry
 six times or fail as "Output audio is invalid". An ffmpeg failure that no
 retry changes (no stream in the output, a `-map` matching nothing, an
 unreadable input, an unknown filter or option; `modules/ffmpeg_failures.py`)
-is raised at once instead of retried on fewer threads. "Press Enter to
+is raised at once instead of retried on fewer threads. A memory message
+keeps the retry, and a damaged capture's decode warnings ("Invalid data
+found when processing input", printed for every broken MP2 frame on a run
+that succeeds) never count: only ffmpeg's "Error opening input" names an
+unreadable input. "Press Enter to
 exit..." and the drag-and-drop prompt are asked only when stdin is a
 console (on Windows the handle must pass `GetConsoleMode`: a detached
 stdin, the NUL device, reports a tty too); with no paths and no console the
@@ -568,7 +572,7 @@ it off, with a warning, because each candidate runs in its own working folder.
   `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
   `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
   own two and `AI_RESTORE_EVENT_LOG`.
-- The 22 keys left out of the key, each read only after the denoiser
+- The 24 keys left out of the key, each read only after the denoiser
   (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
   code by `tests/unit/test_stage_cache_allowlist.py` and
   `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
@@ -578,8 +582,9 @@ it off, with a warning, because each candidate runs in its own working folder.
   `apl_enable_sibilant_guard`, `apl_sibilant_mix`, `apl_sibilant_guard_hz`,
   `apl_sibilant_hf_share_min`, `enable_pause_floor`, `pause_floor_fill_db`,
   `pause_floor_quiet_percentile`, `enable_loudnorm`, `loudnorm_target_lra`,
-  `loudnorm_linear_fallback`, `preserve_original_audio_track`,
-  `dtw_resolution` and `apl_music_bg_floor_db`. Every other key, one the code
+  `loudnorm_linear_fallback`, `mux_limiter_latency_compensation`,
+  `mux_sample_rate`, `preserve_original_audio_track`, `dtw_resolution` and
+  `apl_music_bg_floor_db`. Every other key, one the code
   does not know included, is in the key; the `cathar_*` keys among them,
   because the chain's repair and subtraction run cathar's stages at those
   settings.
