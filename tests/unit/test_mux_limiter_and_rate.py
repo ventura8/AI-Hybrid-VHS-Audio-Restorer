@@ -84,6 +84,13 @@ def test_the_single_track_command_places_and_rates_the_track():
     assert cmd[cmd.index("-ar:a:0") + 1] == "48000"
 
 
+def test_with_loudnorm_off_the_track_is_still_rated_by_the_plan():
+    """No mastering graph: the WAV is mapped directly and the output option sets the container's rate."""
+    cmd = processing._build_single_audio_mux_command(Path("v.mpg"), Path("a.wav"), Path("o.mpg"), ["-c:a", "mp2"], 4, None, PLAN)
+    assert cmd[cmd.index("-map", cmd.index("0:v:0")) + 1] == "1:a:0"
+    assert cmd[cmd.index("-ar:a:0") + 1] == "48000"
+
+
 def test_the_mix_command_shifts_both_stems():
     cmd = processing._final_mix_output_command(
         Path("v.mpg"), Path("v.wav"), Path("b.wav"), Path("o.mpg"), ["-c:a", "mp2"], 4, "graph", PLAN
