@@ -73,6 +73,16 @@ def test_a_span_with_nothing_around_it_is_prominent():
     assert impulse_repair._prominent(residual, 0, 10, 6.0)
 
 
+def test_the_largest_setting_the_config_allows_still_computes():
+    """At the configuration's 120 dB cap the ratio stays finite: a neighbour 140 dB down lets the span pass, 100 dB down does not."""
+    residual = np.zeros(1000)
+    residual[500] = 1.0
+    residual[600] = 1e-7
+    assert impulse_repair._prominent(residual, 499, 502, 120.0)
+    residual[600] = 1e-5
+    assert not impulse_repair._prominent(residual, 499, 502, 120.0)
+
+
 def test_a_span_too_long_for_a_pop_is_refused_whatever_the_guard():
     residual = np.zeros(1000)
     residual[400] = 1.0
@@ -81,7 +91,7 @@ def test_a_span_too_long_for_a_pop_is_refused_whatever_the_guard():
     assert impulse_repair._refillable(residual, 398, 404, 6.0)
 
 
-def test_the_detection_mask_is_the_residual_test(tmp_path):
+def test_the_detection_mask_is_the_residual_test():
     """detect_pops reads the same residual and scale the repair does."""
     _audio, damaged = _cluster_and_click()
     residual, scale = impulse_repair._residual(damaged.astype(np.float64))

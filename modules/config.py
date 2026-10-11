@@ -379,8 +379,10 @@ _NUMERIC_CONFIG_FIELDS = (
     # SOTI 6.32 / 0.50 / 0.05, Vaccin 12.11 / 1.38 / 0.27, the calibrated speech classes 2.75 /
     # 0.17 / 0.04 (m15) and 5.20 / 0.41 / 0.16 (m09); inside the pops of the five crackle
     # fixtures +4.67 / +4.35 / +4.25 dB of repair, 80 / 75 / 74% of the pops refilled. Not yet
-    # judged by ear: off, 6 is the candidate for the listening session.
-    ("apl_depop_min_prominence_db", float, 0.0, 0.0),
+    # judged by ear: off, 6 is the candidate for the listening session. Capped at 120 dB, far
+    # past any setting that still refills a click; above about 6,165 dB the guard's amplitude
+    # ratio (10 ** (dB / 20)) overflows a float and would end the render.
+    ("apl_depop_min_prominence_db", float, 0.0, 0.0, 120.0),
     # The mode's own harmonic hum canceller: how many mains harmonics it evaluates (each is
     # cancelled only where it stands above its own neighbourhood, so a high count costs
     # compute and nothing else -- an EMI buzz runs to eighty harmonics, mains hum to eight)
@@ -508,12 +510,13 @@ _BOOL_CONFIG_FIELDS = (
     # that follows a tone burst. On SOTI (2026-10-11, its chain re-rendered on CPU bit for bit
     # against the shipped render's stage cache) the notch lifted 332 of the 3,740 quietest
     # 23 ms frames by 10 dB or more at 100-1000 Hz, up to +28 dB; the chain after it lifted
-    # none and the finished output kept all 332 (cathar's 4). With the guard the notch's output
-    # lifts 3, its quiet frames sit 0.80 dB over the source's instead of 5.83, and 77% of the
-    # samples pass to the bit; on Vaccin it caps 2.7% of the frames and no reading moves; on
-    # the hum fixtures the lines stay where the notch put them (-8.81 against -8.79 dB under
-    # the clean reference). Off until a listening session judges it; like the switch above it
-    # reaches denoise_only's notch too.
+    # none and the finished output kept them (323 of its 331 lifted frames are the notch's;
+    # cathar's lifts 4). With the guard the notch's output lifts 3, its quiet frames sit
+    # 0.80 dB over the source's instead of 5.83, and 77% of the samples pass to the bit; on
+    # Vaccin it caps 2.7% of the frames and no reading moves; on the hum fixtures the lines
+    # stay where the notch put them (-8.81 against -8.79 dB under the clean reference). Off
+    # until a listening session judges it; like the switch above it reaches denoise_only's
+    # notch too.
     ("apl_surgical_ring_guard", False),
     # When the scanner reported mains hum, the shared pre-conditioning has already notched
     # the fundamental and its second harmonic (Q 15) before the canceller sees the audio, so

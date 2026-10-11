@@ -81,14 +81,23 @@ def test_a_file_of_one_subframe_still_gets_a_gain():
     assert notch_ring_guard.frame_gains(np.array([[1.0]]), np.array([[4.0]])).shape == (1, 1)
 
 
+def _interpolated_curve():
+    """Two frames, the first passing and the second shut, spread over three sub-frames of samples."""
+    return notch_ring_guard.sample_gains(np.array([[1.0], [0.0]]), 0, 3 * notch_ring_guard.SUBFRAME)
+
+
 def test_the_gain_is_interpolated_between_frame_centres():
-    gains = np.array([[1.0], [0.0]])
-    curve = notch_ring_guard.sample_gains(gains, 0, 3 * notch_ring_guard.SUBFRAME)
+    curve = _interpolated_curve()
     centre = notch_ring_guard.SUBFRAME
     assert curve[centre, 0] == 1.0
     assert curve[2 * centre, 0] == 0.0
     assert 0.0 < curve[centre + centre // 2, 0] < 1.0
-    assert curve[0, 0] == 1.0 and curve[-1, 0] == 0.0
+
+
+def test_the_gain_holds_its_end_values_beyond_the_outer_centres():
+    curve = _interpolated_curve()
+    assert curve[0, 0] == 1.0
+    assert curve[-1, 0] == 0.0
 
 
 def test_the_ringing_in_a_gap_is_taken_down_to_the_gap(tmp_path):

@@ -10,8 +10,9 @@ silence. On the SOTI interview (its chain re-rendered on CPU bit for bit against
 cache of the shipped render, 2026-10-11) the notch lifted 332 of the 3,740 quietest 23 ms
 frames by 10 dB or more at 100-1000 Hz, by up to +28 dB: 46 ms holes inside speech at 111.15 s,
 100.98 s and 48.81 s, each filled with 237-258 Hz ringing at -27 dB where the pre-conditioned
-audio sat at -50 to -57 dB. The finished output kept all 332 (`cathar`'s, which has no such
-notch, 4). The pop repair and `decrackle` that follow the notch lift none of those frames.
+audio sat at -50 to -57 dB. The finished output kept them: 323 of its 331 lifted frames are
+the notch's (`cathar`'s, which has no such notch, lifts 4). The pop repair and `decrackle`
+that follow the notch lift none of those frames.
 
 The guard compares the notch's output with its input frame by frame (512 samples on a
 256-sample hop) and caps each output frame at TOLERANCE_DB over its input's energy, the gain
@@ -24,8 +25,12 @@ to within the tolerance of its own level, while the whole gap, edges included, s
 under the ringing (the gap itself is 61 dB under it). On SOTI the notch's output
 then lifts 3 quiet frames instead of 332 (none on 10 s cuts around the three holes, where the
 notch alone lifts 12, 19 and 24), its quiet frames sit 0.80 dB over the source's on average
-instead of 5.83, and 77% of the samples are untouched. On Vaccin, whose quiet frames the notch
-does not lift, it caps 2.7% of the frames and no reading moves. On the ten calibrated hum
+instead of 5.83, and 77% of the samples are untouched. The cap is broadband, so in a gap whose
+floor is hiss the ringing may still hold up to a fifth of the frame's energy and stand over
+its own narrow band: at 200-300 Hz, against the notch's input, 127 of SOTI's 3,740 quietest
+frames still rise 10 dB or more (491 without the guard, up to +24 dB against +40). On
+Vaccin, whose quiet frames the notch does not lift, it caps 2.7% of the frames and no
+reading moves. On the ten calibrated hum
 fixtures (speech at 9 and 15 dB margins, five languages) the lines at 150-250 Hz stay as far
 under the clean reference as the notch put them (-8.81 against -8.79 dB, -8.56 against -8.57)
 and the error against the clean reference falls by 0.04 dB.

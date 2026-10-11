@@ -247,6 +247,11 @@ audio alignment, or FFmpeg multiplexing.
      notch's output at 1 dB over its input. Both keep today's bytes off and
      wait for a listening session; the numbers are in
      `docs/configuration.md`.
+   - Judge the ring guard in the notch's own band too. The 100-1000 Hz
+     reading (332 lifted frames down to 3) hides what the broadband cap
+     leaves: at 200-300 Hz against the notch's input, 127 of SOTI's quiet
+     frames still rise 10 dB or more (491 without it). A band-limited cap
+     is the next step if the listening session still hears the ring.
 1. **`modules/auto_scanner.py`**:
    - `_detect_flutter_or_pitch_drift`: Tracks the recorded video line whine as a
      fixed-frequency speed reference, so programme pitch cannot read as drift.

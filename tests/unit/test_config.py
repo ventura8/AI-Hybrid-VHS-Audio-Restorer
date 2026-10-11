@@ -310,9 +310,12 @@ def test_the_depop_and_ring_guards_default_to_todays_audio():
     warn.assert_not_called()
 
 
-@pytest.mark.parametrize("raw, expected, warned", [(6, 6.0, False), ("9.0", 9.0, False), (-3.0, 0.0, True), (True, 0.0, True)])
+@pytest.mark.parametrize(
+    "raw, expected, warned",
+    [(6, 6.0, False), ("9.0", 9.0, False), (120, 120.0, False), (-3.0, 0.0, True), (True, 0.0, True), (7000.0, 0.0, True)],
+)
 def test_the_prominence_guard_takes_a_non_negative_number(raw, expected, warned):
-    """A number or a numeric string sets it; a negative value or a Boolean warns and keeps it off."""
+    """A number or a numeric string sets it; a negative value, a Boolean or a value past the cap warns and keeps it off."""
     conf, warn = _loaded({"apl_depop_min_prominence_db": raw})
     assert conf["apl_depop_min_prominence_db"] == expected
     assert warn.called is warned

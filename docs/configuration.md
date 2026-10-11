@@ -74,7 +74,9 @@
   calibrated speech classes 2.75 / 0.17 / 0.04 (15 dB margin) and 5.20 /
   0.41 / 0.16 (9 dB); inside the pops of the five crackle fixtures +4.67 /
   +4.35 / +4.25 dB of repair, 80 / 75 / 74% of the pops refilled. 6 dB waits
-  for a listening session. -
+  for a listening session. A value over 120 is refused with a warning and
+  leaves the guard off (past about 6,165 dB its amplitude ratio would overflow
+  and end the render). -
   `apl_enable_hum_cancel` (default **true**), `apl_hum_max_harmonics`
   (default 40) and `apl_hum_bandwidth_hz` (default 1.5), with
   `apl_hum_min_excess_db` (default 6.0) as the detection threshold. The
@@ -129,10 +131,14 @@
   burst. On SOTI the notch lifted 332 of the 3,740 quietest 23 ms frames by
   10 dB or more at 100-1000 Hz, up to +28 dB (46 ms gaps inside speech at
   111.15, 100.98 and 48.81 s filled with 237-258 Hz ringing at -27 dB), and
-  the finished output kept all of them where `cathar`'s has 4. With the
+  the finished output kept them (323 of its 331 lifted frames are the
+  notch's) where `cathar`'s lifts 4. With the
   guard the notch's output lifts 3, its quiet frames sit 0.80 dB over the
   source's on average instead of 5.83, and 77% of its samples pass to the
-  bit. Vaccin, whose gaps the notch does not fill, moves on no reading, and
+  bit. The cap is broadband, so where a gap's floor is hiss the ringing can
+  still stand over its own band: at 200-300 Hz, against the notch's input,
+  127 quiet frames still rise 10 dB or more (491 without the guard). Vaccin,
+  whose gaps the notch does not fill, moves on no reading, and
   on the calibrated hum fixtures the lines stay as far under the clean
   reference as the notch put them. Off until a listening session judges it;
   like `apl_surgical_mains_notch` it reaches `denoise_only`'s notch too. -
