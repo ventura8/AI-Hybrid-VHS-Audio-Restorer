@@ -569,6 +569,38 @@ cathar_dereverb_strength: 2.0
 #     under the source's pause level. On since the listener round: all four loops
 #     accepted it at 12 dB and none moved it (8 and 18 dB lost every round).
 #
+# pause_floor_target (both engines, 2026-10-12):
+#   - 'cluster' (Default): every pause is aimed at one level, the quiet frames'
+#     median minus pause_floor_fill_db, as every release has; outputs keep their
+#     bytes. The hiss diagnosis of 2026-10-11 found three ways it misses: that
+#     median sits 9-15 dB over the true pauses on dense speech or music; where the
+#     neural stage passed the floor the fill adds on top of it (+5.6 dB over the
+#     source on dvd-205405-0); and the separator's peak normalisation drops the
+#     programme up to 10.6 dB, so the fill sits that much too loud (fourstarrevue's
+#     pauses +1.8 dB over the source).
+#   - 'frame': each quiet frame is aimed at pause_floor_fill_db under the source
+#     frame, scaled by the restored programme's gain on the source's loud frames
+#     (p70 and up); a frame already at its target gets nothing. CPU replay on the
+#     diagnosis work directories (the paused WAV, before the mux): true-pause hiss
+#     (3-16 kHz band median against the source) -7.6 -> -13.4 dB over 120 hunt
+#     clips, SOTI -10.9 -> -13.0, Tele7abc -3.5 -> -12.6; hunt clips with pause
+#     hiss over the source 10 -> 3, pause LF over it 27 -> 11.
+#
+# pause_floor_shape / pause_floor_shelf_hz / pause_floor_hf_cut_db:
+#   - 'flat' (Default): the fill is the source as it is, its tape hiss included.
+#   - 'shelf': the fill is the source cut pause_floor_hf_cut_db above
+#     pause_floor_shelf_hz (a 4th-order Butterworth low-pass run forward and
+#     backward, plus the rest that many dB down); 'lowpass': low-passed there (2nd
+#     order, forward and backward; the cut is unused). The pause keeps its room tone
+#     and loses the hiss, and the deficit is read through the same shaping, so a
+#     hiss burst left in a pause never stands in for the body. Replayed with
+#     'frame': hunt true-pause hiss -30.3 dB ('shelf') / -40.3 dB ('lowpass') with
+#     the pause LF at -7.6 dB, as with no fill; SOTI -30.8 and Tele7abc -30.5 dB
+#     with the LF at -11.3 / -11.8 and gap_air at -20.0 / -11.7 dB. The -25 dB
+#     dead-air flag trips on 16 of 234 hunt clips with 'shelf', 11 today, 24 with
+#     no fill. 3000 Hz / 18 dB are the prototype's guesses; a GPU render and a
+#     blind A/B decide every non-default value here.
+#
 # loudnorm_target_lra:
 #   - The mux's EBU R128 loudness-range target. ffmpeg's loudnorm holds its linear
 #     mode only while the measured range is at or under it; a denoised interview with
@@ -615,6 +647,10 @@ expander_decay_s: 0.18
 enable_pause_floor: true
 pause_floor_fill_db: 12.0
 pause_floor_quiet_percentile: 15.0
+pause_floor_target: "cluster"
+pause_floor_shape: "flat"
+pause_floor_shelf_hz: 3000.0
+pause_floor_hf_cut_db: 18.0
 loudnorm_target_lra: 20.0
 loudnorm_linear_fallback: "ffmpeg"
 crt_notch_q: 30.0

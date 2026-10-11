@@ -46,6 +46,10 @@ READ_SITES = {
     "enable_pause_floor": ("ENABLE_PAUSE_FLOOR", {"pause_floor.py:*"}),
     "pause_floor_fill_db": ("PAUSE_FLOOR_FILL_DB", {"pause_floor.py:*"}),
     "pause_floor_quiet_percentile": ("PAUSE_FLOOR_QUIET_PERCENTILE", {"pause_floor.py:*"}),
+    "pause_floor_target": ("PAUSE_FLOOR_TARGET", {"pause_floor.py:*"}),
+    "pause_floor_shape": ("PAUSE_FLOOR_SHAPE", {"pause_floor.py:*"}),
+    "pause_floor_shelf_hz": ("PAUSE_FLOOR_SHELF_HZ", {"pause_floor.py:*"}),
+    "pause_floor_hf_cut_db": ("PAUSE_FLOOR_HF_CUT_DB", {"pause_floor.py:*"}),
     # processing's <module> reads are the re-exports at the end of the file.
     "enable_loudnorm": ("ENABLE_LOUDNORM", {"mastering.py:*", "processing.py:<module>"}),
     "loudnorm_target_lra": ("LOUDNORM_TARGET_LRA", {"mastering.py:*", "processing.py:<module>"}),

@@ -91,6 +91,10 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "enable_pause_floor",
         "pause_floor_fill_db",
         "pause_floor_quiet_percentile",
+        "pause_floor_target",
+        "pause_floor_shape",
+        "pause_floor_shelf_hz",
+        "pause_floor_hf_cut_db",
         # The mux (modules/mastering.py, processing's mux commands) and the sync (modules/sync.py).
         "enable_loudnorm",
         "loudnorm_target_lra",

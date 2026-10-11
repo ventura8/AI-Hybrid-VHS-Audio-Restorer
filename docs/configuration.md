@@ -440,6 +440,54 @@ listening session decides otherwise:
   (`apl_enable_dehum`, off) keeps the frequency it reads from the recording
   and never reads this key.
 
+Four pause floor keys added on 2026-10-12, for both engines
+(`modules/pause_floor.py`, after the polish expander in `auto_pure_linear`
+and in `cathar`). The defaults are what every earlier release ran, so every
+output keeps its bytes (`tests/unit/test_pause_floor_identity.py` checks
+both callers against a frozen copy of HEAD bb5fa2a's stage), until a GPU
+render and a listening session decide otherwise. The numbers below are a
+CPU replay of the stage on the work directories of the hiss diagnosis of
+2026-10-11 (the 13 diagnosis clips, the 235 hunt clips and cathar's two Tata
+excerpts): the paused WAV against the source, 3-16 kHz band median on the
+harness's true pauses, before the mux.
+
+- `pause_floor_target` (`cluster`, or `frame`): `cluster` aims every pause
+  at one level, the median of the quiet frames minus `pause_floor_fill_db`.
+  The diagnosis found three ways it misses. On dense speech or music that
+  median sits 9-15 dB over the true pauses. Where the neural stage passed
+  the floor, the fill adds on top of it (+5.6 dB over the source on
+  dvd-205405-0). The separator's peak normalisation drops the programme up
+  to 10.6 dB across the neural stage, so the fill sits that much too loud
+  against it (fourstarrevue's pauses +1.8 dB over the source). `frame` aims
+  each quiet frame at `pause_floor_fill_db` under the source frame itself,
+  scaled by the restored programme's gain on the source's loud frames (p70
+  and up), and fills no frame whose restored level already meets that
+  target; it fills as soon as one quiet frame sits 0.5 dB short, where
+  `cluster` waits for 5 % of them. Replayed: the hunt's pause hiss went
+  from -7.6 to -13.4 dB (SOTI -10.9 to -13.0, Tele7abc -3.5 to -12.6), and
+  the hunt clips whose pause hiss sits over the source from 10 to 3 (pause
+  low band over the source: 27 to 11).
+- `pause_floor_shape` (`flat`, `shelf`, or `lowpass`),
+  `pause_floor_shelf_hz` (3000.0) and `pause_floor_hf_cut_db` (18.0): `flat`
+  fills with the source as it is, its tape hiss included. `shelf` fills with
+  a copy cut `pause_floor_hf_cut_db` above `pause_floor_shelf_hz` (a
+  4th-order Butterworth low-pass run forward and backward, plus the rest of
+  the signal that many dB down); `lowpass` with a copy low-passed there (2nd
+  order, forward and backward, a Linkwitz-Riley 4th order; the cut is
+  unused). The corner and the cut are read only when the shape is not
+  `flat`. With a shaped fill the deficit is read on the restored audio
+  through the same shaping, so a hiss burst the neural stage left in a pause
+  never stands in for the low-band body: on cathar's Tele7abc excerpt the
+  shelf keeps the pause's 100-1000 Hz band at -14.5 dB against -17.8 dB when
+  read broadband. Replayed with `frame`: the hunt's pause hiss -30.3 dB
+  (`shelf`) and -40.3 dB (`lowpass`) with its pause low band at -7.6 dB, as
+  with no fill; SOTI -30.8 and Tele7abc -30.5 dB with the low band at -11.3
+  and -11.8 dB, `gap_air_db` -20.0 and -11.7 dB, and R4's high-band excess
+  -18.0 and -17.7 dB. The -25 dB dead-air flag on `gap_air_db` trips on 16 of
+  234 hunt clips with `shelf`, on 11 today and on 24 with no fill; the five
+  new ones keep their pause low band at -5 to -13 dB. 3000 Hz and 18 dB are
+  the prototype's guesses, for `scripts/audibility_check.py` and a blind A/B.
+
 ## Event Log
 
 `AI_RESTORE_EVENT_LOG=<dir>` in the environment (not a `config.yaml` key)
@@ -504,7 +552,7 @@ it off, with a warning, because each candidate runs in its own working folder.
   `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
   `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
   own two and `AI_RESTORE_EVENT_LOG`.
-- The 22 keys left out of the key, each read only after the denoiser
+- The 26 keys left out of the key, each read only after the denoiser
   (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
   code by `tests/unit/test_stage_cache_allowlist.py` and
   `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
@@ -513,7 +561,9 @@ it off, with a warning, because each candidate runs in its own working folder.
   `expander_decay_s`, `apl_expander_depth_db`,
   `apl_enable_sibilant_guard`, `apl_sibilant_mix`, `apl_sibilant_guard_hz`,
   `apl_sibilant_hf_share_min`, `enable_pause_floor`, `pause_floor_fill_db`,
-  `pause_floor_quiet_percentile`, `enable_loudnorm`, `loudnorm_target_lra`,
+  `pause_floor_quiet_percentile`, `pause_floor_target`, `pause_floor_shape`,
+  `pause_floor_shelf_hz`, `pause_floor_hf_cut_db`, `enable_loudnorm`,
+  `loudnorm_target_lra`,
   `loudnorm_linear_fallback`, `preserve_original_audio_track`,
   `dtw_resolution` and `apl_music_bg_floor_db`. Every other key, one the code
   does not know included, is in the key; the `cathar_*` keys among them,

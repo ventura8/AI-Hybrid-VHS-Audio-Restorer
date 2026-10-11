@@ -360,6 +360,44 @@ audio alignment, or FFmpeg multiplexing.
   HEAD 549705a's command lines for ten strategies and APL's two calls); APL
   never reads them: its physical repair keeps its own `has_clipping` plan
   and its tonal cleanup calls the dehum step without `autodetect`.
+- **Pause floor target and shape (2026-10-12)**: the hiss diagnosis of
+  2026-10-11 found the pause floor is where `auto_pure_linear` puts the tape
+  hiss back. The Mel-RoFormer takes the true pauses to about -93 dB; the
+  flat fill brings them to -10.9 dB (SOTI) and -4.1 dB (Tele7abc), -7.1 dB
+  median over the hunt, and lifts the floor under the programme 4-7 dB; on
+  cathar's Tele7abc excerpt it sets the pauses too. Its one target misses
+  three ways: the quiet cluster's median sits 9-15 dB over the true pauses
+  on dense speech or music; where the neural stage passed the floor the
+  fill sums on top of it (dvd-205405-0, +5.6 dB over the source); and
+  `denoise_chunking.WHOLE_FILE_PEAK` (0.9) drops the programme up to
+  10.6 dB across the separator on hot or declipped sources, which puts
+  every absolute threshold after it off (the fill target, the expander
+  knee). `pause_floor_target: frame` aims each quiet frame at `fill_db`
+  under the source frame times `programme_gain` (restored over source
+  energy on the source's p70+ frames) and gives a frame already at its
+  target nothing. Its skip rule is "no quiet frame 0.5 dB short": the
+  cluster's 95 % share skipped abc-primetime-1991 and left its 0.5 s of
+  true pause at -77.6 dB. `pause_floor_shape: shelf | lowpass` fills from a
+  zero-phase low-passed copy (`shaper_for`; `shaped_block` streams it with
+  16384 samples of context and matches a whole-file `sosfiltfilt` to
+  1e-9), and reads the deficit through the same shaping. That is the body
+  guard: cathar leaves hiss bursts in its pauses, which read broadband as a
+  target met, so the flat-read deficit kept Tele7abc's pause low band at
+  -17.8 dB where the guard keeps -14.5. The CPU replay of 2026-10-12 (the
+  local scratch scripts `D:\ai_restore_work\scratch_pfloor\replay.py` and
+  `compare.py`, measured with the diagnosis's own `measure.py`): the
+  defaults wrote the shipped paused WAV sample for sample on all 235 hunt,
+  13 diagnosis and 2 cathar work directories; `frame` gave the prototype
+  P1a's readings exactly (pause hiss -13.4 dB, hunt median), `frame` plus
+  `shelf` P1b's within 0.3 dB but on three clips the guard moved 1.0-1.8 dB
+  (-30.3 dB, pause low band -7.6 dB as with no fill). A non-default fill
+  names its output (`paused_12db_p15_frame_shelf3000c18_<input>`), so no
+  render reuses another's. Open: a GPU render and a listening session; the
+  shelf trips the -25 dB dead-air flag on 16 of 234 hunt clips (11 today,
+  24 with no fill); the programme gain reads low on a tape whose loud
+  frames are noise; and no fill touches the RoFormer's residual hiss bursts
+  near speech (2-11 % of pause frames, most of the pause hiss energy) or
+  its weak 3-4.8 kHz removal under the programme.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

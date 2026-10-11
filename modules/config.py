@@ -153,6 +153,12 @@ _NUMERIC_CONFIG_FIELDS = (
     # percentile are never touched.
     ("pause_floor_fill_db", float, 12.0, 0.0, 60.0),
     ("pause_floor_quiet_percentile", float, 15.0, 1.0, 100.0),
+    # The shaped fill (pause_floor_shape 'shelf' or 'lowpass'; read only then): the corner in Hz
+    # and, on the shelf, how far everything above it is cut. 3000 Hz / 18 dB is the prototype
+    # P1b of the 2026-10-11 hiss diagnosis (PAUSE_FLOOR_SHAPE below has the numbers); both are
+    # guesses for audibility_check and a blind A/B to tune.
+    ("pause_floor_shelf_hz", float, 3000.0, 200.0, 20000.0),
+    ("pause_floor_hf_cut_db", float, 18.0, 0.0, 60.0),
     # cathar's split-band subtraction (modules/split_band.py): above the crossover the denoise
     # runs a second time at cathar_alpha_high (cathar_music_alpha_high on music), so the hiss
     # in the highs and the speech band get their own factor. 0 keeps the single pass.
@@ -663,6 +669,14 @@ VALID_CATHAR_DECLIP_MODES = {"always", "detected"}
 # no dehum when the scan found no hum, as every release has; 0 runs `dehum --freq 0` on every tape,
 # so cathar picks the family from the recording itself (cathar 0.8.0's help).
 CATHAR_DEHUM_FREQ_SCANNER = "scanner"
+# The pause floor keeper's level and content (modules/pause_floor.py, both engines). 'cluster' aims
+# every pause at one level, the quiet frames' median minus pause_floor_fill_db; 'frame' aims each
+# quiet frame at pause_floor_fill_db under the source frame, scaled by the restored programme's gain
+# on the loud frames, and fills no frame already at its target. 'flat' fills with the source as it
+# is, hiss included; 'shelf' cuts it pause_floor_hf_cut_db above pause_floor_shelf_hz, 'lowpass'
+# low-passes it there. 'cluster' and 'flat' are what every release has run.
+VALID_PAUSE_FLOOR_TARGETS = {"cluster", "frame"}
+VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass"}
 
 
 def _reject_config_value(param_name, raw_value, default):
@@ -696,6 +710,14 @@ def _normalize_loudnorm_linear_fallback(raw_value):
 
 def _normalize_cathar_declip_mode(raw_value):
     return _normalize_choice(raw_value, VALID_CATHAR_DECLIP_MODES, "cathar_declip_mode", "always")
+
+
+def _normalize_pause_floor_target(raw_value):
+    return _normalize_choice(raw_value, VALID_PAUSE_FLOOR_TARGETS, "pause_floor_target", "cluster")
+
+
+def _normalize_pause_floor_shape(raw_value):
+    return _normalize_choice(raw_value, VALID_PAUSE_FLOOR_SHAPES, "pause_floor_shape", "flat")
 
 
 def _is_zero(raw_value):
@@ -821,6 +843,8 @@ def _apply_user_config(defaults, user_config):
     defaults["loudnorm_linear_fallback"] = _normalize_loudnorm_linear_fallback(defaults.get("loudnorm_linear_fallback"))
     defaults["cathar_declip_mode"] = _normalize_cathar_declip_mode(defaults.get("cathar_declip_mode"))
     defaults["cathar_dehum_freq"] = _normalize_cathar_dehum_freq(defaults.get("cathar_dehum_freq"))
+    defaults["pause_floor_target"] = _normalize_pause_floor_target(defaults.get("pause_floor_target"))
+    defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -864,6 +888,12 @@ def load_config():
         # output keeps its bytes; the C3 listening session judges the other values.
         "cathar_declip_mode": "always",
         "cathar_dehum_freq": CATHAR_DEHUM_FREQ_SCANNER,
+        # The pause floor keeper's target and shape (VALID_PAUSE_FLOOR_TARGETS / _SHAPES): the
+        # defaults are what every release has run, so every output keeps its bytes. The hiss
+        # diagnosis of 2026-10-11 replayed 'frame' with a shaped fill; a GPU render and a
+        # listening session decide (see PAUSE_FLOOR_TARGET below).
+        "pause_floor_target": "cluster",
+        "pause_floor_shape": "flat",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1027,6 +1057,19 @@ CRT_NOTCH_Q = float(CONFIG.get("crt_notch_q", 30.0))
 ENABLE_PAUSE_FLOOR = bool(CONFIG.get("enable_pause_floor", True))
 PAUSE_FLOOR_FILL_DB = float(CONFIG.get("pause_floor_fill_db", 12.0))
 PAUSE_FLOOR_QUIET_PERCENTILE = float(CONFIG.get("pause_floor_quiet_percentile", 15.0))
+# The pause floor's target and shape (2026-10-12; VALID_PAUSE_FLOOR_TARGETS / _SHAPES). Replayed on
+# the CPU on the hiss diagnosis's work directories (the paused WAV against the source, 3-16 kHz band
+# median on the true pauses): 'cluster' + 'flat' wrote the shipped WAV sample for sample on all 235
+# hunt clips, the 13 diagnosis clips and cathar's Tata excerpts. 'frame' took the hunt's pause hiss
+# from -7.6 to -13.4 dB (SOTI -10.9 -> -13.0, Tele7abc -3.5 -> -12.6); 'frame' + 'shelf' (3000 Hz,
+# 18 dB) to -30.3 dB with the pause LF at -7.6, as with no fill (Tata -30.8 / -30.5, LF -11.3 /
+# -11.8, gap_air -20.0 / -11.7). 'frame' gives the prototype P1a's readings on every clip whose pair
+# the stage accepts; the shaped fill's body guard moves three clips 1.0-1.8 dB off P1b. Not judged by
+# ear: a GPU render and a listening session decide.
+PAUSE_FLOOR_TARGET = str(CONFIG.get("pause_floor_target", "cluster"))
+PAUSE_FLOOR_SHAPE = str(CONFIG.get("pause_floor_shape", "flat"))
+PAUSE_FLOOR_SHELF_HZ = float(CONFIG.get("pause_floor_shelf_hz", 3000.0))
+PAUSE_FLOOR_HF_CUT_DB = float(CONFIG.get("pause_floor_hf_cut_db", 18.0))
 CATHAR_SPLIT_BAND_HZ = int(CONFIG.get("cathar_split_band_hz", 0))
 CATHAR_ALPHA_HIGH = float(CONFIG.get("cathar_alpha_high", 2.0))
 CATHAR_MUSIC_ALPHA_HIGH = float(CONFIG.get("cathar_music_alpha_high", 0.5))

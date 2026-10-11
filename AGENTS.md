@@ -74,7 +74,10 @@ The engine supports 10 execution modes configured in `config.yaml`:
     on since the listener round of 2026-09-25 unless noted: the sibilant
     guard (`modules/sibilant_guard.py`, `apl_enable_sibilant_guard`: the 's'
     keeps the body the neural stage empties), the pause floor keeper
-    (`modules/pause_floor.py`, `enable_pause_floor`, after the expander), and
+    (`modules/pause_floor.py`, `enable_pause_floor`, after the expander;
+    `pause_floor_target` and `pause_floor_shape` keep `cluster` and `flat`,
+    today's bytes, while `frame` with `shelf` took the replayed pause hiss
+    from -7.6 to -30.3 dB on 2026-10-12, not yet rendered or heard), and
     on music the stem path (`modules/apl_stems.py`, `apl_music_stem_path`:
     the chain on the vocal stem, the music through the notches and a bounded
     suppressor; not accepted, off). The same round switched the subtraction
@@ -158,8 +161,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the
     pause floor keeper (`modules/pause_floor.py`, `enable_pause_floor`, after
-    the expander; on since the listener round of 2026-09-25). On music the
-    profile also switches the de-esser off (`cathar_music_enable_deesser`),
+    the expander; on since the listener round of 2026-09-25; the
+    `pause_floor_target` and `pause_floor_shape` keys reach it too). On music
+    the profile also switches the de-esser off (`cathar_music_enable_deesser`),
     sets the polish expander's depth (`cathar_music_expander_depth_db`) and
     narrows the CRT notch (`cathar_music_crt_notch_q`, carried into the
     pre-conditioning graph by `processing._precondition_config_for`). The
