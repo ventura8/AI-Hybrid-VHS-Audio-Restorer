@@ -191,6 +191,18 @@ frames hold 600-1200 Hz at -1.5 dB and 2400-4800 at -11, where Piper's hold
 broadcast chain put on -- and it breathes before its phrases, since real quiet
 frames vary 11-14 dB per band frame to frame and a synthesiser's varied 5.
 
+`--digital-mute` adds one opt-in class, `digitalmute_m15`: the speech-led
+base with tape noise only, and one or two gaps of 0.75-3 s cut hard into the
+upload, the first at the head (a blank lead-in) on half the fixtures. Each
+gap is exact zeros or a dither at -120 to -100 dBFS, and the reference and
+target are silent there too; each record lists its gaps (`mute_gaps`). It is
+what an edited upload carries and a tape does not, the case cathar's
+noise-print mute guard is for (`docs/configuration.md`): never a quieter
+stretch of hiss, which is a real floor the guard must keep. It draws on its
+own random stream and is off by default, so the default set, its manifest
+and `validate_fixture_realism.py`, whose variant lists do not name it, are
+unchanged.
+
 ### Does it predict real tape
 
 `validate_fixture_realism.py` reruns the four comparisons whose real-tape

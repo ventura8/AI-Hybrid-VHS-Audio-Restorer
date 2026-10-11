@@ -72,6 +72,15 @@ This generator sets each of those from the corpus rather than from a guess:
   line, percussion -- for the fixtures to show what 50 real captures showed. A sustained
   chord under speech, the first attempt, was not enough. These classes are drawn on their
   own random stream so adding them left the speech-led fixtures bit-identical.
+- **Digital mutes (opt-in, `--digital-mute`).** An edited upload carries stretches the file
+  holds as digital silence -- a cut to black, a blank lead-in, a DVD's silence -- and cathar
+  learns its noise print from them: 7 of 136 IA clips picked a 0.75 s window under -70 dBFS.
+  No class above has one, on purpose: the dead silence a synthesiser leaves mis-predicted real
+  tape and is cut (PAUSE_MAX_S). This class puts it back only as an upload carries it: exact
+  zeros or a dither at -100 dBFS or lower, cut hard into the degraded file, with the reference
+  and the target silent there too. Never a quieter stretch of hiss, which is a real tape
+  floor a guard must keep. Its own random stream, off by default, so the default set and every
+  reader of its manifest are unchanged.
 
 A fixture set earns its keep by predicting real tape. The acceptance test is rank agreement:
 run the comparisons that inverted before, and require that they now rank the way real tape
@@ -272,6 +281,17 @@ MUSIC_NOTE_SECONDS = 1.2
 MUSIC_HIT_SECONDS = 0.5
 MUSIC_BANDWIDTH_HZ = 8000.0
 MUSIC_ROOTS_HZ = (110.0, 130.8, 146.8, 164.8, 196.0, 220.0)
+# The digital-mute class (opt-in): one or two gaps of 0.75-3 s per fixture, the first at the
+# head (a blank lead-in) on half of them; each exact zeros or a Gaussian dither at -120 to
+# -100 dBFS, under the -90 dBFS level cathar's mute guard reads as no tape at all
+# (modules/noiseprint_guard.py). 0.75 s is the single-window print's length, so the shortest
+# gap still holds a whole candidate window.
+DIGITAL_MUTE_CLASS = "digitalmute"
+DIGITAL_MUTE_GAPS = (1, 3)
+DIGITAL_MUTE_GAP_S = (0.75, 3.0)
+DIGITAL_MUTE_LEAD_IN_SHARE = 0.5
+DIGITAL_MUTE_ZERO_SHARE = 0.5
+DIGITAL_MUTE_DITHER_DBFS = (-120.0, -100.0)
 
 
 def _shelf(mono, rate, frequency, gain_db, high):
@@ -766,13 +786,75 @@ def _build_defect_classes(clean_paths, out_dir, segment_frames, noise_bank, othe
     return records
 
 
-def _build(clean_paths, out_dir, segment_frames, max_segments, noise_bank, others, seed, voice=0):
+def _overlaps(span, other):
+    return span[0] < other[1] and other[0] < span[1]
+
+
+def _mute_span(length, rate, rng, lead_in):
+    """One gap's (start, stop) in samples: at the head for a blank lead-in, anywhere otherwise."""
+    size = min(length, int(rng.uniform(*DIGITAL_MUTE_GAP_S) * rate))
+    start = 0 if lead_in else int(rng.integers(0, max(1, length - size)))
+    return start, start + size
+
+
+def mute_spans(length, rate, rng):
+    """The gaps of one fixture, sorted and apart; a drawn gap that would overlap a kept one is dropped."""
+    spans = []
+    for index in range(int(rng.integers(*DIGITAL_MUTE_GAPS))):
+        span = _mute_span(length, rate, rng, lead_in=index == 0 and rng.random() < DIGITAL_MUTE_LEAD_IN_SHARE)
+        if not any(_overlaps(span, kept) for kept in spans):
+            spans.append(span)
+    return sorted(spans)
+
+
+def _mute_fill(size, rng):
+    """A gap's samples and their level: exact zeros (level None) or a dither at -120 to -100 dBFS."""
+    if rng.random() < DIGITAL_MUTE_ZERO_SHARE:
+        return np.zeros(size, dtype=np.float32), None
+    level = float(rng.uniform(*DIGITAL_MUTE_DITHER_DBFS))
+    return rng.normal(0.0, 10.0 ** (level / 20.0), size).astype(np.float32), level
+
+
+def with_digital_mutes(signals, rate, rng):
+    """Cuts digital silence into a mono upload: the mute in the degraded file, silence in the reference and target.
+
+    Returns the new (reference, target, degraded) and the gaps as `{start_s, stop_s, level_dbfs}`
+    (None for exact zeros), so a check knows which stretches hold no tape.
+    """
+    reference, target, degraded = (np.array(signal, dtype=np.float32, copy=True) for signal in signals)
+    gaps = []
+    for start, stop in mute_spans(len(degraded), rate, rng):
+        fill, level = _mute_fill(stop - start, rng)
+        degraded[start:stop] = fill
+        reference[start:stop] = 0.0
+        target[start:stop] = 0.0
+        gaps.append({"start_s": start / rate, "stop_s": stop / rate, "level_dbfs": level})
+    return (reference, target, degraded), gaps
+
+
+def _build_digital_mute(clean_paths, out_dir, segment_frames, noise_bank, others, rng):
+    """The digital-mute class: one fixture per voice on the speech-led base, tape noise only, with gaps cut into it."""
+    records = []
+    for stem, index, segment in _clean_segments(clean_paths, segment_frames, 1):
+        other = others[int(rng.integers(len(others)))] if others else None
+        programme = condition_programme(segment, FIXTURE_SAMPLE_RATE, rng, False, other)
+        noise = noise_bank[int(rng.integers(len(noise_bank)))]
+        signals = degrade_with(programme, FIXTURE_SAMPLE_RATE, noise, DEFECT_MARGIN_DB, (), rng)
+        signals, gaps = with_digital_mutes(signals, FIXTURE_SAMPLE_RATE, rng)
+        fixture = f"{stem}{index:02d}_{DIGITAL_MUTE_CLASS}_m{int(DEFECT_MARGIN_DB):02d}"
+        record = _write_pair(out_dir, fixture, signals, ["tape_noise", "digital_mute"], False, DEFECT_MARGIN_DB)
+        records.append({**record, "mute_gaps": gaps})
+    return records
+
+
+def _build(clean_paths, out_dir, segment_frames, max_segments, noise_bank, others, seed, voice=0, digital_mute=False):
     """Writes every variant for one language and returns the manifest records.
 
     Every class draws on a stream seeded by the voice as well as the run, so five voices do
     not share one noise window, one room, one chord sequence, one resonance centre, one
     dropout pattern, one field rate: a median over five voices is then a median over five
-    draws of everything, not five voices under one draw.
+    draws of everything, not five voices under one draw. The opt-in digital-mute class has a
+    stream of its own, so asking for it leaves every other fixture bit-identical.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     records = _build_speech_led(
@@ -780,6 +862,8 @@ def _build(clean_paths, out_dir, segment_frames, max_segments, noise_bank, other
     )
     records += _build_music_led(clean_paths, out_dir, segment_frames, max_segments, noise_bank, np.random.default_rng([seed + 1, voice]))
     records += _build_defect_classes(clean_paths, out_dir, segment_frames, noise_bank, others, np.random.default_rng([seed + 2, voice]))
+    if digital_mute:
+        records += _build_digital_mute(clean_paths, out_dir, segment_frames, noise_bank, others, np.random.default_rng([seed + 3, voice]))
     return records
 
 
@@ -803,6 +887,11 @@ def _parse_args():
     parser.add_argument("--corpus-dir", type=Path, default=Path("experiments/ia_corpus_1000"))
     parser.add_argument("--catalog", type=Path, default=None)
     parser.add_argument("--noise-windows", type=int, default=24, help="Captures to sample tape noise from")
+    parser.add_argument(
+        "--digital-mute",
+        action="store_true",
+        help="Also write the digital-mute class (exact-zero or <= -100 dBFS gaps cut into the upload); off keeps the default set",
+    )
     return parser.parse_args()
 
 
@@ -820,7 +909,17 @@ def main():
     voices = {language: _first_segment(paths[0], segment_frames) for language, paths in languages.items()}
     for index, (language, clean_paths) in enumerate(languages.items()):
         others = [voice for name, voice in voices.items() if name != language]
-        records = _build(clean_paths, args.output_dir / language, segment_frames, args.max_segments, noise_bank, others, args.seed, index)
+        records = _build(
+            clean_paths,
+            args.output_dir / language,
+            segment_frames,
+            args.max_segments,
+            noise_bank,
+            others,
+            args.seed,
+            index,
+            args.digital_mute,
+        )
         manifest["languages"][language] = records
         print(f"  {language}: {len(records)} paired fixtures")
     (args.output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
