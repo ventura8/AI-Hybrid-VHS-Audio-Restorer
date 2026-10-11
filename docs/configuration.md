@@ -440,6 +440,70 @@ listening session decides otherwise:
   (`apl_enable_dehum`, off) keeps the frequency it reads from the recording
   and never reads this key.
 
+## Mux Timing and Rate
+
+The mux now places the restored track where the source's audio started
+against the video, in every mode and container, with no key: it reads the
+start time of the audio stream the extraction decodes (`ffprobe`) and gives
+each restored input `-itsoffset <start>` with `-copyts`
+(`modules/mux_format.py`). It used to start the track with the video. On
+3 s synthetic sources with the audio 300 ms after the video, a click 1 s
+into the audio landed 273.7 ms early in MP4 and MOV, 295.0 ms in MKV and
+285.0 ms in MPEG-PS; with the audio 300 ms early, MPEG-PS put it 315.0 ms
+late, and with no offset 15.0 ms late (MP2's 481-sample decoder delay
+re-based to zero). After the change the click sits at the limiter's delay
+alone in all six containers tried (MP4, MPEG-PS, MOV, MKV, AVI, TS). An AVI
+carries no start offset; ffmpeg writes none, so its audio starts with its
+video either way. The cathar identity clips start at zero: muxed through
+HEAD and through this code, their files come out byte for byte the same.
+
+An MPEG-PS output (`.mpg`, `.mpeg`) now keeps its source's sample rate when
+MP2 can encode it (32, 44.1 and 48 kHz and the half rates; any other rate
+goes to 48 kHz, an unreadable source stays at 44.1 kHz). It used to be
+44.1 kHz, which DVD-Video does not allow for MP2. Every other container
+keeps 44.1 kHz unless `mux_sample_rate` says otherwise. The capture
+`E:/Test/2015_12_17_10_56_3.mpg` (MP2 at 48 kHz, audio 5.578 ms after the
+video) came out of the 16 Sep renders as 44.1 kHz MP2 with its audio
+10.911 ms before the video; a 12 s cut of it now keeps 48 kHz and its
+restored audio sits 4.989 ms after the source's (the limiter), 0.010 ms with
+the compensation on.
+
+Two keys, both defaulting to today's bytes outside MPEG-PS:
+
+- `mux_limiter_latency_compensation` (false): the mux's limiter (`alimiter`
+  at -1 dBFS) delays what it passes by its lookahead. A synthetic impulse at
+  sample 10000 came out at 10219, 219 samples or 4.97 ms at 44.1 kHz (239
+  samples at 48 kHz), with or without loudnorm's dynamic mode before it, so
+  every output of every mode plays about 5 ms late against its video and
+  against the preserved original track. `true` sets `latency=1`, which kept
+  the impulse at 10000 and the length unchanged. It is a pure time shift,
+  but it changes the bytes the cathar identity check compares, so it waits
+  for the user's sign-off on re-basing that check.
+- `mux_sample_rate` (`pipeline`, or `source`): `pipeline` keeps 44.1 kHz in
+  every container but MPEG-PS. `source` keeps the source's rate in every
+  container whose codec encodes it (AAC's and MP2's rates; PCM takes any),
+  which changes every 48 kHz source's bytes, three of the five identity
+  clips among them.
+
+Both are read only by the mux, so the stage cache leaves them out of its
+key, and the tuning driver knows them.
+
+## Exit Status and Prompts
+
+`restore_audio_hybrid.py` exits 0 when every file was restored (or already
+was), 1 when any file failed or was skipped, and 2 when nothing ran
+(dependencies missing, or no files). A source with no audio stream, or one
+whose audio decodes to no samples (an edit list that hides every packet),
+is a `[Skip]` line with the reason and counts as failed; it used to retry
+six times or fail as "Output audio is invalid". An ffmpeg failure that no
+retry changes (no stream in the output, a `-map` matching nothing, an
+unreadable input, an unknown filter or option; `modules/ffmpeg_failures.py`)
+is raised at once instead of retried on fewer threads. "Press Enter to
+exit..." and the drag-and-drop prompt are asked only when stdin is a
+console (on Windows the handle must pass `GetConsoleMode`: a detached
+stdin, the NUL device, reports a tty too); with no paths and no console the
+app asks nothing and exits 2.
+
 ## Event Log
 
 `AI_RESTORE_EVENT_LOG=<dir>` in the environment (not a `config.yaml` key)

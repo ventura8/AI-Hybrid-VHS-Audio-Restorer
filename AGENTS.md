@@ -48,7 +48,12 @@ alignment:
   mode only while the range and the true-peak rule allow it, and always on
   a programme under 3 s; 37% of the logged "linear" decisions broke the
   true-peak half and rode the gain (`loudnorm_linear_fallback`,
-  `docs/configuration.md`).
+  `docs/configuration.md`). The restored track starts where the source's
+  audio started against the video and MPEG-PS keeps its source's rate
+  (`modules/mux_format.py`); the limiter still delays every output 219
+  samples (4.97 ms at 44.1 kHz) until `mux_limiter_latency_compensation`
+  is signed off. A failed or skipped file makes the app exit 1, and no
+  prompt waits on a stdin that is not a console.
 
 ______________________________________________________________________
 
