@@ -14,7 +14,7 @@ when their distances differ by less than reward.py's tie band, sized from the Se
 benign-pair floors (`--noise-floors`), and every dead zone is bounded from below by that floor;
 hiss and residual-noise readings take their floors only from scorer jitter and same-percept
 near-copies (`--jitter-floors`, the user's rule). A tape counts as a win only when the candidate
-out-ranks the incumbent and is not level with it on every reading. `log.md` carries each
+out-ranks the incumbent and moved past the band the better way on some reading. `log.md` carries each
 candidate's per-reading distances per tape, and a round in which every scored candidate was
 level with the incumbent ends "every move below the Session 0 benign-pair floor (N readings
 unmoved)" instead of "plateau". The learned vetoes are family-wise (`autotune_guards`).
@@ -809,7 +809,8 @@ def _mean_rank(ranks):
 
 
 def _verdict(cid, tape_scores, tables, incumbent_id):
-    """One candidate's ranks, wins (ahead of the incumbent and not level with it), gate counts and per-reading distances."""
+    """One candidate's ranks, wins (ahead of the incumbent and better past the band on some reading), gate counts and
+    per-reading distances."""
     ranks = {slug: tables[slug].ranks[cid] for slug in tape_scores}
     return {
         "mean_rank": _mean_rank(ranks),

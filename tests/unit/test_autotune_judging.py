@@ -169,6 +169,40 @@ def test_a_candidate_level_with_the_incumbent_never_wins_a_tape_through_a_third_
     assert judging.tape_wins({"t1": plain}, "a", "inc") == ["t1"]
 
 
+BODY = "dsp.balance_body_db.output.median"
+
+
+def _pack_flats():
+    """`worse`: tilt 0.7 dB/oct nearer (under the 0.85 floor), body 1.5 dB further (past the 1.2 floor); ten candidates
+    sit inside the incumbent's band on both readings and outside `worse`'s on tilt."""
+    flats = {"inc": {TILT: 2.0, BODY: 2.0}, "worse": {TILT: 1.3, BODY: 3.5}}
+    flats.update({f"pack{index}": {TILT: 2.5, BODY: 2.75} for index in range(10)})
+    return flats
+
+
+def test_a_candidate_whose_only_move_past_the_band_is_worse_never_wins_a_tape_through_a_pack():
+    """Out-ranking the incumbent through third candidates on a sub-floor gain does not make a real loss a win."""
+    floors = judging.Floors({TILT: 0.85, BODY: 1.2}, {})
+    spec = {**SPEC, "dead_zone": 0.0}
+    table = judging.tape_table(_pack_flats(), {TILT: spec, BODY: spec}, "inc", floors)
+    assert table.ranks["worse"] < table.ranks["inc"]
+    assert table.status["worse"] == {TILT: judging.BANDED, BODY: judging.MOVED}
+    assert not table.level("worse") and not table.better("worse")
+    assert judging.tape_wins({"t1": table}, "worse", "inc") == []
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_without_floors_a_tape_win_is_exactly_the_old_better_rank(seed):
+    """Out-ranking the incumbent on exact ranks needs some reading strictly better, so the better-move rule adds nothing."""
+    ranking = {"a": SPEC, "b": {**SPEC, "weight": 2.0}, "c": "up", "d": "down"}
+    flats = _random_flats(np.random.default_rng(100 + seed), list(ranking), 9)
+    old = _rank_variants(flats, ranking)
+    table = judging.tape_table(flats, ranking, "c0")
+    for cid in flats:
+        ahead = old[cid] is not None and old["c0"] is not None and old[cid] < old["c0"]
+        assert judging.tape_wins({"t1": table}, cid, "c0") == (["t1"] if ahead else [])
+
+
 def test_a_reading_nobody_read_on_a_tape_never_wins_it():
     table = judging.tape_table({"inc": {}, "a": {}}, {TILT: SPEC}, "inc", FLOORS)
     assert table.ranks == {"inc": None, "a": None}

@@ -20,8 +20,12 @@ under the floors (0.85, 0.72, 1.20, 1.75, 1.01, 0.38). Re-judged with narrower z
 band, `expander_attack_s` 0.08 won 4 of 4 tapes on moves of 0.002-0.1 dB (E2's refutation):
 with exact ranks any difference decides once a zone is narrower than the incumbent's own
 distance. A rank among a group is relative, so a candidate tied with the incumbent on every
-reading of a tape could still out-rank it through a third candidate; such a tape is not a win
-(`level`).
+reading of a tape could still out-rank it through a third candidate, and so could one whose
+only move past the band is the worse way (a sub-floor gain on one reading beating a pack the
+incumbent ties, a real loss on another): a tape is a win only when the candidate out-ranks the
+incumbent and moved past the band the better way on at least one reading there (`better`).
+Without floors that adds nothing: out-ranking the incumbent on exact ranks needs some reading
+strictly better.
 
 The hiss exemption (the user's rule, 2026-10-11): the ear must be very critical of VHS hiss,
 under speech or singing and in the pauses. Readings of hiss or residual noise (`HISS_PREFIXES`:
@@ -235,15 +239,21 @@ def _worst(statuses):
 
 @dataclass(frozen=True)
 class TapeTable:
-    """One tape judged: ranks, per-reading distances, and per candidate its status against the incumbent per reading."""
+    """One tape judged: ranks, per-reading distances, per candidate its status against the incumbent per reading, and
+    `improved`: per candidate the readings it moved past the tie band the better way against the incumbent."""
 
     ranks: dict
     distances: dict
     status: dict
+    improved: dict = field(default_factory=dict)
 
     def level(self, cid):
         """Whether no reading moved past its tie band against the incumbent on this tape."""
         return _worst(self.status[cid].values()) != MOVED
+
+    def better(self, cid):
+        """Whether some reading moved past its tie band the better way against the incumbent on this tape."""
+        return bool(self.improved.get(cid))
 
 
 def tape_table(flats, ranking, incumbent_id, floors=NO_FLOORS):
@@ -253,7 +263,13 @@ def tape_table(flats, ranking, incumbent_id, floors=NO_FLOORS):
         ranks=mean_ranks(entries, list(flats)),
         distances={cid: {item.key: item.distances[cid] for item in entries} for cid in flats},
         status={cid: {item.key: item.status(cid, incumbent_id) for item in entries} for cid in flats},
+        improved=improved_readings(entries, list(flats), incumbent_id),
     )
+
+
+def improved_readings(entries, cids, incumbent_id):
+    """`{cid: [reading, ...]}`: the entries on which each candidate is ahead of the incumbent beyond the tie band."""
+    return {cid: [item.key for item in entries if item.points_behind(incumbent_id, cid) == 1.0] for cid in cids}
 
 
 def reading_status(tables, cid):
@@ -276,8 +292,8 @@ def moved_tapes(tables, cid):
 
 
 def tape_wins(tables, cid, incumbent_id):
-    """The tapes on which `cid` out-ranks the incumbent and is not level with it on every reading."""
-    return [slug for slug, table in tables.items() if _ahead(table, cid, incumbent_id) and not table.level(cid)]
+    """The tapes on which `cid` out-ranks the incumbent and moved past the tie band the better way on some reading."""
+    return [slug for slug, table in tables.items() if _ahead(table, cid, incumbent_id) and table.better(cid)]
 
 
 def _ahead(table, cid, incumbent_id):
