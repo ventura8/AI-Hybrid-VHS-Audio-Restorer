@@ -1093,6 +1093,10 @@ The driver cuts excerpts, runs
 every grid variant in a fresh interpreter with its own `config.yaml`
 (overrides validated against the app's typed settings and read back from a
 child before a run), scores, and writes `experiments/tune_N/scoreboard.md`.
+The app is launched on batches of excerpts whose command line stays under
+24,000 characters (`COMMAND_LINE_BUDGET`; 240 corpus clips in one call
+raised WinError 206 on 2026-10-11), and a variant stopped part-way resumes
+on the excerpts with no restored output yet.
 Gates veto relative to the engine's own baseline; every variant is ranked;
 `listen` renders the worst windows as WAV cuts. An engine in the grid may
 carry `env:` (for example `AI_RESTORE_CATHAR_BIN` pointing at a second cathar

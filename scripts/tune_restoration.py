@@ -78,6 +78,9 @@ CUT_ARGS = [
 ]
 PROBE_RATIO_KEY = "cathar_noiseprint_duration_s"
 RUN_TIMEOUT_PER_EXCERPT_S = 900
+# Windows caps a command line at 32,767 characters: 240 corpus clips in one app call raised WinError 206
+# (the defect hunt of 2026-10-11), so the app is launched on batches that stay under this budget.
+COMMAND_LINE_BUDGET = 24000
 DEFAULT_GATES = Path("experiments/quality_calibration/gates.json")
 CONFIG_YAML = "config.yaml"
 SOURCE_WAV_SUFFIX = ".src.wav"
@@ -425,10 +428,33 @@ def run_variant(variant_dir, engine_spec, overrides, manifest, excerpts_dir, pyt
     reverted = assert_overrides_resolved(overrides, resolved)
     if reverted:
         raise SystemExit(f"{variant_dir.name}: the app did not honour the overrides: {reverted}")
-    excerpts = link_excerpts(excerpts_dir, variant_dir / "excerpts", manifest)
+    excerpts = pending_excerpts(link_excerpts(excerpts_dir, variant_dir / "excerpts", manifest), suffix)
     timing = _launch(variant_dir, excerpts, python, keep_work, extra_env)
     (variant_dir / TIMING_JSON).write_text(json.dumps(timing, indent=1), encoding="utf-8")
     return timing
+
+
+def pending_excerpts(excerpts, suffix):
+    """The excerpts whose restored output is not there yet, so a run stopped part-way resumes where it was."""
+    return [excerpt for excerpt in excerpts if not is_valid_video(output_path(excerpt, suffix))]
+
+
+def _arg_chars(parts):
+    """The characters `parts` take on a command line, each quoted and space-separated."""
+    return sum(len(part) + 3 for part in parts)
+
+
+def command_batches(prefix, paths, budget=COMMAND_LINE_BUDGET):
+    """`paths` split into runs whose command line (`prefix` plus the paths, each quoted) stays under `budget` characters.
+
+    A path too long to share a run gets one of its own; no paths give no run.
+    """
+    base, batches = _arg_chars(prefix), [[]]
+    for path in paths:
+        if batches[-1] and base + _arg_chars([*batches[-1], path]) > budget:
+            batches.append([])
+        batches[-1].append(path)
+    return batches if batches[-1] else []
 
 
 def _launch(variant_dir, excerpts, python, keep_work, extra_env=None):
@@ -436,17 +462,19 @@ def _launch(variant_dir, excerpts, python, keep_work, extra_env=None):
     if keep_work:
         env["AI_RESTORE_TEST_MODE"] = "1"
     started = time.time()
+    prefix = [python, str(REPO / "restore_audio_hybrid.py")]
     with open(variant_dir / "run.log", "w", encoding="utf-8") as log:
-        subprocess.run(
-            [python, str(REPO / "restore_audio_hybrid.py"), *(str(Path(e).resolve()) for e in excerpts)],
-            cwd=str(variant_dir),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            timeout=RUN_TIMEOUT_PER_EXCERPT_S * max(1, len(excerpts)),
-            check=False,
-        )
+        for batch in command_batches(prefix, [str(Path(e).resolve()) for e in excerpts], COMMAND_LINE_BUDGET):
+            subprocess.run(
+                [*prefix, *batch],
+                cwd=str(variant_dir),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                timeout=RUN_TIMEOUT_PER_EXCERPT_S * len(batch),
+                check=False,
+            )
     wall = time.time() - started
     return {"wall_s": wall, "n": len(excerpts), "s_per_excerpt": wall / max(1, len(excerpts))}
 
