@@ -220,11 +220,15 @@ def readable_bands(sums, floor, layout, active):
 
 
 def local_ratio(sums, fps, ratio_w, readable):
-    """Per frame and band, output over source on the NDC cells within +-0.5 s; the window's ratio with fewer than 40 cells."""
+    """Per frame and band, output over source on the NDC cells within +-0.5 s; the window's ratio with fewer than 40 cells.
+
+    The running sums are held at 0 or above: the filter's rounding left them slightly negative beside empty cells, and a
+    negative ratio put NaN into the filled bands (a fixture probe's warning in `fill_bands`).
+    """
     src_sum, out_sum, count, _floor = sums
     size = 2 * max(1, int(round(LOCAL_HALF_S * fps))) + 1
     src_local, out_local, cells = (
-        scipy.ndimage.uniform_filter1d(part, size, axis=0, mode="nearest") * size for part in (src_sum, out_sum, count)
+        np.maximum(scipy.ndimage.uniform_filter1d(part, size, axis=0, mode="nearest") * size, 0.0) for part in (src_sum, out_sum, count)
     )
     ratio = np.where(cells >= MIN_CELLS, (out_local + EPS) / (src_local + EPS), ratio_w[np.newaxis, :])
     return np.where(readable[np.newaxis, :], ratio, np.nan)

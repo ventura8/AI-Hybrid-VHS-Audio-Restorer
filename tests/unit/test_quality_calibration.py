@@ -23,7 +23,8 @@ def _materials(_fixtures, _language):
     voice = (0.1 * np.sin(2 * np.pi * 220.0 * np.arange(RATE) / RATE) * (np.arange(RATE) % 22050 < 11025)).astype(np.float32)
     noise = (1e-3 * rng.standard_normal(RATE)).astype(np.float32)
     keys = ("speech", "clean", "voice", "donor", "music")
-    return {**{key: voice for key in keys}, "vhs": voice + noise, "noise": noise, "rate": RATE}
+    linear = dict(zip(cal.LINEAR_KEYS, deg.linear_capture(voice, noise, RATE)))
+    return {**{key: voice for key in keys}, "vhs": voice + noise, "noise": noise, "rate": RATE, **linear}
 
 
 def _card(output_path, families):

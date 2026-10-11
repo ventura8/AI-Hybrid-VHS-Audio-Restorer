@@ -84,16 +84,16 @@ def test_oversubtraction_and_gating_change_the_spectrum():
     assert 0.3 < np.sqrt(np.mean(gated**2)) / np.sqrt(np.mean(voice**2)) < 0.9
 
 
+def _all_materials(voice):
+    """Every base a case can start from, the ear v4 linear capture included."""
+    noise = 1e-3 * np.random.default_rng(5).standard_normal(len(voice)).astype(np.float32)
+    materials = {"noise": noise, "clean": voice, "vhs": voice, "donor": np.roll(voice, 1000), "voice": voice, "music": np.roll(voice, 5000)}
+    return {**materials, **dict(zip(("prog_linear", "noise_linear", "vhs_linear"), deg.linear_capture(voice, noise, RATE)))}
+
+
 def test_every_degradation_and_benign_transform_applies():
     voice = _voice()
-    materials = {
-        "noise": 1e-3 * np.random.default_rng(5).standard_normal(len(voice)).astype(np.float32),
-        "clean": voice,
-        "vhs": voice,
-        "donor": np.roll(voice, 1000),
-        "voice": voice,
-        "music": np.roll(voice, 5000),
-    }
+    materials = _all_materials(voice)
     rng = np.random.default_rng(7)
     for name, spec in ((n, s) for n, s in deg.DEGRADATIONS.items() if n != "robotic"):
         source, output = deg.apply(name, spec.levels[0], voice, RATE, materials, rng)
@@ -103,8 +103,9 @@ def test_every_degradation_and_benign_transform_applies():
 def test_every_benign_transform_applies():
     voice = _voice()
     rng = np.random.default_rng(7)
+    materials = _all_materials(voice)
     for name in deg.BENIGN:
-        source, output = deg.apply_benign(name, voice, RATE, rng)
+        source, output = deg.apply_benign(name, voice, RATE, rng, materials)
         assert len(output) >= len(source), name
 
 

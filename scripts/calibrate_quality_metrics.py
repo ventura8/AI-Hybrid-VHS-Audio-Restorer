@@ -90,7 +90,9 @@ GATES = import_module("scripts.restoration_quality.gates").GATES
 # would then give it no floor at all (every R11 check would clear "three floors" of zero).
 # 6 (2026-10-10): R11 reads its band on a rate-scaled STFT (1.35 Hz bins) and `dsp.attack_db` is paired on the
 # source's onsets: a schema-5 score (the R11 subset runs before either) reads both the old way.
-SCORE_SCHEMA = 6
+# 7 (2026-10-12): ear v4's hiss readings (`dsp.hiss_*`) and `dsp.pause_depth_speech_db` are new; a schema-6 score lacks them,
+# and the `*_linear` benign cases would give them no floor.
+SCORE_SCHEMA = 7
 SPEECH_FIXTURE = "mid00_speech_m15"
 DONOR_FIXTURE = "mid01_speech_m15"
 MUSIC_FIXTURE = "mid00_musiconly_m15"
@@ -103,6 +105,8 @@ TAPE_LANGUAGE = "ro"
 # fr beside en (2026-10-09): en's readable window holds 10 fricative frames, under the texture's 30; de and es
 # hold none and it two; fr holds 102 and orders the `sibilant_islands` levels (0.14 / 0.36 / 0.75 over 8 seeds).
 DEFAULT_LANGUAGES = ("en", "fr")
+# Ear v4's linear-track capture built from the fixture (`quality_degradations.linear_capture`): the hiss cases' base.
+LINEAR_KEYS = ("prog_linear", "noise_linear", "vhs_linear")
 # The benign floor, for scripts that cite it from here (`reward_noise_floor.py`).
 noise_floor = checks_mod.noise_floor
 
@@ -145,7 +149,17 @@ def _materials(fixtures_dir, language):
     donor, _rate = _read(_fixture(fixtures_dir, language, DONOR_FIXTURE, "target"))
     music, _rate = _read(_fixture(fixtures_dir, language, MUSIC_FIXTURE, "target"))
     noise = (vhs - clean)[: len(target)]
-    return {"speech": target, "clean": clean, "vhs": vhs, "noise": noise, "donor": donor, "voice": target, "music": music, "rate": rate}
+    materials = {
+        "speech": target,
+        "clean": clean,
+        "vhs": vhs,
+        "noise": noise,
+        "donor": donor,
+        "voice": target,
+        "music": music,
+        "rate": rate,
+    }
+    return {**materials, **dict(zip(LINEAR_KEYS, deg.linear_capture(clean, noise, rate)))}
 
 
 def _write(path, data, rate):
@@ -175,7 +189,7 @@ def _degradation_cases(materials, language, out_dir, rng, names=None):
 def _benign_cases(materials, language, out_dir, rng, names=None):
     cases = []
     for name in deg.BENIGN if names is None else names:
-        source, output = deg.apply_benign(name, materials[deg.benign_base(name)], materials["rate"], rng)
+        source, output = deg.apply_benign(name, materials[deg.benign_base(name)], materials["rate"], rng, materials)
         paths = _write_pair(out_dir / language, f"benign_{name}", source, output, materials["rate"])
         cases.append(Case("benign", name, None, language, *paths))
     return cases

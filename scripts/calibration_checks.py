@@ -15,7 +15,12 @@ Per (degradation, reading) the table in `scripts/quality_degradations.py` declar
   twin reads the shelf in full; the net reading lagging behind it is what is asserted;
 - "match": a source reading must read the condition the degradation built, within
   `tolerance` octaves of the level or of the untouched material's own reading when that is
-  lower (`base.*`): a 10 kHz low pass cannot lift a programme band that ends at 4 kHz.
+  lower (`base.*`): a 10 kHz low pass cannot lift a programme band that ends at 4 kHz;
+- "steady" and "below" (ear v4): the hiss degradations' source is the hissy capture, so every
+  restoration-like output sits under the benign centre and "flat" cannot say "this reading
+  ignores that change". "steady" asks the span of the level medians (max - min) to stay within
+  the tolerance or three floors, whichever is larger; "below" asks every level's median to sit
+  at or under the benign centre less that much. Both are unscored when a level is missing.
 
 A reading missing at some level makes the check "unscored": nothing is asserted on it. A
 "match" check is unscored only when no case carries the source reading (the dsp family, which
@@ -25,6 +30,11 @@ programme band leaves the reading no band of R1's own layout on any case, the wi
 included (`balance_metrics.bands_under`: air's first band needs a band of 5292 Hz, presence
 2125 Hz, the tilt's third 1408 Hz; the realistic-v2 music beds read 1414 Hz, the speech
 targets 1.1-5.0 kHz), "not read" otherwise.
+
+The hiss readings (`dsp.hiss_*`, ear v4) take their benign floor from the `*_linear` cases
+alone, the same-percept transforms on the linear capture (`quality_degradations.benign_only`),
+and every other reading keeps the floor of the other benign cases, so adding the hiss set moves
+no existing floor and no existing check.
 
 The benign floor leaves out what a benign case changes by construction
 (`quality_degradations.benign_changes`): the shifts delay the raw pair, so the raw-pair sync
@@ -60,18 +70,29 @@ def noise_floor(cases, readings):
     """Per metric: the benign centre (median delta) and floor (p95 |delta - centre|) over every benign case."""
     values = {}
     for case in _cases_of(cases, "benign"):
-        for metric, value in _floor_readings(readings.get(case.case_id, {}), deg.benign_changes(case.name)):
+        found = _floor_readings(readings.get(case.case_id, {}), deg.benign_changes(case.name), deg.benign_only(case.name))
+        for metric, value in found:
             values.setdefault(metric, []).append(value)
     return {metric: _centre_and_floor(v) for metric, v in values.items()}
 
 
-def _floor_readings(readings, changed=()):
+def _floor_readings(readings, changed=(), only=None):
     """The (metric, number) pairs a benign floor is taken over: changes only, not the profile or base readings, nor `changed`.
 
-    `changed` names the readings the benign case moves by construction (a shift's raw-pair sync lag).
+    `changed` names the readings the benign case moves by construction (a shift's raw-pair sync lag); `only`, the prefixes
+    a case is limited to (`quality_degradations.benign_only`), else every reading but the hiss ones (`in_scope`).
     """
-    skipped = (BASE_PREFIX, META_PREFIX)
-    return [(m, v) for m, v in readings.items() if isinstance(v, (int, float)) and not m.startswith(skipped) and m not in changed]
+    return [(metric, value) for metric, value in readings.items() if _floored(metric, value, changed) and in_scope(metric, only)]
+
+
+def _floored(metric, value, changed):
+    """A number that is a change: not a profile or base reading, and not one the case moves by construction."""
+    return isinstance(value, (int, float)) and not metric.startswith((BASE_PREFIX, META_PREFIX)) and metric not in changed
+
+
+def in_scope(metric, only):
+    """A `*_linear` benign case floors the hiss readings only; every other case floors every reading but them."""
+    return metric.startswith(only) if only else not metric.startswith(deg.HISS_PREFIX)
 
 
 def _centre_and_floor(values):
@@ -136,12 +157,16 @@ def _moves(name, metric, cases, readings, floor):
     return [None if m is None else abs(m - centre) for m in _level_medians(_level_values(cases, readings, name, metric))]
 
 
+def _allowance(expectation, floor):
+    """The expectation's tolerance or three benign floors, whichever is larger."""
+    return max(expectation.tolerance or 0.0, EFFECT_MULTIPLE * _reference(floor, expectation.metric)["floor"])
+
+
 def _allowed(expectation, floor, twin_moves):
     """Per level, how far a "flat" reading may move: its tolerance or three floors, or under its twin's move."""
     if expectation.twin:
         return twin_moves
-    bound = max(expectation.tolerance or 0.0, EFFECT_MULTIPLE * _reference(floor, expectation.metric)["floor"])
-    return [bound] * len(twin_moves)
+    return [_allowance(expectation, floor)] * len(twin_moves)
 
 
 def _flat(name, expectation, cases, readings, floor):
@@ -189,7 +214,25 @@ def _match_status(share):
     return "pass" if share >= MONOTONIC_SHARE else "fail"
 
 
-CHECKS = {"up": _moving, "down": _moving, "flat": _flat, "match": _match}
+def _steady(name, expectation, cases, readings, floor):
+    """The span check (ear v4): the levels' medians span no more than the tolerance or three floors."""
+    medians = _level_medians(_level_values(cases, readings, name, expectation.metric))
+    if None in medians:
+        return {"status": "unscored"}
+    span, allowed = max(medians) - min(medians), _allowance(expectation, floor)
+    return {"medians": medians, "span": span, "allowed": allowed, "status": "pass" if span <= allowed else "fail"}
+
+
+def _below(name, expectation, cases, readings, floor):
+    """The under-the-centre check (ear v4): every level's median at or under the benign centre less the allowance."""
+    medians = _level_medians(_level_values(cases, readings, name, expectation.metric))
+    if None in medians:
+        return {"status": "unscored"}
+    edge = _reference(floor, expectation.metric)["centre"] - _allowance(expectation, floor)
+    return {"medians": medians, "edge": edge, "status": "pass" if max(medians) <= edge else "fail"}
+
+
+CHECKS = {"up": _moving, "down": _moving, "flat": _flat, "match": _match, "steady": _steady, "below": _below}
 
 
 def _source_band(name, cases, readings):

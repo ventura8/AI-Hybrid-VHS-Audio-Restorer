@@ -67,6 +67,16 @@ The near-copies no listener can tell apart from the output:
   as a no-op. Its anti-alias filters soften the band edge near 20 kHz, which the readings
   above 16 kHz may see.
 
+Ear v4's hiss tie bands (`--transforms hiss`, `HISS_TRANSFORMS`; `scripts/same_percept.py`):
+`gain_up_0_1` / `gain_down_0_1` (+-0.1 dB), `delay_0_37` (an FFT fractional delay of 0.37
+samples), `resample_soxr` (a soxr round trip; `resample_roundtrip` stays out of the set: its
+images at -50..-60 dB land in the noise cells of a deep residual), `requantise_16` and
+`fresh_floor_a` / `_b` / `_c` (fresh realisations of the output's stationary floor, seeds
+SEED + 1..3). The hiss readings take their tie bands from this output-point report, never from
+`--benign-pair`: Session 0's pairs differed grossly, and `reward.tie_floors` refuses a
+benign-pair report for a grid with a hiss family. Each grid `tie` is the report's floor for
+that flat key rounded up to 0.05; the DSP family's repeat jitter must read exactly 0.
+
 Each scoring is flattened the way a sweep ranks it (`runner.aggregates_for_tuning`,
 `{metric.side.stat: value}` plus the `gates.*` counts). Per reading, the deviation of every
 scoring after the reference is |x - x_reference|; the reading's `floor` is the
@@ -112,6 +122,7 @@ import soundfile as sf
 from scipy.signal import resample_poly
 
 from scripts import quality_degradations as deg
+from scripts import same_percept
 from scripts.cli_paths import confined_path, existing_path_arg, language_arg, path_arg
 from scripts.restoration_quality import audio_io, ledger, runner
 
@@ -126,6 +137,7 @@ WORK_DIR = "noise_floor"
 SEED = 20261009
 SHIFT_SAMPLES = 1
 ROUND_TRIP_RATES = (48000, 44100)
+FRACTIONAL_DELAY = 0.37
 FLOOR_PERCENTILE = 95.0
 SUMMARY_TOP = 10
 DEFAULT_CACHE = Path("experiments/quality_cache")
@@ -163,8 +175,71 @@ def resample_roundtrip(audio, rate, _rng):
     return _per_channel(audio, lambda mono: _round_trip(mono, rate))
 
 
-TRANSFORMS = {"shift_1": shift_one_sample, "requantise_16": requantise_16, "resample_roundtrip": resample_roundtrip}
+def gain_up_0_1(audio, _rate, _rng):
+    """+0.1 dB, channel by channel."""
+    return _per_channel(audio, lambda mono: same_percept.gain_db(mono, 0.1))
+
+
+def gain_down_0_1(audio, _rate, _rng):
+    """-0.1 dB, channel by channel."""
+    return _per_channel(audio, lambda mono: same_percept.gain_db(mono, -0.1))
+
+
+def delay_0_37(audio, _rate, _rng):
+    """An FFT fractional delay of 0.37 samples, channel by channel, at the original length."""
+    return _per_channel(audio, lambda mono: same_percept.fractional_delay(mono, FRACTIONAL_DELAY))
+
+
+def resample_soxr(audio, rate, _rng):
+    """A soxr round trip through `round_trip_rate(rate)`, channel by channel, at the original length."""
+    return _per_channel(audio, lambda mono: same_percept.soxr_round_trip(mono, rate, round_trip_rate(rate)))
+
+
+def fresh_floor(audio, rate, offset):
+    """A fresh realisation of the output's stationary floor (`same_percept.fresh_floor`, seed SEED + `offset`)."""
+    return _per_channel(audio, lambda mono: same_percept.fresh_floor(mono, rate, SEED + offset))
+
+
+def fresh_floor_a(audio, rate, _rng):
+    """`fresh_floor` with seed SEED + 1."""
+    return fresh_floor(audio, rate, 1)
+
+
+def fresh_floor_b(audio, rate, _rng):
+    """`fresh_floor` with seed SEED + 2."""
+    return fresh_floor(audio, rate, 2)
+
+
+def fresh_floor_c(audio, rate, _rng):
+    """`fresh_floor` with seed SEED + 3."""
+    return fresh_floor(audio, rate, 3)
+
+
+TRANSFORMS = {
+    "shift_1": shift_one_sample,
+    "requantise_16": requantise_16,
+    "resample_roundtrip": resample_roundtrip,
+    "gain_up_0_1": gain_up_0_1,
+    "gain_down_0_1": gain_down_0_1,
+    "delay_0_37": delay_0_37,
+    "resample_soxr": resample_soxr,
+    "fresh_floor_a": fresh_floor_a,
+    "fresh_floor_b": fresh_floor_b,
+    "fresh_floor_c": fresh_floor_c,
+}
 DEFAULT_TRANSFORMS = ("shift_1", "requantise_16")
+# Ear v4: the same-percept transforms the hiss readings' tie bands come from (`--transforms hiss`).
+HISS_ALIAS = "hiss"
+HISS_TRANSFORMS = (
+    "gain_up_0_1",
+    "gain_down_0_1",
+    "delay_0_37",
+    "resample_soxr",
+    "requantise_16",
+    "fresh_floor_a",
+    "fresh_floor_b",
+    "fresh_floor_c",
+)
 
 
 @dataclass(frozen=True)
@@ -450,7 +525,10 @@ def _known_names(value, known, what):
 
 
 def transforms_arg(value):
-    """An argparse type: comma-separated near-copy names (the reference is always scored; an empty list scores only it)."""
+    """An argparse type: comma-separated near-copy names, or `hiss` for `HISS_TRANSFORMS` (the reference is always scored;
+    an empty list scores only it)."""
+    if str(value).strip() == HISS_ALIAS:
+        return HISS_TRANSFORMS
     return _known_names(value, tuple(TRANSFORMS), "transform")
 
 

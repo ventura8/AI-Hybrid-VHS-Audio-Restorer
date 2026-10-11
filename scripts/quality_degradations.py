@@ -103,6 +103,19 @@ live in `scripts/degradations_v3.py`; their measured effect on the realistic-v2 
 - `sibilant_islands` and `sync_drift` (the R2 and R7 owners' requests) and the R2 readings on
   the v2 `sibilants_*` pair: measured beside their table entries.
 - `--excerpts` in the calibration runs `on_tape()`, the degradations a real excerpt can carry.
+
+Ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss) adds `HISS_DEGRADATIONS`
+on a linear-track capture built from the fixture (`linear_capture`, base `vhs_linear`;
+builders in `scripts/degradations_hiss.py`): hiss changed under the programme alone or in the
+pauses alone, an HF-tilted residual, a hiss-free quiet room floor that must not read as hiss,
+dead pauses, islands and hiss removed by dulling. They need the fixture's own noise, so they
+run on fixtures only (`NEEDS_REFERENCE`). Two directions join for them (`calibration_checks`):
+`steady` (the levels' medians span no more than the tolerance or three floors) and `below`
+(every level under the benign centre by that much). The hiss readings' benign floor comes only
+from the `*_linear` benign cases (`benign_only`), the same-percept transforms on that capture
+(identity, requantisation, a soxr round trip, +0.1 dB, a 0.37-sample delay, a fresh
+realisation of the noise); every other reading's floor comes from the other benign cases, as
+before.
 """
 
 import contextlib
@@ -112,6 +125,7 @@ import numpy as np
 import scipy.ndimage
 import scipy.signal
 
+from scripts import degradations_hiss as hiss_gen
 from scripts import degradations_v3 as v3
 from scripts import realistic_defects as defects
 from scripts.restoration_quality import audio_io, source_profile
@@ -436,7 +450,10 @@ class Expectation:
 
     `direction` is "up" or "down" (it must move that way), "flat" (it must not move: within
     `tolerance` or three benign floors, or strictly under the move of its absolute `twin`),
-    or "match" (a source reading within `tolerance` octaves of the level the condition built).
+    "match" (a source reading within `tolerance` octaves of the level the condition built),
+    "steady" (the levels' medians span no more than `tolerance` or three floors, wherever they
+    sit) or "below" (every level's median under the benign centre by `tolerance` or three
+    floors, whichever is larger).
     """
 
     metric: str
@@ -485,6 +502,7 @@ DEGRADATIONS = {
             Expectation(SIGMOS_COL, "down"),
             Expectation(UTMOS, "down"),
             Expectation("mos.audiobox_pq", "down", True),
+            Expectation("dsp.hiss_prog_kept_hf_db", "down", True),
         ),
     ),
     # Ear v3: R4's island and modulation readings are reported here too. On the fr fixture they
@@ -498,6 +516,7 @@ DEGRADATIONS = {
             Expectation(SIGMOS_DISC, "down", True),
             Expectation(GAP_ISLAND_KURT, "up", True),
             Expectation(GAP_MOD_DIST, "up", True),
+            Expectation("dsp.hiss_island_kurt", "up", True),
         ),
     ),
     "robotic": Degradation(
@@ -846,13 +865,99 @@ V3_DEGRADATIONS = {
     ),
 }
 DEGRADATIONS.update(V3_DEGRADATIONS)
+
+# --- ear v4: the critical hiss readings (scripts/degradations_hiss.py builds the cases) ------
+
+HISS_PREFIX = "dsp.hiss_"
+HISS_PROGRAMME = "dsp.hiss_prog_margin_db"
+HISS_PAUSE = "dsp.hiss_pause_margin_db"
+HISS_PUMP = "dsp.hiss_pump_db"
+HISS_KEPT_HF = "dsp.hiss_prog_kept_hf_db"
+ROOM_DELTA = "dsp.hiss_room_delta_db"
+# The programme reading's tie band (the fresh realisation's p95 at 75 dB), its pause twin's and the guards' benign moves.
+PROGRAMME_STEADY_DB = 0.65
+PAUSE_STEADY_DB = 0.5
+PAUSE_FLAT_DB = 0.3
+KEPT_HF_FLAT_DB = 0.5
+LINEAR = "vhs_linear"
+PROGRAMME_STEADY = Expectation(HISS_PROGRAMME, "steady", tolerance=PROGRAMME_STEADY_DB)
+REMOVED_DB = (6.0, 12.0, 20.0)
+HISS_DEGRADATIONS = {
+    "hiss_under_programme": Degradation(
+        LINEAR,
+        REMOVED_DB,
+        (
+            Expectation(HISS_PROGRAMME, "down"),
+            Expectation("dsp.hiss_prog_excess_db", "down", True),
+            Expectation(HISS_PAUSE, "flat", tolerance=PAUSE_FLAT_DB),
+            Expectation(HISS_PUMP, "down"),
+            Expectation(HISS_KEPT_HF, "flat", tolerance=KEPT_HF_FLAT_DB),
+            Expectation(TILT, "flat", tolerance=PAUSE_FLAT_DB),
+        ),
+    ),
+    "hiss_in_pauses_only": Degradation(
+        LINEAR,
+        REMOVED_DB,
+        (Expectation(HISS_PAUSE, "down"), PROGRAMME_STEADY, Expectation(GAP_ATTEN, "up"), Expectation(HISS_PUMP, "up", True)),
+    ),
+    "hiss_hf_tilt": Degradation(
+        LINEAR,
+        (6.0, 3.0, 0.0),
+        (
+            Expectation(HISS_PROGRAMME, "down"),
+            Expectation(HISS_PAUSE, "down"),
+            Expectation("dsp.gap_hf_excess_db", "down", True),
+            Expectation(HISS_KEPT_HF, "flat", tolerance=KEPT_HF_FLAT_DB),
+        ),
+    ),
+    "low_floor_kept": Degradation(
+        LINEAR,
+        (-18.0, -12.0, -6.0),
+        (
+            Expectation(HISS_PAUSE, "steady", tolerance=PAUSE_STEADY_DB),
+            Expectation(HISS_PAUSE, "below"),
+            PROGRAMME_STEADY,
+            Expectation(ROOM_DELTA, "up", True),
+            Expectation("dsp.hiss_room_onset_db", "down", True),
+        ),
+    ),
+    "dead_pauses": Degradation(
+        LINEAR,
+        (30.0, 45.0, 60.0),
+        (
+            Expectation(HISS_PAUSE, "down"),
+            Expectation(ROOM_DELTA, "down"),
+            Expectation("dsp.pause_depth_db", "up"),
+            Expectation(HISS_PUMP, "up"),
+            PROGRAMME_STEADY,
+        ),
+    ),
+    "hiss_islands": Degradation(
+        LINEAR,
+        (0.3, 0.1, 0.03),
+        (Expectation("dsp.hiss_island_kurt", "up"), Expectation(GAP_ISLAND_KURT, "up", True), Expectation(LKR, "up", True)),
+    ),
+    "hiss_removed_dulled": Degradation(
+        LINEAR, (3500.0, 2500.0, 1500.0), (Expectation(HISS_KEPT_HF, "down"), Expectation(HISS_PROGRAMME, "below"))
+    ),
+}
+DEGRADATIONS.update(HISS_DEGRADATIONS)
 # Planned readings a v3 degradation pre-registers before they exist (R9's flicker is P1).
 UNBUILT_READINGS = ("dsp.hf_flicker_db",)
 
 
 LISTENER = ("gated_pauses", "hiss_in_pauses", "sibilants_thinned", "sibilants_dulled", "transient_smear")
-# `identity_music` gives the stem and transient readings a benign floor of their own.
-BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music")
+# `identity_music` gives the stem and transient readings a benign floor of their own; the `*_linear` cases (ear v4) give the
+# hiss readings theirs, the same-percept transforms on the linear capture, and nothing else (`benign_only`).
+LINEAR_BENIGN = (
+    "identity_linear",
+    "requantise_linear",
+    "resample_linear",
+    "gain_0_1_linear",
+    "delay_0_37_linear",
+    "fresh_noise_linear",
+)
+BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music", *LINEAR_BENIGN)
 # A shift is benign to every lag-aligned reading, not to the raw pair's: `file_metrics` reads the
 # sync on the raw pair, so its lags and offset read the shift itself (5.0 / 30.0 / 60.0 ms), the
 # fault the 40 ms `file.sync_offset` gate stands for. The drift (one constant lag) stays benign.
@@ -868,7 +973,7 @@ def benign_changes(name):
 # Degradations a real tape excerpt cannot carry: they need the fixture's own recorded noise, a
 # second voice or a separate music bed, which only the fixtures have (`linear_bandwidth` runs
 # on a tape with the cut capture as its output: R0's reading of the cut is what it tests there).
-NEEDS_REFERENCE = ("hiss", "hiss_in_pauses", "words_spliced", "background_stripped")
+NEEDS_REFERENCE = ("hiss", "hiss_in_pauses", "words_spliced", "background_stripped", *HISS_DEGRADATIONS)
 TAPE_BASES = ("speech", "vhs")
 
 
@@ -883,8 +988,19 @@ def on_tape_benign():
 
 
 def benign_base(name):
-    """The material a benign case starts from: the music bed for the `*_music` cases, the speech target otherwise."""
+    """The material a benign case starts from: the linear capture for `*_linear`, the bed for `*_music`, else the speech."""
+    if name.endswith(hiss_gen.LINEAR_SUFFIX):
+        return LINEAR
     return "music" if name.endswith("_music") else "speech"
+
+
+def benign_only(name):
+    """The reading prefixes a benign case's floor is limited to: the hiss readings for `*_linear`, None (every other) otherwise."""
+    return (HISS_PREFIX,) if name.endswith(hiss_gen.LINEAR_SUFFIX) else None
+
+
+# The linear capture (ear v4) and its builders, named as the calibration reads them.
+linear_capture = hiss_gen.linear_capture
 
 
 def _pause_pair(base, rate, residual):
@@ -1019,6 +1135,8 @@ V1_BUILDERS = {"hiss": _hissed, "hum": _hummed, "underwater": _underwater}
 
 def apply(name, level, base, rate, materials, rng):
     """The (source, output) pair for one degradation at one level."""
+    if name in hiss_gen.BUILDERS:
+        return hiss_gen.BUILDERS[name](level, base, rate, materials, rng)
     if name in V3_DEGRADATIONS:
         return v3_builder(name)(level, base, rate, materials, rng)
     if name in LISTENER:
@@ -1070,8 +1188,20 @@ def _apply_level(name, level, base, rate):
     return base, compress(base, rate, level)
 
 
-def apply_benign(name, base, rate, rng):
-    """The (source, output) pair for one benign transform: every metric must read nothing."""
+def _linear_benign(name, base, rate, rng, materials):
+    """One same-percept transform of the linear capture: the requantisation draws from `rng`, the rest from their own seeds."""
+    if name == "requantise_linear":
+        return benign_requantise(base, rng)
+    return hiss_gen.LINEAR_BENIGN[name](base, rate, materials)
+
+
+def apply_benign(name, base, rate, rng, materials=None):
+    """The (source, output) pair for one benign transform: every metric must read nothing.
+
+    A `*_linear` case (ear v4) needs the calibration's `materials` only for `fresh_noise_linear` (the noise apart).
+    """
+    if name in LINEAR_BENIGN:
+        return base, _linear_benign(name, base, rate, rng, materials)
     if name.startswith("identity"):
         return base, np.asarray(base, dtype=np.float32).copy()
     if name == "requantise":
