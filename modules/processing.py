@@ -142,7 +142,7 @@ def get_video_duration_sec(video_path):  # pragma: no cover
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
-        val = subprocess.check_output(cmd).decode().strip()
+        val = subprocess.check_output(cmd).decode("utf-8", "replace").strip()
         return float(val)
     except Exception:  # pragma: no cover
         return None

@@ -262,7 +262,15 @@ def _run_loudness_analysis(input_paths, expression, total_duration=None):
         cmd.extend(["-i", str(path)])
     cmd.extend(["-filter_complex", expression, "-map", "[mastered]", "-f", "null", "-"])
     try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=_loudnorm_analysis_timeout(total_duration))
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=_loudnorm_analysis_timeout(total_duration),
+        )
     except Exception:
         return None
     return _parse_loudnorm_json(completed.stderr or "")

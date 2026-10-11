@@ -117,7 +117,7 @@ def _source_duration(source: str, timeout: int = 10):
         str(source),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=timeout)
         return float(result.stdout.strip()) if result.returncode == 0 else None
     except (OSError, ValueError, subprocess.SubprocessError):
         return None

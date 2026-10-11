@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -25,7 +26,19 @@ def _site_packages_candidates():
 
 def _prepend_poetry_site_packages(candidates):
     try:
-        result = subprocess.run(["poetry", "env", "info", "-p"], cwd=REPO_ROOT, capture_output=True, text=True, check=False, timeout=5)
+        # Poetry is a Python program: on Windows its piped output follows the ANSI code page
+        # unless told otherwise, so it is asked for UTF-8, the encoding it is read back with.
+        result = subprocess.run(
+            ["poetry", "env", "info", "-p"],
+            cwd=REPO_ROOT,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=5,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return candidates
 

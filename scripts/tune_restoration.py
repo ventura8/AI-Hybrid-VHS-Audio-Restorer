@@ -94,7 +94,7 @@ DEFAULT_TAPE_MAP = {"campanie": "campanie", "spitalul": "spitalul", "soti": "sot
 def probe_duration(path):
     """Seconds of media, or None when ffprobe cannot read it."""
     cmd = [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     try:
         return float(result.stdout.strip())
     except ValueError:
@@ -338,7 +338,9 @@ def resolved_config(variant_dir, python, extra_env=None):
     """CONFIG as a fresh interpreter launched in `variant_dir` resolves it."""
     code = "import json, modules.config as c; print(json.dumps(c.CONFIG, default=str))"
     env = {**os.environ, **(extra_env or {}), "PYTHONPATH": str(REPO), "PYTHONIOENCODING": "utf-8"}
-    result = subprocess.run([python, "-c", code], cwd=str(variant_dir), env=env, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        [python, "-c", code], cwd=str(variant_dir), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True
+    )
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 

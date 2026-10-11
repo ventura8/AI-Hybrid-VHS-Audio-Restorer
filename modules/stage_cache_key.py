@@ -470,7 +470,9 @@ def gpu_driver():
         return None
     command = [executable, "--query-gpu=driver_version", "--format=csv,noheader"]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=VERSION_TIMEOUT_S, check=False)
+        result = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=VERSION_TIMEOUT_S, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout.strip() or None
