@@ -354,6 +354,10 @@ def _power_mean_db(levels_db):
     return float(10.0 * np.log10(np.mean(10.0 ** (levels_db / 10.0))))
 
 
-def trade(source_wav, output_wav):
-    """The branch's arbiter, unchanged: noise removed and programme deviation (`scripts.measure_tradeoff.measure`)."""
-    return measure(str(source_wav), str(output_wav))
+def trade(source_wav, output_wav, align_method=None, align_prior_s=None):
+    """The branch's arbiter: noise removed (energy-averaged and per-frame median) and programme deviation.
+
+    `scripts.measure_tradeoff.measure`, aligned with `align_method` and `align_prior_s` (the
+    runner passes the pair's own, so both alignments agree).
+    """
+    return measure(str(source_wav), str(output_wav), align_method=align_method, align_prior_s=align_prior_s)

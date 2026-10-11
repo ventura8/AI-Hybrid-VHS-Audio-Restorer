@@ -105,7 +105,8 @@ def _stems(pair, registry):
     out_stem = separate_once(separator, pair.output_wav, stems_dir, pair.output_key)
     src_audio, rate = audio_io.load_audio(src_stem)
     out_audio, _rate = audio_io.load_audio(out_stem)
-    src, out, _lag = audio_io.align_pair(audio_io.to_mono(src_audio), audio_io.to_mono(out_audio))
+    method = getattr(pair, "align_method", None)
+    src, out, _lag = audio_io.align_pair(audio_io.to_mono(src_audio), audio_io.to_mono(out_audio), rate, method)
     return src, out, rate
 
 

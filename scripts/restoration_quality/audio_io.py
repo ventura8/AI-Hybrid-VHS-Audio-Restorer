@@ -17,7 +17,8 @@ from modules.auto_scanner import _compute_chunk_spectrum, _music_ratio_from_spec
 # The router's readings, shared with the app (re-exported for the tests and the calibration).
 from modules.tonal_persistence import syllabic_modulation, tonal_persistence  # noqa: F401
 from modules.utils import FFMPEG_BIN
-from scripts.score_reference import _align, _match_gain
+from scripts import pair_alignment
+from scripts.score_reference import _match_gain
 
 NATIVE_RATE = 44100
 SPEECH_RATE = 16000
@@ -146,15 +147,31 @@ def to_mono(audio):
     return np.asarray(audio, dtype=np.float32).mean(axis=1) if audio.ndim > 1 else np.asarray(audio, dtype=np.float32)
 
 
-def align_pair(source, output):
-    """Source and output on one timeline, the output gain-matched to the source.
+def align_pair(source, output, rate=NATIVE_RATE, method=None, prior_s=None):
+    """Source and output on one timeline, the output gain-matched to the source; returns `(source, output, lag)`.
 
     The sync stage leaves lags of a few hundred samples; every paired metric would read
-    that lag as damage. Alignment and gain matching are the same primitives the reference
-    scorer uses (`scripts/score_reference`).
+    that lag as damage. Alignment (`scripts/pair_alignment.py`) and gain matching are the
+    primitives the reference scorer uses (`scripts/score_reference`); `aligned_pair` also
+    returns the alignment's record (method, status, polarity).
     """
-    aligned_source, aligned_output, lag = _align(np.asarray(source, dtype=np.float64), np.asarray(output, dtype=np.float64))
-    return aligned_source.astype(np.float32), _match_gain(aligned_source, aligned_output).astype(np.float32), int(lag)
+    aligned_source, aligned_output, alignment = aligned_pair(source, output, rate, method, prior_s)
+    return aligned_source, aligned_output, alignment.applied_lag
+
+
+def aligned_pair(source, output, rate=NATIVE_RATE, method=None, prior_s=None):
+    """`(source, output, Alignment)` on one timeline, the output gain-matched to the source.
+
+    `method` names the aligner (None: `AI_RESTORE_ALIGN_METHOD` or the default,
+    `gcc_phat_spans`); `prior_s` is an expected lag in seconds (the mux's is
+    `pair_alignment.MUX_DELAY_S`), which breaks ties and is where an abstaining aligner
+    trims the pair (0 without one).
+    """
+    prior = None if prior_s is None else int(round(prior_s * rate))
+    source, output = np.asarray(source, dtype=np.float64), np.asarray(output, dtype=np.float64)
+    aligned_source, aligned_output, alignment = pair_alignment.align(source, output, rate, method, prior)
+    matched = _match_gain(aligned_source, aligned_output)
+    return aligned_source.astype(np.float32), matched.astype(np.float32), alignment
 
 
 def resample_cached(mono, rate, target_rate, cache_dir, key):
