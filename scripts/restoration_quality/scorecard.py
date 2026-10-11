@@ -14,6 +14,10 @@ and the sync of `file_metrics.py`) and `meta` (what the capture itself carries, 
 profile of `source_profile.py`; source side only, displayed). Counts (clicks, dropouts) also
 report their worst window (`max`) and `p95` beside the median and tail, so one click in one
 window is not diluted by the median of the windows around it.
+
+Ear v4 adds the hiss readings (`dsp.hiss_*`): margins in dB over the audibility threshold at the
+critical playback level, lower is better, so their tail is the hissiest tenth of windows; the
+excess (max(0, margin) per side) is what the v4 grids rank, one-sided with target 0.
 """
 
 from dataclasses import dataclass, field
@@ -134,6 +138,35 @@ METRICS = {
         MetricSpec("dsp.gap_mod_dist_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
         MetricSpec("dsp.gap_island_kurt", "dsp", LOWER, "log-ratio", SPEECH_ROUTES),
         MetricSpec("dsp.gap_pause_s", "dsp", NONE, "s", SPEECH_ROUTES),
+        # Round 0 asked for pause depth on speech windows alone: on Vaccin 47 of 61 windows route mixed, and the
+        # mixed-route aggregate put the ranked-first known excerpts at 38-40 dB (speech windows 29-30). Ear v4's dead-air
+        # guard (G1) reads it.
+        MetricSpec("dsp.pause_depth_speech_db", "dsp", LOWER, "dB", ("speech",)),
+        # Ear v4 (hiss_programme.py, hiss_pause.py): the hiss heard under the programme and in the pauses at the critical
+        # playback level (each file's loud frames at 75 dB SPL). The margins are dB over the audibility threshold
+        # (LOWER: the tail is the hissiest tenth of windows); the excess is max(0, margin) per side, the one-sided form the
+        # v4 grids rank with target 0. The guards are paired against a zero source.
+        MetricSpec("dsp.hiss_prog_margin_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_excess_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_margin_all_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_excess_all_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_margin_hf_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_audible_frac", "dsp", LOWER, ""),
+        MetricSpec("dsp.hiss_prog_removed_db", "dsp", NONE, "dB"),
+        MetricSpec("dsp.hiss_prog_removed_hf_db", "dsp", NONE, "dB"),
+        MetricSpec("dsp.hiss_pump_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_island_kurt", "dsp", LOWER, "log-ratio"),
+        MetricSpec("dsp.hiss_prog_kept_hf_db", "dsp", HIGHER, "dB"),
+        MetricSpec("dsp.hiss_prog_active_s", "dsp", NONE, "s"),
+        MetricSpec("dsp.hiss_prog_bands", "dsp", NONE, "count"),
+        MetricSpec("dsp.hiss_prog_validated", "dsp", NONE, ""),
+        MetricSpec("dsp.hiss_pause_margin_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_pause_excess_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_pause_onset_db", "dsp", HIGHER, "dB SPL"),
+        MetricSpec("dsp.hiss_pause_sone", "dsp", LOWER, "sone"),
+        MetricSpec("dsp.hiss_room_onset_db", "dsp", NONE, "dB SPL"),
+        MetricSpec("dsp.hiss_room_delta_db", "dsp", TWO_SIDED, "dB"),
+        MetricSpec("dsp.hiss_pause_s", "dsp", NONE, "s"),
         MetricSpec("stems.si_sdr_db", "stems", HIGHER, "dB"),
         MetricSpec("stems.lsd_db", "stems", LOWER, "dB"),
         MetricSpec("stems.octave_ratio_db", "stems", HIGHER, "dB"),
@@ -192,6 +225,9 @@ METRICS = {
         MetricSpec("meta.line_hz", "meta", NONE, "Hz"),
         MetricSpec("meta.line_ppm", "meta", NONE, "ppm"),
         MetricSpec("meta.line_sd_ppm", "meta", NONE, "ppm"),
+        # Ear v4: the hiss anchor's coverage (hiss_floor.source_anchor), read once per source, displayed.
+        MetricSpec("meta.hiss_anchor_pause_s", "meta", NONE, "s"),
+        MetricSpec("meta.hiss_anchor_validated", "meta", NONE, ""),
     )
 }
 

@@ -36,6 +36,20 @@ Ear v3 (2026-10-09):
   broken sync stage. The 32 v2 final pairs read drift 0.02-0.26 ms, offset 4.7-5.4 ms and
   no unmatched anchor.
 - `dsp.hf_4k8k` / `dsp.hf_8k16k` stay as backstops only; the v3 grids never rank them.
+
+Ear v4 (2026-10-12): the user's rule of 2026-10-11, in capitals: the ear must be very critical
+of VHS hiss under speech or singing and in silence and pauses. The user heard hiss on every
+Tata tape for weeks while no flag moved: `listener.hiss` is display-only (above), and nothing
+read the hiss under the programme. Two flags read the hiss's audibility at the critical
+playback level (each file's loud frames at 75 dB SPL, `hiss_floor.L_CRIT_DB`):
+`listener.hiss_programme` on the median of `dsp.hiss_prog_margin_db` (`hiss_programme.py`) and
+`listener.hiss_pause` on the tail (the hissiest tenth of windows) of `dsp.hiss_pause_margin_db`
+(`hiss_pause.py`). Both fire at 0 dB, with no jitter allowance: the critical side. Their
+thresholds are the user's rule, which neither a gates file nor a calibration moves
+(`USER_RULE_FIXED`): the ledger's wildcard `clean["*"]` records predate the rule, and a
+derivation would read them as clean on every listener flag and relax the hiss flags to the
+plateau's level. No new hard gate: the v4 grids' `constraints:` hold the hard guards (no dead
+air, no dulling, no musical noise), so every other report reads as before.
 """
 
 import json
@@ -118,18 +132,41 @@ GATES = {
     "listener.attack": Gate("dsp.attack_db", TAIL, ">=", -4.0, "attacks softened: transients smeared", FLAG),
     "listener.bright": Gate("dsp.balance_top_db", "median", "<=", 1.0, "presence or air lifted: bright, thin", FLAG, False),
     "listener.dull": Gate("dsp.balance_top_db", "median", ">=", -1.0, "presence or air lost: dull, underwater", FLAG, False),
+    # Ear v4: the user's rule (module docstring). 0 dB is the audibility threshold at the critical playback level.
+    "listener.hiss_programme": Gate(
+        "dsp.hiss_prog_margin_db",
+        "median",
+        "<=",
+        0.0,
+        "audible tape hiss under speech or singing at the critical playback level (loud frames at 75 dB SPL)",
+        FLAG,
+        False,
+    ),
+    "listener.hiss_pause": Gate(
+        "dsp.hiss_pause_margin_db",
+        "tail",
+        "<=",
+        0.0,
+        "audible tape hiss in the pauses at the critical playback level (the hissiest tenth of windows)",
+        FLAG,
+        False,
+    ),
 }
 
 
 # Gates ear v3 demoted to display-only: a gates file still sets their threshold, never their
 # severity, so a stored v2 calibration cannot make them count again (see the module docstring).
 DISPLAY_ONLY = frozenset({"listener.hiss"})
+# Flags whose threshold, statistic and severity are the user's rule of 2026-10-11: a gates file entry for them is
+# ignored entirely, and `calibration_gates` derives none (module docstring, "Ear v4").
+USER_RULE_FIXED = frozenset({"listener.hiss_programme", "listener.hiss_pause"})
 
 
 def load_gates(path, base=GATES):
     """`base` with the entries of a JSON file merged over it: `{name: {metric, stat, op, threshold, note?, severity?}}`.
 
-    A `DISPLAY_ONLY` gate the base defines keeps the base's severity whatever the file says.
+    A `DISPLAY_ONLY` gate the base defines keeps the base's severity whatever the file says; a `USER_RULE_FIXED` one
+    keeps the base's gate whole.
     """
     with open(path, "r", encoding="utf-8") as handle:
         raw = json.load(handle)
@@ -140,7 +177,9 @@ def load_gates(path, base=GATES):
 
 
 def _file_fields(name, fields, base):
-    """A file entry's fields; a display-only gate the base defines loses the entry's `severity`."""
+    """A file entry's fields; a display-only gate the base defines loses the entry's `severity`, a user-rule one all of them."""
+    if name in USER_RULE_FIXED and name in base:
+        return {}
     if name in DISPLAY_ONLY and name in base:
         fields = dict(fields)
         fields.pop("severity", None)

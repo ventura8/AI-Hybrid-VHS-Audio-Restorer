@@ -38,6 +38,10 @@ A gate whose metric's family was not scored in this run is not derived (`skip_re
 v2 gates came from a dsp-only run, so every speech, mos and stems gate kept its hand-set
 value without the gates file saying so. The report now names each one and why.
 
+Ear v4: the hiss flags (`gates.USER_RULE_FIXED`) are the user's rule of 2026-10-11 and are never
+derived. Thirteen ledger records carry `clean["*"]`, all from before the rule, and they count as
+clean on every listener flag: a derivation would relax the hiss flags to the plateau's level.
+
 Per route: `derive_route_gates` keeps the gates whose metric is read on that route
 (`scorecard.METRICS[...].routes`; file-level readings apply on every route), reads the route's
 own benign floor where it has one and the pooled floor otherwise.
@@ -59,6 +63,7 @@ KNOWN_ORDERING = "known ordering"
 GOOD_BOUND = "known good bound"
 FLOOR = "floor"
 BY_RANK = "by-ear rank"
+USER_RULE_REASON = "fixed by the user's rule of 2026-10-11 (gates.USER_RULE_FIXED)"
 
 
 def passes(value, op, threshold):
@@ -265,7 +270,9 @@ def skip_reason(gate, floor, families=None):
 
 
 def _derived_one(name, gate, floor, ordering, families):
-    """`(entry, None)` or `(None, reason)` for one gate."""
+    """`(entry, None)` or `(None, reason)` for one gate; a gate the user's rule fixes is never derived."""
+    if name in gates_mod.USER_RULE_FIXED:
+        return None, USER_RULE_REASON
     reason = skip_reason(gate, floor, families)
     entry = None if reason else derive_gate(gate, floor, ordering, name)
     if entry is None:
