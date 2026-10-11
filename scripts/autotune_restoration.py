@@ -21,6 +21,13 @@ from winning when a learned judge's median moved past `floor_multiple` x its ben
 (`--noise-floors`, a `scripts/reward_noise_floor.py` report) on some tape; a veto without a
 floor stops the loop before the first render.
 
+Ear v4 (`tune_grids/tata_v4.yaml`, `music_v4.yaml`, the default grid since 2026-10-12: the
+user's rule, be very critical of VHS hiss under the programme and in the pauses) adds
+`constraints:`, the grid's hard guards (`autotune_guards.mark_constraints`): a candidate whose
+reading, on some tape, is worse than the incumbent's by more than `max_move` and beyond `bound`
+cannot win. They are stage-1 dsp readings, so `judge` marks them on every candidate in both
+passes; they keep "no hiss" from being won by deleting programme or emptying the pauses.
+
 Inert candidates are found twice. Before rendering, `INERT_WHEN` leaves out the knobs the
 incumbent's switches make dead (a de-esser threshold with the de-esser off, the air gain with
 the shelf off, the split-band factors under the Wiener denoiser), and `DURATION_BOUND` leaves
@@ -105,7 +112,7 @@ crosses it. Cathar's speech keys on a clip set that is all music are still left 
 
 usage:
   autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
-                          [--grid scripts/tune_grids/tata_v1.yaml] [--families auto|dsp,stems,speech,mos]
+                          [--grid scripts/tune_grids/tata_v4.yaml] [--families auto|dsp,stems,speech,mos]
                           [--start '{"cathar_alpha": 2.0}' | --start-file final.json] [--language ro] [--gates gates.json]
                           [--parallel 2] [--noise-floors experiments/reward/noise_floor_benign.json]
                           [--stage-cache experiments/autotune/stage_cache] [--stage-cache-gb 50]
@@ -136,6 +143,8 @@ if str(REPO) not in sys.path:
 tune = import_module("scripts.tune_restoration")
 audio_io = import_module("scripts.restoration_quality.audio_io")
 guards_mod = import_module("scripts.autotune_guards")
+# Ear v4 (2026-10-12): critical of hiss under the programme and in the pauses, with the hard guards against dead air.
+DEFAULT_GRID = Path("scripts/tune_grids/tata_v4.yaml")
 cathar = import_module("modules.cathar")
 stage_cache = import_module("modules.stage_cache")
 scoring = import_module("scripts.autotune_scoring")
@@ -767,16 +776,20 @@ def _ranks_per_tape(scores, ranking):
     return {slug: rank_on_tape({cid: scores[cid][slug] for cid in scores}, ranking) for slug in tapes}
 
 
-def judge(scores, incumbent_id, ranking, vetoes=None, veto_ids=None):
+def judge(scores, incumbent_id, ranking, vetoes=None, veto_ids=None, constraints=None):
     """`{cid: {"mean_rank", "wins", "failures", "per_tape", "qualifies"}}` against the incumbent across tapes.
 
     With `vetoes` (`{reading: reward.Veto}`, a v3 grid's learned judges) a candidate whose
     median moved past a veto on some tape also carries `vetoed` and cannot qualify. `veto_ids`
     limits the veto to those candidates (the two-stage scoring reads the learned judges on the
-    contenders only); None checks every candidate.
+    contenders only); None checks every candidate. With `constraints` (`{reading:
+    reward.Constraint}`, a v4 grid's hard guards on dsp readings) every candidate is checked and
+    one that trips a constraint on some tape carries `constrained` and cannot qualify.
     """
     per_tape = _ranks_per_tape(scores, ranking)
     verdicts = {cid: _verdict(cid, scores[cid], per_tape, incumbent_id) for cid in scores}
+    for cid in scores:
+        guards_mod.mark_constraints(verdicts[cid], scores[cid], scores[incumbent_id], constraints)
     for cid in scores if veto_ids is None else veto_ids:
         guards_mod.mark_vetoes(verdicts[cid], scores[cid], scores[incumbent_id], vetoes)
     _qualify(verdicts, incumbent_id, len(per_tape))
@@ -911,25 +924,27 @@ def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, inc
     incumbent_id = candidate_id(incumbent)
     live, inert = _split_inert(rendered, incumbent_id, tapes, out_dir)
     ties = guards_mod.find_ties(live, incumbent_id, tapes, out_dir, guards.audibility_offset_db)
-    verdicts = score_and_judge(args, _without(live, ties), (tapes, out_dir), ranking, incumbent_id, guards.vetoes)
+    verdicts = score_and_judge(args, _without(live, ties), (tapes, out_dir), ranking, incumbent_id, guards)
     return _with_set_aside(verdicts, inert, ties, refused)
 
 
-def score_and_judge(args, scorable, where, ranking, incumbent_id, vetoes):
+def score_and_judge(args, scorable, where, ranking, incumbent_id, guards):
     """Two-stage scoring (plan 1.5), exact: the families the ranking and the gates read on every candidate, a judgement
     without the learned vetoes, then the other families on the incumbent and the candidates that qualified so far,
     and the final judgement with the vetoes on those contenders. A veto can only take a qualification away, so
-    the verdicts are the ones a single pass over every family gives."""
+    the verdicts are the ones a single pass over every family gives. `guards` (`autotune_guards.Guards`) brings the
+    vetoes and the grid's constraints; the constraints read stage-1 dsp readings, so both judgements apply them."""
     tapes, out_dir = where
     ranked, rest = scoring.split_families(args.families, ranking, scoring.gate_names(args.gates))
     options = (args.gates, args.language, args.parallel)
     scores = score_round(scorable, tapes, out_dir, ranked, *options)
-    contenders = [cid for cid, verdict in judge(scores, incumbent_id, ranking).items() if verdict["qualifies"]]
+    first = judge(scores, incumbent_id, ranking, constraints=guards.constraints)
+    contenders = [cid for cid, verdict in first.items() if verdict["qualifies"]]
     missing = scoring.lacking(scores, [incumbent_id, *contenders], rest) if contenders else []
     if missing:
         learned = score_round(_only(scorable, missing), tapes, out_dir, rest, *options, scoring.LEARNED_STAGE)
         scoring.merge_families(scores, learned, rest)
-    return judge(scores, incumbent_id, ranking, vetoes, veto_ids=contenders)
+    return judge(scores, incumbent_id, ranking, guards.vetoes, veto_ids=contenders, constraints=guards.constraints)
 
 
 def _only(candidates, ids):
@@ -981,7 +996,7 @@ def _parse_args(argv):
     parser.add_argument("--engine", choices=list(KNOBS), required=True)
     parser.add_argument("--tapes", type=Path, required=True, help="JSON {slug: video path}")
     parser.add_argument("--out", type=Path, default=Path("experiments/autotune"))
-    parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v2.yaml"))
+    parser.add_argument("--grid", type=Path, default=DEFAULT_GRID)
     # The loop stops at a plateau (user: "stop only when no more improvements are possible"); the cap is a safety net.
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--families", default=scoring.AUTO_FAMILIES, help="auto (the families the grid reads) or a list")

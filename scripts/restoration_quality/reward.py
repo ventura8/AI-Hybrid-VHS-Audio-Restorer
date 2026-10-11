@@ -80,6 +80,25 @@ Two of those booleans come from a grid's own sections, which `autotune_restorati
   raises the knob and ends at 2.0 or above is refused, before it is rendered; a move back
   towards the accepted side is never refused.
 
+Ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss) adds two pieces:
+
+- `tie` (`NUMBER_KEYS`, `ReadingSpec.tie`): a reading's tie band in its own units, the p95 of
+  same-percept transforms (a fresh realisation of the same noise, a 0.37-sample delay,
+  +-0.1 dB, a soxr round trip, 16-bit requantisation; `scripts/reward_noise_floor.py
+  --transforms hiss`). `tolerance` takes the larger of the reading's floor and its `tie`. The
+  hiss readings rank one-sided (excess = max(0, margin), target 0, dead zone 0), so the most
+  a tie forgives is the tie itself, never a benign-pair floor: Session 0's pairs differed
+  grossly (residual noise 16.4 dB, noise removed 19.9 dB). `tie_floors` is how GRPO and the
+  preference head take their tie bands: it refuses a benign-pair report for a grid with a
+  hiss family (`HISS_FAMILIES`). The learned vetoes keep `noise_floors`.
+- `constraints:` (`parse_constraints`, `Constraint`, `constrained_readings`): a grid's hard
+  guards, applied by the self-driving loop alone (`autotune_guards.mark_constraints`). A
+  candidate trips one when its reading, on some tape, is worse than the incumbent's by more
+  than `max_move` (default 0) and lies beyond `bound` (default: none); losing a reading the
+  incumbent has trips it too. A tripped candidate is "excluded" (`Constraints.dsp_guard`).
+  They keep "no hiss" from being won by deleting programme: no new audible hiss, no dead air,
+  no gated hiss, no dulling, no musical noise.
+
 `distances` also gives the per-reading features a preference head (`preference.py`) fits
 on when the listener's preference is two-sided. numpy only; nothing here reads a file.
 """
@@ -93,7 +112,7 @@ NEUTRAL = 0.5
 EXCLUDED_REWARD = 0.0
 REQUIRED_KEYS = ("target", "family")
 # key -> (default, smallest allowed value, whether that value itself is allowed)
-NUMBER_KEYS = {"dead_zone": (0.0, 0.0, True), "scale": (1.0, 0.0, False), "weight": (1.0, 0.0, False)}
+NUMBER_KEYS = {"dead_zone": (0.0, 0.0, True), "scale": (1.0, 0.0, False), "weight": (1.0, 0.0, False), "tie": (0.0, 0.0, True)}
 FIXED_REWARD = {"excluded": EXCLUDED_REWARD, "tie": NEUTRAL}
 COMPARED = ("ok", "capped")
 HARD_KEY = "gates.hard_failures"
@@ -114,6 +133,13 @@ NO_BENIGN_FLOOR = (
 )
 # A ledger boundary's rejected side as the sign of a move towards it.
 REJECTED_SIDES = {"rejected_above": 1.0, "rejected_below": -1.0}
+# Ear v4: the families of the critical hiss readings, whose tie bands never come from a benign-pair report.
+HISS_FAMILIES = ("hiss_programme", "hiss_pause")
+BENIGN_PAIR_POINT = "benign_pair"
+HISS_BENIGN_FLOOR = (
+    "a hiss reading's tie band comes from same-percept transforms of the shipped outputs (python -m scripts.reward_noise_floor "
+    "SOURCE=OUTPUT ... --transforms hiss), never from a --benign-pair report: Session 0's pairs differed grossly"
+)
 
 
 @dataclass(frozen=True)
@@ -125,6 +151,7 @@ class ReadingSpec:
     dead_zone: float = 0.0
     scale: float = 1.0
     weight: float = 1.0
+    tie: float = 0.0
 
     def distance(self, value):
         """`weight * max(0, |value - target| - dead_zone) / scale`, or None for a missing or non-finite reading."""
@@ -152,10 +179,11 @@ class Constraints:
     inaudible: bool = False
     verdict_reversal: bool = False
     learned_veto: bool = False
+    dsp_guard: bool = False
 
     def status(self):
-        """One of excluded, tie, capped or ok (see the module docstring)."""
-        if any((self.hard_gate, self.verdict_reversal, self.learned_veto)):
+        """One of excluded, tie, capped or ok (see the module docstring); a tripped grid constraint excludes."""
+        if any((self.hard_gate, self.verdict_reversal, self.learned_veto, self.dsp_guard)):
             return "excluded"
         if self.inaudible:
             return "tie"
@@ -241,10 +269,34 @@ def noise_floors(report):
     return {reading: float(entry["floor"]) for reading, entry in report.get("readings", {}).items() if _finite(entry.get("floor"))}
 
 
+def _floor_of(floors, reading):
+    """The reading's floor from `noise_floors`, 0 when the report has none."""
+    value = floors.get(reading, 0.0)
+    return float(value) if _finite(value) else 0.0
+
+
 def tolerance(flat, grid, floors=None):
-    """`{reading: tie-band share}` of one candidate at its own readings; a reading without a floor adds nothing."""
+    """`{reading: tie-band share}` of one candidate at its own readings.
+
+    The band is the larger of the reading's floor and its grid `tie`; a reading with neither adds nothing.
+    """
     floors = floors or {}
-    return {reading: spec.noise(flat.get(reading), floors[reading]) for reading, spec in parse_grid(grid).items() if reading in floors}
+    bands = {reading: (spec, max(_floor_of(floors, reading), spec.tie)) for reading, spec in parse_grid(grid).items()}
+    return {reading: spec.noise(flat.get(reading), band) for reading, (spec, band) in bands.items() if band > 0.0}
+
+
+def tie_floors(report, grid):
+    """`noise_floors(report)` for the tie bands of GRPO and the preference head; vetoes keep `noise_floors`.
+
+    A benign-pair report for a grid with a reading in a hiss family (`HISS_FAMILIES`) raises ValueError naming the reading:
+    the hiss readings take their tie bands from same-percept transforms. The Session 0 report predates the hiss readings
+    and holds no floor for them, so it is refused on the grid alone, not on the floors it holds.
+    """
+    floors = noise_floors(report)
+    hiss = [reading for reading, spec in parse_grid(grid).items() if spec.family in HISS_FAMILIES]
+    if hiss and BENIGN_PAIR_POINT in report.get("operating_points", []):
+        raise ValueError(f"tie band {hiss[0]}: {HISS_BENIGN_FLOOR}")
+    return floors
 
 
 def readings_by_family(specs):
@@ -388,19 +440,83 @@ def _count(flat, key):
     return float(value) if _finite(value) else 0.0
 
 
-def gate_constraints(flat, incumbent, *, inaudible=False, verdict_reversal=False, learned_veto=False):
+def gate_constraints(flat, incumbent, **measured):
     """`Constraints` for a candidate: the harness gate counts against the incumbent's, plus what the caller measured.
 
     Mirrors `autotune_restoration._beats`: no more hard failures and no more listener flags
     than the incumbent (`gates.hard_failures`, `gates.listener_flags` in the flat readings).
+    `measured` holds the caller's booleans by name: `inaudible`, `verdict_reversal`,
+    `learned_veto` and `dsp_guard` (a tripped grid constraint, `constrained_readings`); an
+    unknown name is a TypeError.
     """
     return Constraints(
         hard_gate=_count(flat, HARD_KEY) > _count(incumbent, HARD_KEY),
         listener_flag=_count(flat, FLAG_KEY) > _count(incumbent, FLAG_KEY),
-        inaudible=bool(inaudible),
-        verdict_reversal=bool(verdict_reversal),
-        learned_veto=bool(learned_veto),
+        **{name: bool(value) for name, value in measured.items()},
     )
+
+
+@dataclass(frozen=True)
+class Constraint:
+    """One grid constraint: the direction that is worse, how far a reading may move that way, and where it may not go."""
+
+    worse: str
+    max_move: float = 0.0
+    bound: float | None = None
+
+    def _beyond(self, value):
+        """Whether `value` lies past the bound the worse way (always, without a bound)."""
+        return self.bound is None or WORSE_SIGN[self.worse] * (value - self.bound) > 0.0
+
+    def trips(self, value, incumbent):
+        """Whether `value` is worse than `incumbent` by more than `max_move` and beyond `bound`, or was lost while it was read."""
+        if not _finite(incumbent):
+            return False
+        if not _finite(value):
+            return True
+        move = WORSE_SIGN[self.worse] * (float(value) - float(incumbent))
+        return move > self.max_move and self._beyond(float(value))
+
+    def describe(self, value, incumbent):
+        """Why `value` trips the constraint against `incumbent`, for the loop's log."""
+        where = "" if self.bound is None else f" and past {self.bound:g}"
+        return f"{value} against the incumbent's {incumbent}: worse ({self.worse}) by more than {self.max_move:g}{where}"
+
+
+CONSTRAINT_CHECKS = (
+    (lambda entry: entry.get("worse") in WORSE_SIGN, "worse must be up or down"),
+    (lambda entry: entry.get("max_move") is not None or entry.get("bound") is not None, "name max_move, bound or both"),
+    (lambda entry: _in_range(entry.get("max_move", 0.0), 0.0, True), "max_move must be a finite number of at least 0"),
+    (lambda entry: entry.get("bound") is None or _finite(entry["bound"]), "bound must be a finite number"),
+)
+
+
+def _constraint_error(entry):
+    """Why a constraint entry is unusable, or None."""
+    if not isinstance(entry, dict):
+        return CONSTRAINT_CHECKS[0][1]
+    return next((message for check, message in CONSTRAINT_CHECKS if not check(entry)), None)
+
+
+def _constraint(reading, entry):
+    error = _constraint_error(entry)
+    if error:
+        raise ValueError(f"constraint {reading}: {error}")
+    bound = entry.get("bound")
+    return Constraint(entry["worse"], float(entry.get("max_move", 0.0)), None if bound is None else float(bound))
+
+
+def parse_constraints(section):
+    """`{reading: Constraint}` from a grid's `constraints:` mapping; ValueError names a bad entry."""
+    if not isinstance(section or {}, dict):
+        raise ValueError("constraints must map a reading to {worse, max_move?, bound?}")
+    return {reading: _constraint(reading, entry) for reading, entry in (section or {}).items()}
+
+
+def constrained_readings(flat, incumbent, constraints):
+    """The readings whose constraint `flat` trips against the incumbent's flat readings on the same material."""
+    flat, incumbent = flat or {}, incumbent or {}
+    return [reading for reading, rule in constraints.items() if rule.trips(flat.get(reading), incumbent.get(reading))]
 
 
 @dataclass(frozen=True)

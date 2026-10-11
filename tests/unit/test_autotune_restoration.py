@@ -150,3 +150,39 @@ def test_the_scorer_environment_adds_the_tape_folder_to_the_data_roots(tmp_path,
     monkeypatch.setenv("AI_RESTORE_DATA_ROOTS", corpus)
     env = scoring._scorer_env(tmp_path / "tapes" / "tape.mov")
     assert env["AI_RESTORE_DATA_ROOTS"].split(os.pathsep) == [corpus, str((tmp_path / "tapes").resolve())]
+
+
+# ----------------------------------------------------------------------------- ear v4: constraints in the judgement
+
+EXCESS = "dsp.hiss_prog_excess_db.output.median"
+V4_RANKING = {"dsp.m.delta.median": "down"}
+
+
+def _v4_scores():
+    """`dead` ranks best and empties the pauses (its excess falls) but trips the hiss constraint on t1; `fine` beats inc."""
+    return {
+        "inc": {"t1": {"dsp.m.delta.median": 2.0, EXCESS: 8.0}, "t2": {"dsp.m.delta.median": 2.0, EXCESS: 8.0}},
+        "fine": {"t1": {"dsp.m.delta.median": 1.0, EXCESS: 8.2}, "t2": {"dsp.m.delta.median": 1.0, EXCESS: 7.0}},
+        "dead": {"t1": {"dsp.m.delta.median": 0.5, EXCESS: 9.5}, "t2": {"dsp.m.delta.median": 0.5, EXCESS: 7.0}},
+    }
+
+
+def test_judge_marks_constraints_on_every_candidate_even_without_vetoes():
+    """The first pass of the two-stage scoring judges without vetoes but with the constraints: `dead` cannot qualify."""
+    rules = at.guards_mod.reward.parse_constraints({EXCESS: {"worse": "up", "max_move": 0.65}})
+    verdicts = at.judge(_v4_scores(), "inc", V4_RANKING, constraints=rules)
+    assert [verdicts[cid]["qualifies"] for cid in ("inc", "fine", "dead")] == [False, True, False]
+    assert verdicts["dead"]["constrained"] == ["t1 dsp.hiss_prog_excess_db.output.median +1.5"]
+
+
+def test_judge_keeps_the_constraints_in_the_vetoed_pass():
+    """With vetoes limited to the contenders, a constrained candidate outside them is still marked."""
+    rules = at.guards_mod.reward.parse_constraints({EXCESS: {"worse": "up", "max_move": 0.65}})
+    verdicts = at.judge(_v4_scores(), "inc", V4_RANKING, {}, veto_ids=["fine"], constraints=rules)
+    assert ("constrained" in verdicts["dead"], verdicts["fine"]["qualifies"]) == (True, True)
+
+
+def test_the_loop_defaults_to_the_v4_grid():
+    """The self-driving loop judges with tata_v4 unless told otherwise."""
+    args = at._parse_args(["--engine", "cathar", "--tapes", "tapes.json"])
+    assert args.grid == at.DEFAULT_GRID == at.Path("scripts/tune_grids/tata_v4.yaml")

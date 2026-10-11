@@ -86,3 +86,12 @@ def test_the_command_line_scores_the_grids_families_by_default(tmp_path, monkeyp
 def test_the_command_line_keeps_a_named_family_list(tmp_path, monkeypatch):
     """--families dsp,stems,speech,mos (the old default) is scored as given."""
     assert _run(monkeypatch, tmp_path, "--families", "dsp,stems,speech,mos") == ("dsp", "stems", "speech", "mos")
+
+
+@pytest.mark.parametrize("name", ["tata_v4.yaml", "music_v4.yaml"])
+def test_the_v4_constraints_read_the_dsp_pass(name):
+    """The v4 grids' constraints are dsp readings, counted among the keys; the families stay those of v3."""
+    grid = tune.load_grid(GRIDS / name)
+    expected = {"tata_v4.yaml": ("dsp", "speech", "mos"), "music_v4.yaml": ("dsp", "stems", "mos")}[name]
+    assert scoring.grid_families(grid) == expected
+    assert scoring.grid_families({"constraints": {"mos.x.output.median": {"worse": "up", "max_move": 1.0}}}) == ("dsp", "mos")
