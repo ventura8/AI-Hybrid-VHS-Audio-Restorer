@@ -21,6 +21,7 @@ ROOTS = (("processing.py", "_neural_output"), ("processing.py", "_run_neural_mod
 # Stages the cached point is known to run: the graph must reach each of them, or it is blind.
 MUST_REACH = {
     ("processing.py", "_pre_denoise_surgical_step"),
+    ("notch_ring_guard.py", "apply_when_enabled"),
     ("filters.py", "build_pre_denoise_surgical_filter"),
     ("apl_chain.py", "stage_plan"),
     ("physical_repair.py", "apply_when_needed"),

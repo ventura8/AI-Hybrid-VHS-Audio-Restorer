@@ -366,6 +366,21 @@ _NUMERIC_CONFIG_FIELDS = (
     # pops at any sensitivity and this recovers +5.5 at 7, touching 61 spans of undamaged
     # speech per 15 s at 40 dB under the programme; 5 touches 312, 8 starts missing pops.
     ("apl_depop_threshold", float, 7.0, 0.0),
+    # The pop repair's prominence guard, in dB; 0 switches it off and every output keeps its
+    # bytes. With it on, a span is refilled only when its peak prediction residual stands this
+    # far above the largest residual within 5 ms either side (impulse_repair._prominent): a
+    # click is one impulse, the residual of speech that trips the threshold comes in clusters.
+    # The threshold alone fired on clean speech far past the 4/s the calibrated class allowed:
+    # the shipped renders logged 3.9-24.2 spans/s over both channels; on SOTI and Vaccin
+    # (2026-10-11) single-sample outliers in loud frames (median at the 71st-80th percentile
+    # level), 98% no more than 1 dB over the waveform's own peak around them, 79-80% within
+    # 15 ms of another, lifting no quiet frame. Spans/s per channel at 0 / 6 / 9 dB on the
+    # shipped chain's pre-depop audio:
+    # SOTI 6.32 / 0.50 / 0.05, Vaccin 12.11 / 1.38 / 0.27, the calibrated speech classes 2.75 /
+    # 0.17 / 0.04 (m15) and 5.20 / 0.41 / 0.16 (m09); inside the pops of the five crackle
+    # fixtures +4.67 / +4.35 / +4.25 dB of repair, 80 / 75 / 74% of the pops refilled. Not yet
+    # judged by ear: off, 6 is the candidate for the listening session.
+    ("apl_depop_min_prominence_db", float, 0.0, 0.0),
     # The mode's own harmonic hum canceller: how many mains harmonics it evaluates (each is
     # cancelled only where it stands above its own neighbourhood, so a high count costs
     # compute and nothing else -- an EMI buzz runs to eighty harmonics, mains hum to eight)
@@ -487,6 +502,19 @@ _BOOL_CONFIG_FIELDS = (
     # 0.04 dB less deviation for the same removal (a gain-match effect of the energy left at
     # 150-250 Hz). The notch and the canceller do better together than the canceller alone.
     ("apl_surgical_mains_notch", True),
+    # Caps every 512-sample frame of those notches' output at 1 dB over their input's energy
+    # (modules/notch_ring_guard.py). A Q-30 notch rings at its own frequency when the audio
+    # feeding it stops: speech holding a partial near a notch and stopping dead hands the gap
+    # that follows a tone burst. On SOTI (2026-10-11, its chain re-rendered on CPU bit for bit
+    # against the shipped render's stage cache) the notch lifted 332 of the 3,740 quietest
+    # 23 ms frames by 10 dB or more at 100-1000 Hz, up to +28 dB; the chain after it lifted
+    # none and the finished output kept all 332 (cathar's 4). With the guard the notch's output
+    # lifts 3, its quiet frames sit 0.80 dB over the source's instead of 5.83, and 77% of the
+    # samples pass to the bit; on Vaccin it caps 2.7% of the frames and no reading moves; on
+    # the hum fixtures the lines stay where the notch put them (-8.81 against -8.79 dB under
+    # the clean reference). Off until a listening session judges it; like the switch above it
+    # reaches denoise_only's notch too.
+    ("apl_surgical_ring_guard", False),
     # When the scanner reported mains hum, the shared pre-conditioning has already notched
     # the fundamental and its second harmonic (Q 15) before the canceller sees the audio, so
     # on those tapes the two lowest lines it finds are the notch's skirts, not lines, and
@@ -1060,6 +1088,8 @@ APL_ENABLE_TONAL_CLEANUP = bool(CONFIG.get("apl_enable_tonal_cleanup", False))
 APL_ENABLE_LEARNED_BLEND = bool(CONFIG.get("apl_enable_learned_blend", True))
 APL_ENABLE_HUM_CANCEL = bool(CONFIG.get("apl_enable_hum_cancel", True))
 APL_SURGICAL_MAINS_NOTCH = bool(CONFIG.get("apl_surgical_mains_notch", True))
+APL_SURGICAL_RING_GUARD = bool(CONFIG.get("apl_surgical_ring_guard", False))
+APL_DEPOP_MIN_PROMINENCE_DB = float(CONFIG.get("apl_depop_min_prominence_db", 0.0))
 APL_HUM_SKIP_NOTCHED = bool(CONFIG.get("apl_hum_skip_notched", False))
 APL_HUM_MAX_HARMONICS = int(CONFIG.get("apl_hum_max_harmonics", 40))
 APL_HUM_BANDWIDTH_HZ = float(CONFIG.get("apl_hum_bandwidth_hz", 1.5))

@@ -35,6 +35,7 @@ from . import denoise_cache as _denoise_cache
 from . import denoise_chunking as _denoise_chunking
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import notch_ring_guard as _notch_ring_guard
 from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
 from . import stage_cache as _stage_cache
@@ -1239,14 +1240,16 @@ def _run_neural_model(surgical_wav, audio_dir, denoise_sub_dir, model_to_use, fl
 def _neural_output(original_wav, audio_dir, total_duration, denoise_model, strategy, flags):
     """Everything up to and including the neural model: (surgical_wav, denoised_wav).
 
-    The surgical notch, the deterministic chain, the model choice and the model, in that order.
-    The stage cache (`modules/stage_cache.py`) replays exactly this pair; nothing here reads a
-    post-neural setting.
+    The surgical notch (with its ring guard, `apl_surgical_ring_guard`, off by default), the
+    deterministic chain, the model choice and the model, in that order. The stage cache
+    (`modules/stage_cache.py`) replays exactly this pair; nothing here reads a post-neural
+    setting.
     """
     model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
     surgical_wav = _pre_denoise_surgical_step(
         original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=flags["hum_cancel"]
     )
+    surgical_wav = _notch_ring_guard.apply_when_enabled(original_wav, surgical_wav)
     plan = _apl_chain.stage_plan(
         audio_dir,
         total_duration,

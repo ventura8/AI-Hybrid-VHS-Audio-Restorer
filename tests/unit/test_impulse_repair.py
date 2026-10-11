@@ -149,7 +149,10 @@ def test_the_stage_is_wired_in_ahead_of_decrackle():
 
     steps = physical_repair._steps()
     assert list(steps)[:2] == ["depop", "decrackle"]
-    assert steps["depop"].keywords == {"threshold": physical_repair.APL_DEPOP_THRESHOLD}
+    assert steps["depop"].keywords == {
+        "threshold": physical_repair.APL_DEPOP_THRESHOLD,
+        "min_prominence_db": physical_repair.APL_DEPOP_MIN_PROMINENCE_DB,
+    }
     assert steps["depop"].func is impulse_repair.depop
 
 

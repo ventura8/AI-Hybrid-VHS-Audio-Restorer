@@ -48,6 +48,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import (
+    APL_DEPOP_MIN_PROMINENCE_DB,
     APL_DEPOP_THRESHOLD,
     APL_ENABLE_PHYSICAL_REPAIR,
     APL_MUTE_MAX_MS,
@@ -178,7 +179,7 @@ def _steps():
     from . import cathar, impulse_repair
 
     return {
-        "depop": functools.partial(impulse_repair.depop, threshold=APL_DEPOP_THRESHOLD),
+        "depop": functools.partial(impulse_repair.depop, threshold=APL_DEPOP_THRESHOLD, min_prominence_db=APL_DEPOP_MIN_PROMINENCE_DB),
         "decrackle": cathar._cathar_decrackle_step,
         "declip": cathar._cathar_declip_step,
         "azimuth": cathar._cathar_azimuth_step,
