@@ -13,7 +13,8 @@ WebAudio buffers and plays them through one `Transport`:
 - space plays and pauses; the slider seeks; a loop of 1, 2 or 3 s from the playhead (key L, or
   the selector) or over the quietest 2 s of the reference cut ("Loop the pause", where pause and
   hiss questions are answered) repeats while the listener switches;
-- the threshold run's trials loop their one-second interval on their own (`autoloop`);
+- the threshold run's trials loop their one-second interval on their own (`autoloop`); key L,
+  which would end that loop, does nothing there, and the help line leaves it out;
 - practice trials show the answer afterwards; test trials never do, and catch trials look like
   any other trial.
 
@@ -71,13 +72,17 @@ input[type=range] { flex: 1 1 200px; min-width: 0; }
 </div>
 <div class="row" id="choices"></div>
 <p id="note"></p>
-<p id="help">Keys: 1, 2 and 3 switch to that sound at the same moment of the cut; space plays and pauses; L loops 2 s from here.</p>
+<p id="help"></p>
 </main>
 <script>
 "use strict";
 const FADE_S = 0.008;
 const LEAD_S = 0.03;
 const LABELS = { cant_tell: "Can't tell" };
+const HELP = {
+  cut: "Keys: 1, 2 and 3 switch to that sound at the same moment of the cut; space plays and pauses; L loops 2 s from here.",
+  loop: "Keys: 1, 2 and 3 switch to that interval at the same moment of its second, which loops on its own; space plays and pauses.",
+};
 const byId = (id) => document.getElementById(id);
 
 class Transport {
@@ -314,6 +319,7 @@ function render(next) {
     byId("choices").appendChild(button(LABELS[c] || c, c === "cant_tell" ? "choice aside" : "choice", () => answer(c)));
   });
   byId("loops").hidden = Boolean(next.autoloop);
+  byId("help").textContent = next.autoloop ? HELP.loop : HELP.cut;
   byId("looplen").value = "0";
   byId("pauseloop").hidden = !(next.loops && next.loops.pause);
   loadBuffers(next);
@@ -369,7 +375,7 @@ document.addEventListener("keydown", (event) => {
     select(state.buttons[slot].name);
     return;
   }
-  if (event.key === "l" || event.key === "L") {
+  if ((event.key === "l" || event.key === "L") && !state.autoloop) {
     event.preventDefault();
     wake();
     toggleLoop();

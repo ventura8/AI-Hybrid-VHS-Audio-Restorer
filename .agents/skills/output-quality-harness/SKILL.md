@@ -598,6 +598,13 @@ something even when nothing is heard:
   least one), shaped like scored trials: the first stimulus against +6 dB
   of air at 7.5 kHz levelled back to the same speech level, and half the
   raw tape with `--catch-raw`. They are scored apart (`context.catch`).
+  The air catch is only as strong as the clip's air: on the Session 1
+  cuts (review, 2026-10-12, CPU) the content above 7.5 kHz sits 30.1 dB
+  under the total on Tele7abc's APL and 54.7 dB under it on the wbbd
+  music clip; the check reads both air catches audible (diff -27.9 and
+  -28.1 dB, 96% and 100% of frames over the mask), but its "audible" is
+  not trusted. A "disengaged" on a dull clip without `--catch-raw` may be
+  a catch nobody could hear: read the catch trials before the flag.
 - ABX, blend and threshold take a "can't tell" answer, kept in the record
   (`ledger.CANT_TELL`, `answer.cant_tell`) and out of the binomial score and
   the QUEST posterior; the prompt still asks for a guess when unsure.
@@ -628,7 +635,10 @@ something even when nothing is heard:
   `auditory.PLAYBACK_SPL_LOUD_FRAMES` takes that listener's latest
   `loud_frames_spl` at import and the record's id joins
   `auditory.VERDICT_RULE`; a named listener without a usable run stops the
-  import. Error budget 7-10 dB (Masalski et al. 2014: the normal-hearing
+  import, `listen_ab`'s too (its cuts and tones import `auditory`), so a
+  listener's first threshold block, and the one after a run that placed no
+  level, runs with the variable unset (the refusal says so). Error budget
+  7-10 dB (Masalski et al. 2014: the normal-hearing
   assumption); the map itself repeats within about 4-5 dB. Thresholds near
   -96 dBFS meet a 16-bit output's floor: record the format in
   `--connection`.

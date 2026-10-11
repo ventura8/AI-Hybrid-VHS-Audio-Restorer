@@ -142,8 +142,19 @@ def test_a_listener_without_a_usable_run_stops_the_read(tmp_path):
     path = _file(tmp_path, [_record("r-1"), _record("r-2", loud=None)])
     with pytest.raises(playback_calibration.CalibrationError, match="no playback calibration for listener 'guest'"):
         playback_calibration.selected({LISTENER_ENV: "guest", PATH_ENV: str(path)})
-    with pytest.raises(playback_calibration.CalibrationError, match="places no playback level"):
+    with pytest.raises(playback_calibration.CalibrationError, match="places no playback level") as refused:
         playback_calibration.selected({LISTENER_ENV: "user", PATH_ENV: str(path)})
+    assert str(refused.value).endswith(f"unset {LISTENER_ENV} ({BLOCKED}), then run listen_ab threshold --listener user")
+
+
+BLOCKED = "the threshold block imports auditory and cannot start while it names an uncalibrated listener"
+
+
+def test_the_refusal_says_to_unset_the_listener_before_the_threshold_block(tmp_path):
+    """The threshold block imports auditory itself: the way out a refusal names is to unset the variable, then run it."""
+    with pytest.raises(playback_calibration.CalibrationError) as refused:
+        playback_calibration.selected({LISTENER_ENV: "guest", PATH_ENV: str(tmp_path / "none.jsonl")})
+    assert f"unset {LISTENER_ENV}" in str(refused.value) and str(refused.value).endswith("--listener guest")
 
 
 def test_auditory_takes_the_listeners_level_at_import(tmp_path, monkeypatch):
@@ -161,3 +172,17 @@ def test_auditory_takes_the_listeners_level_at_import(tmp_path, monkeypatch):
         importlib.reload(auditory)
     assert observed == (58.25, base_rule + "+r-9", "r-9")
     assert (auditory.PLAYBACK_SPL_LOUD_FRAMES, auditory.DEFAULT_PLAYBACK_SPL_LOUD_FRAMES, auditory.VERDICT_RULE) == (65.0, 65.0, base_rule)
+
+
+def test_auditory_will_not_import_for_an_uncalibrated_listener(tmp_path, monkeypatch):
+    """A named listener with no run stops auditory's import, and with it listen_ab's: hence the refusal's "unset" first."""
+    monkeypatch.setenv(LISTENER_ENV, "guest")
+    monkeypatch.setenv(PATH_ENV, str(tmp_path / "none.jsonl"))
+    try:
+        with pytest.raises(playback_calibration.CalibrationError, match=f"unset {LISTENER_ENV}"):
+            importlib.reload(auditory)
+    finally:
+        monkeypatch.delenv(LISTENER_ENV)
+        monkeypatch.delenv(PATH_ENV)
+        importlib.reload(auditory)
+    assert (auditory.PLAYBACK_CALIBRATION, auditory.PLAYBACK_SPL_LOUD_FRAMES) == (None, 65.0)

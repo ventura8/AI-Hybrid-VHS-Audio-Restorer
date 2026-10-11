@@ -179,7 +179,7 @@ def interleaved(count, trials, rng):
 
 
 class ThresholdMode(listen_modes.Mode):
-    """2IFC tone detection at each frequency, QUEST-placed under the hard cap."""
+    """Three-interval forced-choice tone detection at each frequency, QUEST-placed under the hard cap."""
 
     kind = "threshold"
     keys = INTERVALS
@@ -204,7 +204,7 @@ class ThresholdMode(listen_modes.Mode):
         return min(self.cap, self.quantile(index, 0.5))
 
     def tone_trial(self, index, level, key):
-        """A trial at frequency `index`: the tone in the interval `key` names, silence in the other."""
+        """A trial at frequency `index`: the tone in the interval `key` names, silence in the other two."""
         hz = self.frequencies[index]
         tone, silence = tone_clip(hz, level, self.cap), silent_clip()
         play = [(name, tone if name == key else silence) for name in INTERVALS]

@@ -894,10 +894,12 @@ dBFS-to-sensation-level map to
 `AI_RESTORE_LISTENER=user` the audibility check takes that listener's
 playback level instead of assuming 65 dB SPL, within the 7-10 dB the
 normal-hearing assumption costs, and the run's id joins the verdict rule
-the loop keys its stored verdicts on. The page and the switching were
-checked in the Browser pane on synthetic audio: switching between identical
-buffers leaves a residual of exactly 0, restarting the new one from zero
-leaves 0.99.
+the loop keys its stored verdicts on. A listener named there without a
+usable run stops every import of the check, `listen_ab`'s included, so the
+first threshold run goes with the variable unset. The page and the
+switching were checked in the Browser pane on synthetic audio: switching
+between identical buffers leaves a residual of exactly 0, restarting the new
+one from zero leaves 0.99.
 
 #### The reward and the preference head
 

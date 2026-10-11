@@ -25,8 +25,11 @@ LF-terminated line, like the verdict ledger). A record:
 `AI_RESTORE_PLAYBACK_CALIBRATION`, or the default file) and `PLAYBACK_SPL_LOUD_FRAMES` becomes its
 `loud_frames_spl`; unset, nothing is read and the 65 dB SPL assumption stays. A listener named
 but not calibrated, or a latest record with no level, stops the import (`CalibrationError`)
-rather than letting the check fall back to 65 dB SPL in silence. The record's id joins
-`auditory.VERDICT_RULE`, so the loop's stored verdicts are read again under it.
+rather than letting the check fall back to 65 dB SPL in silence. That includes `listen_ab`
+itself (its cuts and tones import `auditory`): run a listener's first threshold block, or the
+one after a run that placed no level, with the variable unset; the error says so. The
+record's id joins `auditory.VERDICT_RULE`, so the loop's stored verdicts are read again under
+it.
 """
 
 import datetime
@@ -205,14 +208,18 @@ def selected(environ=None):
     return usable(latest_for(read(path), listener), listener, path)
 
 
+def rerun_hint(listener):
+    """How to get a usable run: the threshold block imports `auditory` too, so it runs only with the variable unset."""
+    blocked = "the threshold block imports auditory and cannot start while it names an uncalibrated listener"
+    return f"unset {LISTENER_ENV} ({blocked}), then run listen_ab threshold --listener {listener}"
+
+
 def usable(record, listener, path):
     """`record` when it places a playback level; CalibrationError when there is none or it placed none."""
     if record is None:
-        raise CalibrationError(
-            f"no playback calibration for listener {listener!r} in {path}: run the threshold block or unset {LISTENER_ENV}"
-        )
+        raise CalibrationError(f"no playback calibration for listener {listener!r} in {path}: {rerun_hint(listener)}")
     if record["loud_frames_spl"] is None:
-        raise CalibrationError(f"{record['id']} heard no tone under its cap: it places no playback level; run the threshold block again")
+        raise CalibrationError(f"{record['id']} heard no tone under its cap: it places no playback level; {rerun_hint(listener)}")
     return record
 
 
