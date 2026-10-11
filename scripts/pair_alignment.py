@@ -32,8 +32,9 @@ wherever they sit in the file:
   prior when one is given and at 0 otherwise, and the result says why.
 
 An optional prior (a lag in samples, such as the mux's 219 at 44.1 kHz) breaks ties
-only: between peaks within 10 % of a span's highest, and between equally supported lags.
-Without one, ties go to the smaller shift.
+only: between distinct peaks (local maxima) within 10 % of a span's highest, never the
+shoulders of the highest peak's own lobe, and between equally supported lags. Without
+one, ties go to the smaller shift.
 
 `xcorr_head` reproduces the stored scores: `AI_RESTORE_ALIGN_METHOD=xcorr_head`, or
 `method="xcorr_head"`, selects it everywhere. Every result names the method that made it.
@@ -215,10 +216,23 @@ def phase_coherence(cross, mask, nfft, reach):
 
 
 def _tie_break(lags, heights, prior_lag):
-    """The index of the highest peak, or among those within 10 % of it the one nearest the prior (0 without one)."""
-    contenders = np.flatnonzero(heights >= TIE_RATIO * heights.max())
+    """The index of the highest peak, or among the peaks within 10 % of it the one nearest the prior (0 without one).
+
+    Only local maxima contend: on narrowband programme the shoulders of the highest peak's own
+    lobe stand within 10 % of it (up to 3 samples out at 150-1500 Hz), and letting them
+    contend pulled an integer lag of 219 to 217-218 without a prior. On the IA hunt's 204
+    shift-synced clips with a logged shift, local maxima alone read 219 plus that shift exactly
+    on 175 cathar and 196 APL outputs, against 169 and 177 (review, 2026-10-12).
+    """
+    contenders = np.flatnonzero(local_maxima(heights) & (heights >= TIE_RATIO * heights.max()))
     target = 0 if prior_lag is None else prior_lag
     return int(contenders[np.argmin(np.abs(lags[contenders] - target))])
+
+
+def local_maxima(heights):
+    """Where `heights` stands at least as high as both neighbours (each end against its one neighbour)."""
+    padded = np.concatenate(([-np.inf], heights, [-np.inf]))
+    return (heights >= padded[:-2]) & (heights >= padded[2:])
 
 
 def agreeing_peaks(peaks, prior_lag):

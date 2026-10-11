@@ -104,6 +104,27 @@ def test_the_prior_breaks_a_tie_between_equal_peaks():
     assert pa.gcc_alignment(source, output, RATE, prior_lag=290).lag == 300
 
 
+def test_narrowband_programme_keeps_its_integer_lag_with_or_without_a_prior():
+    """150-1200 Hz programme over a hiss the output lost: its lobe's shoulders stand within 10 % of the peak, but never contend."""
+    rng = np.random.default_rng(17)
+    count = 12 * RATE
+    sos = scipy.signal.butter(6, [200.0, 1200.0], btype="band", fs=RATE, output="sos")
+    gates = np.repeat(rng.uniform(0.0, 1.0, count // 4410 + 1) > 0.4, 4410).astype(float)
+    programme = 0.3 * scipy.signal.sosfilt(sos, rng.standard_normal(count)) * scipy.signal.lfilter([0.01], [1.0, -0.99], gates[:count])
+    source = programme + 1e-2 * rng.standard_normal(count)
+    output = _late(programme, MUX)
+    assert [pa.gcc_alignment(source, output, RATE, prior).lag for prior in (None, MUX + 3, MUX - 3)] == [MUX, MUX, MUX]
+
+
+def test_only_local_maxima_contend_in_the_tie_break():
+    heights = np.array([0.2, 0.95, 1.0, 0.97, 0.1, 0.92, 0.3])
+    assert pa.local_maxima(heights).tolist() == [False, False, True, False, False, True, False]
+    lags = np.arange(-3, 4)
+    assert pa._tie_break(lags, heights, None) == 2
+    assert pa._tie_break(lags, heights, 3) == 5
+    assert pa.local_maxima(np.array([1.0, 0.5, 2.0])).tolist() == [True, False, True]
+
+
 def test_the_vote_breaks_a_tie_between_equally_supported_lags():
     peaks = [pa.SpanPeak(10, 0.5), pa.SpanPeak(11, 0.5), pa.SpanPeak(500, 0.5), pa.SpanPeak(501, 0.5)]
     assert [peak.lag for peak in pa.agreeing_peaks(peaks, None)] == [10, 11]

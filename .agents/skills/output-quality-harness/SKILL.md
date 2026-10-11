@@ -97,6 +97,11 @@ for research use by the user's decision of 2026-10-08.
   like with like under `AI_RESTORE_ALIGN_METHOD=xcorr_head`. An abstained
   alignment (`alignment.status`) is a reading the scorer cannot vouch for:
   leave such clips out of a ranking rather than trusting their readings.
+  A one-family re-score (`tune_restoration.merge_families`, also behind
+  `validate_restoration.py --merge-into`) keeps the other families only
+  when the pair is trimmed at the stored `lag_samples`; where the aligner
+  moved the lag it keeps the fresh families alone, so re-score the rest
+  rather than read a document that mixes two timelines.
 - The hunt's `dsp.output_silent` failures are mostly the gain match, not
   the lag (2026-10-11, CPU). Of the 10 (6 cathar, 4 APL), the vote aligns 7
   at the true lag and 6 of those still fail; 3 abstain (no phase coherence
@@ -410,6 +415,11 @@ their module docstrings hold the full measurements.
   the source's loudest 1.5 s spans, the lag at least two and half of the
   spans with coherence 0.1 agree on within 2 samples, else an abstention
   (lag None, trimmed at `align_prior_s` or 0, `alignment.reason` says why).
+  The prior, or 0 without one, breaks ties between distinct peaks only:
+  letting the highest peak's own shoulders contend pulled lags a sample or
+  two short (review, 2026-10-12: of the 204 shift-synced hunt clips with a
+  logged shift, exact on 175 cathar and 196 APL outputs once only local
+  maxima contend, 169 and 177 before).
   Each scored variant carries `alignment` (method, lag, applied lag,
   polarity, spans, agree, coherence); `lag_samples` is the applied lag. The
   old head search (`xcorr_head`: |corr| over the first 1.86 s) stays

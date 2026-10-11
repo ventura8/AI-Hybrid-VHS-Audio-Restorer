@@ -285,7 +285,7 @@ user set, with their reasons:
   gets an absolute twin before a loop tunes against it.
 - Every paired reading sits on the aligner `scripts/pair_alignment.py`
   names in the scored JSON (2026-10-11). Scores stored before then used the
-  head search, which read 68 of 205 cathar hunt outputs 8 samples or more
+  head search, which read 68 of 205 cathar hunt outputs more than 8 samples
   off their true lag: re-score them before they decide anything, and leave
   out a clip whose alignment abstained.
 - Learned training goes only where it fits (2026-10-08): GRPO for a

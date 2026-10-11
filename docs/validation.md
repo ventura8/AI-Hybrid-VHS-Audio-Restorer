@@ -766,10 +766,16 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   error 0, p95 1, max 4 samples); the rest abstain: digital silence, an
   output with no phase coherence on any span, and a 431 ms shift outside
   the +-4096 search. On the four Tata tapes the vote read all eight shipped
-  outputs exactly, where the head search missed five by 6-181 samples.
-  `AI_RESTORE_ALIGN_METHOD=xcorr_head` or `--align-method xcorr_head`
-  reproduces scores stored before then: re-read on the hunt, it matched all
-  470 stored lags.
+  outputs exactly, where the head search missed five by 6-181 samples. The
+  prior breaks ties between distinct peaks only, never the shoulders of the
+  highest peak's own lobe, which on narrowband programme stand within 10 %
+  of it and pulled lags a sample or two short (exact on 175 cathar and 196
+  APL hunt outputs of 204 with a logged shift, 169 and 177 before; review
+  of 2026-10-12). `AI_RESTORE_ALIGN_METHOD=xcorr_head`, or
+  `--align-method xcorr_head`, reproduces scores stored before then:
+  re-read on the hunt, it matched all 470 stored lags. A one-family re-score
+  (`validate_restoration.py --merge-into`, `tune_restoration.py`) keeps the
+  stored families only where the pair is trimmed at the stored lag.
 - **Noise removed per frame**, `measure_tradeoff.py`:
   `file.noise_removed_median_db` beside `file.noise_removed_db`. The pooled
   reading averages the quiet frames' energy, so a few hot frames own it: the

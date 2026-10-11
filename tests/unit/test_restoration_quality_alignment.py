@@ -153,21 +153,31 @@ def test_the_hum_reading_aligns_at_the_files_rate(tmp_path):
     assert row["low_band_deviation_db"] < 0.2
 
 
-def test_the_stems_are_aligned_with_the_pairs_method(tmp_path, monkeypatch):
+def _stem_pair(tmp_path, output_key, **align):
+    return types.SimpleNamespace(cache_dir=tmp_path, source_wav=None, output_wav=None, source_key="src", output_key=output_key, **align)
+
+
+def test_the_stems_are_aligned_with_the_pairs_method_and_prior(tmp_path, monkeypatch):
     source = _speechlike(3.0, seed=10)
-    stems = {"src": _write(tmp_path / "src.wav", source), "out": _write(tmp_path / "out.wav", _late(source, 11))}
+    stems = {
+        "src": _write(tmp_path / "src.wav", source),
+        "out": _write(tmp_path / "out.wav", _late(source, 11)),
+        "odd": _write(tmp_path / "odd.wav", _speechlike(3.0, seed=12)),
+    }
     monkeypatch.setattr(stem_metrics, "separate_once", lambda _sep, _wav, _dir, key: stems[key])
-    methods = []
+    calls = []
     original = audio_io.align_pair
 
-    def spy(source_mono, output_mono, rate, method=None):
-        methods.append(method)
-        return original(source_mono, output_mono, rate, method)
+    def spy(source_mono, output_mono, rate, method=None, prior_s=None):
+        calls.append((method, prior_s))
+        return original(source_mono, output_mono, rate, method, prior_s)
 
     monkeypatch.setattr(stem_metrics.audio_io, "align_pair", spy)
-    pair = types.SimpleNamespace(
-        cache_dir=tmp_path, source_wav=None, output_wav=None, source_key="src", output_key="out", align_method="xcorr_head"
-    )
     registry = types.SimpleNamespace(get=lambda _name, _loader: object())
-    src, out, rate = stem_metrics._stems(pair, registry)
-    assert (methods, rate, len(src)) == (["xcorr_head"], RATE, len(out))
+    src, out, rate = stem_metrics._stems(_stem_pair(tmp_path, "out", align_method="xcorr_head"), registry)
+    assert (calls, rate, len(src)) == ([("xcorr_head", None)], RATE, len(out))
+    # An unrelated stem pair abstains and is trimmed at the pair's prior, as the pair itself would be.
+    src, _out, _rate = stem_metrics._stems(
+        _stem_pair(tmp_path, "odd", align_method=None, align_prior_s=pair_alignment.MUX_DELAY_S), registry
+    )
+    assert (calls[-1], len(src)) == ((None, pair_alignment.MUX_DELAY_S), len(source) - MUX)
