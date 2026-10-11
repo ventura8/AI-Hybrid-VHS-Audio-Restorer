@@ -276,7 +276,11 @@ user set, with their reasons:
   the family tapes never leave the machine, and no cloud or audio-LLM judge
   is used. Every answer goes to the verdict ledger
   (`assets/quality_calibration/verdicts.jsonl`); flags come only from the
-  user's own words.
+  user's own words. Every block records `--device` and `--volume`
+  (required since 2026-10-12) and plays at one speech level (-23 dBFS);
+  a one-button block reads "no signal", never "disengaged" (Session 0:
+  "I chose B every time because they all sounded the same"), and only a
+  missed catch trial reads "disengaged".
 - No default ships without a listening session and one
   `artifacts/realistic-v2` plus IA-corpus confirmation.
 - Readings are ranked two-sided, as distance from what the user accepted;

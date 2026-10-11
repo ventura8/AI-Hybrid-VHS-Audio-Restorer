@@ -481,7 +481,9 @@ holds past the other).
   through the NMR and reads audible.
 
 Declared assumptions: `PLAYBACK_SPL_LOUD_FRAMES` 65 dB SPL (the harness
-cannot know the playback level) and `MASKING_OFFSET_DB` 24 (at 20, SOTI's
+cannot know the playback level unless `AI_RESTORE_LISTENER` names a
+listener whose `listen_ab threshold` run measured it; see "The verdict
+ledger and the listening tool") and `MASKING_OFFSET_DB` 24 (at 20, SOTI's
 +1 dB against off becomes a tie; at 30 every anchor still holds). The 5%
 share is a starting value.
 
@@ -545,7 +547,12 @@ the Round 0 reports are checked per set (see "Round 0 (2026-10-09)").
 
 ```text
 python -m scripts.listen_ab {abx|pair|blend} --tape SLUG --stim LABEL=PATH ...
-    [--anchor LABEL=PATH] [--start S] [--seconds 8-12] [--trials N]
+    --device NAME --volume SETTING [--connection T] [--eq T] [--anc T]
+    [--surround T] [--anchor LABEL=PATH] [--start S] [--seconds 8-12]
+    [--trials N] [--level-dbfs -23] [--catch N] [--catch-raw PATH]
+    [--familiar N]
+python -m scripts.listen_ab threshold --listener SLUG --device NAME
+    --volume SETTING [--level-dbfs -23] [--trials 60] [--calibration PATH]
 ```
 
 The page binds 127.0.0.1 only, so family tapes never leave the machine.
@@ -553,11 +560,83 @@ ABX runs 24 trials by default and at least 16 (17 of 24 is p 0.032 at
 power 0.77). Pair plays every pair once with an explicit "same", plus one
 replicate at the end (with the `--anchor`, the round-one alpha 2 hissy cut,
 when one is given). Blend mixes the candidate into the incumbent and places
-30 trials QUEST-style. Cuts are 8-12 s, aligned (lag and polarity),
-loudness-matched on speech-active frames within +-20 dB, and placed where
-the NMR says the first two stimuli differ most. The block's answers reach
-the ledger in one write at its end. Set `AI_RESTORE_DATA_ROOTS=D:\Tata`
-first.
+30 trials QUEST-style. Cuts are 8-12 s, aligned (lag and polarity) and
+placed where the NMR says the first two stimuli differ most. The block's
+answers reach the ledger in one write at its end. Set
+`AI_RESTORE_DATA_ROOTS=D:\Tata` first.
+
+Since 2026-10-12 (backlog E4, salvaged) a blind block is built to say
+something even when nothing is heard:
+
+- `--device` and `--volume` are required; `--connection`, `--eq`, `--anc`
+  and `--surround` keep the rest of the chain as text in `playback` (the
+  ledger takes any extra playback key as text or null).
+- One speech level: every cut is brought to -23 dBFS on the first
+  stimulus's speech-active frames (`listen_cuts.TARGET_ACTIVE_DBFS`,
+  `--level-dbfs`), replacing the match to the first stimulus within
+  +-20 dB. A silent cut, or one whose peak would pass -0.18 dBFS at the
+  level, refuses the block and names the level every stimulus fits at.
+  Measured on the Session 0 and 1 stimuli (10 s cuts): restorations read
+  -13.8 to -19.0 dBFS on those frames (crest 12.8-17.7 dB), the raw
+  Tele7abc tape at 80 s -36.1 dBFS with a 20.0 dB crest. Session 1 Block 1
+  (APL first) would have held the tape at +20 dB where it needs +21.5; at
+  -23 dBFS it fits with 2.9 dB to spare, and the restorations play 4-9 dB
+  quieter than in Session 0 at the same volume setting.
+- The page (`listen_page.py`) decodes the cuts into WebAudio buffers and
+  switches A, B and X at the same playhead with an 8 ms linear crossfade
+  on a sample boundary (keys 1, 2, 3; space plays and pauses; loops of 1-3
+  s from the playhead, key L, or over the quietest 2 s of the reference,
+  "Loop the pause"). Checked in the Browser pane on synthetic audio
+  (2026-10-12): switching between identical buffers in an
+  `OfflineAudioContext` leaves a residual of exactly 0 after the fade, an
+  inverted copy nulls to exactly 0 mid-fade, and restarting the new buffer
+  from zero instead leaves 0.99.
+- Practice first (`listen_protocol`, `--familiar`: abx and blend 2,
+  threshold 5, pair none), over an exaggerated pair (ABX: the difference
+  doubled; blend: the full candidate), answered with feedback and never
+  scored. Catch trials among the scored ones (`--catch`, one per 8, at
+  least one), shaped like scored trials: the first stimulus against +6 dB
+  of air at 7.5 kHz levelled back to the same speech level, and half the
+  raw tape with `--catch-raw`. They are scored apart (`context.catch`).
+- ABX, blend and threshold take a "can't tell" answer, kept in the record
+  (`ledger.CANT_TELL`, `answer.cant_tell`) and out of the binomial score and
+  the QUEST posterior; the prompt still asks for a guess when unsure.
+- `context.block_flags`: "no signal" when every decided scored answer was
+  one button ("can't tell" aside), never "disengaged" (Session 0's listener:
+  "I chose B every time because they all sounded the same"); "disengaged"
+  only when a catch trial was missed in a block that was not one button.
+- `context.power` per record: ABX the critical score and the power at a
+  true hit rate of 0.6, 0.75 and 0.9 on the decided trials (16 trials: 12
+  needed, power 0.167 at 60%, Leventhal 1986; 24: 17, 0.77 at 75%); pair
+  the same binomial per pair; blend the simulated share of 200 QUEST blocks
+  whose 90% band ends under x = 1 for a listener whose 75% point is x = 0.5.
+- `threshold` (`listen_threshold.py`): three-interval forced choice, a
+  300 ms tone at 1, 2, 4, 8 and 12.5 kHz in one of A, B and C, 12 trials
+  per frequency QUEST-placed on the server under a hard cap of -33 dBFS
+  RMS or 10 dB under the session's speech level, whichever is lower; the
+  prior is the check's own 65 dB SPL assumption. Simulated: median error
+  1.1-1.6 dB, 90% of runs within 4.4-5.4 dB (two intervals with 10 trials:
+  1.7-2.2 and 8.3-11.8 dB; a run of lucky guesses at a 1/2 guess rate put
+  one threshold 25 dB low). A frequency not heard reliably at the cap reads
+  `censored`. The run appends one record to
+  `assets/quality_calibration/playback_calibration.jsonl`
+  (`playback_calibration.py`): `sl_map` (dBFS at 0 dB sensation level per
+  frequency at that device and volume), `spl_full_scale_db` (median of
+  Terhardt's threshold minus each measured one) and `loud_frames_spl` (that
+  plus the session level plus 1.5 dB, the loud-over-active gap of the
+  Session 0/1 restorations, 1.1-2.1 dB). With `AI_RESTORE_LISTENER=<slug>`
+  `auditory.PLAYBACK_SPL_LOUD_FRAMES` takes that listener's latest
+  `loud_frames_spl` at import and the record's id joins
+  `auditory.VERDICT_RULE`; a named listener without a usable run stops the
+  import. Error budget 7-10 dB (Masalski et al. 2014: the normal-hearing
+  assumption); the map itself repeats within about 4-5 dB. Thresholds near
+  -96 dBFS meet a 16-bit output's floor: record the format in
+  `--connection`.
+
+Session 1 commands written before 2026-10-12 need `--device` and
+`--volume` (they pass both), and Block 1 now plays at -23 dBFS instead of
+APL's own -14.6 dBFS: raise the volume by the difference, record the
+setting, and run `threshold` at that setting first.
 
 ### The reward pieces (built; the loop uses the floors and the constraints)
 
@@ -958,7 +1037,8 @@ Tele7abc (diff -17.6 dB, 97% of frames over the mask; 8/16). The listener:
   plosives) is not heard: keep the shipped values.
 - Pass `--device` and `--volume` to every `listen_ab` block: the masking
   model's playback level (`PLAYBACK_SPL_LOUD_FRAMES`) is meaningless
-  without them.
+  without them (required since 2026-10-12, with a threshold run at the
+  session's volume to place that level).
 
 ### Overnight rounds v6 (2026-10-09/10)
 
@@ -1063,7 +1143,10 @@ that threshold is measured, re-run the pre-check with it as `--heard-db`.
   `file.gain_ride_lu`. The stage cache itself is built (see "The
   self-driving loop").
 - The listener's blind threshold (Session 0 left it unmeasured; Session 1
-  Block 1 is prepared), and `audibility_check.py` recalibrated on it.
+  Block 1 is prepared), and `audibility_check.py` recalibrated on it. The
+  tool for the absolute part is built (`listen_ab threshold`, feeding
+  `PLAYBACK_SPL_LOUD_FRAMES` through `AI_RESTORE_LISTENER`); no listener
+  has run it yet.
 - Plan 3.2b (GRPO) and its Optuna baseline wait on the variation pre-check
   above; plan 3.3 (the Mel-RoFormer fine-tune in `tools/msst/`) is not
   started.

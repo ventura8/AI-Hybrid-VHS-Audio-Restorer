@@ -852,8 +852,10 @@ Tele7abc known set and listening flags, and the four round-two pause records).
 
 ```powershell
 Set-Item Env:AI_RESTORE_DATA_ROOTS "D:\Tata"
+.\.venv\Scripts\python.exe -m scripts.listen_ab threshold --listener user `
+    --device "<headphones>" --volume "<setting>"
 .\.venv\Scripts\python.exe -m scripts.listen_ab abx --tape vaccin `
-    --stim A=<file> --stim B=<file>
+    --stim A=<file> --stim B=<file> --device "<headphones>" --volume "<setting>"
 ```
 
 The page binds 127.0.0.1 only: family tapes never leave the machine, and no
@@ -861,9 +863,41 @@ cloud or audio-LLM judge is used. `abx` runs 24 trials (17 right is
 p 0.032); `pair` asks which of two outputs is better with an explicit
 "same" and one replicate per block; `blend` finds the share of the
 candidate mixed into the incumbent the user hears 75% of the time. Cuts are
-8-12 s, aligned, loudness-matched on speech-active frames and placed where
-the two stimuli differ most audibly. The answers go to the ledger when the
-block ends.
+8-12 s, aligned and placed where the two stimuli differ most audibly. The
+answers go to the ledger when the block ends.
+
+Since 2026-10-12 a block that hears nothing still says something.
+`--device` and `--volume` are required, and the rest of the playback chain
+(`--connection`, `--eq`, `--anc`, `--surround`) is kept as text. Every cut
+plays at one speech-active level, -23 dBFS (`--level-dbfs`), instead of the
+first stimulus's level within +-20 dB, so one volume setting holds for the
+whole session; a cut that would clip there refuses the block and names the
+level it would fit at. The restorations of Session 0 and 1 read -13.8 to
+-19.0 dBFS on speech, the raw Tele7abc tape -36.1 dBFS with a 20 dB crest,
+so the tape fits with 2.9 dB to spare and the restorations play 4-9 dB
+quieter than in Session 0 at the same setting. The page switches A, B and X
+at the same playhead with an 8 ms crossfade (keys 1, 2, 3 and space, loops
+of 1-3 s or over the quietest 2 s). Practice trials with feedback come
+first and are never scored; catch trials (+6 dB of air, or half the raw
+tape) sit among the scored ones and are scored apart. "Can't tell" is
+recorded but not scored. A block whose decided answers all took one button
+reads "no signal", never "disengaged"; only a missed catch trial reads
+"disengaged". Each record keeps its power (ABX: 16 trials miss a listener
+right 60% of the time 83% of the time).
+
+`threshold` finds the listener's tone thresholds at 1-12.5 kHz in three
+intervals under a hard cap (-33 dBFS RMS, or 10 dB under the speech
+level), 12 trials per frequency placed on the server so a simulated
+observer tests the convergence (median error 1.1-1.6 dB). It appends a
+dBFS-to-sensation-level map to
+`assets/quality_calibration/playback_calibration.jsonl`. With
+`AI_RESTORE_LISTENER=user` the audibility check takes that listener's
+playback level instead of assuming 65 dB SPL, within the 7-10 dB the
+normal-hearing assumption costs, and the run's id joins the verdict rule
+the loop keys its stored verdicts on. The page and the switching were
+checked in the Browser pane on synthetic audio: switching between identical
+buffers leaves a residual of exactly 0, restarting the new one from zero
+leaves 0.99.
 
 #### The reward and the preference head
 
