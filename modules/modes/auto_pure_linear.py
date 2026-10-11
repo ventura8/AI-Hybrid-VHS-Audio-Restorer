@@ -60,6 +60,12 @@ class AutoPureLinearMode(BaseRestorationMode):
                 # sweep of those switches reach the chain.
                 sibilant_guard=True,
                 pause_floor=True,
+                # The hiss stages after the neural model read their own keys
+                # (apl_post_neural_suppress, apl_neural_level_restore, linear_air_gate), all off
+                # by default; opting in here lets a sweep of those keys reach the chain.
+                post_neural_suppress=True,
+                neural_level_restore=True,
+                air_gate=True,
             )
 
         from .. import apl_stems

@@ -46,6 +46,12 @@ READ_SITES = {
     "enable_pause_floor": ("ENABLE_PAUSE_FLOOR", {"pause_floor.py:*"}),
     "pause_floor_fill_db": ("PAUSE_FLOOR_FILL_DB", {"pause_floor.py:*"}),
     "pause_floor_quiet_percentile": ("PAUSE_FLOOR_QUIET_PERCENTILE", {"pause_floor.py:*"}),
+    # The post-neural hiss stages: the suppressor's gate and the air shelf's gate, and the level restore.
+    "apl_post_neural_suppress": ("APL_POST_NEURAL_SUPPRESS", {"post_neural_suppress.py:*"}),
+    "apl_post_neural_suppress_floor_gap_db": ("APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB", {"post_neural_suppress.py:*"}),
+    "apl_post_neural_suppress_min_residual_db": ("APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB", {"post_neural_suppress.py:*"}),
+    "linear_air_gate": ("LINEAR_AIR_GATE", {"post_neural_suppress.py:*"}),
+    "apl_neural_level_restore": ("APL_NEURAL_LEVEL_RESTORE", {"neural_level.py:*"}),
     # processing's <module> reads are the re-exports at the end of the file.
     "enable_loudnorm": ("ENABLE_LOUDNORM", {"mastering.py:*", "processing.py:<module>"}),
     "loudnorm_target_lra": ("LOUDNORM_TARGET_LRA", {"mastering.py:*", "processing.py:<module>"}),
@@ -58,7 +64,10 @@ READ_SITES = {
     "apl_music_bg_floor_db": ("APL_MUSIC_BG_FLOOR_DB", {"apl_stems.py:_background_pass"}),
 }
 
-POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py"}
+# processing and cathar's mode run the post-cache stages; the two post-neural hiss stages import the
+# hiss-floor reading, itself a post-cache module. processing imports those two at start-up and
+# calls them after the cached point; each returns at once unless its caller opted in.
+POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py", "post_neural_suppress.py", "neural_level.py"}
 
 
 def _module_files():

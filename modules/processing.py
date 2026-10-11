@@ -35,6 +35,8 @@ from . import denoise_cache as _denoise_cache
 from . import denoise_chunking as _denoise_chunking
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import neural_level as _neural_level
+from . import post_neural_suppress as _post_neural_suppress
 from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
 from . import stage_cache as _stage_cache
@@ -1215,7 +1217,11 @@ def _neural_stage(apl_chain, model_to_use, surgical_wav, strategy=None):
     return named or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
 
 
-POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db"})
+POST_NEURAL_STAGES = frozenset(
+    {"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db", "post_neural_suppress", "neural_level_restore", "air_gate"}
+)
+# The post-neural stage switches, each False unless the caller names it.
+POST_NEURAL_SWITCHES = ("sibilant_guard", "pause_floor", "apply_air", "post_neural_suppress", "neural_level_restore", "air_gate")
 # The stage switches the cached point reads, in the order the step takes them.
 NEURAL_FLAGS = ("spectral_denoise", "physical_repair", "deepfilternet", "hum_cancel", "plosive_tamer", "tone_cancel", "resemble_denoise")
 
@@ -1284,16 +1290,17 @@ def _denoise_and_polish_full_audio_step(
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish.
 
-    `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard` and
-    `pause_floor`, all False unless named, and `expander_depth_db`, the polish expander's
-    depth for this caller (auto_pure_linear passes its own; None keeps the shared
+    `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard`,
+    `pause_floor`, `post_neural_suppress`, `neural_level_restore` and `air_gate`, all False
+    unless named (each stage then reads its own key), and `expander_depth_db`, the polish
+    expander's depth for this caller (auto_pure_linear passes its own; None keeps the shared
     `expander_depth_db`). Any other name is a TypeError like a misspelt keyword would be.
     """
     unknown = set(stages) - POST_NEURAL_STAGES
     if unknown:
         raise TypeError(f"unknown post-neural stage(s): {sorted(unknown)}")
     expander_depth_db = stages.get("expander_depth_db")
-    stages = {name: bool(stages.get(name, False)) for name in ("sibilant_guard", "pause_floor", "apply_air")}
+    stages = {name: bool(stages.get(name, False)) for name in POST_NEURAL_SWITCHES}
     flags = dict(
         zip(NEURAL_FLAGS, (spectral_denoise, physical_repair, deepfilternet, hum_cancel, plosive_tamer, tone_cancel, resemble_denoise))
     )
@@ -1304,27 +1311,33 @@ def _denoise_and_polish_full_audio_step(
         audio_dir,
         _stage_cache_key.neural_call(total_duration, denoise_model, strategy, flags, PIPELINE_SAMPLE_RATE),
     )
+    # The neural output at its input's programme level when opted in and apl_neural_level_restore is on.
+    denoised_wav = _neural_level.restore_when_needed(surgical_wav, denoised_wav, audio_dir, stages)
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, expander_depth_db)
 
 
 def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, depth_db=None):
-    """After the neural stage: the sibilant guard (against the pre-neural audio), the polish, then the pause floor.
+    """After the neural stage: the sibilant guard (against the pre-neural audio), the hiss stages, the polish, the pause floor.
 
-    The guard runs before the polish so the expander sees the restored fricatives; the pause
-    floor runs after it so the expander cannot take the fill back out. Its reference is the
-    pre-conditioned audio the chain started from.
+    The guard runs before the polish so the expander sees the restored fricatives; the
+    post-neural suppressor and the air gate after the guard, so the suppressor cleans what
+    the polish will see; the pause floor after the polish so the expander cannot take the
+    fill back out. The pause floor's and the hiss gate's reference is the pre-conditioned
+    audio the chain started from.
     """
     if stages.get("sibilant_guard"):
         from . import sibilant_guard as _sibilant_guard
 
         cleaned_wav = _sibilant_guard.apply_when_needed(surgical_wav, cleaned_wav, audio_dir, strategy=strategy)
+    # The post-neural suppressor and the air gate, each read only when opted in and its key is on.
+    cleaned_wav, apply_air = _post_neural_suppress.apply_when_needed(original_wav, cleaned_wav, audio_dir, stages)
     polished = _polish_full_audio_step(
         cleaned_wav,
         audio_dir,
         total_duration=total_duration,
         strategy=strategy,
-        apply_air=stages.get("apply_air", False),
+        apply_air=apply_air,
         depth_db=depth_db,
     )
     if stages.get("pause_floor"):

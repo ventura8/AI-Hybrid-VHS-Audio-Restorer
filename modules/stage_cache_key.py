@@ -13,8 +13,8 @@ model). The key is the SHA-256 of one canonical JSON document holding:
 - `config`: the resolved `config.CONFIG` minus `POST_NEURAL_CONFIG_KEYS`. Deny by default:
   a key is left out only when every read of it is after the cached point (the read sites are
   frozen in `tests/unit/test_stage_cache_allowlist.py`), and a key nobody knows is kept.
-- `code`: the sources of every module but the four that only run after the cached point, and
-  what importing those four runs (their import-time code, with the bodies of the functions
+- `code`: the sources of every module but the seven that only run after the cached point, and
+  what importing those seven runs (their import-time code, with the bodies of the functions
   import never calls left out). Read when the process starts, with the cache on (`prime`):
   the process runs the code it loaded then, and `drift` refuses to store a render when a
   source or a package changed after that.
@@ -91,6 +91,13 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "enable_pause_floor",
         "pause_floor_fill_db",
         "pause_floor_quiet_percentile",
+        # The post-neural hiss stages (modules/post_neural_suppress.py, modules/neural_level.py):
+        # the suppressor's gate, the air shelf's gate and the level restore after the model.
+        "apl_post_neural_suppress",
+        "apl_post_neural_suppress_floor_gap_db",
+        "apl_post_neural_suppress_min_residual_db",
+        "linear_air_gate",
+        "apl_neural_level_restore",
         # The mux (modules/mastering.py, processing's mux commands) and the sync (modules/sync.py).
         "enable_loudnorm",
         "loudnorm_target_lra",
@@ -103,9 +110,22 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
 )
 
 # Modules whose functions run only after the cached point. Their function bodies stay out of
-# the code key; what importing them runs stays in it, since processing imports two of them at
-# start-up and the other two are imported in the middle of a process that may cache again.
-POST_CACHE_MODULES = frozenset({"modules/sibilant_guard.py", "modules/pause_floor.py", "modules/mastering.py", "modules/sync.py"})
+# the code key; what importing them runs stays in it, since processing imports four of them at
+# start-up (sync, mastering and the two hiss stages, which import hiss_floor) and the others are
+# imported in the middle of a process that may cache again. The
+# post-neural hiss stages read the suppressor's settings, which stay in the key (the subtraction
+# stage before the cached point reads them too), so a change there still misses.
+POST_CACHE_MODULES = frozenset(
+    {
+        "modules/sibilant_guard.py",
+        "modules/pause_floor.py",
+        "modules/mastering.py",
+        "modules/sync.py",
+        "modules/hiss_floor.py",
+        "modules/post_neural_suppress.py",
+        "modules/neural_level.py",
+    }
+)
 
 # The environment, keyed by prefix and so deny by default as the configuration is: every
 # variable that steers the app, audio-separator, the GPU stack, the thread pools, numpy's
@@ -274,7 +294,7 @@ def import_time_code(source):
 
 
 def _module_sources(root):
-    """Relative posix name -> path of every module source but the post-cache four."""
+    """Relative posix name -> path of every module source but the post-cache ones."""
     named = ((path.relative_to(root).as_posix(), path) for path in (root / "modules").rglob("*.py"))
     return {name: path for name, path in named if name not in POST_CACHE_MODULES}
 
