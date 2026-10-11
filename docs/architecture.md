@@ -273,10 +273,11 @@ background expander, or `amix` stage.
 
 ### Long captures
 
-Every UVR denoise call (Pass 7 here, and the stem denoisers of the two-stem
+Every neural denoise call (Pass 7 here, and the stem denoisers of the two-stem
 modes) goes through one runner. A track longer than the chunk length, which
 `neural_chunk_seconds` fixes or, at its default of 0, is sized from the
-machine's memory at the separator's measured 30 GB per hour, is denoised in
+machine's memory at the UVR separator's measured 30 GB per hour (the
+RoFormer's has never been measured and is sized the same way), is denoised in
 `modules/denoise_chunking.py`: equal chunks no longer than that, each
 starting on the models' patch stride, led in by the
 file's loudest block so the model normalises it as it would the whole file,
@@ -287,7 +288,14 @@ published atomically; each chunk's output is kept until then, so an
 interrupted run resumes from the chunks it finished. Measured on an 88-minute
 capture cut in three, the join matches the whole-file output on 99.97% of
 samples with the remainder at float rounding. Shorter tracks take the
-single-pass path unchanged.
+single-pass path unchanged. That is the UVR models' grid. The Mel-RoFormer
+this pass runs on speech is an MDXC model: its chunks start on its own 2 s
+overlap-add step, carry a full 8 s window of context either side, need no
+lead-in, and are written at the input gain the separator gives the whole
+file (`grid_for` in `modules/denoise_chunking.py`). Whole or chunked, the
+clean stem is picked by one rule, `(No Noise)` and then the model's
+training target, `(dry)`, never a residual (`modules/denoise_model.py`).
+See `docs/configuration.md`, "Long Captures".
 
 ## Mode: `auto`
 

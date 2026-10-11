@@ -253,10 +253,11 @@ _NUMERIC_CONFIG_FIELDS = (
     # 44.1 kHz pipeline's Nyquist.
     ("linear_air_freq_hz", float, 7500.0, 1000.0, 16000.0),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
-    # The longest track the UVR denoiser is given in one pass; longer ones are cut into
-    # equal overlapping chunks no longer than this. The separator needs about 30 GB of
-    # host memory per hour of audio, so 0 (the default) sizes the chunk from the machine:
-    # half its memory at that rate, between five minutes and two hours.
+    # The longest track the neural denoiser (UVR or the Mel-RoFormer) is given in one pass;
+    # longer ones are cut into equal overlapping chunks no longer than this. The UVR
+    # separator needs about 30 GB of host memory per hour of audio, so 0 (the default)
+    # sizes the chunk from the machine: half its memory at that rate, between five minutes
+    # and two hours. The RoFormer's memory per hour was never measured; it gets the same.
     ("neural_chunk_seconds", float, 0.0, 0.0),
     # Spectral subtraction factor, set from real tapes rather than synthetic fixtures.
     #

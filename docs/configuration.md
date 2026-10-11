@@ -585,11 +585,14 @@ GPU memory per `auto_pure_linear` job.
 
 ## Long Captures
 
-`neural_chunk_seconds` is the longest track the UVR denoiser is given in one
-pass. The separator keeps several full-length copies of the track in memory
-after inference, about 30 GB per hour of audio (48 GB measured on a 94-minute
-chunk), so a long capture fails outright: a 3h00m tape runs out of memory on
-a 62 GB machine. The default, `0`, sizes the chunk from the machine: half its
+`neural_chunk_seconds` is the longest track the neural denoiser (the UVR
+models, or the Mel-RoFormer that `apl_neural_model` names) is given in one
+pass. The UVR separator keeps several full-length copies of the track in
+memory after inference, about 30 GB per hour of audio (48 GB measured on a
+94-minute chunk), so a long capture fails outright: a 3h00m tape runs out of
+memory on a 62 GB machine. The RoFormer's memory per hour has never been
+measured; its chunks are sized by the same UVR figure. The default, `0`,
+sizes the chunk from the machine: half its
 memory at that rate, between five minutes and two hours: 57 minutes on a
 62 GB desktop, 28 on a 30 GB laptop, 11 on a 12 GB machine. A track longer than
 that is cut into equal chunks no longer than it, each denoised on its own and
@@ -639,3 +642,47 @@ samples, with the body at -103 dB and the seams at -156 dB relative to the
 signal; the worst single sample is -68 dB. Chunks shorter than the automatic
 length buy nothing: the lead-in already gives every chunk the file's maximum,
 and each chunk costs a stride of context either side.
+
+### The Mel-RoFormer and Other MDXC Models
+
+Everything above is the VR models' design. The shipped speech denoiser of
+`auto_pure_linear` (`apl_neural_model`, the Mel-RoFormer) is an MDXC model,
+and until 2026-10-11 it never finished a track longer than one chunk: the
+chunked path took only a `(No Noise)` stem, the RoFormer writes `(dry)` and
+`(other)`, so every speech tape over the chunk length (57 minutes on a 62 GB
+machine, 14 on a 16 GB one) failed in `auto_pure_linear` and in `auto`, from
+v1.3.3, where the RoFormer became the default, on. Music tapes, which run
+UVR (`apl_music_neural_model` is empty), were not affected.
+
+- One rule picks the clean stem wherever a denoised file is taken, whole or
+  chunked, fresh or left by an earlier run (`modules/denoise_model.py`):
+  `(No Noise)` first, then the training target in the `_config.yaml` beside
+  the checkpoint (`(dry)`), then the first file in name order that is not a
+  residual; never `(Noise)` or `(other)`. `models-scores.json`'s
+  `target_stem` is never read: it names the noise stem for the UVR models.
+  The whole-file pass already took `(dry)` by name order, so no output under
+  the chunk length changes; all 318 denoise directories found on this
+  machine get the file they got before.
+- The RoFormer denoises 8 s windows overlap-added every 2 s, 88,200 samples
+  (from its yaml: hop 441 x (dim_t 801 - 1) = 352,800, four windows deep),
+  each window on its own. Its chunks start on that step rather than on the
+  VR patch stride (2,949,120 samples is 33.4 steps) and carry a full window
+  of true audio either side, so every window that touches a chunk's range
+  is one the whole file ran. There is no file-wide spectrogram maximum, so
+  no lead-in. The chunk directory's name ends in `_mdxc88200`.
+- The separator scales its input down to 0.9 when the file's peak is above
+  it, and a chunk on its own would be scaled by its own peak, or not at all.
+  Each chunk is written at the gain the whole file is fed at, computed as the
+  separator computes it, so the network sees the whole file's samples bit
+  for bit. The half-scale retry of a chunk whose output reached full scale
+  stays as the VR path has it; for the RoFormer it changes the level the
+  network sees, so such a chunk is not the whole file's to the bit.
+
+Checked on the CPU, without the network: a replica of the separator's
+RoFormer overlap-add, with a level- and framing-dependent mask standing in
+for the network, over a 7.2-minute speech tape cut into two 300 s chunks. The
+join equalled the whole-file render on every body sample and stayed within
+-158 dB of the signal at the seams (crossfade rounding), at the tape's own
+level and with its peak pushed to 1.07. The same replica cut to the VR grid
+drifted to -47 dB (-30 dB with the hot input). The real network has not yet
+been run chunked against its whole-file render.
