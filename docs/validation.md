@@ -745,6 +745,38 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   and end of the raw pair, which every window reading aligns away. Hard
   gates at one PAL video frame (40 ms) and no unmatched anchor; the 32 v2
   final pairs read 4.7-5.4 ms of constant lag and under 0.3 ms of drift.
+- **Alignment**, `scripts/pair_alignment.py`: every paired reading (the
+  windows, the trade metric, the hum reading, the reference, defect and
+  listening scorers) runs on a pair trimmed to one timeline. Until
+  2026-10-11 the lag was the peak of |corr| over the first 1.86 s
+  (`xcorr_head`): a quiet head gave it nothing to read, its waveform
+  correlation followed the bass whose phase cathar's dewind turns, and |corr|
+  hid an inverted output. The default, `gcc_phat_spans`, reads GCC-PHAT
+  (150-7000 Hz, bins within 30 dB of each side's median) on up to seven of
+  the source's loudest 1.5 s spans and takes the lag that at least two, and
+  half, of the spans with a phase coherence of 0.1 agree on within 2
+  samples. Otherwise it abstains: the lag is unknown, the pair is trimmed at
+  the prior (`--align-prior-ms`, the mux's 4.97 ms) or at 0, and the scored
+  variant's `alignment` record says why; it also names the method, the
+  polarity and the spans, while `lag_samples` stays the applied lag. The lag
+  an output carries is the mux limiter's 219 samples plus the shift the
+  app's sync stage applied (its run log prints it). On the IA hunt's 205
+  shift-synced clips (2026-10-11, CPU) the head search read it within 8
+  samples on 137 cathar and 199 APL outputs, the vote on 203 and 202 (median
+  error 0, p95 1, max 4 samples); the rest abstain: digital silence, an
+  output with no phase coherence on any span, and a 431 ms shift outside
+  the +-4096 search. On the four Tata tapes the vote read all eight shipped
+  outputs exactly, where the head search missed five by 6-181 samples.
+  `AI_RESTORE_ALIGN_METHOD=xcorr_head` or `--align-method xcorr_head`
+  reproduces scores stored before then: re-read on the hunt, it matched all
+  470 stored lags.
+- **Noise removed per frame**, `measure_tradeoff.py`:
+  `file.noise_removed_median_db` beside `file.noise_removed_db`. The pooled
+  reading averages the quiet frames' energy, so a few hot frames own it: the
+  hottest 1 % of SOTI's quiet frames in the shipped APL output hold 34 % of
+  their energy (222 of 3739 stand 10 dB or more over the source, cathar's
+  2), and the pooled reading says -5.17 dB where the median of the per-frame
+  drops says +3.00 (cathar +9.61 pooled, +10.40 median).
 - **The programme's low end (R11)**, `lf_metrics.py`: `dsp.lf_programme_db`,
   the output's 40-200 Hz power over the source's on the source's loud frames,
   less R1's programme gain match (300-3000 Hz), with each mains line R0 names
