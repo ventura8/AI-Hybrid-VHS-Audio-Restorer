@@ -446,10 +446,12 @@ listening session decides otherwise:
 
 `cathar_noiseprint_mute_guard` (false), added on 2026-10-12. cathar learns
 its noise print from the quietest 0.75 s of a clip (a grid of 40 windows)
-or, from 90 s of material, from six stitched pauses. The only guard was
-against an all-zero window, so on an edited upload the pick can be a digital
-mute (a fade to black, a blank lead-in, a DVD's silence), and a print
-learned there removes nothing. On the 136 IA clips of
+or, from 90 s of material, from six stitched pauses. The single-window
+pick's only guard was against an all-zero window, and the stitched pick had
+none (it always keeps the quietest window, exact zeros included), so on an
+edited upload the pick can be a digital mute (a fade to black, a blank
+lead-in, a DVD's silence), and a print learned there removes nothing. On
+the 136 IA clips of
 `experiments/auto_engines_v140/ia_features.json` (cathar 0.7.3), 7 picked a
 window under -70 dBFS (-80.0 to -128.4), and there APL removed a median
 9.7 dB more than cathar, against 3.38 dB on the other 114.
@@ -500,9 +502,11 @@ dBFS; everything else is in dB.
 | scooby-doo | -0.72 / -0.70 | -0.47 / -0.45 | -1.2 / -1.2 |
 
 The pick moved on all 7 and bbc-two-continuity came out sample for sample
-the same. Removal rose by a median 0.42 dB (0.01 to 2.60), far short of the
-5-8 dB cathar reaches elsewhere, because on these dense clips the next
-quietest window is rarely a clean pause. Programme deviation moved by
+the same. Removal rose by a median 0.42 dB (0.01 to 2.60), to a median of
+1.65 dB, still short of the 2.78 dB cathar removes at HEAD on the other 206
+clips the hunt had scored on 2026-10-12 (`tune_ia_hunt_v3`,
+`cathar__baseline`), because on these dense clips the next quietest window
+is rarely a clean pause. Programme deviation moved by
 -0.90 to +0.11 dB. The cost is on lion-king-dodge: its new window straddles
 the mute and the end of the programme before it, so the print carries
 programme, and 8-16 kHz on the loud frames fell 3.4 dB, with 2.8 dB less
@@ -512,12 +516,13 @@ gap air. animal-shelf lost 1.2 dB at 4-8 kHz while its deviation fell
 Two alternatives were measured and set aside:
 
 - Dropping `--noiseprint` whenever the quietest window is a mute (not
-  taking a louder one) read within 0.02 dB of off on all 7 clips.
+  taking a louder one) read within 0.03 dB of off on all 7 clips.
   cathar's own estimate falls for the mute as well: on a synthetic 10 s
-  file, `denoise --alpha 1.0` without a print removed 0.48 dB of hiss, and
-  0.0 dB once the file held a 1 s digital mute, at its start or in the
-  middle. The fallback therefore matters only on material that is mute
-  throughout.
+  file, `denoise --alpha 1.0` without a print removed 0.48 dB of hiss net
+  of its +3.5 dB gain change, and 0.0 dB once the file held a 1 s digital
+  mute, at its start or in the middle; a print learned from 0.75 s of the
+  same hiss removed 9.7 dB. The fallback therefore matters only on material
+  that is mute throughout, and there it removes little.
 - Also rejecting windows a quarter or more of whose frames are digital,
   so that no window straddles a mute, moved three picks louder (read on
   the chain's own output, before the polish, against the same stage off).
@@ -536,6 +541,16 @@ Its spectrum stood 56.0, 63.2 and 14.3 dB (log-spectral distance, 100 Hz to
 the gaps; with the key on, 3.9, 2.3 and 5.1 dB. The other two open on exact
 zeros, which the old all-zero guard already skipped (2.0 and 3.3 dB either
 way).
+
+Key on, the whole local tapes (2026-10-12, CPU, each capture's audio
+decoded to mono, so read before the pre-conditioning): on the seven
+distinct full tapes, 134 to 1692 s long and so on the stitched path, the
+level rule rejected nothing, since no window sat under -69 dBFS. The held
+rule rejected windows on two: a 1 s lead-in of exact zeros, and a 0.75 s
+window at the very end of a file with 75% of its samples held. The
+unguarded stitched pick keeps the quietest window, so on both one of the
+six pauses was that digital stretch; the key moves the stitched pick on
+those two tapes and on no other. The single-window pick moved on none.
 
 The guard stays off until a blind listening session judges it.
 

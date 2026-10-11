@@ -128,8 +128,39 @@ def test_the_class_is_opt_in_and_draws_on_a_stream_of_its_own(tmp_path, monkeypa
     assert mute[0] != mute[1] and mute[0] not in {draws[1] for name, draws in seen.items() if name != "_build_digital_mute"}
 
 
-def test_the_flag_reaches_the_builder():
+def test_the_flag_parses_off_by_default():
     with patch.object(sys, "argv", ["make_realistic_fixtures_v2.py", "--digital-mute"]):
         assert gen._parse_args().digital_mute is True
     with patch.object(sys, "argv", ["make_realistic_fixtures_v2.py"]):
         assert gen._parse_args().digital_mute is False
+
+
+def _main_build_flags(tmp_path, extra):
+    """Runs `main` on one fake language and returns the (voice, digital_mute) each `_build` call received."""
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text("{}", encoding="utf-8")
+    calls = []
+
+    def build(*args):
+        calls.append(args[7:])
+        return [{"name": "en_voice00_speech_m15"}]
+
+    argv = ["make_realistic_fixtures_v2.py", "--output-dir", str(tmp_path / "out"), "--catalog", str(catalog), *extra]
+    with (
+        patch.object(sys, "argv", argv),
+        patch.object(gen, "build_noise_bank", return_value=[np.zeros(RATE, dtype=np.float32)]),
+        patch.object(gen, "_discover_languages", return_value={"en": [tmp_path / "en_voice_clean.wav"]}),
+        patch.object(gen, "_first_segment", return_value=np.zeros(RATE, dtype=np.float32)),
+        patch.object(gen, "_build", side_effect=build),
+    ):
+        (tmp_path / "out").mkdir(exist_ok=True)
+        gen.main()
+    return calls
+
+
+def test_main_hands_the_flag_to_the_builder_and_writes_the_manifest(tmp_path):
+    """`--digital-mute` reaches `_build` as its digital_mute argument; without it `_build` gets False."""
+    assert _main_build_flags(tmp_path, ["--digital-mute"]) == [(0, True)]
+    assert _main_build_flags(tmp_path, []) == [(0, False)]
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["languages"]["en"] == [{"name": "en_voice00_speech_m15"}]

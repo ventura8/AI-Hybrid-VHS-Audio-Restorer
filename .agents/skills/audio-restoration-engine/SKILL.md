@@ -361,10 +361,12 @@ audio alignment, or FFmpeg multiplexing.
   never reads them: its physical repair keeps its own `has_clipping` plan
   and its tonal cleanup calls the dehum step without `autodetect`.
 - **cathar noise-print mute guard (2026-10-12)**: the print's pick took the
-  quietest window whatever it held (the only guard, `1e-6 < rms` with
-  `rms = sqrt(ms + 1e-12)`, rejects an all-zero window and nothing else), so
-  on an edited upload it learns a digital mute and removes nothing; 7 of 136
-  IA clips picked a window under -70 dBFS. `cathar_noiseprint_mute_guard`
+  quietest window whatever it held (the single-window pick's only guard,
+  `1e-6 < rms` with `rms = sqrt(ms + 1e-12)`, rejects an all-zero window
+  and nothing else; the stitched pick has none and always keeps the
+  quietest window, exact zeros included), so on an edited upload it learns
+  a digital mute and removes nothing; 7 of 136 IA clips picked a window
+  under -70 dBFS. `cathar_noiseprint_mute_guard`
   (off; `modules/noiseprint_guard.py`) leaves out a window with half or more
   of its samples held, or under -70 dBFS and 30 dB under the 23 ms frame
   p20 (frames under -90 dBFS out of that p20), in both picks, and drops the
@@ -374,16 +376,21 @@ audio alignment, or FFmpeg multiplexing.
   lost 3.4 dB at 8-16 kHz because its new window straddles the mute and the
   programme before it. Two facts decided the design: cathar's own estimate
   (`denoise` without `--noiseprint`) also reads the mute (0.48 dB of hiss
-  removed on a synthetic file without one, 0.0 dB with a 1 s mute anywhere
-  in it), so dropping the print on a mute pick changes nothing (within
-  0.02 dB on all 7); and rejecting straddling windows as well moves the pick
+  removed net of gain on a synthetic file without one, 0.0 dB with a 1 s
+  mute anywhere in it, against 9.7 dB with a print learned from 0.75 s of
+  its hiss), so dropping the print on a mute pick changes nothing (within
+  0.03 dB on all 7); and rejecting straddling windows as well moves the pick
   onto programme on dense clips (lion-king-dodge: +6.7 dB removed, 9.6 dB
   less gap air). On the opt-in digital-mute fixtures
   (`make_realistic_fixtures_v2.py --digital-mute`) the key took the
   learned window's distance from the fixture's own noise from 56.0, 63.2
   and 14.3 dB LSD to 3.9, 2.3 and 5.1 on the three voices whose pick was a
-  mute. Numbers and the table: `docs/configuration.md`, "cathar Noise-Print
-  Mute Guard". Pending a blind listening session.
+  mute. On the seven distinct local full tapes (stitched path, raw decode)
+  the level rule rejected nothing (no window under -69 dBFS); the held rule
+  moved the stitched pick on two, a 1 s digital lead-in and a digital tail,
+  and the single-window pick on none. Numbers and the table:
+  `docs/configuration.md`, "cathar Noise-Print Mute Guard". Pending a blind
+  listening session.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since
