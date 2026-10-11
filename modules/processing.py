@@ -35,6 +35,7 @@ from . import denoise_cache as _denoise_cache
 from . import denoise_chunking as _denoise_chunking
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import mux_format as _mux_format
 from . import resemble_denoise as _resemble
 from . import spectral_denoise as _spectral_denoise
 from . import stage_cache as _stage_cache
@@ -691,7 +692,9 @@ def _denoise_full_audio_step(original_wav, denoised_audio_dir, denoise_model=Non
     )
 
 
-def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None):
+def _final_mix_output_command(
+    video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None, plan=None
+):
     """Generates FFmpeg arguments for final 2-stem mix.
 
     Args:
@@ -702,23 +705,25 @@ def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tm
         audio_args (list): Audio encoding parameters.
         threads (int): CPU worker threads count.
         filter_expr (str, optional): Prebuilt amix expression; built from config when omitted.
+        plan (mux_format.MuxPlan, optional): Where the stems start and the rate they are encoded
+            at (the source's audio start and the container's rate); today's command when omitted.
 
     Returns:
         list: FFmpeg CLI arguments.
     """
     filter_expr = _resolve_override(filter_expr, _build_mix_filter_expression())
+    plan = _resolve_override(plan, _mux_format.MuxPlan())
     cmd = [
         FFMPEG_BIN,
         "-stats",
         "-hide_banner",
         "-threads",
         str(threads),
+        *plan.global_args(),
         "-i",
         str(video_path),
-        "-i",
-        str(aligned_vocals),
-        "-i",
-        str(aligned_background),
+        *plan.restored_input(aligned_vocals),
+        *plan.restored_input(aligned_background),
         "-filter_complex",
         filter_expr,
         "-map",
@@ -727,6 +732,7 @@ def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tm
         "[mixed]",
         "-c:v",
         "copy",
+        *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
         cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
@@ -817,13 +823,14 @@ def _final_mix_step(
 
     tmp_output = _staged_output_path(final_output_video, aligned_vocals.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
+    plan = _mux_format.plan_for(video_path, final_output_video.suffix)
     loudnorm_args = _resolve_loudnorm_args(
-        video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration
+        video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration, sample_rate=plan.sample_rate
     )
-    filter_expr = _build_mix_filter_expression(vocal_mix_vol, bg_mix_vol, loudnorm_args)
+    filter_expr = _build_mix_filter_expression(vocal_mix_vol, bg_mix_vol, loudnorm_args, sample_rate=plan.sample_rate)
 
     def build_mix_cmd(threads):
-        return _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output, audio_args, threads, filter_expr)
+        return _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output, audio_args, threads, filter_expr, plan)
 
     attempt_cpu_run_with_retry(build_mix_cmd, CPU_THREADS, description="Final Mixing", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Mix Failed: Output video invalid/empty.")
@@ -841,7 +848,7 @@ def _single_audio_stream_args(filter_expr):
     return ["-filter_complex", filter_expr, "-map", "[mastered]"]
 
 
-def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_video, audio_args, threads, filter_expr=None):
+def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_video, audio_args, threads, filter_expr=None, plan=None):
     """Generates FFmpeg arguments for remuxing a single audio track.
 
     Args:
@@ -852,25 +859,29 @@ def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_
         threads (int): CPU worker threads count.
         filter_expr (str, optional): Mastering graph; the track is mapped directly
             when omitted.
+        plan (mux_format.MuxPlan, optional): Where the track starts and the rate it is
+            encoded at; today's command when omitted.
 
     Returns:
         list: FFmpeg CLI arguments.
     """
+    plan = _resolve_override(plan, _mux_format.MuxPlan())
     cmd = [
         FFMPEG_BIN,
         "-stats",
         "-hide_banner",
         "-threads",
         str(threads),
+        *plan.global_args(),
         "-i",
         str(video_path),
-        "-i",
-        str(processed_audio_wav),
+        *plan.restored_input(processed_audio_wav),
         "-map",
         "0:v:0",
         *_single_audio_stream_args(filter_expr),
         "-c:v",
         "copy",
+        *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
         cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
@@ -900,11 +911,14 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
 
     tmp_output = _staged_output_path(final_output_video, processed_audio_wav.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
-    loudnorm_args = _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=duration)
-    filter_expr = _build_single_audio_filter_expression(loudnorm_args)
+    plan = _mux_format.plan_for(video_path, final_output_video.suffix)
+    loudnorm_args = _resolve_single_track_loudnorm_args(
+        video_path, processed_audio_wav, total_duration=duration, sample_rate=plan.sample_rate
+    )
+    filter_expr = _build_single_audio_filter_expression(loudnorm_args, sample_rate=plan.sample_rate)
 
     def build_mux_cmd(threads):
-        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_args, threads, filter_expr)
+        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_args, threads, filter_expr, plan)
 
     attempt_cpu_run_with_retry(build_mux_cmd, CPU_THREADS, description="Final Remux", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Remux Failed: Output video invalid/empty.")

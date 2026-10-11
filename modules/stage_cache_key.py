@@ -91,10 +91,13 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "enable_pause_floor",
         "pause_floor_fill_db",
         "pause_floor_quiet_percentile",
-        # The mux (modules/mastering.py, processing's mux commands) and the sync (modules/sync.py).
+        # The mux (modules/mastering.py, modules/mux_format.py, processing's mux commands) and the
+        # sync (modules/sync.py).
         "enable_loudnorm",
         "loudnorm_target_lra",
         "loudnorm_linear_fallback",
+        "mux_limiter_latency_compensation",
+        "mux_sample_rate",
         "preserve_original_audio_track",
         "dtw_resolution",
         # The stem path's background pass, which never enters the cached stages.

@@ -50,6 +50,9 @@ READ_SITES = {
     "enable_loudnorm": ("ENABLE_LOUDNORM", {"mastering.py:*", "processing.py:<module>"}),
     "loudnorm_target_lra": ("LOUDNORM_TARGET_LRA", {"mastering.py:*", "processing.py:<module>"}),
     "loudnorm_linear_fallback": ("LOUDNORM_LINEAR_FALLBACK", {"mastering.py:*"}),
+    # The mux's limiter compensation and its rate; modules/mux_format.py runs only in the mux.
+    "mux_limiter_latency_compensation": ("MUX_LIMITER_LATENCY_COMPENSATION", {"mastering.py:_limiter_filter"}),
+    "mux_sample_rate": ("MUX_SAMPLE_RATE", {"mux_format.py:_keeps_source_rate"}),
     "preserve_original_audio_track": (
         "PRESERVE_ORIGINAL_AUDIO_TRACK",
         {"processing.py:_final_mix_output_command", "processing.py:_build_single_audio_mux_command"},
@@ -58,7 +61,8 @@ READ_SITES = {
     "apl_music_bg_floor_db": ("APL_MUSIC_BG_FLOOR_DB", {"apl_stems.py:_background_pass"}),
 }
 
-POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py"}
+# mux_format.py takes the codec table and the pipeline rate from mastering; it runs only in the mux.
+POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py", "mux_format.py"}
 
 
 def _module_files():

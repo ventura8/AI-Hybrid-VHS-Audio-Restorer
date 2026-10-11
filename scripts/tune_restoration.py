@@ -252,6 +252,7 @@ def known_config_fields():
     fields["cathar_denoise_method"] = (set(config_mod.VALID_CATHAR_DENOISE_METHODS), None, None)
     fields["cathar_declip_mode"] = (set(config_mod.VALID_CATHAR_DECLIP_MODES), None, None)
     fields["cathar_dehum_freq"] = ({config_mod.CATHAR_DEHUM_FREQ_SCANNER, 0}, None, None)
+    fields["mux_sample_rate"] = (set(config_mod.VALID_MUX_SAMPLE_RATES), None, None)
     fields["apl_neural_model"] = (str, None, None)
     return fields
 

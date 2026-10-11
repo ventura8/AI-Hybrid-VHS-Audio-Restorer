@@ -597,6 +597,29 @@ cathar_dereverb_strength: 2.0
 #     true peak is measured and recorded. Not yet judged by ear; the pause-texture
 #     round decides it.
 #
+# mux_limiter_latency_compensation:
+#   - The mux's limiter (alimiter at -1 dBFS) delays the audio by its lookahead: a
+#     synthetic impulse at sample 10000 came out at 10219, 219 samples or 4.97 ms at
+#     44.1 kHz (ffmpeg 9.0.1), so every output of every mode plays 4.97 ms late against
+#     its video and against the preserved original track.
+#   - false (Default): the limiter as every release has run it; every output keeps its
+#     bytes, which cathar's identity check compares.
+#   - true: alimiter's latency=1 removes the delay (the impulse stayed at 10000, the
+#     length unchanged). A pure time shift; it needs the user's sign-off on re-basing
+#     the identity check before it becomes the default.
+#
+# mux_sample_rate:
+#   - Every stage runs at 44.1 kHz; this is the rate the mux encodes the restored track
+#     at. The source's audio start time is always kept: the restored track starts where
+#     the source's audio started against the video (it used to start with the video:
+#     a 48 kHz MPEG-PS capture with its audio 5.578 ms after the video came out with it
+#     10.911 ms before).
+#   - 'pipeline' (Default): 44.1 kHz in every container except MPEG-PS (.mpg/.mpeg),
+#     which keeps the source's rate (DVD-Video allows MP2 only at 48 kHz; a rate MP2
+#     cannot encode goes to 48 kHz). Every other container keeps its bytes.
+#   - 'source': every container keeps the source's rate when its codec encodes it
+#     (AAC's and MP2's rates; PCM takes any). Changes every 48 kHz source's bytes.
+#
 # crt_notch_q:
 #   - Q of the CRT line-whistle notch in the pre-conditioning graph (30 is the shipped
 #     width; cathar's music profile narrows it to cathar_music_crt_notch_q).
@@ -617,6 +640,8 @@ pause_floor_fill_db: 12.0
 pause_floor_quiet_percentile: 15.0
 loudnorm_target_lra: 20.0
 loudnorm_linear_fallback: "ffmpeg"
+mux_limiter_latency_compensation: false
+mux_sample_rate: "pipeline"
 crt_notch_q: 30.0
 enable_linear_air: true
 linear_air_gain_db: 1.0
