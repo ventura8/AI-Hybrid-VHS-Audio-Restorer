@@ -56,13 +56,22 @@ def _cases_of(cases, kind, name=None):
     return [c for c in cases if c.kind == kind and name in (None, c.name)]
 
 
-def noise_floor(cases, readings):
-    """Per metric: the benign centre (median delta) and floor (p95 |delta - centre|) over every benign case."""
+def noise_floor(cases, readings, leave_out=()):
+    """Per metric: the benign centre (median delta) and floor (p95 |delta - centre|) over every benign case.
+
+    `leave_out` names benign cases to skip: the gates' floor leaves out the same-percept transforms
+    (`quality_degradations.SAME_PERCEPT`), which only the sensitivity checks measure in.
+    """
     values = {}
-    for case in _cases_of(cases, "benign"):
+    for case in _benign_kept(cases, leave_out):
         for metric, value in _floor_readings(readings.get(case.case_id, {}), deg.benign_changes(case.name)):
             values.setdefault(metric, []).append(value)
     return {metric: _centre_and_floor(v) for metric, v in values.items()}
+
+
+def _benign_kept(cases, leave_out):
+    """The benign cases less the ones named in `leave_out`."""
+    return [case for case in _cases_of(cases, "benign") if case.name not in leave_out]
 
 
 def _floor_readings(readings, changed=()):

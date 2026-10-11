@@ -103,9 +103,26 @@ live in `scripts/degradations_v3.py`; their measured effect on the realistic-v2 
 - `sibilant_islands` and `sync_drift` (the R2 and R7 owners' requests) and the R2 readings on
   the v2 `sibilants_*` pair: measured beside their table entries.
 - `--excerpts` in the calibration runs `on_tape()`, the degradations a real excerpt can carry.
+
+Same-percept transforms (`SAME_PERCEPT`, backlog E2 part c, 2026-10-11) join `BENIGN`: changes a
+listener hears as the same sound, which the identity, requantisation, resample and shift cases
+under-state. The calibration's v3b floor under `dsp.gap_hf_excess_db` was 0.0080 dB where a
+fresh hiss realisation reads 0.67 (`pause_metrics`), so an effect could clear "three floors"
+on a difference no listener would call a change. They are: `fresh_noise` (the fixture's own
+recorded noise, `vhs - clean`, against its phase surrogate: the whole-signal magnitude spectrum
+with new phases, the same power spectrum exactly; on a real excerpt, which has no recorded noise,
+two noises shaped like its quietest frames added at their power), the 2nd-order all-pass filters
+at 200 Hz and 2 kHz, a 0.37-sample fractional delay, gain of +-0.1 dB and TPDF dither at 16-bit
+LSB without re-quantising (`requantise` also rounds). Each draws from its own generator seeded
+from (language, name, level) (`benign_rng`), so adding them left every other case bit-identical.
+Their floor feeds the effect-versus-floor sensitivity checks only
+(`calibrate_quality_metrics.synthetic`, `check_floor`): the gates,
+the known-ordering stand-in grid and the report's floor keep the old benign set, and nothing
+here reaches the tuning grids' dead zones.
 """
 
 import contextlib
+import hashlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -157,6 +174,13 @@ SIB_BODY_HZ = (1000.0, 4000.0)
 SIB_TOP_HZ = (6000.0, 12000.0)
 SMEAR_PRE_S = 0.03
 SMEAR_ENVELOPE_S = 0.01
+# The same-percept transforms: a Butterworth-Q all-pass, the fractional delay and its zero padding (longer than the
+# delay's ringing at a fraction of a sample, so the tail never wraps onto the head).
+ALLPASS_Q = 0.7071
+FRACTIONAL_DELAY_SAMPLES = 0.37
+FRACTIONAL_DELAY_PAD = 4096
+# The frame an excerpt's own noise floor is read on when it carries no recorded noise.
+NOISE_FRAME = 1024
 
 
 @contextlib.contextmanager
@@ -326,6 +350,87 @@ def benign_requantise(mono, rng):
 def benign_resample_roundtrip(mono, rate):
     up = audio_io._resample(np.asarray(mono, dtype=np.float32), rate, 48000)
     return audio_io._resample(up, 48000, rate)[: len(mono)]
+
+
+# --- the same-percept transforms: what a listener hears as the same sound (`SAME_PERCEPT`) -------------
+
+
+def benign_rng(language, name, level=None):
+    """The generator of one same-percept case, seeded from (language, name, level) alone."""
+    digest = hashlib.sha256(f"{language}|{name}|{level}".encode("utf-8")).hexdigest()
+    return np.random.default_rng(int(digest[:16], 16))
+
+
+def resynthesised_noise(noise, rng):
+    """The noise's whole-signal magnitude spectrum with new phases (a phase surrogate): its power spectrum exactly, a fresh
+    realisation. A frame-wise STFT re-synthesis loses about 6 dB to the incoherent overlap-add, so the whole signal is used;
+    the recorded tape noise is stationary (realistic-v2 adds it after the gain control)."""
+    spectrum = np.fft.rfft(np.asarray(noise, dtype=np.float64))
+    phases = rng.uniform(-np.pi, np.pi, len(spectrum))
+    phases[[0, -1]] = 0.0
+    return np.fft.irfft(np.abs(spectrum) * np.exp(1j * phases), len(noise))
+
+
+def floor_noise(mono, rng):
+    """Noise with the spectrum of `mono`'s quietest tenth of `NOISE_FRAME` frames, at their power (an excerpt's own hiss)."""
+    data = np.asarray(mono, dtype=np.float64)
+    frames = data[: len(data) // NOISE_FRAME * NOISE_FRAME].reshape(-1, NOISE_FRAME)
+    power = np.mean(frames**2, axis=1)
+    quiet = frames[power <= np.percentile(power, 10.0)]
+    psd = np.mean(np.abs(np.fft.rfft(quiet * np.hanning(NOISE_FRAME), axis=1)) ** 2, axis=0)
+    shape = np.sqrt(np.interp(np.fft.rfftfreq(len(data)), np.fft.rfftfreq(NOISE_FRAME), psd))
+    noise = np.fft.irfft(np.fft.rfft(rng.standard_normal(len(data))) * shape, len(data))
+    return noise * np.sqrt(np.mean(quiet**2) / max(float(np.mean(noise**2)), 1e-30))
+
+
+def fresh_noise(mono, rate, rng, noise=None):
+    """`(source, output)`: the programme under its recorded noise and under a fresh realisation of it.
+
+    Without a recorded noise (a real excerpt) both sides add their own noise shaped like the
+    excerpt's quietest frames, at that level: two realisations of the same added hiss. `rate` is
+    unused (the re-synthesis works on samples) and kept so every same-percept case is called alike.
+    """
+    del rate
+    base = np.asarray(mono, dtype=np.float64)
+    if noise is None:
+        return (base + floor_noise(base, rng)).astype(np.float32), (base + floor_noise(base, rng)).astype(np.float32)
+    recorded = np.resize(np.asarray(noise, dtype=np.float64), len(base))
+    return (base + recorded).astype(np.float32), (base + resynthesised_noise(recorded, rng)).astype(np.float32)
+
+
+def allpass(mono, rate, frequency_hz, q=None):
+    """A 2nd-order all-pass biquad (RBJ): every magnitude kept, the phase turned around `frequency_hz`."""
+    w0 = 2.0 * np.pi * frequency_hz / rate
+    alpha = np.sin(w0) / (2.0 * (q or ALLPASS_Q))
+    b = [1.0 - alpha, -2.0 * np.cos(w0), 1.0 + alpha]
+    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]
+    return scipy.signal.lfilter(b, a, np.asarray(mono, dtype=np.float64)).astype(np.float32)
+
+
+def fractional_delay(mono, samples):
+    """`mono` delayed by a fraction of a sample: a linear phase in the spectrum, zero-padded so nothing wraps."""
+    data = np.concatenate([np.asarray(mono, dtype=np.float64), np.zeros(FRACTIONAL_DELAY_PAD)])
+    spectrum = np.fft.rfft(data) * np.exp(-2j * np.pi * np.fft.rfftfreq(len(data)) * samples)
+    return np.fft.irfft(spectrum, len(data))[: len(mono)].astype(np.float32)
+
+
+def tpdf_dither(mono, rng):
+    """TPDF dither of one 16-bit LSB added, without re-quantising (`benign_requantise` rounds as well)."""
+    dither = (rng.random(len(mono)) + rng.random(len(mono)) - 1.0) / 32768.0
+    return (np.asarray(mono, dtype=np.float64) + dither).astype(np.float32)
+
+
+def _same_percept(name, base, rate, rng, noise):
+    """The `(source, output)` pair of one same-percept transform."""
+    if name == "fresh_noise":
+        return fresh_noise(base, rate, rng, noise)
+    if name in ALLPASS_HZ:
+        return base, allpass(base, rate, ALLPASS_HZ[name])
+    if name in BENIGN_GAIN_DB:
+        return base, gain(base, BENIGN_GAIN_DB[name])
+    if name == "frac_delay_0p37":
+        return base, fractional_delay(base, FRACTIONAL_DELAY_SAMPLES)
+    return base, tpdf_dither(base, rng)
 
 
 # --- the listener degradations: what the user heard on the Tata tapes, one at a time ---------
@@ -851,8 +956,12 @@ UNBUILT_READINGS = ("dsp.hf_flicker_db",)
 
 
 LISTENER = ("gated_pauses", "hiss_in_pauses", "sibilants_thinned", "sibilants_dulled", "transient_smear")
+# Same-percept transforms (see the module docstring): their floor recalibrates the sensitivity checks only.
+ALLPASS_HZ = {"allpass_200hz": 200.0, "allpass_2khz": 2000.0}
+BENIGN_GAIN_DB = {"gain_up_0p1db": 0.1, "gain_down_0p1db": -0.1}
+SAME_PERCEPT = ("fresh_noise", *ALLPASS_HZ, "frac_delay_0p37", *BENIGN_GAIN_DB, "tpdf_dither")
 # `identity_music` gives the stem and transient readings a benign floor of their own.
-BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music")
+BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music", *SAME_PERCEPT)
 # A shift is benign to every lag-aligned reading, not to the raw pair's: `file_metrics` reads the
 # sync on the raw pair, so its lags and offset read the shift itself (5.0 / 30.0 / 60.0 ms), the
 # fault the 40 ms `file.sync_offset` gate stands for. The drift (one constant lag) stays benign.
@@ -1070,8 +1179,18 @@ def _apply_level(name, level, base, rate):
     return base, compress(base, rate, level)
 
 
-def apply_benign(name, base, rate, rng):
-    """The (source, output) pair for one benign transform: every metric must read nothing."""
+def apply_benign(name, base, rate, rng, materials=None):
+    """The (source, output) pair for one benign transform: every metric must read nothing.
+
+    A same-percept transform takes `materials["noise"]` (the fixture's recorded noise) when there is one.
+    """
+    if name in SAME_PERCEPT:
+        return _same_percept(name, base, rate, rng, (materials or {}).get("noise"))
+    return _near_copy(name, base, rate, rng)
+
+
+def _near_copy(name, base, rate, rng):
+    """The (source, output) pair of an identity, requantisation, resample or shift case."""
     if name.startswith("identity"):
         return base, np.asarray(base, dtype=np.float32).copy()
     if name == "requantise":
