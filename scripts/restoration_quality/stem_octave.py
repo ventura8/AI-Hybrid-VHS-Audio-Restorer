@@ -20,7 +20,9 @@ source stem `S`, the source mix `M` and the output mix `O`, on the source's time
 
 - cells: the source stem's programme cells (`auditory.programme_cells`: loud frames, bin 12 dB
   over its p10 floor) that stand `NOISE_MARGIN_DB` over the stem's bias-corrected mean noise
-  (`balance_metrics.over_noise`, guard a) and where the background leads the mix, `S` within
+  (`balance_metrics.over_noise`, guard a), that sit at or above `CELL_FLOOR_DBFS` (guard c: the
+  level of the sine that would put the cell's power in its bin, at least -90 dBFS, one 16-bit
+  step), and where the background leads the mix, `S` within
   `LEAD_DB` of `M`: at most a fifth of such a cell can be anything else, so removing all of
   it moves the mix by 1 dB at most;
 - per octave of `OCTAVES_HZ` (125 Hz up, the CRT line and its skirt left out), the median
@@ -65,6 +67,26 @@ Measured on CPU (2026-10-12) from cached BS-RoFormer stems, no separator run:
   read (raw octave 157 of 166), APL 18 of 178 (raw 126 of 192); 9 sources are capped. cathar's
   failing windows sit in every octave at -3 to -6 dB, APL's mostly above 4 kHz; not traced.
 
+Guard (c), the absolute floor (2026-10-12). Guard (a) is relative to the stem's own floor, so
+over a clean floor it passes cells under anything a capture carries: in an octave a
+band-limited source never filled, cells 20-30 dB over the floor can sit near -94 dBFS, and an
+output without them read as a deep loss. A cell now counts only at `CELL_FLOOR_DBFS`, -90 dBFS,
+or more: the level of a sine one 16-bit step (2^-15) in amplitude. R1's -70 dBFS was tried
+first and is too high for a cell (it is a broadband level): on the 24 accepted v2 music finals
+it left m_wbbddanceswithwolves unread on both engines and moved APL m_videoplayback-2021-07-11
+from -0.79 to -2.24 dB (-80 dBFS: the same two unread, -1.38). At -90 all 22 finals that read
+still read, three move by 0.19 dB at most, and none falls under -3 dB; the calibration's
+`background_stripped` cases read as before (-5.9 / -11.1 / -14.9). On the hunt's shipped
+outputs the floor moves 22 cathar and 18 APL readings and two cathar verdicts, both to a pass
+(channel-4-adverts-treasure-hunt -5.46 to -2.93, the-riddlers -5.64 to -2.86, beds whose lost
+cells sit under -90 dBFS); APL keeps its 18 failures. It does not clear
+`et-el-extraterrestre-tve` (-54.0 / -54.3 dB, cathar / APL), the clip the octave investigation
+described as holding -94 dBFS cells: its 4-16 kHz cells are the first two STFT frames of window
+0 (185 + 175 cells in 4-8 kHz, 338 + 124 in 8-16 kHz) at -68 dBFS median, where the analysis's
+zero padding meets a source that starts mid-signal; the output starts quieter and has no such
+edge. Leaving out the two frames at either end of a window clears it (-0.19 / -2.56 dB), but
+that moves every reading, so it waits for its own calibration.
+
 Blind spot: a background that never falls to a floor inside the 15 s window. Guard (a)'s
 floor is the bin's own p10, which on a steady or slowly moving bed is the bed itself, so the
 bed's cells never stand the margin over it and the octave is unread: a sustained 24-partial
@@ -102,6 +124,14 @@ LIVE_RANGE = 10.0 ** (-balance_metrics.DYNAMIC_RANGE_DB / 10.0)
 SEPARATOR_PEAK = 0.9
 # A stem whose peak sits this close to SEPARATOR_PEAK was scaled down by the separator.
 CAPPED_TOLERANCE = 1e-4
+# Guard (c): a background cell weaker than a sine one 16-bit step in amplitude (2^-15, -90.3 dBFS)
+# is under what a 16-bit capture carries, so it is no programme. A cell's level is that of the sine
+# whose power it holds: under `stft_power`'s scaling (scipy's 'spectrum', the window's sum) a sine of
+# amplitude A centred on a bin puts (A / 2)^2 there, so a full-scale sine reads 0 dBFS. R1's -70 dBFS
+# (`balance_metrics.MIN_LEVEL_DBFS`) is a broadband level: as a cell floor it left two of the 24
+# accepted v2 music finals unread and moved another 1.45 dB towards the gate (module docstring).
+CELL_FLOOR_DBFS = -90.0
+FULL_SCALE_SINE_POWER = 0.25
 
 
 def stem_scale(input_peak, stem_peak):
@@ -135,8 +165,13 @@ def _read(levels):
 
 def background_cells(stem, src):
     """The source stem's guarded programme cells where the stem holds the mix within `LEAD_DB`."""
-    guarded = auditory.programme_cells(stem) & balance_metrics.over_noise(stem, NOISE_MARGIN_DB)
+    guarded = auditory.programme_cells(stem) & balance_metrics.over_noise(stem, NOISE_MARGIN_DB) & over_floor(stem)
     return guarded & (stem >= src * 10.0 ** (-LEAD_DB / 10.0))
+
+
+def over_floor(power):
+    """Guard (c): the cells at or above `CELL_FLOOR_DBFS`, read as the level of the sine that would put that power in the bin."""
+    return power >= FULL_SCALE_SINE_POWER * 10.0 ** (CELL_FLOOR_DBFS / 10.0)
 
 
 def mix_gain_db(src, out, freqs):

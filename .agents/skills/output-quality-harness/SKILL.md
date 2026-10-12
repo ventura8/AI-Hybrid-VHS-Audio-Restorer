@@ -1302,6 +1302,26 @@ scores read in place).
   `background_stripped` on the 2026-09-20 calibration stems -5.9 / -11.1 /
   -14.9 dB (raw -0.9 / -2.6 / -14.3); the hunt's shipped cathar 66 of 178
   clips under -3, APL 18 of 178 (raw 157 of 166, 126 of 192).
+- **Guard (c), the absolute floor (2026-10-12).** A background cell counts
+  only at `CELL_FLOOR_DBFS` (-90 dBFS) or more, its level read as the sine
+  that would put its power in the bin (`FULL_SCALE_SINE_POWER` 0.25 under
+  `stft_power`'s scaling): guard (a) is relative, so over a clean floor it
+  passed cells under anything a capture carries. R1's -70 dBFS
+  (`balance_metrics.MIN_LEVEL_DBFS`) is a broadband level and too high per
+  cell: two of the 24 accepted v2 music finals went unread
+  (m_wbbddanceswithwolves, both engines) and APL m_videoplayback-2021-07-11
+  moved -0.79 to -2.24 dB; -80 left the same two unread. At -90: 22 finals
+  read, three move by 0.19 dB at most; `background_stripped` unchanged; on
+  the hunt 22 cathar and 18 APL readings move, two cathar verdicts pass
+  (treasure-hunt -5.46 to -2.93, the-riddlers -5.64 to -2.86), APL keeps 18
+  failures. Not et-el's fix, despite the investigation's "-94 dBFS cells":
+  et-el-extraterrestre-tve still reads -54.0 / -54.3 because its 4-16 kHz
+  cells are window 0's first two STFT frames (zero padding meeting a
+  source that starts mid-signal, -68 dBFS median; the output starts
+  quieter). Dropping two frames at each end clears it (-0.19 / -2.56) and
+  moves every reading: a separate change with its own calibration. Scripts:
+  `D:\ai_restore_work\scratch_npdepth` (`etel_check.py`, `check_finals.py`
+  with the floor as its argument, `check_calibration.py`, `hunt_floor.py`).
 - **Its blind spot.** Guard (a)'s floor is each bin's p10 in the window, so
   a bed that never falls to a floor in 15 s is unread: a sustained chord
   reads None stripped or not; on the realistic-v2 musiconly beds a planted

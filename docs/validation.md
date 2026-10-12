@@ -1306,6 +1306,21 @@ only; no restoration default moved.
   `music_hiss_removed` cases are built on the music fixture's clean bed and
   its own recorded noise, not the speech fixture's `noise`, on which the
   mute's octave never read. The real-separator checks run on the GPU.
+  Guard (c), added 2026-10-12: a background cell counts only at -90 dBFS
+  or more (`CELL_FLOOR_DBFS`, the level of the sine whose power the cell
+  holds; -90 dBFS is a sine one 16-bit step in amplitude), since guard (a)
+  is relative and passes cells under anything a capture carries over a
+  clean floor. R1's -70 dBFS, a broadband level, was too high for a cell:
+  it left m_wbbddanceswithwolves unread on both engines and moved APL
+  m_videoplayback-2021-07-11 from -0.79 to -2.24 dB. At -90 the accepted
+  finals keep their readings (22 read, three move by 0.19 dB at most, none
+  under -3), `background_stripped` reads as before, and on the hunt two
+  cathar verdicts move to a pass (treasure-hunt, the-riddlers) while APL
+  keeps its 18 failures. It does not clear et-el-extraterrestre-tve
+  (-54.0 / -54.3): its 4-16 kHz cells are window 0's first two STFT
+  frames, where the zero padding meets a source that starts mid-signal, at
+  -68 dBFS. Dropping two frames at each end of a window clears it
+  (-0.19 / -2.56) but moves every reading, so it waits for a calibration.
 - `speech.cer_median` and `mos.audiobox_pc` are soft until a verdict sets
   them; the grids' learned vetoes on both stay.
 - `Gate.calibrated` is False for every hand-set threshold (lkr's 1.747, a

@@ -9,6 +9,7 @@ import pytest
 
 from scripts import quality_degradations as deg
 from scripts.restoration_quality import audio_io, stem_metrics, stem_octave
+from scripts.restoration_quality.lf_metrics import stft_power
 
 RATE = 44100
 SECONDS = 15.0
@@ -176,6 +177,63 @@ def test_without_a_readable_mix_octave_the_background_levels_against_itself(bed,
     gone = deg.band_gain(bed, RATE, (500.0, 1000.0), -60.0)
     assert _read(source, source, 0.5 * source) == pytest.approx(0.0, abs=0.3)
     assert _read(source, source, gone + hiss) < -10.0
+
+
+def _sine_cells(dbfs, bin_index=100, seconds=1.0):
+    """The STFT power of a sine at `dbfs` (its amplitude re full scale) centred on one bin."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    tone = 10.0 ** (dbfs / 20.0) * np.sin(2 * np.pi * bin_index * RATE / stem_octave.FRAME * t)
+    return stft_power(tone, RATE, stem_octave.FRAME, stem_octave.HOP)[1][bin_index, 4:-4]
+
+
+@pytest.mark.parametrize(("dbfs", "over"), [(-89.0, True), (-91.0, False), (0.0, True)])
+def test_the_floor_reads_a_cell_as_the_sine_that_fills_it(dbfs, over):
+    """A sine centred on a bin reads its own level there: -89 dBFS clears the -90 dBFS floor, -91 does not."""
+    assert bool(stem_octave.over_floor(_sine_cells(dbfs)).all()) is over
+
+
+def test_a_full_scale_sine_puts_the_floors_reference_power_in_its_bin():
+    assert float(np.median(_sine_cells(0.0))) == pytest.approx(stem_octave.FULL_SCALE_SINE_POWER, rel=1e-6)
+
+
+# White noise under the band-limited tape's empty top octave: 31 dB under a -94 dBFS tone's bin.
+DITHER_DBFS = -100.0
+
+
+def _band_limited_tape(tone_dbfs):
+    """`(source, output)` of a quiet band-limited tape: the bed and its hiss end at 5 kHz, white noise at DITHER_DBFS above.
+
+    Over that clean top octave, tones at `tone_dbfs` in 8-16 kHz play from 30 to 130 ms into each 0.4 s chord (loud
+    frames, never the quiet ones guard (b) counts on), so their bins fall to the noise between chords and the cells
+    stand 18 dB or more over the bins' floor: guard (a) passes them at -94 dBFS. The output is the oracle
+    restoration (hiss 20 dB down) without the tones.
+    """
+    t = np.arange(int(SECONDS * RATE)) / RATE
+    tones = sum(np.sin(2 * np.pi * hz * t) for hz in (9000.0, 10500.0, 12000.0, 13500.0)) * 10.0 ** (tone_dbfs / 20.0)
+    hiss = deg.band_gain(_hiss(), RATE, (5000.0, RATE / 2.0), -120.0)
+    dither = 10.0 ** (DITHER_DBFS / 20.0) * np.random.default_rng(13).standard_normal(len(t))
+    bed = 0.05 * _bed()
+    gate = (t % 0.4 >= 0.03) & (t % 0.4 < 0.13)
+    return bed + 0.05 * hiss + dither + tones * gate, bed + 0.005 * hiss + dither
+
+
+def test_et_els_case_cells_at_minus_94_dbfs_no_longer_read_as_a_loss():
+    """Cells at -94 dBFS (et-el's level as the octave investigation gave it) that the output leaves out read no loss."""
+    source, output = _band_limited_tape(-94.0)
+    assert _read(source, source, output) == pytest.approx(0.0, abs=0.3)
+
+
+def test_without_the_floor_those_cells_read_as_a_deep_loss(monkeypatch):
+    """The same pair with guard (c) off: the empty octave reads about -29 dB, far under the -3 dB gate."""
+    monkeypatch.setattr(stem_octave, "CELL_FLOOR_DBFS", -np.inf)
+    source, output = _band_limited_tape(-94.0)
+    assert _read(source, source, output) < -20.0
+
+
+def test_a_quiet_background_over_the_floor_still_reads_its_loss():
+    """The same tones at -60 dBFS are programme: leaving them out reads about -48 dB."""
+    source, output = _band_limited_tape(-60.0)
+    assert _read(source, source, output) < -20.0
 
 
 @pytest.mark.parametrize(
