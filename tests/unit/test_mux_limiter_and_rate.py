@@ -100,6 +100,18 @@ def test_the_mix_command_shifts_both_stems():
     assert cmd.count("-copyts") == 1
 
 
+@pytest.mark.parametrize(("archival", "shift"), [(False, "-0.330000"), (True, "0.000000")])
+def test_both_commands_tell_an_mpeg_plan_whether_the_archival_track_is_mapped(monkeypatch, archival, shift):
+    """Audio leading the video by 330 ms in MPEG-PS: no -copyts, and the shift follows the streams the command maps."""
+    monkeypatch.setattr(processing, "PRESERVE_ORIGINAL_AUDIO_TRACK", archival)
+    plan = MuxPlan(SourceAudio(48000, 0.21, 0.54, True, 0.21), 48000)
+    single = processing._build_single_audio_mux_command(Path("v.mpg"), Path("a.wav"), Path("o.mpg"), ["-c:a", "mp2"], 4, None, plan)
+    mix = processing._final_mix_output_command(Path("v.mpg"), Path("v.wav"), Path("b.wav"), Path("o.mpg"), ["-c:a", "mp2"], 4, "g", plan)
+    for cmd in (single, mix):
+        assert "-copyts" not in cmd
+        assert {cmd[i + 1] for i, arg in enumerate(cmd) if arg == "-itsoffset"} == {shift}
+
+
 def test_without_a_plan_both_commands_are_todays():
     single = processing._build_single_audio_mux_command(Path("v.mp4"), Path("a.wav"), Path("o.mp4"), ["-c:a", "aac"], 4, None)
     mix = processing._final_mix_output_command(Path("v.mp4"), Path("v.wav"), Path("b.wav"), Path("o.mp4"), ["-c:a", "aac"], 4, "g")

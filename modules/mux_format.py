@@ -21,10 +21,34 @@ landed against the first video frame:
 
 Placing the restored WAV at the source audio's own start time (`-itsoffset` on that input)
 with ffmpeg's input timestamps kept (`-copyts`) puts the click within 0.002 ms of the
-source's in all five containers and all three offsets. Neither half alone does: without
-`-copyts` the MPEG-PS muxer re-bases a copied video to its own start while matroska keeps
-it, so no single offset fits both. With the source's start at zero (every cathar identity
-clip) the shift is zero and the decoded audio is unchanged.
+source's in all five containers and all three offsets. Without `-copyts` ffmpeg re-bases an
+MPEG-PS or MPEG-TS input to the earliest stream the command maps from it, while an MP4, MOV or
+matroska input goes to its first stream of any kind, so no single offset fits every container
+that way. With the source's start at zero (every cathar identity clip) the shift is zero and
+the decoded audio is unchanged.
+
+MPEG-PS and MPEG-TS take no `-copyts`: their demuxer corrects a timestamp jump (two captures
+joined byte-wise, a recorder's pause, a broadcast splice) only while timestamps are not
+copied. Measured (2026-10-12, ffmpeg 9.0.1) on sources of two 6 s halves joined byte-wise,
+each with a flash frame at 1 s and 4 s and a click 120 ms after each, read the way a player
+built on ffmpeg plays them: with `-copyts` the second half's copied video timestamps piled up
+at the jump (all near 6.46 s), and its two clicks moved against their flashes by -254 and
+-620 ms in MPEG-PS, +84 and +83 ms in MPEG-TS with MPEG-2 video, +124 and +123 ms with H.264
+(the WAV mapped directly); through the full single-track mux with the limiter compensated,
++336 and -620 ms in MPEG-PS, +84 and +83 ms in MPEG-TS.
+
+Without `-copyts` ffmpeg re-bases such an input to the earliest stream the command maps from
+it, not to the file's first stream: the copied video alone, or the video and the first audio
+stream when the archival track is kept. The restored input therefore goes to the audio's
+start against that earliest start (`-itsoffset <audio start - mapped start>`). That held all
+four joined clicks within 0.01 ms of the source's; on continuous sources with the audio
+300 ms late, 330 ms early or with the video (the MP2 or AAC priming its only lead) it sat
+within 0.005 ms, with and without the archival track, where placing it against the video alone
+missed by the audio's lead (330.00 and 10.00 ms in MPEG-PS, 341.00 and 21.00 ms in MPEG-TS)
+once the archival track was kept. A real MPEG-PS capture cut whose audio led its video by
+554.5 ms sat +4.978 ms from the source (the limiter), -0.001 ms with the limiter compensated.
+An unreadable start leaves these containers on the command every earlier release ran. A
+source cut byte-wise mid-GOP read the same under both placements.
 
 The rate: an MPEG-PS output keeps its source's rate when MP2 can encode it (32, 44.1 and
 48 kHz and the half rates; any other goes to 48 kHz, an unreadable one stays at 44.1 kHz);
@@ -54,14 +78,39 @@ PROBE_TIMEOUT_S = 30
 # ffmpeg's own pick of an input's audio when no -map names one (the extraction runs that way):
 # the highest channel count, a default-disposition stream outranking any count, the first on a tie.
 DEFAULT_DISPOSITION_WEIGHT = 5_000_000
+# ffprobe's demuxer names for MPEG-PS and MPEG-TS: timestamp jumps corrected only without -copyts,
+# and the input re-based to the earliest stream the command maps (the module docstring has the measurements).
+REBASING_DEMUXERS = frozenset({"mpeg", "mpegts"})
 
 
 @dataclass(frozen=True)
 class SourceAudio:
-    """The source audio stream the extraction decodes: its rate in Hz and its start time in seconds, each None when unreadable."""
+    """The source audio stream the extraction decodes: its rate in Hz and start time in seconds, each None when unreadable.
+
+    `video_start` is the first video stream's start (the one the mux copies), `first_audio_start`
+    the first audio stream's (the one the archival track maps), and `rebases_video` is True for
+    an MPEG-PS or MPEG-TS source (REBASING_DEMUXERS).
+    """
 
     sample_rate: int | None = None
     start_time: float | None = None
+    video_start: float | None = None
+    rebases_video: bool = False
+    first_audio_start: float | None = None
+
+
+def _mapped_start(source, archival):
+    """Where ffmpeg starts an MPEG-PS/TS input without -copyts: its earliest mapped stream, None when one is unreadable."""
+    starts = (source.video_start, source.first_audio_start) if archival else (source.video_start,)
+    return None if None in starts else min(starts)
+
+
+def _rebased_shift(source, archival):
+    """The audio's start against the input's mapped start, or None when either is unreadable."""
+    mapped = _mapped_start(source, archival)
+    if source.start_time is None or mapped is None:
+        return None
+    return source.start_time - mapped
 
 
 @dataclass(frozen=True)
@@ -71,16 +120,27 @@ class MuxPlan:
     source: SourceAudio | None = None
     sample_rate: int = PIPELINE_SAMPLE_RATE
 
-    def _start(self):
-        return None if self.source is None else self.source.start_time
+    def _shift(self, archival):
+        """Where the restored input starts: the audio's own start, or in MPEG-PS/TS its start against the mapped start."""
+        if self.source is None:
+            return None
+        return _rebased_shift(self.source, archival) if self.source.rebases_video else self.source.start_time
 
     def global_args(self):
-        """ffmpeg keeps every input's timestamps, so the copied video and the shifted track keep the source's relation."""
-        return [] if self._start() is None else ["-copyts"]
+        """ffmpeg keeps every input's timestamps, so the copied video and the shifted track keep the source's relation.
 
-    def restored_input(self, path):
-        """A restored WAV as an ffmpeg input, starting where the source's audio started."""
-        start = self._start()
+        Never in MPEG-PS or MPEG-TS, whose demuxer corrects timestamp jumps only without it.
+        """
+        copies = self.source is not None and not self.source.rebases_video and self.source.start_time is not None
+        return ["-copyts"] if copies else []
+
+    def restored_input(self, path, archival=False):
+        """A restored WAV as an ffmpeg input, starting where the source's audio started.
+
+        `archival` is True when the command also maps the source's first audio stream (the
+        archival track), which moves an MPEG-PS/TS input's start when that stream leads the video.
+        """
+        start = self._shift(archival)
         shift = [] if start is None else ["-itsoffset", f"{start:.6f}"]
         return [*shift, "-i", str(path)]
 
@@ -104,13 +164,33 @@ def _pick_score(stream):
     return (_number(stream.get("channels"), int) or 0) + DEFAULT_DISPOSITION_WEIGHT * default
 
 
+def _streams_of(streams, codec_type):
+    """The probed streams of one codec type, in the source's order."""
+    return [stream for stream in streams if stream.get("codec_type") == codec_type]
+
+
+def _rebases_video(probe):
+    """True when ffprobe names the source's demuxer MPEG-PS or MPEG-TS."""
+    names = str((probe.get("format") or {}).get("format_name") or "").split(",")
+    return bool(REBASING_DEMUXERS.intersection(names))
+
+
 def parse_probe(text):
     """The picked audio stream from ffprobe's JSON, or None when the source has no audio stream."""
-    streams = json.loads(text).get("streams") or []
-    if not streams:
+    probe = json.loads(text)
+    streams = probe.get("streams") or []
+    audio = _streams_of(streams, "audio")
+    if not audio:
         return None
-    picked = max(streams, key=_pick_score)
-    return SourceAudio(_number(picked.get("sample_rate"), int), _number(picked.get("start_time"), float))
+    picked = max(audio, key=_pick_score)
+    video = next(iter(_streams_of(streams, "video")), {})
+    return SourceAudio(
+        _number(picked.get("sample_rate"), int),
+        _number(picked.get("start_time"), float),
+        _number(video.get("start_time"), float),
+        _rebases_video(probe),
+        _number(audio[0].get("start_time"), float),
+    )
 
 
 def probe_source_audio(video_path):
@@ -119,10 +199,8 @@ def probe_source_audio(video_path):
         FFPROBE_BIN,
         "-v",
         "error",
-        "-select_streams",
-        "a",
         "-show_entries",
-        "stream=sample_rate,channels,start_time:stream_disposition=default",
+        "stream=codec_type,sample_rate,channels,start_time:stream_disposition=default:format=format_name",
         "-of",
         "json",
         str(video_path),

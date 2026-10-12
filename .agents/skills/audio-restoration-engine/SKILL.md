@@ -117,6 +117,12 @@ audio alignment, or FFmpeg multiplexing.
      audio began 300 ms late), and the rate the container keeps (MPEG-PS its
      source's, 48 kHz for a rate MP2 cannot take; `mux_sample_rate: source`
      for every container). Without a readable probe the command is today's.
+     Never `-copyts` on MPEG-PS or MPEG-TS: their demuxer corrects a
+     timestamp jump only without it (two halves joined byte-wise: the
+     second half's clicks moved -254/-620 ms in MPEG-PS, +84/+83 ms in
+     MPEG-TS). There ffmpeg starts the input at the earliest stream the
+     command maps (the video, plus the first audio stream when the
+     archival track is kept), and `-itsoffset` is taken against that.
    - `_extract_audio_step`: a source ffprobe reads without an audio stream,
      and an extraction with a header and no samples (an edit list hiding
      every packet: hunt v3's Pooh, Powerpuff, Rocky), raise

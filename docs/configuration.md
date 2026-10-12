@@ -446,7 +446,18 @@ The mux now places the restored track where the source's audio started
 against the video, in every mode and container, with no key: it reads the
 start time of the audio stream the extraction decodes (`ffprobe`) and gives
 each restored input `-itsoffset <start>` with `-copyts`
-(`modules/mux_format.py`). It used to start the track with the video. On
+(`modules/mux_format.py`). MPEG-PS and MPEG-TS sources take no `-copyts`,
+because their demuxer corrects a timestamp jump (two recordings joined
+byte-wise, a recorder's pause) only without it: on two 6 s halves joined
+byte-wise, `-copyts` piled the second half's video timestamps at the jump
+and moved its clicks -254 and -620 ms against their flash frames in
+MPEG-PS, +84 and +83 ms in MPEG-TS. Without it ffmpeg starts such an input
+at the earliest stream the command maps (the copied video, and the first
+audio stream when `preserve_original_audio_track` keeps it), so the
+restored input goes to the audio's start against that stream's; all four
+clicks then held within 0.01 ms, and a real capture cut whose audio led its
+video by 554.5 ms sat at the limiter's delay. It used to start the track
+with the video. On
 3 s synthetic sources with the audio 300 ms after the video, a click 1 s
 into the audio landed 273.7 ms early in MP4 and MOV, 295.0 ms in MKV and
 285.0 ms in MPEG-PS; with the audio 300 ms early, MPEG-PS put it 315.0 ms

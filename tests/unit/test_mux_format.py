@@ -9,15 +9,19 @@ import pytest
 from modules import mux_format
 from modules.mux_format import MuxPlan, SourceAudio
 
-AT_48K_LATE = SourceAudio(48000, 0.300000)
+AT_48K_LATE = SourceAudio(48000, 0.300000, first_audio_start=0.300000)
 
 
-def _probe_json(*streams):
-    return json.dumps({"streams": list(streams)})
+def _probe_json(*streams, format_name="mov,mp4,m4a,3gp,3g2,mj2"):
+    return json.dumps({"streams": list(streams), "format": {"format_name": format_name}})
 
 
 def _stream(rate="48000", start="0.300000", channels=2, default=0):
-    return {"sample_rate": rate, "start_time": start, "channels": channels, "disposition": {"default": default}}
+    return {"codec_type": "audio", "sample_rate": rate, "start_time": start, "channels": channels, "disposition": {"default": default}}
+
+
+def _video(start="0.000000"):
+    return {"codec_type": "video", "start_time": start, "disposition": {"default": 1}}
 
 
 def test_the_default_plan_is_todays_command():
@@ -50,7 +54,57 @@ def test_the_probe_reads_rate_and_start():
 
 def test_no_audio_stream_reads_as_no_source():
     assert mux_format.parse_probe(_probe_json()) is None
+    assert mux_format.parse_probe(_probe_json(_video())) is None
     assert mux_format.parse_probe("{}") is None
+
+
+@pytest.mark.parametrize(("format_name", "rebases"), [("mpeg", True), ("mpegts", True), ("matroska,webm", False), ("avi", False)])
+def test_the_probe_reads_the_first_video_start_and_the_demuxer(format_name, rebases):
+    probe = _probe_json(_video("0.540000"), _stream(start="0.649978"), _video("9.000000"), format_name=format_name)
+    assert mux_format.parse_probe(probe) == SourceAudio(48000, 0.649978, 0.54, rebases, 0.649978)
+
+
+def test_the_probe_keeps_the_first_audio_start_for_the_archival_track():
+    """The archival track maps the first audio stream, which need not be the one the extraction picks."""
+    probe = _probe_json(_stream(rate="32000", start="0.400000", channels=1), _stream(start="0.500000", channels=6), format_name="mpeg")
+    assert mux_format.parse_probe(probe) == SourceAudio(48000, 0.5, None, True, 0.4)
+
+
+def test_a_probe_without_a_format_does_not_rebase():
+    assert mux_format.parse_probe(json.dumps({"streams": [_stream()]})).rebases_video is False
+
+
+def test_mpeg_ps_and_ts_place_the_track_against_the_video_without_copyts():
+    """Their demuxer corrects timestamp jumps only without -copyts; ffmpeg starts the input at the copied video."""
+    plan = MuxPlan(SourceAudio(48000, 0.649978, 0.54, True, 0.649978), 48000)
+    assert plan.global_args() == []
+    assert plan.restored_input("a.wav") == ["-itsoffset", "0.109978", "-i", "a.wav"]
+
+
+@pytest.mark.parametrize(("audio_start", "shift"), [(0.21, "0.000000"), (0.649978, "0.109978")])
+def test_with_the_archival_track_an_mpeg_input_starts_at_its_earliest_mapped_stream(audio_start, shift):
+    """Audio leading the video moves the input's start to the audio; audio after it leaves the video's."""
+    plan = MuxPlan(SourceAudio(48000, audio_start, 0.54, True, audio_start), 48000)
+    assert plan.restored_input("a.wav", archival=True) == ["-itsoffset", shift, "-i", "a.wav"]
+
+
+@pytest.mark.parametrize(
+    ("source", "archival"),
+    [
+        (SourceAudio(48000, 0.649978, None, True, 0.649978), False),
+        (SourceAudio(48000, None, 0.54, True, None), False),
+        (SourceAudio(48000, 0.649978, 0.54, True, None), True),
+    ],
+)
+def test_mpeg_ps_and_ts_with_an_unread_start_run_todays_command(source, archival):
+    plan = MuxPlan(source, 48000)
+    assert (plan.global_args(), plan.restored_input("a.wav", archival)) == ([], ["-i", "a.wav"])
+
+
+@pytest.mark.parametrize("archival", [False, True])
+def test_other_containers_keep_copyts_whatever_the_video_start(archival):
+    plan = MuxPlan(SourceAudio(48000, 0.3, 0.1, False, 0.0))
+    assert (plan.global_args(), plan.restored_input("a.wav", archival)[:2]) == (["-copyts"], ["-itsoffset", "0.300000"])
 
 
 @pytest.mark.parametrize("start", ["N/A", None, "nan", "inf"])
@@ -80,7 +134,9 @@ def test_probe_source_audio_asks_ffprobe_for_the_audio_streams(monkeypatch):
     monkeypatch.setattr(mux_format.subprocess, "run", fake_run)
     assert mux_format.probe_source_audio("tape.mpg") == AT_48K_LATE
     cmd, kwargs = calls[0]
-    assert cmd[0] == mux_format.FFPROBE_BIN and cmd[-1] == "tape.mpg" and "a" in cmd
+    assert cmd[0] == mux_format.FFPROBE_BIN and cmd[-1] == "tape.mpg"
+    entries = cmd[cmd.index("-show_entries") + 1]
+    assert "codec_type" in entries and "start_time" in entries and "format=format_name" in entries
     assert (kwargs["encoding"], kwargs["errors"]) == ("utf-8", "replace")
 
 

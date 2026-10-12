@@ -178,7 +178,8 @@ every container) and ends with a sample-peak limiter, `alimiter` at 0.891
 (-1 dBFS on the samples). Its lookahead delays the output 219 samples
 (4.97 ms at 44.1 kHz) unless `mux_limiter_latency_compensation` is on. The
 restored track is placed where the source's audio started against the video
-(`-copyts` and `-itsoffset`, `modules/mux_format.py`).
+(`-copyts` and `-itsoffset`, `modules/mux_format.py`; in MPEG-PS and MPEG-TS
+`-itsoffset` alone, so their timestamp jumps are still corrected).
 
 The limiter is not a true-peak limiter
 and guarantees no dBTP ceiling. On the default path loudnorm holds the true
