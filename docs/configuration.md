@@ -60,6 +60,23 @@
   `decrackle` recovers +1.7 at any sensitivity; on undamaged speech it
   changes 40 dB under the programme, and across 50 real captures it moves
   neither noise removal nor deviation (9.91 to 9.97 dB, 0.22 to 0.22). -
+  `apl_depop_min_prominence_db` (default 0.0, off; every output keeps its
+  bytes). The pop repair's prominence guard: a span is refilled only when
+  its peak prediction residual stands this many dB over every other residual
+  within 5 ms either side. On real tape the threshold alone refills far more
+  than the 4 spans a second the calibrated class allowed: the shipped renders
+  of the four local interviews logged 3.9 to 24.2 a second over both
+  channels, on sources the harness reads as free of clicks. On SOTI and
+  Vaccin those spans are single-sample outliers in loud speech, 79-80% of
+  them within 15 ms of another and 98% no more than 1 dB over the waveform
+  around them; they lift no quiet frame. Per channel at 0 / 6 / 9 dB: SOTI
+  6.32 / 0.50 / 0.05 spans a second, Vaccin 12.11 / 1.38 / 0.27, the
+  calibrated speech classes 2.75 / 0.17 / 0.04 (15 dB margin) and 5.20 /
+  0.41 / 0.16 (9 dB); inside the pops of the five crackle fixtures +4.67 /
+  +4.35 / +4.25 dB of repair, 80 / 75 / 74% of the pops refilled. 6 dB waits
+  for a listening session. A value over 120 is refused with a warning and
+  leaves the guard off (past about 6,165 dB its amplitude ratio would overflow
+  and end the render). -
   `apl_enable_hum_cancel` (default **true**), `apl_hum_max_harmonics`
   (default 40) and `apl_hum_bandwidth_hz` (default 1.5), with
   `apl_hum_min_excess_db` (default 6.0) as the detection threshold. The
@@ -105,7 +122,27 @@
   at the median and worse by more than a decibel on 8 tapes against better
   on 1; leaving the two pre-conditioned harmonics out of the canceller's
   plan and refinement (the second on) changes nothing measurable. The notch
-  and the canceller do better together. - `apl_enable_dehum` (default
+  and the canceller do better together. - `apl_surgical_ring_guard`
+  (default **false**; every output keeps its bytes). Caps each 512-sample
+  frame of those third-to-fifth harmonic notches' output at 1 dB over the
+  frame's input energy (`modules/notch_ring_guard.py`). A Q-30 notch rings at
+  its own frequency when the audio feeding it stops, so speech holding a
+  partial near a notch and stopping dead hands the gap that follows a tone
+  burst. On SOTI the notch lifted 332 of the 3,740 quietest 23 ms frames by
+  10 dB or more at 100-1000 Hz, up to +28 dB (46 ms gaps inside speech at
+  111.15, 100.98 and 48.81 s filled with 237-258 Hz ringing at -27 dB), and
+  the finished output kept them (323 of its 331 lifted frames are the
+  notch's) where `cathar`'s lifts 4. With the
+  guard the notch's output lifts 3, its quiet frames sit 0.80 dB over the
+  source's on average instead of 5.83, and 77% of its samples pass to the
+  bit. The cap is broadband, so where a gap's floor is hiss the ringing can
+  still stand over its own band: at 200-300 Hz, against the notch's input,
+  127 quiet frames still rise 10 dB or more (491 without the guard). Vaccin,
+  whose gaps the notch does not fill, moves on no reading, and
+  on the calibrated hum fixtures the lines stay as far under the clean
+  reference as the notch put them. Off until a listening session judges it;
+  like `apl_surgical_mains_notch` it reaches `denoise_only`'s notch too. -
+  `apl_enable_dehum` (default
   **false**). cathar's adaptive `dehum` inside this mode, never requested
   while the native canceller is on. Off because the stage's isolated gain
   (2.07 dB of hum) collapsed in the chain to +0.66 dB on a coin flip: a

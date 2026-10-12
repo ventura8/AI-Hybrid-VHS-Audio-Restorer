@@ -17,6 +17,20 @@ class it repairs +5.5 dB against `decrackle`'s +1.7, detects 98% of the pops, an
 undamaged speech introduces a change 40 dB under the programme. It runs before `decrackle`,
 which then handles the fine residue it was built for, and it is gated on the same click
 detection.
+
+On real tape the threshold alone fires far more often than on the fixtures' synthetic voice.
+The shipped renders of the four local interviews (2026-10-09) logged 3.9 to 24.2 refilled
+spans a second over both channels, against the 4 a second the calibrated class allowed, on
+sources the harness reads as free of clicks. Re-rendered on CPU (2026-10-11), SOTI's and
+Vaccin's spans are single-sample residual outliers in loud frames (median at the 80th and
+71st percentile frame level), 98% of them no more than 1 dB over the waveform's own peak
+within 10 ms and 79-80% within 15 ms of another span: the heavy-tailed residual of speech,
+not clicks.
+They lift no quiet frame and change the audio 31.5-32.7 dB under the programme. The
+prominence guard (`apl_depop_min_prominence_db`, off by default) refills a span only when its
+peak residual stands that far above every other residual within 5 ms either side; at 6 dB it
+keeps +4.35 of the +4.67 dB of repair inside the crackle fixtures' pops and refills 0.50
+spans a second per channel on SOTI and 1.38 on Vaccin (6.32 and 12.11 without it).
 """
 
 from pathlib import Path
@@ -52,6 +66,12 @@ DEFAULT_THRESHOLD = 7.0
 # under on music with speech and untouched on music alone, and the crackle repair is intact.
 ISOLATION_WINDOW_SAMPLES = 1323
 ISOLATION_MAX_DENSITY = 0.01
+# The prominence guard's window (`apl_depop_min_prominence_db`, off at 0): 5 ms either side
+# of the span. A click is one impulse and its residual stands alone; the residual of speech
+# that trips the threshold comes in clusters. A 10 ms window refused more of both: at 6 dB
+# the crackle fixtures kept +3.88 dB of repair against +4.35 at 5 ms, for 0.19 spans/s per
+# channel on SOTI against 0.50.
+PROMINENCE_WINDOW_SAMPLES = 220
 
 
 def _ar_coefficients(samples, order):
@@ -65,9 +85,14 @@ def _ar_coefficients(samples, order):
     return np.concatenate(([1.0], tail))
 
 
-def detect_pops(samples, threshold=DEFAULT_THRESHOLD):
-    """Sample mask of the pops in a mono signal: prediction residual outliers, block by block."""
-    mask = np.zeros(len(samples), dtype=bool)
+def _residual(samples):
+    """The prediction residual of a mono signal, block by block, and each sample's block scale.
+
+    A block too short or too quiet to model keeps a zero residual and an infinite scale, so
+    nothing in it reads as an outlier.
+    """
+    residual = np.zeros(len(samples))
+    scale = np.full(len(samples), np.inf)
     for start in range(0, len(samples), BLOCK_SAMPLES):
         stop = min(start + BLOCK_SAMPLES, len(samples))
         low = max(0, start - AR_ORDER)
@@ -75,10 +100,16 @@ def detect_pops(samples, threshold=DEFAULT_THRESHOLD):
         if len(block) < 4 * AR_ORDER or float(np.max(np.abs(block))) < 1e-6:
             continue
         skip = stop - low - (stop - start)
-        residual = scipy.signal.lfilter(_ar_coefficients(block, AR_ORDER), [1.0], block)[skip:]
-        scale = 1.4826 * float(np.median(np.abs(residual - np.median(residual)))) + 1e-9
-        mask[start:stop] = np.abs(residual) > threshold * scale
-    return mask
+        residual[start:stop] = scipy.signal.lfilter(_ar_coefficients(block, AR_ORDER), [1.0], block)[skip:]
+        block_residual = residual[start:stop]
+        scale[start:stop] = 1.4826 * float(np.median(np.abs(block_residual - np.median(block_residual)))) + 1e-9
+    return residual, scale
+
+
+def detect_pops(samples, threshold=DEFAULT_THRESHOLD):
+    """Sample mask of the pops in a mono signal: prediction residual outliers, block by block."""
+    residual, scale = _residual(samples)
+    return np.abs(residual) > threshold * scale
 
 
 def _spans(mask):
@@ -142,41 +173,66 @@ def _isolated(mask, start, stop):
     return around.size == 0 or float(around.mean()) <= ISOLATION_MAX_DENSITY
 
 
-def remove_pops(samples, threshold=DEFAULT_THRESHOLD):
+def _prominent(residual, start, stop, min_prominence_db):
+    """Whether a span's peak residual stands `min_prominence_db` over every other residual within the window.
+
+    Always true with the guard off (0 dB or less), so the stage then refills what it always did.
+    """
+    if min_prominence_db <= 0.0:
+        return True
+    low, high = max(0, start - PROMINENCE_WINDOW_SAMPLES), min(len(residual), stop + PROMINENCE_WINDOW_SAMPLES)
+    around = np.abs(np.concatenate([residual[low:start], residual[stop:high]]))
+    peak = float(np.max(np.abs(residual[start:stop])))
+    return around.size == 0 or peak >= float(np.max(around)) * 10.0 ** (min_prominence_db / 20.0)
+
+
+def _refillable(residual, start, stop, min_prominence_db):
+    """A guarded span short enough to be a pop and, with the guard on, prominent enough to be one."""
+    return stop - start <= MAX_SPAN_SAMPLES and _prominent(residual, start, stop, min_prominence_db)
+
+
+def remove_pops(samples, threshold=DEFAULT_THRESHOLD, min_prominence_db=0.0):
     """Returns (repaired mono signal, number of spans repaired)."""
     repaired = samples.astype(np.float64).copy()
-    mask = detect_pops(repaired, threshold)
+    residual, scale = _residual(repaired)
+    mask = np.abs(residual) > threshold * scale
     count = 0
     for start, stop in _merged(_spans(mask), MERGE_SAMPLES):
         if not _isolated(mask, start, stop):
             continue
         start, stop = max(0, start - GUARD_SAMPLES), min(len(repaired), stop + GUARD_SAMPLES)
-        if stop - start <= MAX_SPAN_SAMPLES and _repair_span(repaired, start, stop):
+        if _refillable(residual, start, stop, min_prominence_db) and _repair_span(repaired, start, stop):
             count += 1
     return repaired.astype(np.float32), count
 
 
-def _repaired_channels(audio, threshold):
+def _repaired_channels(audio, threshold, min_prominence_db=0.0):
     """Every channel of a capture with its pops refilled, and how many spans that took."""
     repaired = np.empty_like(audio)
     total = 0
     for channel in range(audio.shape[1]):
-        repaired[:, channel], count = remove_pops(audio[:, channel], threshold)
+        repaired[:, channel], count = remove_pops(audio[:, channel], threshold, min_prominence_db)
         total += count
     return repaired, total
 
 
-def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=None):
+def _guard_note(min_prominence_db):
+    """The log's note on the prominence guard: nothing when it is off, so the line reads as it always did."""
+    return f" (prominence guard {min_prominence_db:g} dB)" if min_prominence_db > 0.0 else ""
+
+
+def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=None, min_prominence_db=0.0):
     """Removes pops from a WAV, channel by channel; returns the output path or None.
 
     `total_duration` is accepted for the repair runner's uniform stage signature and unused.
+    `min_prominence_db` is the prominence guard (`apl_depop_min_prominence_db`); 0 is off.
     """
     del total_duration
     if sf is None or threshold <= 0.0:
         return None
     try:
         audio, rate = sf.read(str(input_wav), dtype="float32", always_2d=True)
-        repaired, total = _repaired_channels(audio, threshold)
+        repaired, total = _repaired_channels(audio, threshold, min_prominence_db)
     except (OSError, RuntimeError, ValueError) as exc:
         log_msg(f"    [Repair] depop skipped after failure: {exc}", level="WARNING")
         return None
@@ -190,5 +246,5 @@ def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=Non
     target = output_dir / f"depopped_{Path(input_wav).name}"
     with atomic_target(target) as partial:
         sf.write(str(partial), repaired, rate, subtype="FLOAT")
-    log_msg(f"    [Repair] Refilled {total} pop spans.")
+    log_msg(f"    [Repair] Refilled {total} pop spans{_guard_note(min_prominence_db)}.")
     return target

@@ -300,3 +300,29 @@ def test_the_inverted_pair_switch_parses_like_every_boolean(raw, expected, warne
     conf, warn = _loaded({"azimuth_reject_inverted_pair": raw})
     assert conf["azimuth_reject_inverted_pair"] is expected
     assert warn.called is warned
+
+
+def test_the_depop_and_ring_guards_default_to_todays_audio():
+    """No config.yaml entry: the pop repair's prominence guard and the notch's ring guard are both off."""
+    conf, warn = _loaded({"process_mode": "auto_pure_linear"})
+    assert conf["apl_depop_min_prominence_db"] == 0.0
+    assert conf["apl_surgical_ring_guard"] is False
+    warn.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "raw, expected, warned",
+    [(6, 6.0, False), ("9.0", 9.0, False), (120, 120.0, False), (-3.0, 0.0, True), (True, 0.0, True), (7000.0, 0.0, True)],
+)
+def test_the_prominence_guard_takes_a_non_negative_number(raw, expected, warned):
+    """A number or a numeric string sets it; a negative value, a Boolean or a value past the cap warns and keeps it off."""
+    conf, warn = _loaded({"apl_depop_min_prominence_db": raw})
+    assert conf["apl_depop_min_prominence_db"] == expected
+    assert warn.called is warned
+
+
+@pytest.mark.parametrize("raw, expected, warned", [("on", True, False), (False, False, False), ("maybe", False, True)])
+def test_the_ring_guard_switch_parses_like_every_boolean(raw, expected, warned):
+    conf, warn = _loaded({"apl_surgical_ring_guard": raw})
+    assert conf["apl_surgical_ring_guard"] is expected
+    assert warn.called is warned

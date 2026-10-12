@@ -316,6 +316,31 @@ removal and deviation move by 0.00 dB. The finished-output metrics still do not
 show it, for the reason they show none of the impulse stages: the chain's own
 colour is a larger error inside a pop's few milliseconds than the pop was.
 
+On real tape the pop repair fires far more often than on the set. The shipped
+renders of the four local interviews (2026-10-09) logged 3.9 to 24.2 refilled
+spans a second over both channels, on sources the harness reads as free of
+clicks. With SOTI's and Vaccin's pre-neural chain re-rendered on CPU (bit for
+bit against the stage cache), their spans are single-sample residual outliers
+in loud speech (median at the 80th and 71st percentile frame level), 98% no
+more than 1 dB over the waveform's peak within 10 ms and 79-80% within 15 ms
+of another span: the residual of speech, not clicks. They change the audio
+31.5-32.7 dB under the programme and lift no quiet frame. On the set as it
+stands the music-only class at a 15 dB margin also reads 5.39 spans a second,
+37 dB under the programme, where the set the stage was tuned on read nothing
+(0.35 with the guard at 6 dB). The pauses the
+SOTI output fills -- 332 of its 3,740 quietest 23 ms frames up 10 dB or more
+at 100-1000 Hz, which the finished output keeps and `cathar`'s does not --
+come from the surgical notch ahead of the chain instead: a Q-30 bandreject at
+250 Hz rings for tens of milliseconds when speech holding a partial near it
+stops dead, and fills the 46 ms gaps at 111.15, 100.98 and 48.81 s with
+237-258 Hz tone at -27 dB. Run alone on 10 s cuts around those gaps, the
+notch lifts 12, 19 and 24 quiet frames; the pop repair and `decrackle` lift
+none. One guard answers each finding, both off by default until a listening
+session judges them: `apl_depop_min_prominence_db` (at 6 dB, 0.50 and 1.38
+spans a second per channel on SOTI and Vaccin, +4.35 of the crackle class's
++4.67 dB kept) and `apl_surgical_ring_guard` (SOTI's notch output lifts 3
+quiet frames instead of 332); `docs/configuration.md` has the numbers.
+
 The set is also what the per-bin blend is fitted on, through
 `scripts/build_blend_dataset.py --reference target` pointed at
 `artifacts/realistic-v2`, using the shipping chain's own subtraction so the

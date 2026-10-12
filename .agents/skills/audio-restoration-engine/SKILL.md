@@ -280,6 +280,36 @@ audio alignment, or FFmpeg multiplexing.
    - In-process patches of a module constant are not seen (the key reads
      `config.CONFIG`): a test or experiment that patches one patches
      `CONFIG` too, or leaves the cache off.
+1. **`modules/impulse_repair.py`, `modules/notch_ring_guard.py`**: the pop
+   repair and the surgical notch's ring guard (2026-10-11). Facts that
+   redirect a diagnosis:
+   - A quiet-frame rise on an `auto_pure_linear` output is not
+     necessarily the repair. SOTI's 332 lifted quiet frames (of 3,740, 10 dB
+     or more at 100-1000 Hz) come from the Q-30 surgical notch at 250 Hz
+     ringing into 46 ms gaps after speech; the pop repair and `decrackle`
+     lift none. Reproduce before blaming a stage: the pre-neural chain
+     re-renders bit for bit on CPU from the stage cache's `key.json`
+     (`call.strategy.precondition_filters` through
+     `filters._precondition_filter_from_config`, then
+     `build_pre_denoise_surgical_filter(hum_cancel=True)`, then the chain),
+     checked against `manifest.json`'s `input.pcm_sha256` and the
+     `surgical.wav` samples.
+   - The render log's "Refilled N pop spans" counts every channel: SOTI's
+     pre-conditioning mirrors one channel, so its 5,486 are 2,743 spans
+     twice. On clean speech the spans are the residual of speech
+     (single-sample, clustered, no louder than the waveform), at 6-12 a
+     second per channel on SOTI and Vaccin.
+   - `apl_depop_min_prominence_db` (off) refuses a span whose peak residual
+     does not stand that far over every residual within 5 ms;
+     `apl_surgical_ring_guard` (off) caps each 512-sample frame of the
+     notch's output at 1 dB over its input. Both keep today's bytes off and
+     wait for a listening session; the numbers are in
+     `docs/configuration.md`.
+   - Judge the ring guard in the notch's own band too. The 100-1000 Hz
+     reading (332 lifted frames down to 3) hides what the broadband cap
+     leaves: at 200-300 Hz against the notch's input, 127 of SOTI's quiet
+     frames still rise 10 dB or more (491 without it). A band-limited cap
+     is the next step if the listening session still hears the ring.
 1. **`modules/auto_scanner.py`**:
    - `_detect_flutter_or_pitch_drift`: Tracks the recorded video line whine as a
      fixed-frequency speed reference, so programme pitch cannot read as drift.

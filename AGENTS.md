@@ -115,6 +115,15 @@ The engine supports 10 execution modes configured in `config.yaml`:
     switched on with today's pause floor, which refills what it lowers
     with source hiss (pauses up 29-81 dB on 7 of 27 gated clips); it is
     judged with the per-frame pause fill.
+  - Two guards wait for a listening session (2026-10-11; both off, so
+    every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
+    quietest frames up 10 dB or more) are the Q-30 surgical notch ringing
+    into gaps after speech, not the pop repair, which lifts none:
+    `apl_surgical_ring_guard` caps the notch's output at 1 dB over its
+    input, frame by frame. The pop repair refills clustered speech
+    residual, 6-12 spans a second per channel on clean tape:
+    `apl_depop_min_prominence_db` refuses a span that does not stand out
+    from the residual around it (`docs/configuration.md`).
 - **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
   - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
     floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the
