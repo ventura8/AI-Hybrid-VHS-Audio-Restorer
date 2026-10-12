@@ -48,6 +48,29 @@ DROPOUT_CONTEXT_S = 0.5
 WHISTLE_HZ = 15625.0
 WHISTLE_CORE_HZ = 30.0
 WHISTLE_NEIGHBOURHOOD_HZ = 500.0
+WHISTLE_NPERSEG = 32768
+# Hann's equivalent noise bandwidth in bins: a sine of mean square P puts P / (1.5 rate / N) in its bin.
+WHISTLE_ENBW_BINS = 1.5
+# The whistle reading's floor (2026-10-12): the neighbourhood is read no lower than the bin a sine
+# this far under the loud frames (>= p70) would fill, and the reading never goes under 0; before,
+# it was a ratio of nothing to nothing. The realistic-v2 oracle check failed it on 288 of 920
+# pairs: the fixtures' tape noise is notched at both line rates (`realistic_defects._without_tones`),
+# so every capture read -40..-52 dB (a hole, not a line) and the clean programme +2..+5, the
+# maximum of near-empty bins (the targets' neighbourhood sits a median 108 dB under their loud
+# frames per bin, p95 92.5 dB); the band-limited captures read +33. Of the IA hunt's 34 cathar
+# clips whose reading rose over 1 dB (8 over 3), 30 had the source's band over 80 dB under its
+# loud frames, and only two held a line at the line rate in both halves of the clip: et-el (a 23 dB
+# PAL line the scanner missed) and thevistagroup (a 16 dB NTSC line it read as PAL); elsewhere the
+# core's maximum sat at a random offset. Floored at 70-90 dB no oracle pair fails; at 80 dB the
+# hunt's cathar clips over 3 dB fall from 8 to 2 and APL's from 7 to 1 (ein-halleluja on both: a
+# polarity-inverted pair whose channel mean cancels the source; and full-size-render202202012106's
+# cathar output, its band 1-5 dB over the floor), and the six cathar_music_alpha 0.25 refusals
+# stand (m_vid-20220730-091707 carries a real line 37 dB under its loud frames, its hiss 68 dB
+# under, above the floor: +3.4..+3.7 dB). The planted lines keep reading: the whistle class
+# (-39 dB) +41 dB, the recorded whine spread by flutter (-57..-62 dB) +10..+21 dB. A line 80 dB
+# under the loud frames plays at -5 dB SPL at the critical level (75 dB SPL), 65 dB under
+# Terhardt's threshold at 15.6 kHz.
+WHISTLE_FLOOR_DB = 80.0
 LRA_WINDOW_S = 3.0
 LRA_HOP_S = 1.0
 LRA_ABSOLUTE_GATE = -70.0
@@ -327,13 +350,27 @@ def _count_runs(mask, min_length):
 
 
 def whistle_line_db(mono, rate, line_hz=WHISTLE_HZ):
-    """The CRT line whistle: peak within +-30 Hz of `line_hz` over the median of its +-500 Hz neighbourhood, in dB."""
-    if len(mono) < 32768 or line_hz >= rate / 2.0:
+    """The CRT line whistle: how far the peak within +-30 Hz of `line_hz` stands out, in dB, never under 0.
+
+    It stands over the median of its +-500 Hz neighbourhood, read no lower than
+    `whistle_floor_density` (`WHISTLE_FLOOR_DB`): a hole at the line reads 0, and so does a
+    near-empty band, whatever the ratio of its bins.
+    """
+    if len(mono) < WHISTLE_NPERSEG or line_hz >= rate / 2.0:
         return None
-    freqs, psd = scipy.signal.welch(np.asarray(mono, dtype=np.float64), rate, nperseg=32768)
+    data = np.asarray(mono, dtype=np.float64)
+    freqs, psd = scipy.signal.welch(data, rate, nperseg=WHISTLE_NPERSEG)
     core = np.abs(freqs - line_hz) <= WHISTLE_CORE_HZ
     around = (np.abs(freqs - line_hz) <= WHISTLE_NEIGHBOURHOOD_HZ) & ~core
-    return float(10.0 * np.log10((psd[core].max() + 1e-20) / (np.median(psd[around]) + 1e-20)))
+    reference = max(float(np.median(psd[around])), whistle_floor_density(data, rate))
+    return max(0.0, float(10.0 * np.log10((psd[core].max() + 1e-20) / (reference + 1e-20))))
+
+
+def whistle_floor_density(mono, rate):
+    """The Welch density one bin holds for a sine `WHISTLE_FLOOR_DB` under the loud frames' (>= p70) mean square."""
+    level = frame_levels(mono)
+    loud = level[level >= np.percentile(level, LOUD_PERCENTILE)]
+    return float(np.mean(loud**2)) * 10.0 ** (-WHISTLE_FLOOR_DB / 10.0) / (WHISTLE_ENBW_BINS * rate / WHISTLE_NPERSEG)
 
 
 def hum_excess_db(mono, rate, mains_hz=50.0):

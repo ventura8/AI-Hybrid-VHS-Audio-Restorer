@@ -271,7 +271,8 @@ their module docstrings hold the full measurements.
   15.4 kHz, right dead (51 dB); Vaccin 7127 Hz, no brickwall, r 1.00; all
   50 Hz. The Tele7abc and SOTI lines are steady (7 and 13 ppm), classed
   `playback_chain`. The hum and whistle readings take its `mains_hz` and
-  `line_hz` (falling back to 50 Hz and 15625 Hz). The summed rule of
+  `line_hz` (falling back to 50 Hz and 15625 Hz); the whistle reading is
+  floored since 2026-10-12 (see the gates section below). The summed rule of
   `measure_hum._mains_by_evidence`, which the app's own mains detector
   shares, names 60 Hz on SOTI: there the 150-250 Hz speech peaks sit
   21-29 dB over a lone 50 Hz fundamental. R0 decides on the 1 s frames
@@ -1354,10 +1355,49 @@ scores read in place).
   and an oracle check (`ORACLE_MAX_SHARE`, 5 % of the pairs of each capture
   against its `_target` and `_clean`; `--oracle-max N` for a quick run)
   that refuses the gates files and exits 1. On the dsp family, all five
-  languages: `dsp.whistle` 288, `dsp.hf_8k16k` 102, `dsp.clicks` 45 (1 at
-  the v2 file's 0.79), `file.dropouts` 44, `dsp.hum` 18, `dsp.hf_4k8k` 8,
-  `file.lra` 1, so today no run writes a gates file until the whistle and
-  air readings are fixed.
+  languages: `dsp.whistle` 288 (none since its floor, below),
+  `dsp.hf_8k16k` 102, `dsp.clicks` 45 (1 at the v2 file's 0.79),
+  `file.dropouts` 44, `dsp.hum` 18, `dsp.hf_4k8k` 8, `file.lra` 1, so today
+  no run writes a gates file until the air reading is fixed.
+- **`dsp.whistle_db` is floored** (2026-10-12,
+  `dsp_metrics.WHISTLE_FLOOR_DB`): the core's peak over the neighbourhood's
+  median, the median read no lower than the bin a sine 80 dB under the
+  loud frames (p70) would fill, and never under 0. Before, a ratio of
+  nothing to nothing: realistic-v2's tape noise is notched within 40 Hz of
+  both line rates (`realistic_defects._without_tones`), so its captures
+  read -40 to -52 dB and the clean targets +2 to +5 (the maximum of
+  near-empty bins: their neighbourhood sits a median 108 dB, p95 92.5,
+  under the loud frames per bin). The IA hunt's 34 cathar clips rising
+  over 1 dB (8 over the gate; channel-4-news, the-tube, spider and santas
+  among them) held a line at
+  the line rate on two only: et-el-extraterrestre (a 23 dB PAL line the
+  scanner missed) and thevistagroup (an NTSC line it read as PAL); on 30
+  the source's band lay over 80 dB under its loud frames, and the core's
+  maximum sat at a random offset in both halves of the clip. Re-read on
+  the same windows, a floor of 70 to 90 dB fails no oracle pair (100 dB
+  fails 28). At 80 dB the hunt's clips over the gate fall from 8 to 2
+  (cathar) and from 7 to 1 (APL): ein-halleluja on both, a polarity-
+  inverted pair whose channel mean cancels the source (every paired
+  reading on it is wrong; R0 knows the pair is inverted, the runner's
+  downmix does not), and full-size-render202202012106's cathar output,
+  its band 1-5 dB over the floor. The six `cathar_music_alpha` 0.25
+  refusals stand: m_vid-20220730-091707 carries a real line 37 dB under
+  its loud frames over hiss 68 dB under, so the floor never reads and the
+  candidate lifts it +3.4 to +3.7 dB (the incumbent +2.4 to +2.7); the
+  scanner's head search reads that wandering PAL line as NTSC
+  (`crt_detect_mode`, the audio-restoration-engine skill). The planted
+  lines keep reading: the whistle class (-39 dB) +41 dB, the recorded
+  whine of the transport classes (-57 to -62 dB, spread by flutter) +10 to
+  +21 dB. 34 of the 440 realistic-v2 captures without a planted line carry
+  a line R0 tracks at 15574-15796 Hz, their noise bed's own, 50-170 Hz off
+  the rates the bed's notch cuts. A weak-line fixture class (a line 3-8 dB
+  over the capture's floor, on the three hissiest beds) was built and
+  dropped: even there the line sat 81-86 dB under the loud frames, read 0
+  by the floor, inaudible by construction. Tests:
+  `tests/unit/test_whistle_reading.py`. Scratch:
+  `D:\ai_restore_work\scratch_whistle\` (`diagnose.py` and `closer.py` for
+  the core-maximum offsets, `candidates.py`, `sweep_floor.py`,
+  `confirm_reading.py`, `music_alpha_recheck.py`, `gen_weak_line.py`).
 - **The degradation table:** `background_stripped` asserts the programme
   octave (the raw one blind); `stem_octave_muted` plants a 1000-2000 Hz mute
   of the hiss-bearing bed at -6 / -12 / -24 dB; `music_hiss_removed` is the
@@ -1941,11 +1981,12 @@ layer owns what:
 
 - From calibration v3: R0 naming a mains only when its fundamental stands
   about 10 dB out (after the IA and noise clips confirm it).
-- From the oracle check (2026-10-12): `dsp.whistle` made oracle-proof (31 %
-  of the oracle pairs fail it, so a calibration run writes no gates file
-  until it is; `dsp.hf_4k8k` / `dsp.hf_8k16k` abstain above R0's programme
-  bandwidth since 2026-10-12, which cleared 43 of APL's 44 hunt failures,
-  and need the oracle re-run to confirm), the dropout count no longer
+- From the oracle check (2026-10-12): `dsp.hf_4k8k` / `dsp.hf_8k16k`
+  confirmed oracle-proof (they abstain above R0's programme bandwidth since
+  2026-10-12, which cleared 43 of APL's 44 hunt failures, and need the
+  oracle re-run; `dsp.whistle` is floored and fails no oracle pair), the
+  runner's downmix of a polarity-inverted pair (it cancels the source:
+  ein-halleluja), the dropout count no longer
   reading hum and noise removal as holes, and a rate rather than a count for
   `file.dropouts` on long tapes (the shipped Tata outputs read 0-16 holes).
 - R3's harness coverage reading, `scripts/replay_post_neural.py` (it would

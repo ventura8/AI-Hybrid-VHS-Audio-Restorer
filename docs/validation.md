@@ -1411,6 +1411,23 @@ at the line; the air gate reads the hiss leaving the loud frames' 8-16 kHz
 as air lost. Until those two readings are made oracle-proof, a calibration
 run with the check writes no gates file.
 
+The whistle reading is oracle-proof since 2026-10-12
+(`dsp_metrics.WHISTLE_FLOOR_DB`): the neighbourhood's median is read no
+lower than the bin a sine 80 dB under the loud frames (p70) would fill, and
+the reading never goes under 0. The captures read -40 to -52 dB before, a
+hole and not a line: the fixtures' tape noise is notched within 40 Hz of
+both line rates (`realistic_defects._without_tones`). Re-read on the same
+15 s windows, all 920 pairs pass at a floor of 70 to 90 dB (28 fail at
+100), while the planted lines keep reading (the whistle class +41 dB, the
+transport classes' recorded whine +10 to +21). On the IA hunt the clips
+over the 3 dB gate fall from 8 to 2 (cathar) and from 7 to 1 (APL); the
+ones left are a polarity-inverted pair whose channel mean cancels the
+source and a render whose band sits 1-5 dB over the floor. Of the 34 cathar
+clips whose old reading rose over 1 dB, two held a line at the line rate in
+both halves of the clip, both missed or misnamed by the scanner's head
+search (`crt_detect_mode`, `docs/configuration.md`). The air gate still
+waits for its oracle re-run.
+
 The air gates are programme-bound since 2026-10-12: `dsp.hf_4k8k` and
 `dsp.hf_8k16k` read None on a band that starts at or above R0's programme
 bandwidth (`dsp_metrics.programme_band_ratios_db`), where the band holds
