@@ -659,6 +659,38 @@ audio alignment, or FFmpeg multiplexing.
   `D:\ai_restore_work\scratch_npdepth` (`validate_guard.py` with
   `GUARD_D`, `analyze_validate.py`, `run_tata.py`, `tata_compare.py`).
   Pending a blind listening session.
+- **cathar quantile noise print (2026-10-12)**:
+  `cathar_noiseprint_method: quantile` (default `window`;
+  `modules/noiseprint_quantile.py`) writes cathar's print from the whole
+  stage input instead of the quietest window: per bin, the 5th percentile
+  of the 32-frame (0.37 s) moving mean of cathar's own frames (left
+  channel, symmetric Hann 2048, hop 512, whole frames; verified to 4.5e-7
+  against `cathar noiseprint`), +0.62 dB, over windows with no digital-mute
+  frame (under -90 dBFS or half its samples held), from a streamed 0.1 dB
+  histogram. Under 20 live windows, or on a read or write error, it goes
+  back to the window pick; the window path's guards do not apply. How the
+  estimator was chosen: realistic-v2's vhs minus clean is the exact tape
+  noise, and the bank's noise is no Rayleigh magnitude (mean/p10 4.7-5.7 at
+  5 kHz against 2.73, codec holes above 10 kHz), so the textbook raw
+  quantile with the Rayleigh correction misses by 5-20 dB; over 1-64 frames
+  and q 0.05-0.5 with the correction fitted as the median per-bin error,
+  K32 q0.05 reads closest (median LSD 4.22 dB over 300 tape-noise-only
+  fixtures, window 4.93, stitched 8.59). The window is closer on fixtures
+  with pauses but reads the hiss band 1.3-2.4 dB high; on music with no
+  pause it learns programme (+5-6 dB, 45-48 % of bins over +6 dB). On the
+  IA hunt (denoise stage, CPU) 25 of the 56 denoise-class octave failures
+  stop failing, 3 of 96 passing clips start (a near-silent window and a
+  digital mute the window had learned); the hiss floor under the programme
+  comes down 10.2 dB instead of 14.1. On the Tata tapes it leaves 1.5-3.1
+  dB more hiss above 7 kHz and stops the stitched print's 24-32 dB cut of
+  speech at 3-6 kHz (soti, tele7abc): the stitched pauses carry speech.
+  `cathar_alpha` 1.25 with it brings the hiss removal back to the window's
+  (37 of 56 still failing, 7 passing clips start). The fact to remember: at
+  alpha 1.0 a correct print removes less than the over-reading one the
+  listener round tuned against, so judge `quantile` with alpha, not alone.
+  Scripts and data: `D:\ai_restore_work\scratch_qprint` (`tools/calibrate3.py`,
+  `cal3_table.py`, `hunt_validate.py`, `hunt_alpha.py`, `run_tata.py`,
+  `tata_measure.py`, `tata_alpha.py`). Pending a blind listening session.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

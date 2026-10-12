@@ -253,6 +253,7 @@ def known_config_fields():
     fields["cathar_declip_mode"] = (set(config_mod.VALID_CATHAR_DECLIP_MODES), None, None)
     fields["cathar_dehum_freq"] = ({config_mod.CATHAR_DEHUM_FREQ_SCANNER, 0}, None, None)
     fields["cathar_noiseprint_shallow_action"] = (set(config_mod.VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS), None, None)
+    fields["cathar_noiseprint_method"] = (set(config_mod.VALID_CATHAR_NOISEPRINT_METHODS), None, None)
     fields["pause_floor_target"] = (set(config_mod.VALID_PAUSE_FLOOR_TARGETS), None, None)
     fields["pause_floor_shape"] = (set(config_mod.VALID_PAUSE_FLOOR_SHAPES), None, None)
     fields["linear_air_gate"] = (set(config_mod.VALID_LINEAR_AIR_GATES), None, None)

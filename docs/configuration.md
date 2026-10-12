@@ -268,6 +268,9 @@
   `cathar_noiseprint_min_depth_db` (0, off) and
   `cathar_noiseprint_shallow_action` (`scale`) scale or drop a print that
   sits too close to the programme; see "cathar Noise-Print Depth Guard".
+  `cathar_noiseprint_method` (`window`) learns the print from the quietest
+  window, or on `quantile` writes it from the whole material, per bin; see
+  "cathar Quantile Noise Print".
   - Music profile: a tape whose
     tonal persistence (the scanner's median share of held spectral peaks over
     15 s windows; music 0.064-0.225, speech over a bed 0.007-0.033, dry
@@ -1033,6 +1036,171 @@ the listener round accepted. The candidates for the listening session
 are 13 with `scale` or `drop`, which left these four tapes alone, or 20
 restricted to the single-window path (15 s clips), which this key does not
 offer. Not judged by ear.
+
+## cathar Quantile Noise Print
+
+`cathar_noiseprint_method` (`window` or `quantile`), added on 2026-10-12.
+`window` (the default) learns the print from the quietest 0.75 s of a clip,
+or from six stitched 0.75 s pauses on 90 s of material or more, as every
+release has. A 15 s clip with no pause has no quiet window, so that print is
+programme and the subtraction strips the background bed (the depth guard's
+evidence above); a digital mute teaches it nothing. `quantile`
+(`modules/noiseprint_quantile.py`) writes the print from the whole stage
+input instead, streamed block by block, in the format cathar 0.8.0 reads: a
+JSON list of 1025 mean magnitudes of cathar's own frames (2048-sample
+symmetric Hann, hop 512, whole frames only, the left channel; checked to
+4.5e-7 against `cathar noiseprint` on a probe). Per bin it takes the 5th
+percentile of the 32-frame (0.37 s at 44.1 kHz) moving mean of the
+magnitude over the windows that hold no digital mute (a frame under
+-90 dBFS, or with half its samples repeating the one before), plus
+0.62 dB, read off a 0.1 dB histogram so memory does not grow with the
+material. The file is `noise_<stem>_quantile_k32_q0.05.np.json`. Material
+with fewer than 20 such windows, or a print that cannot be read or written,
+goes back to the window pick with a WARNING. The window path's mute and
+depth guards do not apply (this print has no window), the music profile
+learns no print either way, and auto_pure_linear's subtraction never reads
+the key. At `window` the quantile module is never read: every command line
+is HEAD 053ba30's (`tests/unit/test_cathar_quantile_print.py`), the five
+cathar reference clips decode 5/5 identical on CPU, and the four Tata tapes'
+outputs decode byte for byte as the depth guard's guard-off run.
+
+### Calibration on realistic-v2
+
+The fixtures add the hiss after the recorder's gain control, so vhs minus
+clean is each fixture's exact tape noise. Each estimator's print is read
+against the print of that noise by its log-spectral distance over the bins
+within 40 dB of the noise's loudest, 100 Hz to 16 kHz (LSD), its median
+error at 3-16 kHz (bias) and the share of bins more than 6 dB over (over).
+The bank's tape noise is no Rayleigh magnitude: its 5 kHz bin's mean sits
+4.7-5.7 times its p10 (2.73 for Rayleigh) and codec holes empty bins above
+10 kHz, so a raw low quantile with the Rayleigh correction misses by 5 to
+20 dB. A moving mean first narrows each bin to its local mean, holes
+included. Over 1 to 64 frames and quantiles 0.05 to 0.5, each with its
+correction fitted as the median per-bin error over the 300 tape-noise-only
+fixtures, the 5th percentile of the 32-frame mean reads closest, at
++0.62 dB (on white noise it reads 1.93 dB under the mean; the programme
+lifts most of that back). Medians of the LSD over each class's fixtures (dB):
+
+| Class (50 fixtures each) | Window | Stitched | Quantile |
+| :--- | ---: | ---: | ---: |
+| speech | 3.51 | 10.12 | 4.61 |
+| speech with hum | 3.86 | 8.67 | 4.21 |
+| music bed | 4.14 | 9.06 | 4.33 |
+| music bed with hum | 3.39 | 7.78 | 3.70 |
+| music-led | 7.48 | 8.21 | 4.88 |
+| music only | 7.98 | 8.49 | 4.16 |
+| all 300 | 4.93 | 8.59 | 4.22 |
+
+The bias at 3-16 kHz and the share of bins over +6 dB:
+
+| Class | Window | Stitched | Quantile |
+| :--- | ---: | ---: | ---: |
+| speech | +2.39, 21 % | +7.21, 55 % | +0.06, 18 % |
+| speech with hum | +1.76, 24 % | +8.26, 62 % | +0.84, 22 % |
+| music bed | +1.45, 22 % | +5.89, 56 % | +1.09, 20 % |
+| music bed with hum | +1.26, 16 % | +4.85, 43 % | -0.35, 14 % |
+| music-led | +5.83, 45 % | +5.95, 50 % | -0.31, 15 % |
+| music only | +5.00, 48 % | +5.89, 49 % | -1.41, 11 % |
+
+Where the fixture has pauses the window is closer overall but reads the
+hiss band 1.3-2.4 dB high; with no pause it learns programme. Every print
+also learns the room tone (+1.5 to +2.8 dB under 3 kHz on speech and music).
+The stitched pick never runs on 15 s material; it is read here for its
+choice of pauses. The
+module's streamed print reads within 0.06 dB (median per bin) of the
+in-memory estimator, a 3 s digital mute moves it -0.1 to +1.9 dB (the
+quiet stretch goes with it, never down to the mute), and a 15 s fixture
+takes 0.3-0.4 s.
+
+### IA hunt clips
+
+On CPU at cathar's denoise stage (cathar 0.8.0, alpha 1.0, beta 0.02), each
+of the investigation's speech-profile hunt clips' own stage input and
+window print copied: the window print re-run (byte for byte the shipped
+stage output on 152 of 152) against the quantile print, read against the
+source with the octave reading's tail (`stems.octave_programme`, failing
+under -3 dB) and the APL hiss diagnosis's readings: the hiss floor under
+the programme (minimum statistics, 3-16 kHz ERB bands, median and
+energy-sum deltas, and the bands up to 4.8 kHz), the true pauses (median and
+energy mean), the pause low band, musical noise (lkr), the loud-frame
+4-8 / 8-16 kHz loss where the programme reaches the band, gap air and the
+'s' level. The last column is informative only: the quantile print with
+`cathar_alpha` 1.25.
+
+The 56 denoise-class failing clips (medians, dB):
+
+| Reading | Window | Quantile | Alpha 1.25 |
+| :--- | ---: | ---: | ---: |
+| Clips still failing | 53 | 28 | 37 |
+| Octave tail | -5.69 | -3.01 | -3.90 |
+| Quiet-frame removal | 5.48 | 2.67 | 3.51 |
+| Hiss under programme | -14.07 | -10.22 | -13.15 |
+| Same, energy sum | -14.09 | -9.93 | -13.22 |
+| Same, 3-4.8 kHz | -14.23 | -10.13 | -12.97 |
+| Pauses, median (26 clips) | -18.75 | -12.95 | -16.32 |
+| Pauses, energy mean | -13.68 | -11.92 | -13.79 |
+| Pause low band | -14.88 | -10.34 | -14.72 |
+| lkr | 0.30 | 0.22 | 0.28 |
+| 4-8 kHz loud loss | -0.36 | -0.58 | -0.67 |
+| 8-16 kHz loud loss | -0.92 | -0.50 | -0.60 |
+| Gap air under -25 dB (clips) | 3 | 1 | 1 |
+
+The 96 passing clips:
+
+| Reading | Window | Quantile | Alpha 1.25 |
+| :--- | ---: | ---: | ---: |
+| Clips failing | 1 | 4 | 8 |
+| Quiet-frame removal | 3.23 | 2.58 | 3.22 |
+| Hiss under programme | -10.74 | -8.85 | -11.10 |
+| Pauses, median (53 clips) | -11.82 | -10.37 | -13.72 |
+| Pauses, energy mean | -9.80 | -8.42 | -10.52 |
+| lkr | 0.25 | 0.22 | 0.27 |
+| 4-8 kHz loud loss | -0.18 | -0.17 | -0.17 |
+| 8-16 kHz loud loss | -0.35 | -0.36 | -0.33 |
+
+The quantile print sits a median 13.5 dB under the loud frames on the
+failing clips' programme band (100 Hz to the programme bandwidth, at most
+8 kHz) against 8.6 for the window, and only one failing clip's sits within
+6 dB; on the passing clips 17.4 against 17.2. It sits 3.5 dB under the
+window print below 3 kHz and 3.0 above on the failing clips, 0.3 and 1.6 on
+the passing ones. Two of the three new failures are clips where the window
+had found nothing to subtract: itv-continuity's window sat 33 dB down on a
+near-silent stretch, and the-lion-king-dodge-commercials' was a digital
+mute (the clip the mute guard cost 3.4 dB at 8-16 kHz). The third,
+potsworth, moves from -2.4 to -4.4 dB.
+
+### The four Tata tapes
+
+Whole tapes through the app in cathar mode on CPU, each variant on its own
+copies; the output against the tape's own audio. The stitched print's six
+pauses carry speech: the quantile print sits 1.2-3.5 dB under it above
+6 kHz and 2-13 dB under it below. The hiss floor under the programme is
+shown above 7 kHz (the programme ends at 4.5-7.1 kHz on these tapes) and
+at 3-6 kHz, window then quantile; gap air is absolute, and the 's' level is
+net of the plain frames:
+
+| Output (dB) | gaudeamus5 | soti | tele7abc | vaccin |
+| :--- | ---: | ---: | ---: | ---: |
+| Floor, 7 kHz up | -13.8/-11.6 | -14.6/-13.1 | -14.1/-12.4 | -13.1/-10.0 |
+| Floor, 3-6 kHz | -14.1/-11.7 | -31.6/-12.5 | -24.1/-13.1 | -15.9/-10.7 |
+| Pauses, median | -8.5/-9.5 | -12.1/-11.2 | -8.2/-7.6 | -11.3/-11.3 |
+| Pauses, mean | -8.4/-9.0 | -11.0/-10.6 | -6.8/-6.8 | -9.9/-9.5 |
+| Pause low band | -13.2/-11.9 | -14.7/-15.9 | -10.2/-9.7 | -16.7/-15.8 |
+| lkr | 0.67/0.62 | 0.76/0.57 | 0.35/0.22 | 0.45/0.35 |
+| 4-8 kHz loss | -2.98/-2.61 | -1.19/-1.04 | -1.07/-1.01 | -0.67/-0.64 |
+| Gap air | -5.0/-4.6 | -9.0/-8.7 | -10.3/-9.6 | -8.3/-7.0 |
+| 's' level | - | +5.0/+1.1 | +3.8/+2.0 | +2.7/+1.8 |
+
+The quantile print leaves 1.5-3.1 dB more hiss above 7 kHz under the
+programme, and stops the 24-32 dB cut at 3-6 kHz on soti and tele7abc,
+which was speech; the pauses come out alike (the pause floor keeper refills
+them), with less musical noise and a smaller lift of the 's'. Replayed at
+the denoise stage (informative), `cathar_alpha` 1.25 with the quantile
+print brings the floor above 7 kHz to within 1.5 dB of the window's on all
+four (-14.5, -16.6, -16.0, -13.2 against -13.9, -15.2, -14.5, -14.3) at
+lkr 0.80, 0.71, 0.32, 0.38 (window 0.86, 1.25, 0.46, 0.46). Not judged by
+ear: the listening session gets `quantile` at alpha 1.0 and 1.25 against
+`window`, on the hunt clips that stop failing and on the Tata tapes.
 
 ## Event Log
 

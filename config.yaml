@@ -493,6 +493,30 @@ arnndn_enable_adeclick: true
 #     about half the noise ('scale') or none ('drop'); at 13 all four come out
 #     byte for byte as with the guard off. Not judged by ear; cathar only.
 #
+# cathar_noiseprint_method (2026-10-12):
+#   - 'window' (Default): the print is learned from the quietest 0.75 s (six
+#     stitched 0.75 s pauses on 90 s of material or more), as every release has.
+#   - 'quantile': the print is written from the whole material
+#     (modules/noiseprint_quantile.py): per bin, the 5th percentile of the
+#     0.37 s moving mean of cathar's own frames (left channel), +0.62 dB, over
+#     the frames that are not digital mutes, streamed. On realistic-v2 it reads
+#     the exact tape noise at a median log-spectral distance of 4.22 dB (the
+#     window 4.93, the stitched pick 8.59); on music with no pause it reads
+#     the 3-16 kHz noise -1.4 to -0.3 dB off where the window learns programme
+#     (+5.0 to +5.8 dB). Material with fewer than 20 live windows goes back to
+#     the window pick; the window path's mute and depth guards do not apply.
+#   - CPU, cathar 0.8.0, 2026-10-12: at the denoise stage of the IA hunt, 25 of
+#     the 56 denoise-class stems.octave_programme failures stop failing (53 ->
+#     28) and 3 of the 96 passing clips start; the hiss floor under the
+#     programme comes down 10.2 dB instead of 14.1 (failing clips) and 8.9
+#     instead of 10.7 (passing). On the four Tata tapes it leaves 1.5-3.1 dB
+#     more hiss above 7 kHz, stops the stitched print's 24-32 dB cut of speech
+#     at 3-6 kHz on soti and tele7abc, and lowers musical noise. With
+#     cathar_alpha 1.25 the hiss removal comes back to the window's (hunt: 37
+#     of 56 still failing, 7 passing clips start). Not judged by ear: see
+#     docs/configuration.md, "cathar Quantile Noise Print". cathar speech
+#     profile only.
+#
 # cathar_enable_repair:
 #   - Specialized non-linear transient spectral spike and dropout repair (default: true)
 #
@@ -562,6 +586,7 @@ cathar_noiseprint_duration_s: 4.5
 cathar_noiseprint_mute_guard: false
 cathar_noiseprint_min_depth_db: 0.0
 cathar_noiseprint_shallow_action: "scale"
+cathar_noiseprint_method: "window"
 cathar_dehum_adaptive: true
 cathar_dehum_harmonics: 8
 cathar_enable_mono_below: true
