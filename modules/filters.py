@@ -333,13 +333,25 @@ def _validate_arnndn_file_integrity(model_path, model_name):
         return False
 
 
+def _store_model_file(directory, model_name):
+    """The resolved model file inside directory, or None when absent or when its real path leaves it.
+
+    A file that is a link to somewhere outside the store folder is skipped, so a link placed
+    in the store can never hand FFmpeg a file outside it.
+    """
+    model_file = directory / model_name
+    if not model_file.is_file():
+        return None
+    resolved = model_file.resolve()
+    return resolved if resolved.parent == directory.resolve() else None
+
+
 def _search_model_in_dirs(model_name, search_dirs):
-    """Searches candidate folders for an RNNoise model file and verifies its integrity."""
+    """Searches the store folders for an RNNoise model file confined to them and verifies its integrity."""
     for directory in search_dirs:
-        model_file = directory / model_name
-        if model_file.is_file():
-            if _validate_arnndn_file_integrity(model_file, model_name):
-                return model_file.resolve()
+        model_file = _store_model_file(directory, model_name)
+        if model_file is not None and _validate_arnndn_file_integrity(model_file, model_name):
+            return model_file
     return None
 
 
@@ -415,24 +427,50 @@ def _try_auto_download_arnndn(model_name):
     return None
 
 
-def _resolve_arnndn_model_path(model_name=ARNNDN_MODEL):
-    """Resolves ARNNDN model file across candidate paths, auto-downloading if missing or corrupt."""
-    candidate = Path(model_name)
-    if candidate.is_file() and _validate_arnndn_file_integrity(candidate, candidate.name):
-        return candidate.resolve()
+def _arnndn_store_dirs():
+    """The RNNoise store folders: the package-anchored model store, never the working directory."""
+    return [MODELS_DIR / "arnndn", MODELS_DIR]
 
-    search_dirs = [Path("models") / "arnndn", Path("models"), MODELS_DIR / "arnndn", MODELS_DIR]
-    found = _search_model_in_dirs(model_name, search_dirs)
+
+def _resolve_arnndn_model_path(model_name=ARNNDN_MODEL):
+    """Resolves an RNNoise model inside the model store, auto-downloading known names.
+
+    Only the bare filename is honoured, so a planted config.yaml cannot name a path
+    outside the store (a CWD-relative or absolute `arnndn_model`): the name is joined onto
+    the package-anchored store folders and never opened as given. A `models/` folder in the
+    working directory is not searched (a folder of tapes would otherwise supply its own
+    store), and a store file whose real path leaves its folder is skipped. Returns None
+    when the store has no such model. modules.config also reduces `arnndn_model` to a bare
+    `.rnnn` filename before it reaches here.
+    """
+    safe_name = Path(str(model_name)).name
+    found = _search_model_in_dirs(safe_name, _arnndn_store_dirs())
     if found is not None:
         return found
+    return _try_auto_download_arnndn(safe_name)
 
-    downloaded = _try_auto_download_arnndn(model_name)
-    return downloaded if downloaded is not None else candidate.resolve()
+
+# Characters that cannot be represented inside a single-quoted FFmpeg filter option. A
+# single quote terminates the quoted option (FFmpeg drops it across its two parse levels,
+# so it cannot round-trip), and once a quote has broken out `; , [ ]` would start new
+# filters or pads. A legitimate model path (a bare `.rnnn` filename under the model store)
+# never contains them, so the path is refused rather than risk filtergraph injection.
+_FILTER_PATH_FORBIDDEN = ("'", '"', ";", ",", "[", "]", "\n", "\r", "\0")
 
 
 def _escape_ffmpeg_filter_path(file_path):
-    """Escapes path characters (like colons in Windows drive paths) for FFmpeg filter syntax."""
-    return str(Path(file_path).resolve().as_posix()).replace("\\", r"\\").replace("'", r"\'").replace(":", r"\:")
+    """Escapes a model path for an FFmpeg single-quoted filter option (`...='<path>'`).
+
+    The caller wraps the value in single quotes. Inside those quotes a drive colon and a
+    backslash still split the filter option unless escaped (a bare `D:` truncates the value
+    to `D`), while spaces are literal. `.as_posix()` first turns every separator into `/`.
+    A single quote cannot survive FFmpeg's two parse levels, so a path carrying one (or
+    another filtergraph metacharacter) is refused outright.
+    """
+    posix = str(Path(file_path).resolve().as_posix())
+    if any(ch in posix for ch in _FILTER_PATH_FORBIDDEN):
+        raise ValueError(f"Unsafe character in FFmpeg filter path: {posix!r}")
+    return posix.replace("\\", r"\\").replace(":", r"\:")
 
 
 def _build_arnndn_filter_string(
@@ -521,7 +559,7 @@ def _filter_arnndn_step(original_wav, filtered_audio_dir, total_duration=None, m
     if not ffmpeg_has_filter("arnndn"):
         raise RuntimeError("The available FFmpeg executable does not support the 'arnndn' filter.")
     model_path = _resolve_arnndn_model_path(selected_model)
-    if not model_path.is_file():
+    if model_path is None:
         raise FileNotFoundError(f"ARNNDN model file not found: {selected_model}. Place it in models/arnndn/ or models/.")
 
     filter_str = _build_arnndn_filter_string(str(model_path))

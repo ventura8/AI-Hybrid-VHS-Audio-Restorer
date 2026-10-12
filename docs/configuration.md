@@ -338,7 +338,18 @@
     speech/dialogue denoiser. - Best for dialogue-heavy VHS recordings. -
     Parameters: `arnndn_model` (default `"cb.rnnn"` in `models/arnndn/`),
     `arnndn_highpass_freq`, `arnndn_enable_adeclick`. - Output suffix:
-    `*_Speech_Cleaned`.
+    `*_Speech_Cleaned`. - `arnndn_model` must be a bare `.rnnn` filename inside
+    `models/arnndn/` or `models/` (like the UVR model names): a path separator,
+    a `..`, a leading dot, a drive prefix (`D:model.rnnn`), a non-`.rnnn`
+    suffix, or any FFmpeg filtergraph metacharacter (`'` `"` `;` `,` `[` `]`)
+    is rejected with a `[Config]` warning and falls back to `cb.rnnn`. The name
+    reaches a single-quoted FFmpeg filter option, so this blocks a planted
+    `config.yaml` from breaking out of the quote and injecting filters that
+    open attacker-chosen local files. The name is looked up only in the
+    application's own `models/arnndn/` and `models/` folders, never in a
+    `models/` folder of the directory the restorer is launched from, and a
+    model file there that is a link pointing outside its folder is skipped; a
+    model that is not found stops the run with a missing-model error.
 
 ## Listener-Round Settings
 

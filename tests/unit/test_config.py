@@ -266,6 +266,43 @@ def test_model_filename_accepts_bare_names(value, expected):
     assert modules.config._model_filename("denoise_model", value, "d") == expected
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "cb.rnnn';amovie=/etc/hosts",
+        "x';amovie=target.wav",
+        "a[b],c.rnnn",
+        "a;b.rnnn",
+        "../../../etc/passwd",
+        "sub/model.rnnn",
+        "D:model.rnnn",
+        "model.ckpt",
+        ".rnnn",
+        True,
+        ["x.rnnn"],
+    ],
+)
+def test_arnndn_model_filename_rejects_injection_and_paths(capsys, value):
+    """An arnndn_model that could inject filters or escape the store falls back to the default."""
+    default = modules.config.DEFAULT_ARNNDN_MODEL
+    assert modules.config._arnndn_model_filename("arnndn_model", value, default) == default
+    assert "arnndn_model" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (modules.config.DEFAULT_ARNNDN_MODEL, modules.config.DEFAULT_ARNNDN_MODEL),
+        ("  my_model.rnnn ", "my_model.rnnn"),
+        ("", modules.config.DEFAULT_ARNNDN_MODEL),
+        (None, modules.config.DEFAULT_ARNNDN_MODEL),
+    ],
+)
+def test_arnndn_model_filename_accepts_bare_rnnn(value, expected):
+    """A bare .rnnn filename is accepted; unset or empty falls back to the default silently."""
+    assert modules.config._arnndn_model_filename("arnndn_model", value, modules.config.DEFAULT_ARNNDN_MODEL) == expected
+
+
 def _loaded(user_config):
     """The configuration load_config resolves from a config.yaml holding `user_config`."""
     mock_yaml = MagicMock()

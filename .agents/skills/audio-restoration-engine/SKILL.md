@@ -124,10 +124,30 @@ audio alignment, or FFmpeg multiplexing.
    - `_detect_enclosure_resonance_notch`: Requires a high-contrast bump of
      moderate width in the averaged spectral envelope, so speech formants and
      harmonic spikes are rejected.
-   - `_resolve_arnndn_model_path`: Scans `models/arnndn/`, `models/`,
-     `MODELS_DIR/arnndn/`, and `MODELS_DIR/` for RNNoise `.rnnn` models.
-   - `_escape_ffmpeg_filter_path`: Escapes colons in Windows drive paths (e.g.
-     `C\:/...`) for FFmpeg filter expressions.
+   - `_resolve_arnndn_model_path`: Scans only the package-anchored
+     `MODELS_DIR/arnndn/` and `MODELS_DIR/` for RNNoise `.rnnn` models, never a
+     `models/` folder in the working directory: a folder of tapes launched as
+     the CWD would otherwise supply its own store, and a link planted there
+     (a symlink, or a junction on the `models` folder) made FFmpeg open an
+     outside file (verified on 2026-10-12 with FFmpeg 9.0.1). Only the bare
+     filename of the argument is honoured (`Path(name).name`), and
+     `_store_model_file` skips a store file whose real path leaves its folder,
+     so neither a CWD-relative or absolute name nor a link inside the store
+     can hand FFmpeg a file outside it. Nothing found returns `None`, and
+     `_filter_arnndn_step` raises `FileNotFoundError`. The default graph is
+     unchanged when the app runs from its own folder (the CWD `models/` and
+     `MODELS_DIR` are then the same files).
+   - `_escape_ffmpeg_filter_path`: The value is placed inside a single-quoted
+     FFmpeg option (`arnndn=m='<path>'`). Inside those quotes a drive colon and
+     a backslash still split the option unless escaped (`C\:/...`; a bare `D:`
+     truncates the value to `D`), while spaces are literal. A single quote
+     cannot round-trip FFmpeg's two parse levels (it is dropped and the
+     remainder becomes filtergraph syntax), so a path carrying `'`, `"`, `;`,
+     `,`, `[`, `]`, or a newline is refused with `ValueError` rather than
+     escaped. Never encode `'` as `\'` inside the quoted option: FFmpeg reads
+     `\'` as the quote terminator, which injects attacker-chosen filters
+     (an `amovie=` opening a local file). `arnndn_model` is also reduced to a
+     safe bare `.rnnn` filename at config load (`_arnndn_model_filename`).
    - `_run_ffmpeg_filter_step`: Atomic execution with CPU thread fallback.
 1. **`modules/processing.py`**:
    - `_separate_stems_step`: Invokes `audio-separator` with BS-Roformer /
