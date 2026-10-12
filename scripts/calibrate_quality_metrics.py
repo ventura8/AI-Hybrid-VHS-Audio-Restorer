@@ -5,7 +5,7 @@
         [--excerpts tape_cut.wav ...] [--metrics all|dsp,...]
         [--known-ordering known_ordering.json] [--grid tata_v3.yaml]
         [--ledger verdicts.jsonl | --no-ledger] [--round ID] [--previous DIR]
-        [--out experiments/quality_calibration] [--device cuda]
+        [--oracle-max N] [--out experiments/quality_calibration] [--device cuda]
 
 Two sources of truth. The synthetic suite applies each failure in
 `scripts/quality_degradations.py` at three levels to realistic-v2 fixtures and asks, per
@@ -52,6 +52,20 @@ What changed for ear v3 (design 4.4, critique 11), and why:
 - fr beside en by default (`DEFAULT_LANGUAGES`, 2026-10-09): R2's texture needs 30
   fricative frames a window, which en's speech target never holds; fr's does.
 
+Two refusals (E1, 2026-10-12):
+
+- No gates file without `--known-ordering`. Without one every gate falls back to the floor
+  rule, which is the hand-set value in `gates.py` or three benign floors: the v3 and v3b
+  files (round "manifest") were written that way and their lkr 0.3 vetoed the shipped Tata
+  outputs on 3 of 4 tapes (APL) and 4 of 4 (cathar). Such a run (the `--metrics dsp`
+  re-check after a detector change) still writes both reports.
+- The oracle check. Every realistic-v2 capture (`*_vhs.wav`) is scored against the
+  programme it was made from (`*_target.wav` and `*_clean.wav`), an output no restoration
+  can beat; a hard gate of the gates being written that fails more than `ORACLE_MAX_SHARE`
+  (5%) of those pairs refuses denoising itself, and the run writes no gates file and exits 1.
+  The pairs share the score cache (kind `oracle`, with their aggregate kept for the gates);
+  `--oracle-max N` spreads N captures per language over the set for a quick run.
+
 Writes `report.json`, `report.md`, `gates.json` and `gates_<route>.json` (each in the format
 `scripts/restoration_quality/gates.py:load_gates` reads).
 """
@@ -82,7 +96,8 @@ creport = import_module("scripts.calibration_report")
 runner = import_module("scripts.restoration_quality.runner")
 scorecard = import_module("scripts.restoration_quality.scorecard")
 source_profile = import_module("scripts.restoration_quality.source_profile")
-GATES = import_module("scripts.restoration_quality.gates").GATES
+gates_mod = import_module("scripts.restoration_quality.gates")
+GATES = gates_mod.GATES
 
 # 4 (2026-10-09): R2 matches the gain per frame and needs 30 frames for the texture, R4 leaves out the bins
 # under the 16-bit dither, R7 reads along the sync track, `file.dropouts` is new: every v3 score is stale.
@@ -105,6 +120,11 @@ TAPE_LANGUAGE = "ro"
 DEFAULT_LANGUAGES = ("en", "fr")
 # The benign floor, for scripts that cite it from here (`reward_noise_floor.py`).
 noise_floor = checks_mod.noise_floor
+ORACLE = "oracle"
+ORACLE_SUFFIX = "_vhs.wav"
+ORACLE_OUTPUTS = ("target", "clean")
+ORACLE_MAX_SHARE = 0.05
+NO_ORDERING = "no --known-ordering: every gate would rest on the hand-set values (the floor rule)"
 
 
 @dataclass
@@ -192,6 +212,32 @@ def build_cases(fixtures_dir, languages, out_dir):
     return cases
 
 
+def oracle_output(source, kind):
+    """The fixture file beside a capture: `<stem>_vhs.wav` -> `<stem>_<kind>.wav`."""
+    return Path(str(source)[: -len(ORACLE_SUFFIX)] + f"_{kind}.wav")
+
+
+def spread(items, limit):
+    """`limit` items spread evenly over `items` (all of them when `limit` is 0 or covers them)."""
+    if not limit or limit >= len(items):
+        return list(items)
+    return [items[int(index)] for index in np.linspace(0, len(items) - 1, int(limit))]
+
+
+def build_oracle_cases(fixtures_dir, languages, limit=0):
+    """Every realistic-v2 capture against the programme it was made from, per language (`--oracle-max` spreads a subset)."""
+    cases = []
+    for language in languages:
+        for source in spread(sorted((Path(fixtures_dir) / language).glob(f"*{ORACLE_SUFFIX}")), limit):
+            cases += [_oracle_case(source, language, kind) for kind in ORACLE_OUTPUTS if oracle_output(source, kind).is_file()]
+    return cases
+
+
+def _oracle_case(source, language, kind):
+    stem = source.name[: -len(ORACLE_SUFFIX)]
+    return Case(ORACLE, f"{stem}__{kind}", None, language, source, oracle_output(source, kind))
+
+
 def _tape_materials(path):
     """A real excerpt as every base material: it is the speech, the capture and the bed at once."""
     audio, rate = _read(path)
@@ -255,6 +301,11 @@ def covers(doc, families):
     return doc.get("schema") == SCORE_SCHEMA and set(families) <= set(doc.get("requested", ()))
 
 
+def usable(doc, case, families):
+    """Whether a cached score serves `case`: it covers the families, and an oracle pair's keeps the aggregate its gates read."""
+    return covers(doc, families) and (case.kind != ORACLE or "aggregate" in doc)
+
+
 def whisper_language(case):
     """The language Whisper is held to: the fixture's own, Romanian for a tape excerpt (`ro-<stem>`)."""
     return case.language.split("-", 1)[0]
@@ -272,6 +323,8 @@ def _score_case(case, families, registry, cache_dir):
         "families": card.families,
         "deltas": {**readings, **base_profile(case)},
         "routes": route_readings(card, readings),
+        "aggregate": card.aggregate,
+        "speaker_floor": card.speaker_floor,
     }
 
 
@@ -289,7 +342,7 @@ def score_cases(cases, families, registry, cache_dir, scores_dir):
     for case in cases:
         path = Path(scores_dir) / f"{case.case_id.replace('/', '_')}.json"
         doc = _cached(path)
-        if not covers(doc, families):
+        if not usable(doc, case, families):
             doc = _score_case(case, families, registry, cache_dir)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(doc, indent=1, default=cordering.json_default), encoding="utf-8")
@@ -376,6 +429,7 @@ def _parse_args(argv=None):
     parser.add_argument("--no-ledger", action="store_true", help="read the manifest's own flag lists only")
     parser.add_argument("--round", default=None, help="id of this calibration round (default: the ledger rounds of the verdicts)")
     parser.add_argument("--previous", type=Path, default=None, help="directory of the previous round's gates files (default: --out)")
+    parser.add_argument("--oracle-max", type=int, default=0, help="oracle captures per language, spread over the set (0: every one)")
     parser.add_argument("--out", type=Path, default=Path("experiments/quality_calibration"))
     parser.add_argument("--device", default="cuda")
     return parser.parse_args(argv)
@@ -398,12 +452,14 @@ def _ordering(args, scoring, suite, grid):
 def synthetic(args, families, registry):
     """The synthetic suite: `{cases, status, floor, route_floors, checks}` (status = the families that scored, per case)."""
     cases = build_cases(args.fixtures, args.languages, args.out) + build_tape_cases(args.excerpts, args.out)
+    cases += build_oracle_cases(args.fixtures, args.languages, args.oracle_max)
     scores = score_cases(cases, families, registry, args.out / "cache", args.out / "scores")
     readings = readings_of(scores)
     floor = checks_mod.noise_floor(cases, readings)
     route_floors = {route: checks_mod.noise_floor(cases, readings_of(scores, route)) for route in ROUTES}
     checks = checks_mod.run_checks(cases, readings, floor)
-    return {"cases": cases, "status": family_status(scores), "floor": floor, "route_floors": route_floors, "checks": checks}
+    suite = {"cases": cases, "status": family_status(scores), "floor": floor, "route_floors": route_floors, "checks": checks}
+    return {**suite, "scores": scores}
 
 
 def load_grid(args):
@@ -440,8 +496,75 @@ def main(argv=None):
     suite = synthetic(args, families, registry)
     context = known_ordering_context(args, families, registry, suite, grid)
     files, additions = derive_all(context, previous)
-    creport.write_reports(args.out, {**_report(context, suite), **additions}, files)
-    return print_summary(args.out, suite["checks"], suite["status"], families)
+    oracle = oracle_check(suite["cases"], suite["scores"], {**GATES, **cgates.as_gates(files[GATE_FILE])})
+    refusal = refusal_reason(args, oracle)
+    report = {**_report(context, suite), **additions, "oracle": oracle, "gates_written": not refusal, "refusal": refusal}
+    creport.write_reports(args.out, report, {} if refusal else files)
+    notes = (oracle_line(oracle), refusal_line(refusal))
+    return max(print_summary(args.out, suite["checks"], suite["status"], families, notes), int(oracle_failed(oracle)))
+
+
+def oracle_check(cases, scores, gates):
+    """`{pairs, gates, by_output, failing, passed}`: per hard gate, how many oracle pairs it fails, overall and per output kind.
+
+    `failing` names every gate failing more than `ORACLE_MAX_SHARE` of the pairs; with no pair
+    at all the check cannot vouch for the gates and does not pass.
+    """
+    failed = _oracle_failures(cases, scores, gates)
+    rows = _shares(_counts(names for _kind, names in failed), len(failed))
+    failing = _over_share(rows)
+    by_output = {kind: _counts(_of_output(failed, kind)) for kind in ORACLE_OUTPUTS}
+    return {"pairs": len(failed), "gates": rows, "by_output": by_output, "failing": failing, "passed": bool(failed) and not failing}
+
+
+def _over_share(rows):
+    """The gates failing more than `ORACLE_MAX_SHARE` of the pairs, by name."""
+    return sorted(name for name, row in rows.items() if row["share"] > ORACLE_MAX_SHARE)
+
+
+def _oracle_failures(cases, scores, gates):
+    """`[(output kind, hard failures)]`, one per oracle pair."""
+    return [(case.name.rsplit("__", 1)[-1], _hard_failures(scores[case.case_id], gates)) for case in cases if case.kind == ORACLE]
+
+
+def _shares(counts, pairs):
+    """`{gate: {failed, share}}` in name order."""
+    return {name: {"failed": count, "share": count / pairs} for name, count in sorted(counts.items())}
+
+
+def _of_output(failed, kind):
+    """The failure lists of the pairs whose output is `kind`."""
+    return [names for found, names in failed if found == kind]
+
+
+def _hard_failures(doc, gates):
+    """The hard gates one oracle pair's stored aggregate fails."""
+    return gates_mod.hard_failures(gates_mod.evaluate_gates(doc.get("aggregate", {}), gates, doc.get("speaker_floor")))
+
+
+def _counts(groups):
+    """`{name: how many groups name it}`."""
+    counts = {}
+    for names in groups:
+        for name in names:
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def oracle_failed(oracle):
+    """Whether the oracle check refuses the gates (a gate over the share, or no pair to check)."""
+    return not oracle["passed"]
+
+
+def refusal_reason(args, oracle):
+    """Why no gates file is written, or None: no known ordering, or the oracle check failed."""
+    if not args.known_ordering:
+        return NO_ORDERING
+    if not oracle["pairs"]:
+        return "no oracle pair: no *_vhs.wav with its *_target.wav or *_clean.wav under --fixtures"
+    if oracle["failing"]:
+        return f"oracle: {', '.join(oracle['failing'])} fail more than {ORACLE_MAX_SHARE:.0%} of {oracle['pairs']} oracle pairs"
+    return None
 
 
 def non_blind_failures(checks):
@@ -466,14 +589,27 @@ def _missing_line(status, families):
     return f"families not scored (their gates keep the hand-set values): {', '.join(missing)}" if missing else None
 
 
-def print_summary(out, checks, status, families):
-    """Prints the counts, the clipped checks and any family that did not score; returns the exit code."""
+def print_summary(out, checks, status, families, notes=()):
+    """Prints the counts, the clipped checks, any family that did not score and the `notes` lines; returns the exit code."""
     failed, unscored = non_blind_failures(checks), non_blind_unscored(checks)
     passed = f"{sum(c['status'] == 'pass' for c in checks)}/{len(checks)} sensitivity checks pass"
     print(f"{passed}; {len(failed)} non-blind failures; {len(unscored)} non-blind unscored; report at {out / 'report.md'}")
-    for line in filter(None, (clipped_line(checks), _missing_line(status, families))):
+    for line in filter(None, (clipped_line(checks), _missing_line(status, families), *notes)):
         print(line)
     return 1 if failed else 0
+
+
+def oracle_line(oracle):
+    """The oracle check in one line, or None when it did not run."""
+    if oracle is None:
+        return None
+    counts = ", ".join(f"{name} {row['failed']}" for name, row in oracle["gates"].items()) or "none"
+    return f"oracle pairs: {oracle['pairs']}; hard failures per gate: {counts}"
+
+
+def refusal_line(refusal):
+    """The refusal in one line, or None when the gates files were written."""
+    return f"gates files not written: {refusal}" if refusal else None
 
 
 if __name__ == "__main__":

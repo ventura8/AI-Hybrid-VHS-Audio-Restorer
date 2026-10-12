@@ -159,10 +159,23 @@ def test_the_round_id_is_explicit_or_the_verdict_rounds_or_the_manifest():
     assert cal.round_id(None, {"t": {}}) == "manifest"
 
 
-def _run(tmp_path, *extra):
+def _oracle_fixtures(root):
+    """One realistic-v2 triplet in en: the capture and the two programmes it was made from."""
+    folder = root / "fixtures" / "en"
+    folder.mkdir(parents=True, exist_ok=True)
+    for part in ("vhs", "target", "clean"):
+        sf.write(str(folder / f"mid00_speech_m15_{part}.wav"), np.zeros(RATE // 10, dtype=np.float32), RATE, subtype="FLOAT")
+    return root / "fixtures"
+
+
+MANIFEST = Path(cal.REPO) / "assets" / "quality_calibration" / "known_ordering.json"
+
+
+def _run(tmp_path, *extra, ordering=True):
     """A whole calibration on the fakes: dsp and mos asked for, mos unavailable, the repository's first manifest."""
-    manifest = Path(cal.REPO) / "assets" / "quality_calibration" / "known_ordering.json"
-    argv = ["--fixtures", "unused", "--out", str(tmp_path), "--metrics", "dsp,mos", "--known-ordering", str(manifest)]
+    out = tmp_path / "out"
+    argv = ["--fixtures", str(_oracle_fixtures(tmp_path)), "--out", str(out), "--metrics", "dsp,mos"]
+    argv += ["--known-ordering", str(MANIFEST)] if ordering else []
     return cal.main([*argv, "--no-ledger", *extra])
 
 
@@ -193,13 +206,19 @@ def _names_in(directory):
     return {path.name for path in directory.iterdir()}
 
 
-@pytest.mark.usefixtures("fake_scoring", "fake_ordering")
+@pytest.fixture(name="checks_pass")
+def _checks_pass(monkeypatch):
+    """The fakes fail their sensitivity checks; with them passing the exit code follows the oracle check alone."""
+    monkeypatch.setattr(cal, "non_blind_failures", lambda _checks: [])
+
+
+@pytest.mark.usefixtures("fake_scoring", "fake_ordering", "checks_pass")
 def test_a_whole_run_writes_the_pooled_and_per_route_gates_and_the_report(tmp_path, capsys):
     """Every gates file and both reports are written; a family that did not score is said, with its gates."""
     _run(tmp_path)
-    written = _names_in(tmp_path)
+    written = _names_in(tmp_path / "out")
     assert {"gates.json", "gates_speech.json", "gates_music.json", "gates_mixed.json", "report.json", "report.md"} <= written
-    report = json.loads((tmp_path / "report.json").read_text("utf-8"))
+    report = json.loads((tmp_path / "out" / "report.json").read_text("utf-8"))
     assert report["round"] == "manifest"
     assert report["skipped_gates"]["mos.sigmos_col"] == "family mos not scored in this run"
     assert "families not scored" in capsys.readouterr().out
@@ -210,7 +229,7 @@ def test_a_second_run_reads_the_first_runs_gates_as_the_previous_round(tmp_path)
     """The gates carry the new round; only a verdict-derived threshold counts agreeing rounds."""
     _run(tmp_path, "--round", "1")
     _run(tmp_path, "--round", "2")
-    gates = json.loads((tmp_path / "gates.json").read_text("utf-8"))
+    gates = json.loads((tmp_path / "out" / "gates.json").read_text("utf-8"))
     assert {entry["round"] for entry in gates.values()} == {"2"}
     assert all(entry["rounds_agreeing"] == 0 for entry in gates.values() if entry["source"] != "known ordering")
 
