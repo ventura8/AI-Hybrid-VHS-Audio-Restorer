@@ -720,6 +720,27 @@ audio alignment, or FFmpeg multiplexing.
   single-window-only guard would. Scripts and data:
   `D:\ai_restore_work\scratch_npdepth` (`validate_guard.py` with
   `GUARD_D`, `analyze_validate.py`, `run_tata.py`, `tata_compare.py`).
+  Third action, `quantile` (same day): the shallow print is replaced by
+  the whole-file quantile print (`noiseprint_quantile.quantile_print`, the
+  file the method writes, beside the learned print); too few live windows
+  scale it as on `scale` with a WARNING, and under
+  `cathar_noiseprint_method: quantile` (already failed) the guard scales
+  at once (`noiseprint_depth.shallow_action`). At the denoise stage of the
+  56 denoise-class failing and 96 passing hunt clips (CPU, harness at
+  03afd4a; two clips read 2-3 dB milder than the first validation, so 53
+  fail at the stage): at 13, `quantile` leaves 30 failing like `scale`
+  (`drop` 14), one passing clip starts (potsworth, -2.4 to -4.4), and the
+  hiss floor under the programme comes down 10.6 / 9.5 dB (failing /
+  passing; shipped 14.1 / 10.7, `scale` 9.3 / 8.8, `drop` 2.1 / 4.6),
+  the pauses 14.1 / 11.0 (`scale` 12.4 / 10.9). The quantile print does
+  not depend on D: at 20 it still leaves 30 failing (`scale` 17, `drop`
+  9). Tata at 13 with `quantile`: all four byte for byte the guard-off
+  outputs; at 20, byte for byte the quantile method's. The listening
+  session's candidate: 13 with `quantile` against the shipped print on the
+  85 hunt clips it touches. Scripts and data:
+  `D:\ai_restore_work\scratch_shq\tools` (`shq_validate.py`,
+  `shq_table.py`, `run_tata.py`, `tata_compare.py`); table in
+  `docs/configuration.md`, "The three actions on one reading".
   Pending a blind listening session.
 - **cathar quantile noise print (2026-10-12)**:
   `cathar_noiseprint_method: quantile` (default `window`;

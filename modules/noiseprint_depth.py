@@ -19,7 +19,11 @@ the print is programme, and `cathar_noiseprint_shallow_action` decides what the 
   STFT magnitudes, 2048 Hann / hop 512, of the probe's left channel) times
   10^(-(D - depth)/20), so the print sits exactly D dB under the loud frames; written beside
   the learned print as `<print>_depth<D>db.np.json`;
-- 'drop': no learned print, so `denoise` runs without `--noiseprint`, as the music profile does.
+- 'drop': no learned print, so `denoise` runs without `--noiseprint`, as the music profile does;
+- 'quantile': the whole-file quantile print (`modules/noiseprint_quantile.py`) in its place,
+  written beside the learned print as `noise_<stage>_quantile_k32_q0.05.np.json`, the same file
+  `cathar_noiseprint_method: quantile` writes; material it cannot be learned from (fewer than
+  its 20 live windows, or a file it cannot read or write) is scaled as on 'scale', with a WARNING.
 
 Run through this module at the denoise stage (2026-10-12, the cathar 0.8.0 CLI on CPU on each
 clip's own stage input, the 159 speech-profile hunt clips): at D = 20, 'scale' leaves 25 of the
@@ -30,6 +34,13 @@ untouched, so its command lines and its bytes are the chain's without the guard.
 local Tata tapes' stitched pauses sit only 13.7-16.9 dB under their loud frames: at 20 the
 guard fires on all four and the denoise removes about half the noise ('scale') or none
 ('drop'); at 13 all four keep their bytes. Off by default (0); cathar mode alone reads the keys.
+
+'quantile', run the same way on the 56 denoise-class failing and 96 passing hunt clips and
+re-read with the harness at 03afd4a (53 fail at the stage): at D = 13, 30 still fail as on
+'scale' (14 on 'drop'), one passing clip starts failing, and the hiss floor under the programme
+comes down 10.6 / 9.5 dB (failing / passing; shipped 14.1 / 10.7, 'scale' 9.3 / 8.8, 'drop'
+2.1 / 4.6). The quantile print does not depend on D, so at 20 it still leaves 30 ('scale' 17,
+'drop' 9). The four Tata tapes keep their bytes at 13; at 20 they get the quantile method's.
 """
 
 import json
@@ -38,6 +49,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from . import noiseprint_quantile
 from .utils import log_msg
 
 # The loud frames: the p90 of the mono mix's frame RMS over 1024-sample frames.
@@ -45,9 +57,11 @@ LOUD_FRAME = 1024
 LOUD_PERCENTILE = 90.0
 # Frames per streamed read (`cathar._window_levels` reads 240 hops at a time).
 BLOCK_FRAMES = 240
-SHALLOW_ACTIONS = ("scale", "drop")
+SHALLOW_ACTIONS = ("scale", "drop", "quantile")
 PRINT_SUFFIX = ".np.json"
 LOG_PREFIX = "    [Cathar] Noise-print depth guard:"
+# What the quantile module logs it falls back to when the guard asked it for a replacement.
+QUANTILE_FALLBACK = "the depth guard scales the learned print instead"
 
 
 def db(rms):
@@ -120,12 +134,22 @@ def scale_print(np_path, gain_db, out_path):
     return Path(out_path)
 
 
+def shallow_action(action, method):
+    """The guard's action: 'quantile' scales when `cathar_noiseprint_method` 'quantile' already tried that print and failed.
+
+    cathar learns a window print under the method 'quantile' only when the quantile print could
+    not be learned, so the guard does not read the whole material again to fail the same way.
+    """
+    return "scale" if action == "quantile" and method == "quantile" else action
+
+
 def guard_print(np_path, wav_path, pick, min_depth_db, action):
-    """The print the denoise subtracts: the learned one when deep enough, else scaled to `min_depth_db` or None ('drop').
+    """The print the denoise subtracts: the learned one when deep enough, else scaled to `min_depth_db`, None or the quantile print.
 
     `pick()` returns the `(starts, frames)` the print was learned from. A pick or a depth that
     cannot be read, or a print that cannot be scaled, keeps the learned print: the guard only
-    ever falls back to what the chain did without it.
+    ever falls back to what the chain did without it. On 'quantile' a print the quantile module
+    cannot learn falls back to 'scale'.
     """
     try:
         windows = pick()
@@ -140,7 +164,20 @@ def guard_print(np_path, wav_path, pick, min_depth_db, action):
     if action == "drop":
         log_msg(f"{LOG_PREFIX} {reading}, under {min_depth_db:g} dB: the print is programme; denoising without a learned print")
         return None
-    return _scaled(np_path, depth - min_depth_db, scaled_print_path(np_path, min_depth_db), reading)
+    gain_db, out_path = depth - min_depth_db, scaled_print_path(np_path, min_depth_db)
+    if action == "quantile":
+        return _replaced(np_path, wav_path, gain_db, out_path, reading)
+    return _scaled(np_path, gain_db, out_path, reading)
+
+
+def _replaced(np_path, wav_path, gain_db, out_path, reading):
+    """The whole-file quantile print, written beside the learned one; scaled as on 'scale' (with a WARNING) when it cannot be learned."""
+    quantile = noiseprint_quantile.quantile_print(wav_path, Path(np_path).parent, fallback=QUANTILE_FALLBACK)
+    if quantile is None:
+        log_msg(f"{LOG_PREFIX} no quantile print could be learned from the material; falling back to 'scale'", level="WARNING")
+        return _scaled(np_path, gain_db, out_path, reading)
+    log_msg(f"{LOG_PREFIX} {reading}: the print is programme; replaced by the whole-file quantile print {quantile.name}")
+    return quantile
 
 
 def _scaled(np_path, gain_db, out_path, reading):

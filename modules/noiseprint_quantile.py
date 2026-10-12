@@ -183,19 +183,19 @@ def existing_print(out_path):
     return Path(out_path) if isinstance(values, list) and len(values) == BINS else None
 
 
-def quantile_print(wav_path, output_dir):
-    """The quantile print of wav_path written into output_dir, or None (logged) when the window pick must learn it."""
+def quantile_print(wav_path, output_dir, fallback=FALLBACK):
+    """The quantile print of wav_path written into output_dir, or None (logged, with what the caller does instead: `fallback`)."""
     out_path = Path(output_dir) / print_name(wav_path)
     if existing_print(out_path) is not None:
         return out_path
     try:
         magnitudes, acc = learn(wav_path)
         if magnitudes is None:
-            log_msg(f"{LOG_PREFIX} {acc.windows} live windows, fewer than {MIN_WINDOWS}; {FALLBACK}", level="WARNING")
+            log_msg(f"{LOG_PREFIX} {acc.windows} live windows, fewer than {MIN_WINDOWS}; {fallback}", level="WARNING")
             return None
         write_print(magnitudes, out_path)
     except (OSError, RuntimeError, ValueError) as exc:
-        log_msg(f"{LOG_PREFIX} could not be learned ({exc}); {FALLBACK}", level="WARNING")
+        log_msg(f"{LOG_PREFIX} could not be learned ({exc}); {fallback}", level="WARNING")
         return None
     seconds = SMOOTH_FRAMES * HOP / sf.info(str(wav_path)).samplerate
     log_msg(

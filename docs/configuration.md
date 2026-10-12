@@ -266,8 +266,9 @@
   `cathar_noiseprint_mute_guard` (false) keeps digital mutes out of the
   print's pick; see "cathar Noise-Print Mute Guard" below.
   `cathar_noiseprint_min_depth_db` (0, off) and
-  `cathar_noiseprint_shallow_action` (`scale`) scale or drop a print that
-  sits too close to the programme; see "cathar Noise-Print Depth Guard".
+  `cathar_noiseprint_shallow_action` (`scale`) scale, drop or replace with
+  the quantile print a print that sits too close to the programme; see
+  "cathar Noise-Print Depth Guard".
   `cathar_noiseprint_method` (`window`) learns the print from the quietest
   window, or on `quantile` writes it from the whole material, per bin; see
   "cathar Quantile Noise Print".
@@ -1118,9 +1119,10 @@ The guard stays off until a blind listening session judges it.
 ## cathar Noise-Print Depth Guard
 
 `cathar_noiseprint_min_depth_db` (0, off) and
-`cathar_noiseprint_shallow_action` (`scale` or `drop`), added on
-2026-10-12. On a 15 s clip with no pause cathar's quietest 0.75 s is
-programme, and the learned print then strips the background bed. On the
+`cathar_noiseprint_shallow_action` (`scale`, `drop` or `quantile`), added
+on 2026-10-12 (`quantile` the same day, after the quantile print). On a
+15 s clip with no pause cathar's quietest 0.75 s is programme, and the
+learned print then strips the background bed. On the
 IA hunt (`tune_ia_hunt_v3`, 235 clips) cathar failed
 `stems.octave_programme` on 64 of the 176 clips that read, and the
 learned-print subtraction took the octave on 56 of them. On the failing
@@ -1141,6 +1143,15 @@ A print shallower than the key is programme:
   print 0.1 times the first, within 6e-8. Scaling the file is learning
   from a quieter probe.
 - `drop` runs `denoise` without `--noiseprint`, as the music profile does.
+- `quantile` hands the denoise the whole-file quantile print in its place
+  (`modules/noiseprint_quantile.py`, "cathar Quantile Noise Print" below),
+  written beside the learned print as
+  `noise_<stage>_quantile_k32_q0.05.np.json`, the file
+  `cathar_noiseprint_method: quantile` writes. Material it cannot be learned
+  from (fewer than 20 live windows, or a read or write error) is scaled as
+  on `scale`, after a WARNING; with `cathar_noiseprint_method: quantile`,
+  whose print already failed on that material, the guard scales without
+  learning it again (`noiseprint_depth.shallow_action`).
 
 A print at least D dB down is handed on untouched, and a depth that
 cannot be measured keeps the learned print with a WARNING: no window to
@@ -1201,6 +1212,68 @@ are 13 with `scale` or `drop`, which left these four tapes alone, or 20
 restricted to the single-window path (15 s clips), which this key does not
 offer. Not judged by ear.
 
+### The three actions on one reading
+
+Measured on CPU on 2026-10-12 with the worktree's `guard_print` and
+`_cathar_denoise_step` (cathar 0.8.0) at the denoise stage of the IA
+hunt's 56 denoise-class failing clips and its 96 passing ones (the
+quantile print's clip sets), each clip's base stage input and learned
+print copied (D in dB). Every guarded output was byte for byte the earlier
+validations' (`scale` and `drop` 380 of 380, `quantile` 190 of 190), no
+clip fell back from `quantile` to `scale`, and every kept print wrote the
+shipped output. The octave gate is re-read with the harness at 03afd4a,
+as the quantile print's validation read it: two clips
+(the-riddlers, channel-4-adverts-treasure-hunt) read -2.6 and -2.9 dB
+where the guard's first validation read -5.5 and -5.7, so 53 of the 56
+fail at the stage and each failing count here is two under the Denoise
+column above. Columns: clips touched (failing / passing), failing clips
+still failing, passing clips that start failing, then medians over each
+group (failing / passing, in dB, output minus source): quiet-frame
+removal (`measure_tradeoff`), and the APL hiss diagnosis's floor under
+the programme and level in the true pauses (3-16 kHz, its `measure.py`).
+
+| D | Action | Touched | Failing | New | Removal | Prog. hiss | Pause hiss |
+| ---: | :--- | :--- | ---: | ---: | :--- | :--- | :--- |
+| off | | 0 / 0 | 53 | 0 | 5.48 / 3.23 | -14.1 / -10.7 | -18.8 / -11.8 |
+| 13 | scale | 42 / 43 | 30 | 0 | 3.46 / 2.76 | -9.3 / -8.8 | -12.4 / -10.9 |
+| 13 | drop | 42 / 43 | 14 | 0 | 0.13 / 0.83 | -2.1 / -4.6 | -7.8 / -10.3 |
+| 13 | quantile | 42 / 43 | 30 | 1 | 3.04 / 2.68 | -10.6 / -9.5 | -14.1 / -11.0 |
+| 20 | scale | 47 / 58 | 17 | 0 | 1.46 / 1.66 | -5.1 / -5.5 | -9.8 / -9.8 |
+| 20 | drop | 47 / 58 | 9 | 0 | 0.06 / 0.30 | -2.0 / -3.3 | -3.5 / -8.8 |
+| 20 | quantile | 47 / 58 | 30 | 1 | 2.67 / 2.58 | -10.6 / -9.0 | -13.4 / -10.9 |
+
+At 13, `quantile` cures as many clips as `scale` (23 of 53, 19 of them
+the same) and keeps more of the hiss removal: on the clips it touches the
+floor under the programme comes down 10.3 dB on the failing clips and 9.1
+on the passing ones (shipped 15.0 and 12.0, `scale` 8.1 and 7.8), the
+pauses 14.5 and 10.8 (19.9 and 13.5, `scale` 11.3 and 9.9). Its
+quiet-frame removal is a little lower than `scale`'s (2.4 against 2.6 dB
+on the touched failing clips): the quantile print sits lower under 3 kHz.
+Of the 18 touched clips still failing, 9 read between -3.0 and -3.6 dB.
+The quantile print does not depend on D, so at 20 it cures no more clips
+than at 13: the five failing clips it adds (prints 13-20 dB down) all
+still fail, and the 15 passing ones it adds stay passing. The one new
+failure is potsworth-nick-super-switch (print 9.4 dB down), already near
+the gate on the shipped print (-2.4 dB, -4.4 on the quantile print, which
+removes more there: programme hiss -17.1 against -16.2 dB). The guard
+spares the quantile method's other two new failures, whose prints sit
+37 and 104 dB down (itv-continuity, lion-king-dodge).
+
+The four local Tata tapes at 13 with `quantile` (whole, CPU, the full app,
+each variant on its own copies): the guard keeps all four stitched prints
+(13.7-16.9 dB down) and the decoded output and the denoise stage are byte
+for byte those with the guard off, which are also the guard
+investigation's guard-off outputs. At 20 the guard fires on all four and
+the outputs are byte for byte `cathar_noiseprint_method: quantile`'s, with
+its 1.5-3.1 dB more hiss above 7 kHz ("The four Tata tapes" below).
+
+For the listening session: 13 with `quantile`, against the shipped print
+on the 85 hunt clips it touches. It cures what `scale` at 13 cures, keeps
+more hiss removal than `scale`, and leaves the family tapes alone; 20 with
+`scale` cures 13 more failing clips, but the hiss floor under the
+programme then comes down 5 dB instead of 14 on the failing clips and the
+removal halves on all four Tata tapes. Not judged by ear.
+
 ## cathar Quantile Noise Print
 
 `cathar_noiseprint_method` (`window` or `quantile`), added on 2026-10-12.
@@ -1226,7 +1299,9 @@ learns no print either way, and auto_pure_linear's subtraction never reads
 the key. At `window` the quantile module is never read: every command line
 is HEAD 053ba30's (`tests/unit/test_cathar_quantile_print.py`), the five
 cathar reference clips decode 5/5 identical on CPU, and the four Tata tapes'
-outputs decode byte for byte as the depth guard's guard-off run.
+outputs decode byte for byte as the depth guard's guard-off run. The depth
+guard's `quantile` action writes the same print and subtracts it only where
+the window print is shallow ("The three actions on one reading" above).
 
 ### Calibration on realistic-v2
 

@@ -481,7 +481,10 @@ arnndn_enable_adeclick: true
 #     stems.octave_programme failures (their windows a median 8.3 dB under the
 #     loud frames, 13.0 on the passing clips). 'scale' (Default) scales the
 #     print so it sits exactly that deep (<print>_depth<D>db.np.json); 'drop'
-#     denoises without a learned print, as the music profile does.
+#     denoises without a learned print, as the music profile does; 'quantile'
+#     subtracts the whole-file quantile print instead (cathar_noiseprint_method
+#     below), and scales when it cannot be learned (fewer than 20 live
+#     windows), with a WARNING.
 #   - At 20 on the 159 speech-profile hunt clips (cathar 0.8.0 on CPU at the
 #     denoise stage, 2026-10-12): 109 touched; failing clips still failing 25
 #     of 62 ('scale') or 17 ('drop'), no passing clip fails, quiet-frame removal
@@ -492,6 +495,14 @@ arnndn_enable_adeclick: true
 #     loud frames, so at 20 the guard fires on all four and the denoise removes
 #     about half the noise ('scale') or none ('drop'); at 13 all four come out
 #     byte for byte as with the guard off. Not judged by ear; cathar only.
+#   - 'quantile' (2026-10-12, the 56 denoise-class failing and 96 passing hunt
+#     clips, re-read with the harness at 03afd4a, where 53 fail at the stage):
+#     at 13, 30 still fail as on 'scale' (14 on 'drop'), one passing clip
+#     starts, and the hiss floor under the programme comes down 10.6 / 9.5 dB
+#     (failing / passing; shipped 14.1 / 10.7, 'scale' 9.3 / 8.8). At 20 it
+#     still leaves 30 (the quantile print does not depend on D; 'scale' 17).
+#     The Tata tapes keep their bytes at 13. Candidate for the listening
+#     session: 13 with 'quantile'.
 #
 # cathar_noiseprint_method (2026-10-12):
 #   - 'window' (Default): the print is learned from the quietest 0.75 s (six

@@ -881,7 +881,8 @@ def _window_print(current, work_dir, total_duration):
     if np_path is None or CATHAR_NOISEPRINT_MIN_DEPTH_DB <= 0:
         return np_path
     pick = functools.partial(_probe_windows, current, probe_s, stitched, CATHAR_NOISEPRINT_MUTE_GUARD)
-    return noiseprint_depth.guard_print(np_path, current, pick, CATHAR_NOISEPRINT_MIN_DEPTH_DB, CATHAR_NOISEPRINT_SHALLOW_ACTION)
+    action = noiseprint_depth.shallow_action(CATHAR_NOISEPRINT_SHALLOW_ACTION, CATHAR_NOISEPRINT_METHOD)
+    return noiseprint_depth.guard_print(np_path, current, pick, CATHAR_NOISEPRINT_MIN_DEPTH_DB, action)
 
 
 def _probe_windows(wav_path, duration_s, stitched, mute_guard):

@@ -387,7 +387,7 @@ def test_the_tuning_driver_reads_the_depth_as_a_float_from_0_to_60():
 
 
 def test_the_tuning_driver_reads_the_shallow_action_as_a_choice():
-    assert tune_restoration.known_config_fields()["cathar_noiseprint_shallow_action"] == ({"scale", "drop"}, None, None)
+    assert tune_restoration.known_config_fields()["cathar_noiseprint_shallow_action"] == ({"scale", "drop", "quantile"}, None, None)
 
 
 def test_the_keys_never_reach_auto_pure_linears_subtraction(tmp_path):

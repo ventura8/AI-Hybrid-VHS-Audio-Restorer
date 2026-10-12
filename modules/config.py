@@ -238,14 +238,17 @@ _NUMERIC_CONFIG_FIELDS = (
     ("cathar_noiseprint_duration_s", float, 4.5, 0.0),
     # cathar's noise-print depth guard (modules/noiseprint_depth.py): a print whose window(s) sit
     # less than this many dB under the material's loud frames (p90 of 1024-sample frame RMS) is
-    # programme, and cathar_noiseprint_shallow_action scales it to this depth or drops it. On a
-    # 15 s clip with no pause the print is the quietest 0.75 s of programme: on the IA hunt the
-    # failing speech-profile clips' windows sat a median 8.3 dB under the loud frames against
-    # 13.0 on the passing ones, and the subtraction stripped the background bed on 56 of cathar's
-    # 64 stems.octave_programme failures. At 20 (CPU, 159 hunt clips) 25 of the 62 failing clips
-    # still fail on 'scale' and 17 on 'drop', none new; but the four Tata tapes' stitched pauses sit
-    # only 13.7-16.9 dB down, so 20 fires on all four and halves their noise removal ('scale'); at
-    # 13 they keep their bytes. 0 (the default) skips the guard, so every output keeps its bytes
+    # programme, and cathar_noiseprint_shallow_action scales it to this depth, drops it or replaces
+    # it with the whole-file quantile print. On a 15 s clip with no pause the print is the quietest
+    # 0.75 s of programme: on the IA hunt the failing speech-profile clips' windows sat a median 8.3
+    # dB under the loud frames against 13.0 on the passing ones, and the subtraction stripped the
+    # background bed on 56 of cathar's 64 stems.octave_programme failures. At 20 (CPU, 159 hunt
+    # clips) 25 of the 62 failing clips still fail on 'scale' and 17 on 'drop', none new; but the
+    # four Tata tapes' stitched pauses sit only 13.7-16.9 dB down, so 20 fires on all four and
+    # halves their noise removal ('scale'); at 13 they keep their bytes. 'quantile' at 13 (CPU, the
+    # 56 failing / 96 passing hunt clips) leaves 30 of the 53 failing at the stage failing, as
+    # 'scale' does, one passing clip new, and keeps more hiss removal (programme floor -10.6 / -9.5
+    # dB against -9.3 / -8.8). 0 (the default) skips the guard, so every output keeps its bytes
     # (docs/configuration.md, "cathar Noise-Print Depth Guard").
     ("cathar_noiseprint_min_depth_db", float, 0.0, 0.0, 60.0),
     ("cathar_dehum_harmonics", int, 8, 1),
@@ -775,8 +778,10 @@ VALID_LOUDNORM_LINEAR_FALLBACKS = {"ffmpeg", "gain_limiter"}
 VALID_CATHAR_DECLIP_MODES = {"always", "detected"}
 # What the noise-print depth guard does with a print shallower than cathar_noiseprint_min_depth_db:
 # 'scale' scales its magnitudes so it sits exactly that deep, 'drop' denoises without a learned
-# print (as the music profile does). Read only with the guard on (modules/noiseprint_depth.py).
-VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS = {"scale", "drop"}
+# print (as the music profile does), 'quantile' replaces it with the whole-file quantile print
+# (modules/noiseprint_quantile.py), and scales it when that cannot be learned. Read only with the
+# guard on (modules/noiseprint_depth.py).
+VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS = {"scale", "drop", "quantile"}
 # Where cathar's learned print comes from (modules/noiseprint_quantile.py): 'window' learns it from
 # the quietest 0.75 s (six stitched pauses on 90 s or more), as every release has; 'quantile' writes
 # it from the whole material, per bin the 5th percentile of the 0.37 s moving mean (+0.62 dB),
