@@ -33,6 +33,7 @@ from . import apl_stems as _apl_stems
 from . import deepfilter_denoise as _deepfilter
 from . import denoise_cache as _denoise_cache
 from . import denoise_chunking as _denoise_chunking
+from . import denoise_model as _denoise_model
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
 from . import neural_level as _neural_level
@@ -499,11 +500,6 @@ def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_durati
     return final_output
 
 
-def _has_denoised_candidates(candidates_denoised):
-    """Checks whether any candidate files exist in denoised directory."""
-    return bool(candidates_denoised)
-
-
 def _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure):
     """Handles failure when separator produces no candidates."""
     if fallback_on_failure:
@@ -512,13 +508,11 @@ def _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_f
     raise RuntimeError(warning_message.strip())
 
 
-def _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure):
-    """Selects primary denoised output file from generated candidates."""
-    clean_candidates = [f for f in candidates_denoised if "(No Noise)" in f.name]
-    if clean_candidates:
-        return clean_candidates[0]
-    if _has_denoised_candidates(candidates_denoised):
-        return candidates_denoised[0]
+def _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure, model_name=None):
+    """Selects the clean stem the separator wrote (`denoise_model.clean_stem`): '(No Noise)', the MDXC target, never a residual."""
+    chosen = _denoise_model.clean_stem(candidates_denoised, model_name)
+    if chosen is not None:
+        return chosen
     return _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure)
 
 
@@ -529,7 +523,7 @@ def _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, 
     log_msg("    [AI] Starting Inference (GPU Accelerated)...")
     separator.separate(str(input_wav))
     candidates_denoised = sorted(denoised_output_dir.glob(WAV_GLOB), key=lambda path: path.name.lower())
-    return _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure)
+    return _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure, model_name)
 
 
 def _denoise_one_chunk(model_name):
@@ -544,12 +538,17 @@ def _denoise_one_chunk(model_name):
         separator = _build_separator(out_dir, normalization_threshold=_denoise_chunking.CHUNK_PEAK)
         _load_separator_model(separator, model_name)
         separator.separate(str(chunk_wav))
-        produced = _denoise_chunking.clean_output_in(out_dir)
+        produced = _denoise_chunking.clean_output_in(out_dir, model_name)
         if produced is None:
-            raise RuntimeError(f"UVR-DeNoise produced no clean stem for {chunk_wav.name}")
+            raise RuntimeError(f"The denoiser ({model_name}) produced no clean stem for {chunk_wav.name}")
         return produced
 
     return denoise_chunk
+
+
+def _model_fetcher(model_name, output_dir):
+    """Downloads a model's files without loading it, as its first load would: a fresh store gets the yaml the chunk grid reads."""
+    return lambda: _build_separator(output_dir).download_model_files(model_name)
 
 
 def _run_denoise_separator(
@@ -564,7 +563,10 @@ def _run_denoise_separator(
     try:
         model_name = _resolve_override(denoise_model, DENOISE_MODEL)
         if _denoise_chunking.duration_needs_chunking(input_wav):
-            result = _denoise_chunking.run(input_wav, denoised_output_dir, _denoise_one_chunk(model_name))
+            fetch = _model_fetcher(model_name, denoised_output_dir)
+            result = _denoise_chunking.run(
+                input_wav, denoised_output_dir, _denoise_one_chunk(model_name), model_name=model_name, fetch_model=fetch
+            )
         else:
             result = _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, fallback_on_failure)
         log_msg(f"    {selected_label}: {result.name}")
@@ -615,26 +617,28 @@ def _ensure_float_pcm(wav_path):
     return wav_path
 
 
-def _select_preferred_denoised_output(valid_denoised):
-    """Pick a deterministic denoised output, preferring '(No Noise)' when present."""
-    sorted_valid_denoised = sorted(valid_denoised, key=lambda path: path.name.lower())
-    clean_candidates = [f for f in sorted_valid_denoised if "(No Noise)" in f.name]
+def _select_preferred_denoised_output(valid_denoised, model_name=None):
+    """The clean stem among valid outputs a previous run left, or None when all are residuals (`denoise_model.clean_stem`)."""
+    return _denoise_model.clean_stem(valid_denoised, model_name)
 
-    if clean_candidates:
-        return clean_candidates[0]
 
-    return sorted_valid_denoised[0]
+def _existing_denoised_output(denoised_dir, denoise_model=None):
+    """The clean stem a previous run left in a denoise directory, or None, which denoises afresh.
+
+    A directory holding only a residual stem ('(Noise)', '(other)': a run stopped between
+    the separator's two writes) holds no finished output.
+    """
+    valid_denoised = [f for f in denoised_dir.glob(WAV_GLOB) if is_valid_audio(f)]
+    return _select_preferred_denoised_output(valid_denoised, _resolve_override(denoise_model, DENOISE_MODEL))
 
 
 def _denoise_vocals_step(vocals_wav, denoised_vocals_dir, total_duration=None, denoise_model=None):
     """Step 2b: Denoise Speech Stem (UVR-DeNoise-Lite) via Python API."""
     del total_duration
-    candidates_denoised = list(denoised_vocals_dir.glob(WAV_GLOB))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
+    existing = _existing_denoised_output(denoised_vocals_dir, denoise_model)
+    if existing is not None:
         log_msg("  [Step 2/5] Skipping Speech Denoising (exists)")
-        return _select_preferred_denoised_output(valid_denoised)
+        return existing
 
     log_msg("  [Step 2/5] Denoising Speech Stem (UVR-DeNoise-Lite - AI Engine)...")
 
@@ -651,12 +655,10 @@ def _denoise_vocals_step(vocals_wav, denoised_vocals_dir, total_duration=None, d
 
 def _denoise_background_step(background_wav, denoised_background_dir, denoise_model=None):
     """Step 4: Denoise Background (UVR-DeNoise-Lite) via Python API."""
-    candidates_denoised = list(denoised_background_dir.glob(WAV_GLOB))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
+    existing = _existing_denoised_output(denoised_background_dir, denoise_model)
+    if existing is not None:
         log_msg("  [Step 3/5] Skipping Background Denoising (exists)")
-        return _select_preferred_denoised_output(valid_denoised)
+        return existing
 
     log_msg("  [Step 3/5] Denoising Background (UVR-DeNoise-Lite - AI Engine)...")
 
@@ -673,12 +675,10 @@ def _denoise_background_step(background_wav, denoised_background_dir, denoise_mo
 
 def _denoise_full_audio_step(original_wav, denoised_audio_dir, denoise_model=None):
     """Denoises the full extracted audio track for denoise_only mode."""
-    candidates_denoised = list(denoised_audio_dir.glob(WAV_GLOB))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
+    existing = _existing_denoised_output(denoised_audio_dir, denoise_model)
+    if existing is not None:
         log_msg("  [Step 2/4] Skipping Full-Audio Denoise (exists)")
-        return _select_preferred_denoised_output(valid_denoised)
+        return existing
 
     log_msg("  [Step 2/4] Denoising Full Audio (UVR-DeNoise-Lite - AI Engine)...")
 

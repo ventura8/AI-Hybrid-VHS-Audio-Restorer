@@ -101,7 +101,11 @@ audio alignment, or FFmpeg multiplexing.
    - `_enhance_vocals_step`: Runs Resemble-Enhance with dynamic NFE and Tau
      parameters and GPU retry with CUDA cache flushing.
    - `_denoise_background_step` / `_denoise_full_audio_step`: UVR-DeNoise-Lite
-     inference.
+     inference, or the Mel-RoFormer that `apl_neural_model` names on APL
+     speech. The output, and one a previous run left, is picked by
+     `denoise_model.clean_stem` (`_select_denoised_candidate`,
+     `_existing_denoised_output`); a directory holding only a residual is
+     denoised again.
    - `_ensure_float_pcm`: Restores 32-bit float on any stem a separator emitted
      as fixed-point.
    - `_collect_stem_candidates`: Token-based, case-insensitive stem matching
@@ -111,6 +115,24 @@ audio alignment, or FFmpeg multiplexing.
      tail of `modules/mastering.py`.
    - `_final_mux_single_audio_step`: Direct stream video copy with
      container-dependent audio mux.
+1. **`modules/denoise_model.py`** and **`modules/denoise_chunking.py`**:
+   - `clean_stem`: the one rule for the denoised file, whole or chunked:
+     `(No Noise)` (the VR models), then `(<training.target_instrument>)` from
+     the `_config.yaml` beside an MDXC checkpoint (`(dry)` for the shipped
+     RoFormer), then the first file in name order that is not a residual;
+     never `(Noise)` or `(other)`. It reads the yaml from the folder the
+     separator loads from (`AUDIO_SEPARATOR_MODEL_DIR`, else `models/`).
+   - `mdxc_window` / `grid_for`: an MDXC model's overlap-add window and step
+     (`hop x (dim_t - 1)`, `// num_overlap`: 352,800 and 88,200 samples for
+     the RoFormer). Its chunks start on the step, carry a window of context
+     either side, take no anchor, and are written at the whole file's input
+     gain (`whole_file_input_gain`). The VR models keep `PATCH_FRAMES`, the
+     anchor and the one-stride context.
+   - `_grid_after_fetch` / `processing._model_fetcher`: the yaml reaches the
+     store only with the model's first load (the installers do not provision
+     the RoFormer), so a `.ckpt` model without one is fetched
+     (`download_model_files`, no load) before its chunks are cut; still
+     without a usable yaml it runs on the VR grid with a WARNING.
 1. **`modules/mastering.py`**:
    - `_resolve_loudnorm_args` / `_resolve_single_track_loudnorm_args`:
      two-pass loudnorm to -16 LUFS, -1 dBTP and `loudnorm_target_lra`,
@@ -264,6 +286,23 @@ audio alignment, or FFmpeg multiplexing.
   destination upon success.
 - **Resume Protection**: Check for pre-existing valid stage outputs before
   launching compute-heavy inference steps.
+- **Denoised stem and long tapes**: pick a separator output only through
+  `denoise_model.clean_stem`, never by `models-scores.json`'s `target_stem`
+  (it names `noise` for UVR-DeNoise and UVR-DeNoise-Lite) and never by a
+  hard-coded `(No Noise)`: that rule made the chunked path raise on the
+  RoFormer's `(dry)` / `(other)`, so from v1.3.3 to the 2026-10-11 fix every
+  APL speech tape over the chunk length (57 min on this 62 GB host, 14 min
+  on 16 GB) failed; music tapes run UVR and were spared. The whole-file pass
+  kept its choice (318 denoise directories on this machine: same file). The
+  RoFormer's chunk grid (`grid_for`) reproduced the whole-file render on
+  every body sample and at -158 dB at the seams in a CPU replica of its
+  overlap-add with a stand-in mask (7.2-minute tape, two 300 s chunks; the
+  VR grid drifted to -47 dB), and again with audio-separator 0.47.0's own
+  `MDXCSeparator.separate` / `demix` and a stub network driven through
+  `_run_denoise_separator` (synthetic 150 s, three 60 s chunks: body equal,
+  seams -161 dB; VR grid -23 to -33 dB); the real network has not been run
+  chunked yet. The chunk length still rests on UVR's measured 32 GB/h: the
+  MDXC separator's memory per hour is unmeasured.
 - **Video Stream Copy**: Never re-encode the video stream (`-c:v copy`) during
   audio extraction or remuxing.
 - **cathar bit-identity**: after any change under `modules/`, restore the five

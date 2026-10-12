@@ -79,13 +79,16 @@ denoise_model: "UVR-DeNoise-Lite.pth"
 adaptive_denoise_threshold_db: -50.0
 
 # neural_chunk_seconds:
-#   - The longest track the UVR denoiser processes in one pass, in seconds.
-#   - The separator keeps several full-length copies of the track in memory after
+#   - The longest track the neural denoiser (UVR, or the Mel-RoFormer that
+#     apl_neural_model names) processes in one pass, in seconds.
+#   - The UVR separator keeps several full-length copies of the track in memory after
 #     inference, about 30 GB per hour of audio, so a long capture fails outright:
-#     3h00m runs out of memory on a 62 GB machine. A track longer than this value is
-#     cut into equal chunks no longer than it, each overlapping the next by two
-#     seconds, denoised one at a time and rejoined with a crossfade; the result is
-#     the whole-track result to within float rounding (see docs/configuration.md).
+#     3h00m runs out of memory on a 62 GB machine. The RoFormer's memory per hour has
+#     never been measured; it is sized by the same figure. A track longer than this
+#     value is cut into equal chunks no longer than it, each overlapping the next by
+#     two seconds, denoised one at a time and rejoined with a crossfade; the result is
+#     the whole-track result to within float rounding, on each model's own grid (see
+#     docs/configuration.md, "Long Captures").
 #   - Default: 0, which sizes the chunk from the machine: half its memory at that
 #     rate, between five minutes and two hours (57 minutes on a 62 GB desktop,
 #     28 on a 30 GB laptop). Tracks up to the chunk length are processed whole. Set
