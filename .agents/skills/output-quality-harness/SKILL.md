@@ -1103,32 +1103,54 @@ only a blind session at a recorded device and volume moves L_crit.
   a band of 2 kHz or more and at least two reference bands; an unvalidated
   window abstains from the ranked fields.
 
-`hiss_programme.py`, the hiss left under the programme (a port of the
-`hup3` prototype, identical on its probe):
+`hiss_programme.py`, the hiss left under the programme (the `hup3`
+prototype's estimator, rebuilt after validation round 1):
 
-1. Window guard (the prototype had none): a non-finite sample, a
-   correlation under 0.5 or a programme gain over 6 dB reads every name
-   None (unguarded, the prototype's p90 read +19..+28 on SOTI and Vaccin
-   round-one renders, above the sources' median).
+1. Window guard: a non-finite or still sample, a 300-4000 Hz power
+   envelope correlating under 0.5 between the sides, or a programme gain
+   over 24 dB (a sanity bound) reads every name None. Round 1's waveform
+   correlation (0.5) and 6 dB gain rejected every Gaudeamus render: their
+   programme band is polarity-inverted and 2 ms off the runner's LF-led
+   lag (waveform correlation 0.31-0.34, envelope 0.96-1.00), and the
+   least-squares gain match shrank them 8.2-8.3 dB (Gaudeamus1) and
+   14.6-14.9 dB (Gaudeamus5) in every window, which R1's gain undoes.
 1. True pauses: DSP-VAD non-speech runs of 200 ms or more within 6 dB of
    the floor; the rest is active. Floor under the programme: `block_floor`,
-   held no higher than the anchor.
+   held no higher than the anchor, whose unread (NaN) bands take the anchor
+   interpolated in log level across them (a held note in a music fixture's
+   quiet frames left a band unread and its floor uncapped: the note, 15 dB
+   over the hiss, read as a +20 dB hiss).
 1. Noise-dominated cells (NDC): the band valley within 1.5 dB of the floor
-   two frames before and after (never the frame itself, which selected on
-   its own noise draw), ring mean (bins f+-2..4) at or under the floor, the
-   cell at most 10x its ring. Readable band: 40 cells, 2 % of its active
-   cells, a source NDC mean within -2..+1 dB of the floor, a floor over the
-   dither plus 10 dB.
-1. Removal: sum O / sum S over the NDC cells (output in the source's
-   programme gain), local over +-0.5 s where 40 cells allow; unreadable
-   bands interpolated in dB over log2 f, the pooled ratio outside, capped at
-   0 dB and bounded by each side's valleys. Hiss band power = floor x bins x
-   ratio.
+   two frames before and after, ring mean (bins f+-2..4) at or under the
+   floor, no partial in the same bin two frames away (10x its ring). Nothing
+   selects on the cell's own power: round 1's cap on it (10x its ring) kept
+   the low draws and read a fresh realisation 3.7 % over the source per band.
+   Readable band: 40 cells, 2 % of its active cells, a source NDC mean within
+   -2..+1 dB of the floor, a floor over the dither plus 10 dB.
+1. Removal: sum O / sum S over NDC cells (output in the source's programme
+   gain), local over +-0.5 s where 40 cells allow, read apart in two classes:
+   free band-frames (the band's mean power two frames before and after within
+   1.3x the floor: gaps between words, bands above the programme) and busy
+   ones; each frame takes its own class's ratio, so the pause floor keeper's
+   hiss in the gaps between words is read in those gaps.
+1. Spectral cap: a band's ratio stands at most 6 dB over the ratio the free
+   cells of the other bands of 1 kHz and up (outside +-2 bands, +-1 frame)
+   show at the same instant. This is the round-1 fix: programme the source's
+   hiss hid is revealed by a clean output and sat in the band-edge NDC cells
+   at 9-16 dB under the floor, so a perfect output read +9..+22. Revealed
+   programme stays in the bands the programme reaches; residual hiss is
+   broadband. Unreadable bands interpolated as before; hiss band power =
+   floor x bins x ratio, no more than the side's own band power over three
+   frames.
 1. Masking (Johnston 1988): offset alpha (14.5 + z) + (1 - alpha) 5.5 dB,
-   alpha the programme's own tonality read on the source with its floor
-   removed (shared by both sides); masker = band power less hiss at L_crit,
-   spread 27 / 12 dB per ERB, PEAQ forward spread over two frames, floored
-   at Terhardt's threshold.
+   alpha the programme's own tonality on the source with its floor removed;
+   one masker for both sides, the source's band power less its hiss (read on
+   the output, the threshold carried the output's own draw and a fresh
+   realisation read +0.4..+0.9 dB more hiss). Each side plays at its own
+   loud frames at L_crit (the output in the source's gain at L_crit less its
+   loud level plus that gain), the pause reading's convention. Spread
+   27 / 12 dB per ERB, PEAQ forward spread over two frames, floored at
+   Terhardt's threshold.
 1. NMR integrated as 10 log10 sqrt(sum NMR^2) over the readable bands of
    1 kHz and up (`margin`), every band of 1 kHz and up (`margin_all`, it
    carries singing) and the readable bands of 3 kHz and up (`margin_hf`);
@@ -1137,11 +1159,14 @@ only a blind session at a recorded device and volume moves L_crit.
    None.
 1. Guards, paired (0, value): `hiss_pump_db` (hiss kept under the programme
    against the pauses' own removal: positive = gated out of the pauses and
-   left under speech; needs 0.5 s of pause), `hiss_prog_kept_hf_db` (output
-   over source on active cells of 3 kHz and up standing 18 dB over the
-   floor: dulling) and `hiss_island_kurt` (R4's frame kurtosis on 20 ms
-   frames, 3 kHz to 1.06 x the top readable band; None when the output's
-   margin is under -10 dB).
+   left under speech; needs 0.5 s of pause), `hiss_prog_kept_hf_db` (per
+   band of 3 kHz and up, the median output over source on active cells
+   standing 18 dB over the floor, both held at the 16-bit dither, averaged
+   over the bands with 20 such cells: dulling; round 1's median over all
+   cells hid a cut of the band edge behind the 3-4 kHz cells and missed the
+   4 kHz low pass on 9 of 23 fixtures) and `hiss_island_kurt` (R4's frame
+   kurtosis on 20 ms frames, 3 kHz to 1.06 x the top readable band; None
+   when the output's margin is under -10 dB).
 
 `hiss_pause.py`, the hiss in the pauses (the pause design's prototype with
 block estimator, q 0.5, raw shape, no trim, Terhardt):
@@ -1154,13 +1179,18 @@ block estimator, q 0.5, raw shape, no trim, Terhardt):
 1. 1-ERB bands from 50 Hz to min(16 kHz, Nyquist, brickwall); the
    stationary floor per band is the median over 200 ms blocks of each mask
    run (a tail of 5 frames kept), divided by the Wilson-Hilferty median/mean
-   ratio max(1 - 1/(9k), 0.05)^3, k = max(kept bins / 1.5, 0.5) x 10.
-1. rel_b = floor_b in dB re the side's own whole-file loud frames.
+   ratio max(1 - 1/(9k), 0.05)^3, k = max(kept bins / 1.5, 0.5) x 10. The
+   median stays: the mean (tried in round 1's fixes) let the soft programme
+   a clean output reveals in the source's quiet frames read up to +43 dB.
+1. rel_b = floor_b in dB re the side's own whole-file loud frames; for the
+   margin each band takes the power mean of itself and its two neighbours
+   (realisation scatter sd 0.25 -> 0.13-0.18 dB on the fixtures).
    w(f) = 1 / (1 + exp(-log2(f / 2500) / 0.25)): 0.05 at 1.5 kHz, 0.22 at
    2 kHz, 0.5 at 2.5 kHz, 0.94 at 4 kHz.
 1. `margin` = max over bands of 1 kHz and up of L_crit + rel_b + 10 log10 w
-   minus (Tq - 3); no band holding anything reads L_crit - 140 = -65, never None
-   (an empty output loses nothing for being unread). `onset` = L_crit - margin
+   minus (Tq - 3), never under L_crit - 140 = -65 (a band-filtered pause read
+   -1843 in round 1); no band holding anything reads -65, never None (an
+   empty output loses nothing for being unread). `onset` = L_crit - margin
    (level-free). `room_onset` (100-2000 Hz, unweighted), `room_delta` (the
    100-1500 Hz floor re loud frames, output minus source: dead air reads far
    under 0), `sone` (Zwicker loudness x Bark width x w).
@@ -1213,9 +1243,9 @@ default `--grid` of `autotune_restoration.py` and `tune_restoration.py`;
 the v3 grids stay for reproducibility.
 
 - `tata_v4`: v3's ranking without R4's slope, spread and LSD (display only),
-  plus `dsp.hiss_prog_excess_db.output.median` (weight 3.0, tie 0.25),
-  `dsp.hiss_prog_excess_all_db.output.median` (1.5, 0.20),
-  `dsp.hiss_pause_excess_db.output.tail` (3.0, 0.25) and `.median` (1.5, 0.50),
+  plus `dsp.hiss_prog_excess_db.output.median` (weight 3.0, tie 0.10),
+  `dsp.hiss_prog_excess_all_db.output.median` (1.5, 0.25),
+  `dsp.hiss_pause_excess_db.output.tail` (3.0, 0.20) and `.median` (1.5, 0.35),
   each one-sided (target 0, dead zone 0, scale 1). The vetoes are v3's six plus
   DNSMOS BAK and SIGMOS NOISE (floor multiple 1): the guards line reads "8
   learned vetoes, 1 verdict reversals, 16 constraints, audibility tie at a 24 dB
@@ -1225,11 +1255,12 @@ the v3 grids stay for reproducibility.
   entries, eight relative constraints (accepted music finals sit outside
   music_v3's uncalibrated R1 dead zones).
 - `tie` is the jitter report's floor for that flat key, rounded up to 0.05:
-  programme excess median 0.202, all-band 0.196, pause excess tail 0.244, median
-  0.473 (`experiments/reward/noise_floor_hiss.json`, 2026-10-12: eight pairs,
-  two repeats, DSP repeat jitter exactly 0). H1's `max_move` equals the tie;
-  H2's bound is its delta key's own floor (programme 0.109 -> 0.15, pause tail
-  0.321 -> 0.35, music all-band 0.334 -> 0.35).
+  programme excess median 0.073, all-band 0.247, pause excess tail 0.174,
+  median 0.327 (`experiments/reward/noise_floor_hiss.json`, validation round 1
+  of 2026-10-12: eight pairs, two repeats, DSP repeat jitter exactly 0, the
+  fixed `fresh_floor`). H1's `max_move` equals the tie; H2's bound is its
+  delta key's own floor (programme 0.130 -> 0.15, pause tail 0.181 -> 0.20,
+  music all-band 0.244 -> 0.25).
 - `constraints:` (`reward.Constraint`, `autotune_guards.mark_constraints` in
   both judging passes): a candidate whose reading, on some tape, is worse than
   the incumbent's by more than `max_move` (default 0) and lies beyond `bound`
@@ -1251,9 +1282,27 @@ The benign transforms (`scripts/same_percept.py`; `reward_noise_floor` with
 `--transforms hiss`): `gain_up_0_1`, `gain_down_0_1` (x 10^(+-0.1/20)),
 `delay_0_37` (FFT fractional delay, pad 8192), `resample_soxr` (librosa soxr_hq
 round trip through `round_trip_rate`, never `resample_poly`), `requantise_16`
-and `fresh_floor_a/b/c` (30 s blocks, 1 s crossfade; STFT 1024 / 768; the
-noise-led cells, envelope at most 2x the block's per-bin P20, take seeded white
-noise at the 5 x 5 envelope). Run before a v4 round:
+and `fresh_floor_a/b/c` (30 s blocks, 1 s crossfade; STFT 1024 / 768). The
+noise-led cells have a 5 x 5 envelope within 3x the block's per-bin P20 of
+it and within 2x the median envelope of the 21 bins around it; each mixes
+one file-long seeded white noise at the envelope power-complementarily with
+the old cell, its share rising 0 to 1 as its 5 x 5 neighbourhood goes 50 to
+90 % noise-led. Round 1 fixed three defects here: a held note sits at its
+own P20 like the floor and was redrawn as a band of noise (Gaudeamus5's
+pause median +1.6..+2.1 dB; the spectral-peak test); the 2x test (1.5x a
+stationary floor's mean) failed about 5 % of pure-noise cells, whose islands
+of the old draw lost their energy in the inverse STFT, so a white noise came
+back 0.32 dB down, correlated 0.26 with the old draw, and every fresh pause
+reading read low; and independent draws per block lost up to 3 dB in the
+crossfades. Now a white noise keeps its power within 0.04 dB at correlation
+0.07, and each level of a 20 dB gated noise within 0.05 dB; musical-noise
+islands and held tones stand over 3x the P20 and stay (deciding on 9 x 9
+means redrew them and moved cathar renders' programme reading -0.3..-0.8
+dB, a change of texture). A render
+whose floor sits at two levels (an expander-gated floor 20 dB under a
+keeper-filled pause, APL's B above 4 kHz) keeps its pause cells there: the
+block P20 is the gated level, so those pairs do not show the high bands'
+realisation scatter. Run before a v4 round:
 
 ```text
 python -m scripts.reward_noise_floor "<v4_air>\<tape>__source.wav=<v4_air>\<tape>__B_air_1dB.wav" (x4)
@@ -1263,14 +1312,18 @@ python -m scripts.reward_noise_floor "<v4_air>\<tape>__source.wav=<v4_air>\<tape
 
 The report pools every transform into one p95 floor; `by_transform` keeps
 each one's largest deviation and `percentile_by_transform` its own p95.
-On the 2026-10-12 report: gain 0.000 and soxr 0.000 on every margin and
-excess key; delay p95 0.003-0.029 (largest 0.124, a programme tail);
-requantisation at most 0.037; the fresh realisations set every floor
-(p95 0.31 programme median, 0.30 all-band, 0.28 pause tail, 1.78 pause
-median, all of the last from Gaudeamus5's B, a music tape; 0.47
-without it). Requantisation moves `hiss_prog_kept_hf_db` on Vaccin by
-up to 2.9 dB (its high band sits near the 16-bit floor): the guard only
-trips downward, so dither can hide dulling but not exclude a render.
+On the round-1 report (2026-10-12): gain and soxr 0.000 on every margin
+and excess key; delay at most 0.036 and requantisation at most 0.038 on the
+ranked keys; the fresh realisations set every floor (programme excess
+median 0.073, all-band 0.247, pause tail 0.174, pause median 0.327). The
+fresh draws alone move the pause median up to 0.99 and the tail up to 0.80,
+both on Gaudeamus5's cathar final (music pauses); the speech pairs at most
+0.36 / 0.24. The first build's report read the pause median at 1.78 (the
+fresh floor redrawing Gaudeamus5's held notes), its `fresh_floor` lost 0.32
+dB of a white noise (pause ties 0.35 / 0.45 before the fix), and
+requantisation moved `hiss_prog_kept_hf_db` on Vaccin by 2.9 dB; the
+spectral-peak test, the power-keeping redraw and the dither floor on the
+guard took all three away (kept HF p95 0.003).
 
 The degradations (`scripts/degradations_hiss.py`,
 `quality_degradations.HISS_DEGRADATIONS`, fixtures only): a linear capture
@@ -1282,7 +1335,9 @@ The specification named the fixture's recorded noise for the capture; that
 noise is rumble-heavy, the VAD found no true pauses in the gapped capture
 and `low_floor_kept` read NaN, so the capture takes tape hiss instead. The
 benign `*_linear` cases (identity, requantise, soxr, +0.1 dB, 0.37-sample
-delay, `fresh_noise_linear`) set the `dsp.hiss_*` floors alone
+delay, `fresh_noise_linear`, since round 1 an exact fresh draw of the tape
+hiss: `same_percept.fresh_like` carried the old draw's local fluctuation
+into the new one) set the `dsp.hiss_*` floors alone
 (`benign_only`); every other floor is untouched (51 of 51 identical, en
 and fr). `calibration_checks` gains `steady` (the level medians span at
 most max(tolerance, 3 floors)) and `below` (every median at or under the
@@ -1304,28 +1359,74 @@ acceptance rows. A shape derived from a family tape stays under the
 gitignored `artifacts/`.
 
 The acceptance record, every row with its measured value, is
-`docs/ear_v4_hiss.md`. What did not pass: the fresh p95 of the pause median
-(1.78, Gaudeamus5) and of the fixtures and `fresh_noise_linear` (1.0-1.6
-programme); a perfect fixture output under 0 (0 of 23: the saturation);
-`lp4k_all` kept HF at or under -1 on 14 of 23 fixtures; the `hiss_islands` check
-(2.25 floors at the mild level, rule 3); the programme-only spreads on S and V
-(all-band 0.21 / 0.26, kept HF 0.31 / 1.26) and G's pause spread (0.109); the
-two SPL conventions (5 of 12 within 0.3 dB); single4s on T (+0.18 over stitched,
-not +2); the plateau rule on G (the programme abstains, 9 of 12); less removal
-on S (H1 trips on the pause tail, +0.638); music coverage (no validated window
-on 13 clips); the IA pause removal (6 cathar and 15 APL clips under -0.55).
-Everything else passed, including every round-one hiss label, the dead-air,
-cheat, fill and underwater exclusions, identity, Session 0 and raw-hissier rows.
+`docs/ear_v4_hiss.md`. Validation round 1 (2026-10-12) failed the first
+build and fixed the implementation, not the bars; the record lists each
+defect, its cause and its fix. What still does not pass: the fresh draws'
+p95 on the pause keys (median 0.99 against 0.35 and tail 0.80 against 0.55,
+both from Gaudeamus5's cathar final, whose pauses hold quiet music the
+transform partly redraws; the speech pairs at most 0.36 / 0.24) and the
+fixtures' pause fresh p95 (0.51-0.54); two perfect fixture outputs over 0
+(one music fixture whose programme ends at 2.2 kHz, +0.38 / +4.5; 41 of 43
+pass); one `lp4k_all` fixture (-0.35, its programme ends at 3.6 kHz); the
+corpus shape's validation share (12 of 40); single4s on T (+0.43 over
+stitched, not +2); T's fill 8 pauses 0.44 dB over the raw tape (0.24 past
+the tie); the IA pause removal (5 cathar and 14 APL clips under -0.55).
+Five rows contradict the evidence and are reported, not gamed: the air
+shelf is no programme-only change (it lifts the residual hiss 0.3-1.3 dB, so
+the all-band and kept-HF spreads move); "cathar alpha 2 has hiss" was not
+blind and the user's blind ABX could not tell 0.7.3 from 0.7.5 (8 of 16;
+pauses 13 of 14 "same"), so the programme flag stays off (the pause flag
+fires); "hiss on every v2 plateau" is the harness's own note, the listener
+marked both v2 finals clean (10 of 12 flagged); less removal on S adds 0.53
+dB of audible pause hiss, over the 0.20 tie (H1 trips, as on T's alpha 2 on
+0.7.3, 0.32); single4s is dull on T only by the user's flags (the guard
+trips on T and V, not S). Everything else passes: identity, Session 0,
+raw-hissier (but T fill 8), the dead-air, cheat, fill and underwater
+exclusions, both Gaudeamus clips read, every calibration check, the cost.
 
 Pitfalls:
 
-- The prototype's programme tail is contaminated without the window guard:
-  misaligned windows read +19..+28 on SOTI and Vaccin renders, above the
-  sources' median. The guard (correlation 0.5, gain 6 dB) is part of the
-  reading, and the tail is not ranked.
+- A clean output reveals the soft programme the source's hiss hid (band-edge
+  bands 9-16 dB under the floor): any reading of "what the output kept of
+  the source's noise cells" counts it as hiss, and the first build read a
+  perfect output +9..+22 (saturating 13-14 dB under the source). Read the
+  free band-frames apart and cap each band's ratio 6 dB over the other
+  bands' free cells (`hiss_programme.spectral_cap`).
+- A transform that redraws some cells and keeps others must keep power
+  across the seam: islands of the old draw lose their energy in the inverse
+  STFT (the first `fresh_floor` lost 0.32 dB of a white noise and up to 3
+  dB in its crossfades, and every fresh pause reading came out low). Set
+  the steady test over the floor's own fluctuation (3x the P20, not 2x),
+  mix the seam power-complementarily and draw one noise for the file. Check
+  a white noise's power and its correlation with the old draw: a transform
+  that keeps part of the old draw (a soft share everywhere correlated 0.41)
+  reads smaller ties than a fresh draw would, and one that redraws a
+  residual's musical-noise islands changes its texture, not its draw.
+- The jitter report caches each near-copy as
+  `<cache-dir>/noise_floor/<output key>_<transform>.wav` and reuses it on
+  every later run: after changing a transform in `same_percept.py`, delete
+  those files (or score through a new cache dir), or the report re-scores
+  the old near-copies (round 1's first re-run did, and read the old floors
+  to the third decimal).
+- The pause median's realisation scatter is the estimator's own on short
+  pauses: 0.5-1.5 s of pauses per window, a 3-band power mean, the median
+  over 200 ms blocks, then the median over windows (fresh draws move it up
+  to 0.36 on T's B). The mean
+  would halve it but let a perfect output's pauses read up to +43.
+- The window guard is part of the programme reading: misaligned windows
+  read +19..+28 on SOTI and Vaccin renders without it. It is the 300-4000
+  Hz envelope correlation (at least 0.5), not the waveform's (Gaudeamus'
+  renders are polarity-inverted), and a 24 dB sanity bound on the
+  least-squares gain (Gaudeamus5's renders sit 14.6-14.9 dB under their
+  source); the tail is not ranked.
+- Each side plays at its own loud frames (75 dB SPL) in both readings: the
+  least-squares gain only aligns the cell ratios. Setting the output's
+  level through it disagreed with its loud frames by up to 0.88 dB.
 - `clean["*"]` in the verdict ledger would relax the hiss flags: the 13
   pre-rule wildcard records read as clean on every listener flag, so
-  `calibration_gates` never derives `USER_RULE_FIXED` gates.
+  `calibration_gates` never derives `USER_RULE_FIXED` gates. The ledger's
+  "listener.hiss on every v2 plateau" is a harness note on the round-two
+  records, which mark the v2 finals clean: not a verdict.
 - `resample_poly` (the scipy round trip) puts images at -50..-60 dB into
   the noise cells of a deep residual: it is not a same-percept transform
   for hiss; `resample_soxr` is.
@@ -1337,27 +1438,21 @@ Pitfalls:
 - The pause floor keeper (`modules/pause_floor.py`) refills the pauses with
   the pre-conditioned source at `pause_floor_fill_db` 12, so pause hiss is
   pinned at the tape's level and the pause family plateaus until the engine
-  changes (fill 18 is allowed, keeper off excluded by G2).
-- Tele7abc `apl__baseline`: its programme reads +10.8 over the cathar
-  baseline's 0 and its pauses are dead (depth 37.2, pump +18.7), so the
-  same render is the hissiest under speech and the deadest in the pauses;
-  the constraints exclude it before the ranking sees the pause excess of 0.
+  changes (fill 18 is allowed, keeper off excluded by G2; fill 8 lands T's
+  pause tail 0.44 dB over the raw tape).
+- Tele7abc `apl__baseline`: its programme reads 7.1 dB over the cathar
+  baseline's (-2.57 against -9.64, both under the threshold) and its pauses
+  are dead (depth 37.2, pump +18.9); the constraints exclude it before the
+  ranking sees its pause excess of 0.
 - The prototype's `shaped_noise` lacked the FRAME / 2 scaling: its hiss sat
   30.1 dB under the spectrum it was shaped from, so its fixture check
-  (perfect output -8.79, fresh p95 0.617) never met the saturation. At the
-  tape relation the programme reading saturates 13-14 dB under the source
-  and a perfect output reads +9..+22.
-- The fresh realisation moves the programme reading 1.0-1.6 dB (p95) on the
-  fixtures, more than on the tapes: the m12 programmes hold more noise-led
-  cells.
+  (perfect output -8.79, fresh p95 0.617) never met the saturation above.
 - The corpus noise of the fixtures is rumble-heavy: its anchor validates on
-  12 of 40, and the hiss cap reads it 7-19 dB low elsewhere.
-- Music: the programme reading validated no window on the 13 music clips
-  (anchor unvalidated, a band under 2 kHz, or the window guard on a
-  low-correlation render whose least-squares alignment shrank it 8-11 dB).
-- The two SPL conventions disagree up to 0.88 dB on the runner's pair (5 of
-  12 within 0.3): a render that compresses its loud frames moves its own
-  loud-frame anchor away from the programme gain.
+  12 of 40 (T's shape 23, the hiss shape 20), and its fresh p95 reads 0.60
+  on the programme against 0.24-0.34 on the other two shapes.
+- Music: Gaudeamus1 reads 4 of its 8 windows (the rest hold under two
+  readable bands of 1 kHz and up), Gaudeamus5 all 38; the other 11 music
+  clips abstain (anchor unvalidated, or a programme band under 1 kHz).
 
 ### Not built yet
 

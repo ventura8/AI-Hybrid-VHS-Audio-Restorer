@@ -928,7 +928,11 @@ places at one declared critical playback level, each file's loud frames at
   stationary floor (the hiss anchor, read once per source from R4's true
   pauses) and the output's removal on noise-dominated cells give the hiss;
   the programme masks it (Johnston's tonal and noise offsets, spread across
-  ERB bands and forward in time).
+  ERB bands and forward in time). Programme the source's hiss hid, which a
+  clean output reveals, is told from hiss by a spectral cap: a band's
+  residual stands at most 6 dB over what the other bands show at the same
+  instant (validation round 1: the first build read a perfect fixture output
+  +9..+22 dB, the fixed one at or under 0 on 41 of 43 linear fixtures).
 - `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
   floor over Terhardt's threshold in quiet. Room tone under about 2 kHz
   barely counts; dead air is a guard of its own.
@@ -936,7 +940,11 @@ places at one declared critical playback level, each file's loud frames at
   one-sided with target 0 by `scripts/tune_grids/tata_v4.yaml` and
   `music_v4.yaml`, the loop's and the sweep's default, with tie bands from
   same-percept transforms (`scripts/reward_noise_floor.py` with
-  `--transforms hiss`), never from Session 0's benign pairs.
+  `--transforms hiss`), never from Session 0's benign pairs. The fresh
+  realisation (`same_percept.fresh_floor`) keeps the floor's power within
+  0.04 dB and redraws it (correlation 0.07 with the old draw); the first
+  build's lost 0.32 dB of a white noise and correlated 0.26 with its draw,
+  so every fresh pause reading came out low and widened the ties.
 - The flags `listener.hiss_programme` (median) and `listener.hiss_pause`
   (tail) fire at 0 dB and are the user's rule: no gates file and no
   calibration moves them (`gates.USER_RULE_FIXED`).
