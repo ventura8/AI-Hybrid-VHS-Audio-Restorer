@@ -26,7 +26,7 @@ try:
 except ImportError:
     sf = None
 
-from . import noiseprint_depth, noiseprint_guard
+from . import noiseprint_depth, noiseprint_guard, noiseprint_quantile
 from .config import (
     CATHAR_ALPHA,
     CATHAR_ALPHA_HIGH,
@@ -82,6 +82,7 @@ from .config import (
     CATHAR_MUSIC_PERSISTENCE_MIN,
     CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
+    CATHAR_NOISEPRINT_METHOD,
     CATHAR_NOISEPRINT_MIN_DEPTH_DB,
     CATHAR_NOISEPRINT_MUTE_GUARD,
     CATHAR_NOISEPRINT_SHALLOW_ACTION,
@@ -851,7 +852,24 @@ def _music_settings():
 
 
 def _learned_print(current, work_dir, total_duration):
-    """The print the denoise subtracts: learned from the quietest tape, then held to `cathar_noiseprint_min_depth_db`.
+    """The print the denoise subtracts: the whole-file quantile print on 'quantile', else (or when it fails) the window pick's.
+
+    `cathar_noiseprint_method` 'window' (the default) never reads the quantile module, so the
+    slice, the noiseprint run and every command line are the window pick's as before.
+    """
+    quantile = _quantile_print(current, work_dir)
+    return quantile if quantile is not None else _window_print(current, work_dir, total_duration)
+
+
+def _quantile_print(current, work_dir):
+    """The quantile print (`modules/noiseprint_quantile.py`) when the key asks for it; None otherwise or when it cannot be learned."""
+    if CATHAR_NOISEPRINT_METHOD != "quantile":
+        return None
+    return noiseprint_quantile.quantile_print(current, work_dir)
+
+
+def _window_print(current, work_dir, total_duration):
+    """The print learned from the quietest tape, then held to `cathar_noiseprint_min_depth_db`.
 
     The depth guard (`modules/noiseprint_depth.py`) runs only with the key over 0; at 0 the
     learned print goes to the denoise as it always has. Its windows are picked again exactly

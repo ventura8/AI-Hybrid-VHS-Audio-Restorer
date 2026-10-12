@@ -224,6 +224,18 @@ The engine supports 10 execution modes configured in `config.yaml`:
     Off keeps HEAD 57bfdb8's command lines
     (`tests/unit/test_cathar_print_depth_guard.py`); it waits for a blind
     listening session.
+  - Quantile noise print (2026-10-12, `cathar_noiseprint_method`, `window`
+    or `quantile`): `quantile` writes the print from the whole material, per
+    bin the 5th percentile of the 0.37 s moving mean plus 0.62 dB, chosen
+    against realistic-v2's exact tape noise (median distance 4.22 dB, the
+    window 4.93) (`modules/noiseprint_quantile.py`). At the IA hunt's denoise
+    stage 25 of the 56 denoise-class octave failures stop failing and 3 of
+    96 passing clips start, but it removes less hiss (the floor under the
+    programme down 10.2 dB, not 14.1; on the Tata tapes 1.5-3.1 dB more hiss
+    above 7 kHz, while the stitched print's 3-6 kHz cut was speech);
+    `cathar_alpha` 1.25 brings the removal back. `window` keeps HEAD
+    053ba30's command lines (`tests/unit/test_cathar_quantile_print.py`); it
+    waits for a blind listening session.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the
