@@ -11,22 +11,22 @@ from scripts.restoration_quality import gates, reward
 GRIDS = Path(tr.REPO) / "scripts" / "tune_grids"
 SHAPE = ("dsp.gap_slope_db_oct.output.median", "dsp.gap_spread_db.output.median", "dsp.gap_lsd_db.output.median")
 HISS_TATA = {
-    "dsp.hiss_prog_excess_db.output.median": (3.0, 0.25, "hiss_programme"),
-    "dsp.hiss_prog_excess_all_db.output.median": (1.5, 0.2, "hiss_programme"),
-    "dsp.hiss_pause_excess_db.output.tail": (3.0, 0.25, "hiss_pause"),
-    "dsp.hiss_pause_excess_db.output.median": (1.5, 0.5, "hiss_pause"),
+    "dsp.hiss_prog_excess_db.output.median": (3.0, 0.1, "hiss_programme"),
+    "dsp.hiss_prog_excess_all_db.output.median": (1.5, 0.25, "hiss_programme"),
+    "dsp.hiss_pause_excess_db.output.tail": (3.0, 0.2, "hiss_pause"),
+    "dsp.hiss_pause_excess_db.output.median": (1.5, 0.35, "hiss_pause"),
 }
-HISS_MUSIC = {**HISS_TATA, "dsp.hiss_prog_excess_all_db.output.median": (3.0, 0.2, "hiss_programme")}
-HISS_MUSIC["dsp.hiss_prog_excess_db.output.median"] = (1.5, 0.25, "hiss_programme")
+HISS_MUSIC = {**HISS_TATA, "dsp.hiss_prog_excess_all_db.output.median": (3.0, 0.25, "hiss_programme")}
+HISS_MUSIC["dsp.hiss_prog_excess_db.output.median"] = (1.5, 0.1, "hiss_programme")
 NOISE_VETOES = {
     "mos.dnsmos_bak.delta.median": {"worse": "down", "floor_multiple": 1},
     "mos.sigmos_noise.delta.median": {"worse": "down", "floor_multiple": 1},
 }
 TATA_CONSTRAINTS = {
-    "dsp.hiss_prog_excess_db.output.median": {"worse": "up", "max_move": 0.25},
-    "dsp.hiss_pause_excess_db.output.tail": {"worse": "up", "max_move": 0.25},
+    "dsp.hiss_prog_excess_db.output.median": {"worse": "up", "max_move": 0.1},
+    "dsp.hiss_pause_excess_db.output.tail": {"worse": "up", "max_move": 0.2},
     "dsp.hiss_prog_margin_db.delta.median": {"worse": "up", "bound": 0.15},
-    "dsp.hiss_pause_margin_db.delta.tail": {"worse": "up", "bound": 0.35},
+    "dsp.hiss_pause_margin_db.delta.tail": {"worse": "up", "bound": 0.2},
     "dsp.pause_depth_speech_db.delta.median": {"worse": "up", "bound": 35.0},
     "dsp.hiss_room_delta_db.output.median": {"worse": "down", "bound": -54.0},
     "dsp.hiss_pump_db.output.median": {"worse": "up", "max_move": 3.0, "bound": 12.0},
@@ -41,9 +41,9 @@ TATA_CONSTRAINTS = {
     "dsp.sib_texture_db.output.median": {"worse": "up", "bound": 2.0},
 }
 MUSIC_CONSTRAINTS = {
-    "dsp.hiss_prog_excess_all_db.output.median": {"worse": "up", "max_move": 0.2},
-    "dsp.hiss_pause_excess_db.output.tail": {"worse": "up", "max_move": 0.25},
-    "dsp.hiss_prog_margin_all_db.delta.median": {"worse": "up", "bound": 0.35},
+    "dsp.hiss_prog_excess_all_db.output.median": {"worse": "up", "max_move": 0.25},
+    "dsp.hiss_pause_excess_db.output.tail": {"worse": "up", "max_move": 0.2},
+    "dsp.hiss_prog_margin_all_db.delta.median": {"worse": "up", "bound": 0.25},
     "dsp.hiss_pump_db.output.median": {"worse": "up", "max_move": 3.0, "bound": 12.0},
     "dsp.hiss_prog_kept_hf_db.output.median": {"worse": "down", "max_move": 1.0},
     "dsp.hiss_island_kurt.output.median": {"worse": "up", "max_move": 0.3},
@@ -66,64 +66,65 @@ DEAD_APL = (
     "apl__roformer_no_expander_no_a",
 )
 BOTH_FLAGS = {"listener.hiss_programme", "listener.hiss_pause"}
-# SOTI's alpha 2.0 raises the pause tail excess 0.638 dB over the baseline's 0, past the pause tie (0.25).
+# SOTI's alpha 2.0 raises the pause tail excess 0.53 dB over the baseline's 0, past the pause tie (0.20).
 LESS_REMOVAL_SOTI = {H2}
 # The stored sets' readings (the acceptance run of 2026-10-12, docs/ear_v4_hiss.md): validate_restoration --metrics dsp at
 # windows 15 s, hop 7.5 s, experiments/hiss_v4/<set>.json; per output, the aggregate a grid reads for each name in READINGS
-# ("-" unread). The family tapes stay on the machine; these are numbers only.
+# ("-" unread). The hiss readings are validation round 1's fixed build (the same windows through the runner's hiss path),
+# the others the acceptance run's. The family tapes stay on the machine; these are numbers only.
 PINNED_TABLE = """
 r1_tele7abc/cathar__baseline
-  0.0 0.0 -28.968 -37.408 32.975 -39.675 2.712 -2.643 1.831 0.959 9.097 -0.231 -0.066 -0.231 -1.892 1.601 -2.938 -4.608
+  0.0 0.0 -34.8 -37.834 32.975 -39.675 2.741 -3.858 1.864 0.959 9.097 -0.231 -0.066 -0.231 -1.892 1.601 -9.639 -4.78
 r1_tele7abc/apl__baseline
-  10.831 0.0 -15.611 -36.954 37.225 -34.252 18.655 -0.318 1.071 0.176 5.928 -0.257 -0.241 -0.257 0.967 2.42 10.831 -4.436
+  0.0 0.0 -27.677 -38.083 37.225 -34.252 18.851 -0.465 1.09 0.176 5.928 -0.257 -0.241 -0.257 0.967 2.42 -2.57 -5.186
 r1_tele7abc/apl__no_air
-  10.34 0.0 -16.275 -36.998 37.491 -34.249 18.663 -0.761 1.072 0.174 5.97 -0.3 -0.291 -0.3 0.111 2.406 10.34 -4.48
+  0.0 0.0 -28.717 -38.144 37.491 -34.249 18.86 -1.095 1.09 0.174 5.97 -0.3 -0.291 -0.3 0.111 2.406 -3.566 -5.247
 r1_tele7abc/apl__no_expander
-  10.83 0.0 -15.603 -33.304 36.888 -31.064 15.413 -0.305 1.073 0.315 5.699 -0.256 -0.241 -0.256 0.967 2.415 10.83 -1.511
+  0.0 0.0 -27.674 -34.439 36.888 -31.064 15.059 -0.436 1.093 0.315 5.699 -0.256 -0.241 -0.256 0.967 2.415 -2.57 -2.13
 r1_tele7abc/apl__no_expander_no_air
-  10.339 0.0 -16.255 -33.355 37.201 -31.058 15.411 -0.706 1.074 0.308 5.784 -0.301 -0.292 -0.301 0.111 2.405 10.339 -1.564
+  0.0 0.0 -28.573 -34.491 37.201 -31.058 15.069 -1.066 1.093 0.308 5.784 -0.301 -0.292 -0.301 0.111 2.405 -3.544 -2.184
 r1_tele7abc/apl__roformer
-  13.723 0.0 -12.653 -124.564 40.306 -118.992 95.677 -0.291 1.279 0.0 0.0 -0.254 -0.268 -0.254 0.948 2.375 13.723 -89.867
+  2.275 0.0 -23.031 -96.704 40.306 -118.992 95.008 -0.415 1.271 0.0 0.0 -0.254 -0.268 -0.254 0.948 2.375 2.275 -65.0
 r1_tele7abc/apl__roformer_no_expander_no_a
-  13.252 0.0 -13.057 -123.01 40.227 -117.958 94.926 -0.673 1.288 0.0 0.0 -0.299 -0.315 -0.299 0.117 2.376 13.252 -89.502
+  1.071 0.0 -24.211 -96.704 40.227 -117.958 94.241 -1.015 1.274 0.0 0.0 -0.299 -0.315 -0.299 0.117 2.376 1.071 -65.0
 r1_tele7abc/cathar075__alpha_2_0
-  0.0 0.0 -26.022 -37.855 31.531 -40.05 0.89 -3.583 1.711 1.734 9.863 -0.963 -0.857 -0.963 -2.466 1.652 -0.627 -4.35
+  0.0 0.0 -31.326 -37.504 31.531 -40.05 1.337 -4.099 1.711 1.734 9.863 -0.963 -0.857 -0.963 -2.466 1.652 -6.089 -4.667
 r1_tele7abc/cathar__alpha_2_25
-  0.0 0.0 -26.373 -36.778 31.57 -39.627 2.095 -2.363 1.824 1.736 9.489 -0.233 -0.061 -0.233 -2.074 1.37 -0.54 -3.439
+  0.0 0.0 -31.834 -37.694 31.57 -39.627 2.107 -3.688 1.824 1.736 9.489 -0.233 -0.061 -0.233 -2.074 1.37 -7.012 -4.218
 r1_tele7abc/cathar__alpha_2_0
-  2.787 0.973 -22.724 -32.443 29.012 -39.585 0.984 -2.141 1.682 1.754 9.469 -0.213 -0.052 -0.213 -2.096 1.184 2.787 0.93
+  0.0 0.321 -27.959 -32.801 29.012 -39.585 1.363 -3.458 1.682 1.754 9.469 -0.213 -0.052 -0.213 -2.096 1.184 -2.892 0.321
 r1_tele7abc/cathar__alpha_2_0_beta_0_005
-  2.519 0.8 -22.981 -32.686 29.538 -45.615 1.144 -2.142 1.7 1.722 10.186 -0.214 -0.052 -0.214 -2.097 1.219 2.519 0.687
+  0.0 0.0 -28.331 -33.138 29.538 -45.615 1.621 -3.463 1.7 1.722 10.186 -0.214 -0.052 -0.214 -2.097 1.219 -3.268 -0.092
 fill_tele7abc/fill12
-  18.098 31.03 -7.703 -1.513 4.06 -2.627 -8.506 0.003 1.081 0.043 4.643 -0.078 -0.054 -0.078 0.253 0.394 18.098 31.03
+  8.473 31.012 -17.295 -1.753 4.06 -2.626 -7.227 0.207 1.085 0.043 4.643 -0.078 -0.054 -0.078 0.253 0.394 8.473 31.012
 fill_tele7abc/fill8
-  21.412 33.435 -4.286 0.999 1.047 -0.492 -7.72 0.004 1.039 0.043 2.551 -0.079 -0.052 -0.079 0.253 0.394 21.412 33.435
+  12.042 33.773 -13.082 1.026 1.047 -0.49 -7.073 0.207 1.04 0.043 2.551 -0.079 -0.052 -0.079 0.253 0.394 12.042 33.773
 fill_tele7abc/fill18
-  13.934 24.676 -11.913 -7.698 8.04 -8.631 -7.188 0.003 1.122 0.083 4.998 -0.078 -0.054 -0.078 0.253 0.394 13.934 24.676
+  3.645 25.044 -21.891 -7.839 8.04 -8.631 -5.497 0.206 1.124 0.083 4.998 -0.078 -0.054 -0.078 0.253 0.394 3.645 25.044
 fill_tele7abc/keeper_off
-  12.383 9.913 -13.818 -27.258 10.237 -67.51 68.394 0.003 1.157 0.12 11.47 -0.078 -0.056 -0.078 0.253 0.394 12.383 5.667
+  0.347 9.492 -24.944 -28.166 10.237 -67.5 67.62 0.206 1.158 0.12 11.47 -0.078 -0.056 -0.078 0.253 0.394 0.347 5.156
 v4air_tele7abc/shipped_apl
-  18.93 31.025 -7.365 -1.512 4.058 -2.626 -7.534 0.006 1.085 0.043 4.642 -0.083 -0.06 -0.083 0.255 0.388 18.93 31.025
+  8.473 31.012 -17.295 -1.753 4.058 -2.626 -7.227 0.207 1.085 0.043 4.642 -0.083 -0.06 -0.083 0.255 0.388 8.473 31.012
 v4air_tele7abc/synth_lp4k
-  15.003 30.155 -12.107 -2.476 4.573 -2.591 12.051 -23.036 -0.001 0.055 9.242 -1.35 -1.882 -1.35 -18.055 -1.492 15.003 30.155
+  0.3 29.539 -27.401 -3.251 4.573 -2.591 11.706 -35.007 -0.001 0.055 9.242 -1.35 -1.882 -1.35 -18.055 -1.492 -1.179 29.539
 v4air_tele7abc/synth_raw
-  26.736 33.204 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 26.736 33.204
+  25.791 33.334 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 25.791 33.334
 v4air_tele7abc/synth_gated
-  18.113 0.0 -7.854 -152.421 5.483 -120.404 17.109 0.007 1.078 0.0 0.0 -0.083 -0.061 -0.083 0.26 0.374 18.113 -119.853
+  8.463 0.0 -17.753 -96.699 5.483 -120.392 14.964 0.207 1.078 0.0 0.0 -0.083 -0.061 -0.083 0.26 0.374 8.463 -65.0
 r1_soti/cathar__baseline
-  0.0 0.0 -29.407 -35.953 32.379 -38.24 0.919 -6.325 1.659 1.668 9.866 -0.225 -0.394 -0.225 -0.981 0.219 -8.671 -3.39
+  0.0 0.0 -34.019 -35.858 32.379 -38.24 1.595 -5.515 1.427 1.668 9.866 -0.225 -0.394 -0.225 -0.981 0.219 -12.69 -3.411
 r1_soti/cathar__alpha_2_0
-  0.0 0.638 -23.796 -30.754 27.281 -38.289 -0.18 -5.561 1.616 1.46 9.585 -0.276 -0.442 -0.276 -1.542 0.182 -2.624 0.098
+  0.0 0.532 -26.214 -30.336 27.281 -38.289 0.635 -4.887 1.623 1.46 9.585 -0.276 -0.442 -0.276 -1.542 0.182 -5.866 -0.3
 r1_vaccin/cathar__baseline
-  0.0 0.0 -29.718 -35.093 30.421 -39.181 3.684 -18.106 0.976 0.345 8.304 -1.04 -0.684 -0.93 0.456 - -9.391 -4.293
+  0.0 0.0 -28.542 -31.918 30.421 -39.181 3.764 -2.377 1.045 0.345 8.304 -1.04 -0.684 -0.93 0.456 - -9.673 -1.984
 r1_vaccin/cathar__alpha_2_0
-  0.0 0.0 -26.014 -34.795 30.183 -39.146 5.216 -12.781 0.982 1.186 7.971 -0.816 -0.554 -0.697 0.216 - -6.326 -4.099
+  0.0 0.0 -23.046 -31.429 30.183 -39.146 5.241 -1.904 1.016 1.186 7.971 -0.816 -0.554 -0.697 0.216 - -4.575 -1.256
 known_tele/stitched
-  0.0 0.0 -28.968 -37.408 32.975 -39.675 2.712 -2.643 1.831 0.959 9.097 -0.231 -0.066 -0.231 -1.892 1.601 -2.938 -4.608
+  0.0 0.0 -34.8 -37.834 32.975 -39.675 2.741 -3.858 1.864 0.959 9.097 -0.231 -0.066 -0.231 -1.892 1.601 -9.639 -4.78
 known_tele/single4s
-  0.007 0.0 -28.964 -36.934 33.423 -39.619 0.671 -8.762 1.727 0.152 7.738 -2.039 -1.648 -2.039 0.392 3.665 -2.757 -4.29
+  0.0 0.0 -34.712 -37.363 33.423 -39.619 3.111 -7.878 1.861 0.152 7.738 -2.039 -1.648 -2.039 0.392 3.665 -9.206 -4.36
 known_tele/deesser_bug
-  0.0 0.0 -32.728 -37.981 38.645 -39.661 17.101 -37.069 1.03 0.087 1.914 -4.668 -6.054 -4.668 -21.029 1.807 -6.989 -5.283
+  0.0 0.0 -47.752 -38.548 38.645 -39.661 16.927 -35.332 - 0.087 1.914 -4.668 -6.054 -4.668 -21.029 1.807 -21.891 -5.444
 """
 
 
@@ -237,10 +238,21 @@ def test_the_cleared_cathar_renders_trip_no_constraint(label):
     assert not _trips(f"r1_tele7abc/{label}", "r1_tele7abc/cathar__baseline")
 
 
-@pytest.mark.parametrize("label", ["cathar__alpha_2_0", "cathar__alpha_2_0_beta_0_005"])
-def test_the_renders_heard_hissy_trip_both_hiss_guards(label):
-    """'cathar alpha 2 has hiss' (0.7.3): new hiss under the programme and in the pauses against the baseline."""
-    assert {H1, H2} <= _trips(f"r1_tele7abc/{label}", "r1_tele7abc/cathar__baseline")
+@pytest.mark.parametrize(("label", "expected"), [("cathar__alpha_2_0", {H2}), ("cathar__alpha_2_0_beta_0_005", set())])
+def test_the_renders_heard_hissy_read_hissier_than_every_cleared_render(label, expected):
+    """'cathar alpha 2 has hiss' (0.7.3, round one, not blind): hissier than every cleared render in both places.
+
+    Under the programme both read under the threshold (-2.9 / -3.3 against -6.1..-9.6), and in the pauses at its edge
+    (+0.3 / -0.1 against -4.2..-4.8). Against the baseline alpha 2 trips the pause H1 (excess 0.32 over the 0.20 tie);
+    its beta 0.005 trips neither. The user's blind ABX of 2026-10-09 could not tell alpha 2 on 0.7.3 from 0.7.5 (8 of
+    16) nor their pauses (6 of 7 "same").
+    """
+    row = PINNED[f"r1_tele7abc/{label}"]
+    for cleared in ("cathar075__alpha_2_0", "cathar__alpha_2_25", "cathar__baseline"):
+        other = PINNED[f"r1_tele7abc/{cleared}"]
+        assert row[PROG_FLAG] > other[PROG_FLAG] + 2.0
+        assert row[PAUSE_FLAG] > other[PAUSE_FLAG] + 4.0
+    assert {H1, H2} & _trips(f"r1_tele7abc/{label}", "r1_tele7abc/cathar__baseline") == expected
 
 
 @pytest.mark.parametrize(
@@ -266,15 +278,15 @@ def test_less_removal_against_the_baseline(tape, expected):
 
 @pytest.mark.parametrize("label", ["deesser_bug", "single4s"])
 def test_the_underwater_renders_trip_the_dulling_guard(label):
-    """The de-esser bug (kept HF -37 dB) and single4s (-8.8 dB) against stitched (-2.6 dB) on Tele7abc."""
+    """The de-esser bug (kept HF -35.3 dB) and single4s (-7.9 dB) against stitched (-3.9 dB) on Tele7abc."""
     assert KEPT_HF in _trips(f"known_tele/{label}", "known_tele/stitched")
 
 
 @pytest.mark.parametrize(
     ("case", "expected"),
     [
-        ("r1_tele7abc/cathar__alpha_2_0", BOTH_FLAGS),
-        ("r1_tele7abc/cathar__alpha_2_0_beta_0_005", BOTH_FLAGS),
+        ("r1_tele7abc/cathar__alpha_2_0", {"listener.hiss_pause"}),
+        ("r1_tele7abc/cathar__alpha_2_0_beta_0_005", set()),
         ("r1_tele7abc/cathar075__alpha_2_0", set()),
         ("r1_tele7abc/cathar__alpha_2_25", set()),
         ("r1_tele7abc/cathar__baseline", set()),

@@ -1,7 +1,8 @@
 # Ear v4 (2026-10-12): critical of hiss. The user's rule (2026-10-11, in capitals): the AI human
 # ear must be VERY CRITICAL of VHS hiss under speech or singing and in silence and pauses. The
-# user heard hiss on every Tata tape for weeks ("hiss on every v2 plateau", "hiss (single4s,
-# Tele7abc)", "hiss left?") while the harness never moved: listener.hiss was display-only, pause
+# user heard hiss on every Tata tape for weeks (the ledger: "underwater again, light hiss (single4s,
+# Tele7abc)"; the harness's own round-two note flagged listener.hiss on every v2 plateau while the
+# listener heard natural pauses) while the harness never moved: listener.hiss was display-only, pause
 # depth ranked a 2.95..35 dB band, gap_atten and gap_hf_excess were shown only, and nothing read
 # the hiss under the programme. The same user rejected dead pauses ("silent in pauses"), so "no
 # hiss" never means dead air: a quiet floor of room tone under about 1-2 kHz may stay.
@@ -27,9 +28,14 @@
 # programme reading reproduced none of round one's hiss labels; at 75 it separates them on
 # Tele7abc (cathar alpha 2 on 0.7.3 +2.39, its beta 0.005 +2.16, against the cleared 0.7.5 alpha
 # 2 -0.70, alpha 2.25 -0.98, baseline -3.01) and orders single4s ("light hiss", +0.01) over
-# stitched (-3.01); this build reads +0.18 there (docs/ear_v4_hiss.md). The prototype's fixture
-# check ran with its noise 30 dB under the tape's relation; at that relation the programme
-# reading saturates 13-14 dB under the source. The audibility tie keeps 65 dB and its 24 dB offset. Only a blind
+# stitched (-3.01). Validation round 1 (2026-10-12, docs/ear_v4_hiss.md) found the first build's
+# programme reading saturating 13-14 dB under the source (a perfect fixture output read +9..+22):
+# programme the hiss hid in the source read as hiss. The fixed reading (hiss_programme.py steps
+# 3-6) reads a perfect output at or under 0 on 41 of 43 validated linear fixtures and the -30 dB
+# oracle within 0.5 dB of its truth; on Tele7abc's round one it reads every 0.7.3 alpha 2 render
+# 2.8-6.8 dB over the cleared ones under the programme, all under 0 (the user's blind ABX of
+# 2026-10-09 could not tell 0.7.3 from 0.7.5), and in the pauses +0.32 / -0.09 against -4.2 and under.
+# The audibility tie keeps 65 dB and its 24 dB offset. Only a blind
 # session at a recorded device and volume moves L_crit. The hiss flags (gates.py,
 # listener.hiss_programme / listener.hiss_pause at 0 dB) are the user's rule: no gates file and
 # no calibration moves them (gates.USER_RULE_FIXED).
@@ -119,16 +125,19 @@ ranking:
 
   # --- v4: hiss under the programme and in the pauses (one-sided excess, target 0, dead zone 0; tie from the
   # same-percept jitter report). The all-band reading carries singing.
-  # Ties from the jitter report of 2026-10-12 (experiments/reward/noise_floor_hiss.json: the eight pairs of v4_air
-  # B_air_1dB and v2 final2_cathar on Tele7abc, SOTI, Vaccin and Gaudeamus5, first 125 s, --transforms hiss, two
-  # repeats, dsp; DSP repeat jitter exactly 0): each tie is the pooled p95 floor of its flat key rounded up to
-  # 0.05. programme excess median 0.202 -> 0.25, all-band 0.196 -> 0.20, pause excess tail 0.244 -> 0.25,
-  # median 0.473 -> 0.50. The fresh realisations set every floor (gain and soxr read 0.000, delay at most
-  # 0.032 on these medians, requantisation 0.037).
-  dsp.hiss_prog_excess_all_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.2, family: hiss_programme}
-  dsp.hiss_prog_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.25, family: hiss_programme}
-  dsp.hiss_pause_excess_db.output.tail: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.25, family: hiss_pause}
-  dsp.hiss_pause_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.5, family: hiss_pause}
+  # Ties from the jitter report of 2026-10-12, validation round 1 (experiments/reward/noise_floor_hiss.json: the
+  # eight pairs of v4_air B_air_1dB and v2 final2_cathar on Tele7abc, SOTI, Vaccin and Gaudeamus5, first 125 s,
+  # --transforms hiss, two repeats, dsp; DSP repeat jitter exactly 0): each tie is the pooled p95 floor of its flat
+  # key rounded up to 0.05. programme excess median 0.073 -> 0.10, all-band 0.247 -> 0.25, pause excess tail
+  # 0.174 -> 0.20, median 0.327 -> 0.35. The programme keys pool T, S and G (102 deviations; V's first 125 s
+  # validates no window), the pause keys all eight pairs (136). The fresh realisations set every floor (gain and
+  # soxr read 0.000, delay and requantisation at most 0.04 on these keys). The fresh floor keeps spectral peaks and
+  # musical-noise islands and keeps the floor's power (same_percept.fresh_floor): the first build's lost 0.32 dB of
+  # a white noise, read every fresh pause low and set the pause ties at 0.35 / 0.45.
+  dsp.hiss_prog_excess_all_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.25, family: hiss_programme}
+  dsp.hiss_prog_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.1, family: hiss_programme}
+  dsp.hiss_pause_excess_db.output.tail: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.2, family: hiss_pause}
+  dsp.hiss_pause_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.35, family: hiss_pause}
 
 # The loop's guards (plan 1.5; tata_v3.yaml says how each works): `autotune_restoration.py`
 # applies them, `tune_restoration.py` reads none of them.
@@ -157,11 +166,11 @@ reversals:
 # v4: hard guards (autotune_guards.mark_constraints): worse than the incumbent by more than max_move (default 0)
 # and beyond bound (default: none) on some clip excludes the candidate, and so does a reading it lost.
 # H1 max_move = the entry's tie; H2 bound = the delta key's own jitter floor rounded up to 0.05 (all-band
-# 0.334 -> 0.35).
+# 0.244 -> 0.25).
 constraints:
-  dsp.hiss_prog_excess_all_db.output.median: {worse: up, max_move: 0.2}
-  dsp.hiss_pause_excess_db.output.tail: {worse: up, max_move: 0.25}
-  dsp.hiss_prog_margin_all_db.delta.median: {worse: up, bound: 0.35}
+  dsp.hiss_prog_excess_all_db.output.median: {worse: up, max_move: 0.25}
+  dsp.hiss_pause_excess_db.output.tail: {worse: up, max_move: 0.2}
+  dsp.hiss_prog_margin_all_db.delta.median: {worse: up, bound: 0.25}
   dsp.hiss_pump_db.output.median: {worse: up, max_move: 3.0, bound: 12.0}
   dsp.hiss_prog_kept_hf_db.output.median: {worse: down, max_move: 1.0}
   dsp.hiss_island_kurt.output.median: {worse: up, max_move: 0.3}
