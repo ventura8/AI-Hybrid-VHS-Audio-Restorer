@@ -9,6 +9,16 @@ when its mean rank across tapes is better, it wins on at least half the tapes an
 no more hard gates than the incumbent. The loop stops when no candidate qualifies (a
 plateau); `--rounds` (default 20) is only a safety cap. The listener is asked at the plateau.
 
+Judging resolution (2026-10-11, `scripts/autotune_judging.py`): two candidates tie on a reading
+when their distances differ by less than reward.py's tie band, sized from the Session 0
+benign-pair floors (`--noise-floors`), and every dead zone is bounded from below by that floor;
+hiss and residual-noise readings take their floors only from scorer jitter and same-percept
+near-copies (`--jitter-floors`, the user's rule). A tape counts as a win only when the candidate
+out-ranks the incumbent and moved past the band the better way on some reading. `log.md` carries each
+candidate's per-reading distances per tape, and a round in which every scored candidate was
+level with the incumbent ends "every move below the Session 0 benign-pair floor (N readings
+unmoved)" instead of "plateau". The learned vetoes are family-wise (`autotune_guards`).
+
 An ear v3 grid (`tune_grids/tata_v3.yaml`, `music_v3.yaml`) adds three guards to that verdict
 (plan 1.5, `scripts/autotune_guards.py`); a v1 or v2 grid has none of these sections and is
 judged as before. `reversals:` refuses, before it is rendered, a move that heads past a ledger
@@ -108,6 +118,7 @@ usage:
                           [--grid scripts/tune_grids/tata_v1.yaml] [--families auto|dsp,stems,speech,mos]
                           [--start '{"cathar_alpha": 2.0}' | --start-file final.json] [--language ro] [--gates gates.json]
                           [--parallel 2] [--noise-floors experiments/reward/noise_floor_benign.json]
+                          [--jitter-floors experiments/reward/noise_floor.json]
                           [--stage-cache experiments/autotune/stage_cache] [--stage-cache-gb 50]
 
 `tapes.json` maps a slug to a video path. Everything is resumable: candidates are keyed by
@@ -140,6 +151,7 @@ cathar = import_module("modules.cathar")
 stage_cache = import_module("modules.stage_cache")
 scoring = import_module("scripts.autotune_scoring")
 material = import_module("scripts.autotune_material")
+judging = import_module("scripts.autotune_judging")
 # Called through this module, so a test can stand in for the scorer.
 score_round = scoring.score_round
 SCORER_PARALLEL = scoring.SCORER_PARALLEL
@@ -755,35 +767,31 @@ def _with_set_aside(verdicts, inert, ties, refused):
 # ----------------------------------------------------------------------------- judging
 
 
-def rank_on_tape(flats, ranking):
-    """`{cid: rank_score}` on one tape from flat aggregates, with the grid's directions."""
-    summaries = {cid: {"metrics": {key: {"median": value} for key, value in flat.items()}} for cid, flat in flats.items()}
-    return tune.rank_variants(summaries, ranking)
-
-
-def _ranks_per_tape(scores, ranking):
-    """`{slug: {cid: rank_score}}` over every tape the candidates were scored on."""
+def _tables(scores, ranking, incumbent_id, floors):
+    """`{slug: autotune_judging.TapeTable}` over every tape the candidates were scored on."""
     tapes = list(next(iter(scores.values())))
-    return {slug: rank_on_tape({cid: scores[cid][slug] for cid in scores}, ranking) for slug in tapes}
+    return {slug: judging.tape_table({cid: scores[cid][slug] for cid in scores}, ranking, incumbent_id, floors) for slug in tapes}
 
 
-def judge(scores, incumbent_id, ranking, vetoes=None, veto_ids=None):
-    """`{cid: {"mean_rank", "wins", "failures", "per_tape", "qualifies"}}` against the incumbent across tapes.
+def judge(scores, incumbent_id, ranking, vetoes=None, veto_ids=None, *, floors=None):
+    """`{cid: {"mean_rank", "wins", "failures", "per_tape", "qualifies", ...}}` against the incumbent across tapes.
 
-    With `vetoes` (`{reading: reward.Veto}`, a v3 grid's learned judges) a candidate whose
-    median moved past a veto on some tape also carries `vetoed` and cannot qualify. `veto_ids`
-    limits the veto to those candidates (the two-stage scoring reads the learned judges on the
-    contenders only); None checks every candidate.
+    `floors` (`autotune_judging.Floors`) gives each reading its tie band and dead-zone floor; None
+    (no floors file) keeps exact ties. With `vetoes` (`{reading: reward.Veto}`, a v3 grid's learned
+    judges) a candidate the family-wise rule trips also carries `vetoed` and cannot qualify.
+    `veto_ids` limits the veto to those candidates (the two-stage scoring reads the learned
+    judges on the contenders only); None checks every candidate.
     """
-    per_tape = _ranks_per_tape(scores, ranking)
-    verdicts = {cid: _verdict(cid, scores[cid], per_tape, incumbent_id) for cid in scores}
+    floors = floors or judging.NO_FLOORS
+    tables = _tables(scores, ranking, incumbent_id, floors)
+    verdicts = {cid: _verdict(cid, scores[cid], tables, incumbent_id) for cid in scores}
     for cid in scores if veto_ids is None else veto_ids:
-        guards_mod.mark_vetoes(verdicts[cid], scores[cid], scores[incumbent_id], vetoes)
-    _qualify(verdicts, incumbent_id, len(per_tape))
+        guards_mod.mark_vetoes(verdicts[cid], scores[cid], scores[incumbent_id], vetoes, floors)
+    qualify(verdicts, incumbent_id, len(tables))
     return verdicts
 
 
-def _qualify(verdicts, incumbent_id, n_tapes):
+def qualify(verdicts, incumbent_id, n_tapes):
     """Sets `qualifies`: not the incumbent, beats it and passes the guards."""
     base = verdicts[incumbent_id]
     for cid, verdict in verdicts.items():
@@ -794,19 +802,26 @@ def _total(tape_scores, key):
     return sum(flat.get(key, 0.0) for flat in tape_scores.values())
 
 
-def _wins(ranks, per_tape, incumbent_id):
-    return sum(1 for slug, rank in ranks.items() if rank is not None and rank < per_tape[slug][incumbent_id])
-
-
-def _verdict(cid, tape_scores, per_tape, incumbent_id):
-    ranks = {slug: per_tape[slug][cid] for slug in tape_scores}
+def _mean_rank(ranks):
+    """The mean of the tapes' ranks, None when no tape ranked anything."""
     known = [r for r in ranks.values() if r is not None]
+    return float(np.mean(known)) if known else None
+
+
+def _verdict(cid, tape_scores, tables, incumbent_id):
+    """One candidate's ranks, wins (ahead of the incumbent and better past the band on some reading), gate counts and
+    per-reading distances."""
+    ranks = {slug: tables[slug].ranks[cid] for slug in tape_scores}
     return {
-        "mean_rank": float(np.mean(known)) if known else None,
-        "wins": _wins(ranks, per_tape, incumbent_id),
+        "mean_rank": _mean_rank(ranks),
+        "wins": len(judging.tape_wins(tables, cid, incumbent_id)),
         "failures": _total(tape_scores, "gates.hard_failures"),
         "flags": _total(tape_scores, "gates.listener_flags"),
         "per_tape": ranks,
+        "distances": {slug: tables[slug].distances[cid] for slug in tape_scores},
+        "moved": judging.moved_tapes(tables, cid),
+        "status": judging.reading_status(tables, cid),
+        "level": all(table.level(cid) for table in tables.values()),
     }
 
 
@@ -860,7 +875,7 @@ def run_round(args, engine, tapes, out_dir, state, ranking, number):
         everything.update(combo)
         verdicts = _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, incumbent)
     accepted = _settle(state, number, incumbent, everything, verdicts)
-    _report_round(out_dir, state["rounds"][-1], incumbent, everything, len(tapes))
+    _report_round(out_dir, state["rounds"][-1], incumbent, everything, len(tapes), floors=getattr(args, "floors", None))
     save_state(out_dir, state)
     return accepted is not None
 
@@ -921,15 +936,16 @@ def score_and_judge(args, scorable, where, ranking, incumbent_id, vetoes):
     and the final judgement with the vetoes on those contenders. A veto can only take a qualification away, so
     the verdicts are the ones a single pass over every family gives."""
     tapes, out_dir = where
+    args.floors = getattr(args, "floors", None)
     ranked, rest = scoring.split_families(args.families, ranking, scoring.gate_names(args.gates))
     options = (args.gates, args.language, args.parallel)
     scores = score_round(scorable, tapes, out_dir, ranked, *options)
-    contenders = [cid for cid, verdict in judge(scores, incumbent_id, ranking).items() if verdict["qualifies"]]
+    contenders = [cid for cid, verdict in judge(scores, incumbent_id, ranking, floors=args.floors).items() if verdict["qualifies"]]
     missing = scoring.lacking(scores, [incumbent_id, *contenders], rest) if contenders else []
     if missing:
         learned = score_round(_only(scorable, missing), tapes, out_dir, rest, *options, scoring.LEARNED_STAGE)
         scoring.merge_families(scores, learned, rest)
-    return judge(scores, incumbent_id, ranking, vetoes, veto_ids=contenders)
+    return judge(scores, incumbent_id, ranking, vetoes, veto_ids=contenders, floors=args.floors)
 
 
 def _only(candidates, ids):
@@ -947,9 +963,11 @@ def _cells(verdict, n_tapes):
     return f"{rank} | {verdict['wins']}/{n_tapes} | {verdict['failures']:.0f} | {verdict.get('flags', 0.0):.0f} | {qualifies}"
 
 
-def _outcome(accepted, everything, incumbent):
+def _outcome(record, everything, incumbent, floors):
+    """The round's last word: what was accepted, or why nothing was (`autotune_judging.plateau_label`)."""
+    accepted = record["accepted"]
     if accepted is None:
-        return "no candidate qualified: plateau"
+        return judging.plateau_label(record["verdicts"], record["incumbent"], floors)
     return f"accepted `{accepted}` -> {describe(everything[accepted], incumbent)}"
 
 
@@ -962,15 +980,17 @@ def _inert_findings(ordered, everything, incumbent):
     ]
 
 
-def _report_round(out_dir, record, incumbent, everything, n_tapes):
-    """Appends the round's table, its outcome, its knob-table findings and its guards' findings to log.md and prints them."""
+def _report_round(out_dir, record, incumbent, everything, n_tapes, *, floors=None):
+    """Appends the round's table, its per-reading distances, its outcome and its findings to log.md and prints them."""
     ordered = _ordered(record["verdicts"])
+    floors = floors or judging.NO_FLOORS
     lines = [f"## round {record['round']}", "", f"incumbent `{candidate_id(incumbent)}` {describe(incumbent, {})}", ""]
     lines += ["| candidate | change | mean rank | wins | hard failures | flags | qualifies |", "|---|---|---|---|---|---|---|"]
     lines += [f"| {cid} | {describe(everything[cid], incumbent)} | {_cells(v, n_tapes)} |" for cid, v in ordered]
+    lines += judging.distance_lines(ordered, lambda cid: describe(everything[cid], incumbent), floors)
     moved = guards_mod.guard_findings(ordered, lambda cid: describe(everything[cid], incumbent))
     findings = [*_inert_findings(ordered, everything, incumbent), *moved]
-    lines += ["", _outcome(record["accepted"], everything, incumbent), *findings, ""]
+    lines += ["", _outcome(record, everything, incumbent, floors), *findings, ""]
     with open(out_dir / LOG_MD, "a", encoding="utf-8") as log:
         log.write("\n".join(lines) + "\n")
     print("\n".join(lines), flush=True)
@@ -994,7 +1014,13 @@ def _parse_args(argv):
         "--noise-floors",
         type=Path,
         default=guards_mod.DEFAULT_NOISE_FLOORS if guards_mod.DEFAULT_NOISE_FLOORS.exists() else None,
-        help="a scripts/reward_noise_floor.py report: the benign floors a v3 grid's learned vetoes are measured in",
+        help="a scripts/reward_noise_floor.py --benign-pair report: the floors of the vetoes, the tie band and the dead zones",
+    )
+    parser.add_argument(
+        "--jitter-floors",
+        type=Path,
+        default=judging.DEFAULT_JITTER_FLOORS if judging.DEFAULT_JITTER_FLOORS.exists() else None,
+        help="a scripts/reward_noise_floor.py report of repeats and near-copies: the hiss readings' floors, the vetoes' moves",
     )
     parser.add_argument(
         "--stage-cache", type=Path, default=None, help="a folder for the neural-stage cache (AI_RESTORE_STAGE_CACHE); off by default"
@@ -1008,6 +1034,19 @@ def _parse_args(argv):
 def _noise_floors(path):
     """`{reading: floor}` from a `scripts/reward_noise_floor.py` report, or {} without one."""
     return guards_mod.noise_floors(scoring.existing_path(path, "--noise-floors") if path else None)
+
+
+def _floors(args):
+    """The ranking's floors: the benign pairs of `--noise-floors`, the scorer jitter of `--jitter-floors`; a warning per
+    missing report (without the benign pairs the ranking keeps exact ties, without the jitter hiss readings get none)."""
+    benign = _noise_floors(args.noise_floors)
+    path = scoring.existing_path(args.jitter_floors, "--jitter-floors") if args.jitter_floors else None
+    jitter = judging.jitter_floors(guards_mod.read_json(path), path) if path else {}
+    if not benign:
+        print("warning: no --noise-floors report: candidates tie only on equal distances and the dead zones stay as set", flush=True)
+    if not jitter:
+        print("warning: no --jitter-floors report: hiss readings and veto moves have no jitter floor", flush=True)
+    return judging.Floors(benign, jitter)
 
 
 def _resume(args, out_dir):
@@ -1028,8 +1067,9 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     grid = tune.load_grid(args.grid)
     ranking = grid["ranking"]
-    args.guards = guards_mod.loop_guards(grid, _noise_floors(args.noise_floors), ALL_KNOBS)
-    print(f"guards: {guards_mod.describe_guards(args.guards)}", flush=True)
+    args.floors = _floors(args)
+    args.guards = guards_mod.loop_guards(grid, judging.veto_floors(args.floors), ALL_KNOBS)
+    print(f"guards: {guards_mod.describe_guards(args.guards)}; floors: {judging.describe_floors(args.floors)}", flush=True)
     args.families = scoring.resolve_families(args.families, grid, args.gates)
     print(f"scoring families: {','.join(args.families)}", flush=True)
     args.durations = tape_durations(tapes)

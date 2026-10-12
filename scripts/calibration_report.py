@@ -76,8 +76,8 @@ def _ordering_lines(title, ordering):
     return lines
 
 
-def _floor_lines(floor):
-    lines = ["", "## Benign floor", "", "| metric | centre | floor (p95) |", "|---|---|---|"]
+def _floor_lines(floor, title="Benign floor"):
+    lines = ["", f"## {title}", "", "| metric | centre | floor (p95) |", "|---|---|---|"]
     return lines + [f"| {metric} | {v['centre']:+.4f} | {v['floor']:.4f} |" for metric, v in sorted(floor.items())]
 
 
@@ -131,6 +131,7 @@ def _markdown(report):
         "|---|---|---|---|---|---|---|---|",
     ]
     lines += [_check_line(row) for row in report["checks"]] + _family_lines(report["families"]) + _floor_lines(report["floor"])
+    lines += _floor_lines(report.get("check_floor", report["floor"]), "Sensitivity floor (with the same-percept transforms)")
     lines += _ordering_lines("Known ordering (default gates)", report["ordering_records"])
     lines += _ordering_lines("Known ordering (derived gates)", report["ordering_after_records"])
     lines += _refusal_lines(report.get("refusal")) + _oracle_lines(report.get("oracle"))

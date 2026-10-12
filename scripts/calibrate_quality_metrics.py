@@ -218,10 +218,16 @@ def _degradation_cases(materials, language, out_dir, rng, names=None):
     return cases
 
 
+def _benign_rng(language, name, rng):
+    """A same-percept case's own generator, seeded from (language, name); the older cases keep drawing from `rng`."""
+    return deg.benign_rng(language, name) if name in deg.SAME_PERCEPT else rng
+
+
 def _benign_cases(materials, language, out_dir, rng, names=None):
     cases = []
     for name in deg.BENIGN if names is None else names:
-        source, output = deg.apply_benign(name, materials[deg.benign_base(name)], materials["rate"], rng)
+        base = materials[deg.benign_base(name)]
+        source, output = deg.apply_benign(name, base, materials["rate"], _benign_rng(language, name, rng), materials)
         paths = _write_pair(out_dir / language, f"benign_{name}", source, output, materials["rate"])
         cases.append(Case("benign", name, None, language, *paths))
     return cases
@@ -476,15 +482,28 @@ def _ordering(args, scoring, suite, grid):
 
 
 def synthetic(args, families, registry):
-    """The synthetic suite: `{cases, status, floor, route_floors, checks}` (status = the families that scored, per case)."""
+    """The synthetic suite: `{cases, status, floor, check_floor, route_floors, checks}` (status = the families that scored).
+
+    `check_floor` takes every benign case, the same-percept transforms included, and is what the
+    sensitivity checks measure an effect in; `floor` and `route_floors` leave those out and are what
+    the gates, the known-ordering stand-in grid and the report's floor read (E2 part c).
+    """
     cases = build_cases(args.fixtures, args.languages, args.out) + build_tape_cases(args.excerpts, args.out)
     cases += build_oracle_cases(args.fixtures, args.languages, args.oracle_max)
     scores = score_cases(cases, families, registry, args.out / "cache", args.out / "scores")
     readings = readings_of(scores)
-    floor = checks_mod.noise_floor(cases, readings)
-    route_floors = {route: checks_mod.noise_floor(cases, readings_of(scores, route)) for route in ROUTES}
-    checks = checks_mod.run_checks(cases, readings, floor)
-    suite = {"cases": cases, "status": family_status(scores), "floor": floor, "route_floors": route_floors, "checks": checks}
+    floor = checks_mod.noise_floor(cases, readings, deg.SAME_PERCEPT)
+    check_floor = checks_mod.noise_floor(cases, readings)
+    route_floors = {route: checks_mod.noise_floor(cases, readings_of(scores, route), deg.SAME_PERCEPT) for route in ROUTES}
+    checks = checks_mod.run_checks(cases, readings, check_floor)
+    suite = {
+        "cases": cases,
+        "status": family_status(scores),
+        "floor": floor,
+        "check_floor": check_floor,
+        "route_floors": route_floors,
+        "checks": checks,
+    }
     return {**suite, "scores": scores}
 
 
@@ -505,6 +524,7 @@ def known_ordering_context(args, families, registry, suite, grid=None):
 def _report(context, suite):
     ordering = context["ordering"]
     report = {"round": context["round"], "checks": suite["checks"], "families": suite["status"], "floor": suite["floor"]}
+    report["check_floor"] = suite.get("check_floor", suite["floor"])
     report.update({"route_floors": suite["route_floors"], "ordering_records": ordering, "cases": [asdict(c) for c in suite["cases"]]})
     return {**report, "unmapped_flags": cordering.unmapped_flags(ordering, GATES)}
 

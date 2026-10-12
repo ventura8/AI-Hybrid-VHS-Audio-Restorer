@@ -333,6 +333,13 @@ user set, with their reasons:
   head search, which read 68 of 205 cathar hunt outputs more than 8 samples
   off their true lag: re-score them before they decide anything, and leave
   out a clip whose alignment abstained.
+- The ear must be very critical of VHS hiss, under speech or singing and in
+  the pauses (2026-10-11). A reading of hiss or residual noise never takes a
+  tie band, a dead-zone floor or a veto limit from the Session 0 benign
+  pairs: those pairs differed grossly there (residual noise 16.4 dB, pause
+  depth 5.8 dB) and would blind the ear to hiss. Its floors come only from
+  scorer repeat jitter and same-percept transforms
+  (`scripts/autotune_judging.py`, `--jitter-floors`).
 - Learned training goes only where it fits (2026-10-08): GRPO for a
   per-tape settings policy, later, and only if it beats the single best
   preset; an anchored fine-tune for the Mel-RoFormer denoiser; a
@@ -450,8 +457,9 @@ The repository defines the following modular skills in `.agents/skills/`.
   plateau; ear v3's readings, the audibility check
   (`scripts/audibility_check.py`), the verdict ledger and the listening tool
   (`scripts/listen_ab.py`), the reward pieces
-  (`scripts/reward_noise_floor.py`), and the variation pre-check that gates
-  the settings policy (`scripts/variation_precheck.py`).
+  (`scripts/reward_noise_floor.py`), the loop's judging resolution and its
+  offline re-judge (`scripts/rejudge_autotune.py`), and the variation
+  pre-check that gates the settings policy (`scripts/variation_precheck.py`).
 - [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
   SonarQube Cloud on this repository: the CI scan, reading and fixing its
   findings without suppressions, project settings on sonarcloud.io, and the
