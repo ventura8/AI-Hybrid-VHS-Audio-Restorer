@@ -97,3 +97,19 @@ def test_the_trade_is_skipped_when_the_rates_differ(monkeypatch):
     matched = types.SimpleNamespace(rate=44100, output_rate=44100, source_wav="s", output_wav="o")
     assert (runner.trade_entries(mismatched, card), card.meta["trade_skipped"]) == ({}, "sample rates differ")
     assert runner.trade_entries(matched, card)["file.noise_removed_db"]["output"] == 5.0
+
+
+def _refused(*_paths):
+    """`os.replace` as Windows answers it while another scorer replaces the same file."""
+    raise PermissionError(5, "Access is denied")
+
+
+def test_a_profile_another_scorer_is_writing_is_left_to_it(tmp_path, monkeypatch):
+    """Two scorers caching the same anchor at once: the loser drops its temporary file; with no file there it raises."""
+    path = tmp_path / "profile" / "key_hiss_hash.json"
+    runner.write_profile(path, {"how": "pauses"})
+    monkeypatch.setattr(runner.os, "replace", _refused)
+    runner.write_profile(path, {"how": "pauses"})
+    assert sorted(item.name for item in path.parent.iterdir()) == [path.name]
+    with pytest.raises(PermissionError):
+        runner.write_profile(tmp_path / "other" / "missing.json", {"how": "pauses"})

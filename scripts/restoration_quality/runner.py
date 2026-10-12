@@ -267,13 +267,24 @@ def read_profile(path):
 
 
 def write_profile(path, profile):
-    """Writes `profile` to `path` through a temporary file, so a parallel scorer never reads half of it."""
+    """Writes `profile` to `path` through a temporary file, so a parallel scorer never reads half of it.
+
+    Windows refuses `os.replace` onto a file another process is replacing or reading at that moment (WinError 5): two
+    scorers that computed the same missing profile or hiss anchor at once (six parallel scorings of one source's IA
+    excerpts hit it). The other one wrote the same content, so the temporary file is dropped; without a file at `path`
+    the error stands.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     with os.fdopen(handle, "w", encoding="utf-8") as stream:
         stream.write(json.dumps(profile, default=_json_default))
-    os.replace(temporary, path)
+    try:
+        os.replace(temporary, path)
+    except PermissionError:
+        os.remove(temporary)
+        if not path.exists():
+            raise
 
 
 def load_profile(pair):
