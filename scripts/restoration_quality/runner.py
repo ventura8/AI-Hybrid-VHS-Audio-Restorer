@@ -193,8 +193,9 @@ class Pair:
         self.lag = self.alignment.applied_lag
         self.windows = audio_io.windows(len(self.source), self.rate, seconds, hop)
         self.routes = [audio_io.route_window(self.source[w.slice_of(self.rate)], self.rate) for w in self.windows]
-        # The output is routed too: a window with programme whose output reads as silence is dead air.
-        self.output_routes = [audio_io.route_window(self.output[w.slice_of(self.rate)], self.rate) for w in self.windows]
+        # The output is routed too: a window with programme whose output reads as silence is dead air. It is
+        # read at the source's level, not at the projection gain's, which a cleaned noisy tape collapses.
+        self.output_routes = audio_io.output_routes(self.source, self.output, self.windows, self.rate)
         self.source_key, self.output_key = audio_io.file_key(self.source_wav), audio_io.file_key(self.output_wav)
         self._resampled = {}
         # R0, read by the dsp family on first use (`load_profile`).

@@ -216,6 +216,27 @@ def windows(n_samples, rate, seconds=15.0, hop=7.5):
     return out
 
 
+def level_matched(reference, estimate):
+    """`estimate` scaled to `reference`'s RMS over the pair: the level a window's silence is judged at.
+
+    The pair's own gain match is a least-squares projection (`score_reference._match_gain`),
+    which falls toward 0 when the output keeps little of the source's waveform: a quiet,
+    noise-dominated tape whose noise the restoration removed. On the IA hunt (2026-10-12) it
+    scaled outputs playing at -20 dBFS mean under the -50 dBFS silence line, and 8 cathar and
+    4 auto_pure_linear clips failed `dsp.output_silent` on audio that was never silent.
+    """
+    estimate = np.asarray(estimate, dtype=np.float32)
+    ref = float(np.sqrt(np.mean(np.square(np.asarray(reference, dtype=np.float64))))) if len(reference) else 0.0
+    est = float(np.sqrt(np.mean(np.square(estimate.astype(np.float64))))) if len(estimate) else 0.0
+    return estimate if est <= 0.0 else estimate * np.float32(ref / est)
+
+
+def output_routes(source, output, windows_, rate):
+    """Each window's route on the output, read at the source's level (`level_matched`), not the projection's."""
+    levelled = level_matched(source, output)
+    return [route_window(levelled[w.slice_of(rate)], rate) for w in windows_]
+
+
 def route_window(mono, rate):
     """speech | music | mixed | silence: the scanner's band ratios, then tonal persistence where they read nothing."""
     rms = float(np.sqrt(np.mean(np.asarray(mono, dtype=np.float64) ** 2)) + 1e-12)

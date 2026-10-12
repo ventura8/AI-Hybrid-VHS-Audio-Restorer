@@ -115,7 +115,10 @@ for research use by the user's decision of 2026-10-08.
   correlate 0.09-0.13 in magnitude with their source at the true lag
   (phase coherence 0.55-0.95 in 150-7000 Hz), so the gain puts them
   18-21 dB under their energy-matched level and their windows route as
-  silence.
+  silence. Fixed on 2026-10-12: the output is routed on an RMS-matched copy
+  (`audio_io.output_routes`); on the re-scored hunt all 12 failures (8
+  cathar, 4 APL) cleared, and a window an output really drops still reads
+  as silence.
 - The listener readings (v2, 2026-09-23) exist because the median level of
   the quiet frames could not tell "silent in pauses" from "has hiss" (every
   restoration drives the deepest pauses to -96..-104 dBFS): read the gaps

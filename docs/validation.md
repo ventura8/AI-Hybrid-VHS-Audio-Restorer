@@ -623,7 +623,14 @@ native-rate DSP on the source's own frame classes, reproduce the verdicts
   paired, the window values move about 0.3 dB in the median and the tail's
   verdicts at -4 dB hold on Gaudeamus1 and 5.
 - `dsp.output_silent`: a window with programme whose output routes as
-  silence (the output is routed too); a hard gate.
+  silence (the output is routed too); a hard gate. The output is routed at
+  the source's level (`audio_io.output_routes`, an RMS match over the pair),
+  not at the pair's least-squares gain, which falls toward 0 when a
+  restoration keeps little of a noisy tape's waveform: on the re-scored IA
+  hunt (2026-10-12) that gain put 8 cathar and 4 `auto_pure_linear` outputs
+  playing at about -20 dBFS mean under the -50 dBFS silence line, and all
+  12 failures cleared with the level match; a window an output really drops
+  still reads as silence.
 
 These gates carry the severity `flag`: the tuning loop counts them (a
 candidate may not add flags) but they do not veto until a second listening
