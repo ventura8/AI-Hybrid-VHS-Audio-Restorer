@@ -513,7 +513,11 @@ arnndn_enable_adeclick: true
 #     more hiss above 7 kHz, stops the stitched print's 24-32 dB cut of speech
 #     at 3-6 kHz on soti and tele7abc, and lowers musical noise. With
 #     cathar_alpha 1.25 the hiss removal comes back to the window's (hunt: 37
-#     of 56 still failing, 7 passing clips start). Not judged by ear: see
+#     of 56 still failing, 7 passing clips start). On real tape it reads
+#     1.0-1.1 dB under the true-pause hiss at 6-10 kHz (Tata, 52 IA clips),
+#     +0.3 dB over on the fixtures, and it needs noise-only material in 5 %
+#     of the windows (about 1.1 s of a 15 s clip) or it learns the
+#     programme's floor (itv-continuity). Not judged by ear: see
 #     docs/configuration.md, "cathar Quantile Noise Print". cathar speech
 #     profile only.
 #

@@ -18,8 +18,9 @@ Calibrated on artifacts/realistic-v2 (2026-10-12): the exact tape noise of each 
 vhs - clean (the hiss is injected after the recorder's gain control), and each estimator is
 read by the log-spectral distance of its print to that noise's print over the bins within 40 dB
 of the noise's loudest (100 Hz-16 kHz). The bank's tape noise is no Rayleigh magnitude (its
-5 kHz bin's mean sits 4.7-5.7 times its p10, against 2.73; codec holes empty bins above 10 kHz),
-so a raw low quantile with the Rayleigh correction misses by 5-20 dB; a moving mean first
+5 kHz bin's mean sits 3.2-4.7 times its p10, class medians over the 200 tape-noise-only
+fixtures, against 2.73, and 2.6-3.8 in the Tata tapes' true pauses; codec holes empty bins
+above 10 kHz), so a raw low quantile with the Rayleigh correction misses by 5-20 dB; a moving mean first
 narrows each bin to its local mean, holes included. Over 1-64 frames and quantiles 0.05-0.5,
 each with its correction fitted as the median per-bin error over the 300 tape-noise-only
 fixtures, the 5th percentile of the 32-frame mean reads closest: a median distance of 4.22 dB,
@@ -42,6 +43,15 @@ start failing. It removes less: the hiss floor under the programme comes down 10
 pauses carry speech: in the output the floor above 7 kHz comes down 1.5-3.1 dB less, the 24-32
 dB cut at 3-6 kHz on soti and tele7abc (that speech) becomes 12-13 dB, and musical noise and
 the 's' lift fall.
+
+On real tape, against the noise of the true pauses, this print reads 1.0-1.1 dB under it at
+6-10 kHz (the Tata tapes, 52 IA hunt clips with pauses) where it reads +0.3 dB over it on the
+realistic-v2 fixtures with pauses, so BIAS_DB does not transfer whole. The 5th percentile needs
+noise-only material in 5 % of the windows (about 1.1 s of a 15 s clip): with less it learns the
+programme's floor (itv-continuity, 12-18 dB over its pause noise). A near-silent stretch over
+the digital floor whose bins a codec emptied is learned as zero (gogs-vhs-collection), a 2 s
+fade to silence at each end pulls the print 4.2 dB down, and a partial held through 95 % of the
+windows is learned in full (docs/configuration.md, "Real tape and limits").
 
 cathar mode alone reads the key (`cathar._learned_print`), on the speech profile (the music
 profile learns no print). The window path's mute and depth guards do not apply: this print has

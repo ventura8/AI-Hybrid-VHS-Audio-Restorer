@@ -670,8 +670,9 @@ audio alignment, or FFmpeg multiplexing.
   histogram. Under 20 live windows, or on a read or write error, it goes
   back to the window pick; the window path's guards do not apply. How the
   estimator was chosen: realistic-v2's vhs minus clean is the exact tape
-  noise, and the bank's noise is no Rayleigh magnitude (mean/p10 4.7-5.7 at
-  5 kHz against 2.73, codec holes above 10 kHz), so the textbook raw
+  noise, and the bank's noise is no Rayleigh magnitude (mean/p10 3.2-4.7
+  at 5 kHz, class medians, against 2.73; 2.6-3.8 in the Tata tapes'
+  pauses; codec holes above 10 kHz), so the textbook raw
   quantile with the Rayleigh correction misses by 5-20 dB; over 1-64 frames
   and q 0.05-0.5 with the correction fitted as the median per-bin error,
   K32 q0.05 reads closest (median LSD 4.22 dB over 300 tape-noise-only
@@ -679,15 +680,28 @@ audio alignment, or FFmpeg multiplexing.
   with pauses but reads the hiss band 1.3-2.4 dB high; on music with no
   pause it learns programme (+5-6 dB, 45-48 % of bins over +6 dB). On the
   IA hunt (denoise stage, CPU) 25 of the 56 denoise-class octave failures
-  stop failing, 3 of 96 passing clips start (a near-silent window and a
-  digital mute the window had learned); the hiss floor under the programme
-  comes down 10.2 dB instead of 14.1. On the Tata tapes it leaves 1.5-3.1
-  dB more hiss above 7 kHz and stops the stitched print's 24-32 dB cut of
-  speech at 3-6 kHz (soti, tele7abc): the stitched pauses carry speech.
+  stop failing, 3 of 96 passing clips start (a digital mute the window had
+  learned; and itv-continuity, where the window print is its 1 s noise-only
+  intro and the quantile print the programme's floor, 12-18 dB over it:
+  the 5th percentile needs noise-only material in 5 % of the windows, about
+  1.1 s of a 15 s clip); the hiss floor under the programme comes down
+  10.2 dB instead of 14.1. On the Tata tapes it leaves 1.5-3.1 dB more hiss
+  above 7 kHz and stops the stitched print's 24-32 dB cut of speech at
+  3-6 kHz (soti, tele7abc): the stitched pauses carry speech (that print
+  reads +4.3 dB over the true-pause noise at 3-6 kHz, +8 to +11 under
+  3 kHz). Against the true-pause noise the quantile print reads 1.0-1.1 dB
+  under at 6-10 kHz on real tape (Tata, 52 IA clips with pauses) but
+  +0.3 dB over on realistic-v2's fixtures with pauses: the +0.62 dB
+  correction does not transfer whole, so recheck it on real tape before a
+  default moves. It also learns a codec-emptied near-silence over -90 dBFS
+  as zero (gogs-vhs-collection), drops 4.2 dB under 2 s fades to silence
+  at both ends, and learns a partial held through 95 % of the windows.
   `cathar_alpha` 1.25 with it brings the hiss removal back to the window's
   (37 of 56 still failing, 7 passing clips start). The fact to remember: at
   alpha 1.0 a correct print removes less than the over-reading one the
   listener round tuned against, so judge `quantile` with alpha, not alone.
+  The real-tape and limit readings: `scratch_qprint\review` (`pause_truth.py`,
+  `fixture_pause.py`, `noise_ratio.py`, `synthetic.py`, `clip_profile.py`).
   Scripts and data: `D:\ai_restore_work\scratch_qprint` (`tools/calibrate3.py`,
   `cal3_table.py`, `hunt_validate.py`, `hunt_alpha.py`, `run_tata.py`,
   `tata_measure.py`, `tata_alpha.py`). Pending a blind listening session.

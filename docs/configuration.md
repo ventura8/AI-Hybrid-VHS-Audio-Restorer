@@ -1072,7 +1072,9 @@ against the print of that noise by its log-spectral distance over the bins
 within 40 dB of the noise's loudest, 100 Hz to 16 kHz (LSD), its median
 error at 3-16 kHz (bias) and the share of bins more than 6 dB over (over).
 The bank's tape noise is no Rayleigh magnitude: its 5 kHz bin's mean sits
-4.7-5.7 times its p10 (2.73 for Rayleigh) and codec holes empty bins above
+3.2-4.7 times its p10 (medians per class and language over the 200
+tape-noise-only fixtures, a tenth of them past 9; 2.73 for Rayleigh, 2.6-3.8
+in the Tata tapes' true pauses) and codec holes empty bins above
 10 kHz, so a raw low quantile with the Rayleigh correction misses by 5 to
 20 dB. A moving mean first narrows each bin to its local mean, holes
 included. Over 1 to 64 frames and quantiles 0.05 to 0.5, each with its
@@ -1163,11 +1165,15 @@ failing clips' programme band (100 Hz to the programme bandwidth, at most
 8 kHz) against 8.6 for the window, and only one failing clip's sits within
 6 dB; on the passing clips 17.4 against 17.2. It sits 3.5 dB under the
 window print below 3 kHz and 3.0 above on the failing clips, 0.3 and 1.6 on
-the passing ones. Two of the three new failures are clips where the window
-had found nothing to subtract: itv-continuity's window sat 33 dB down on a
-near-silent stretch, and the-lion-king-dodge-commercials' was a digital
-mute (the clip the mute guard cost 3.4 dB at 8-16 kHz). The third,
-potsworth, moves from -2.4 to -4.4 dB.
+the passing ones. Of the three new failures, the-lion-king-dodge-commercials
+is a clip where the window had found nothing to subtract: its window print
+was a digital mute (the clip the mute guard cost 3.4 dB at 8-16 kHz).
+itv-continuity is the other way round: its window print is its 1 s
+noise-only intro (within 0.25 dB of the noise in its true pauses, 300 Hz
+to 16 kHz), while the quantile print sits 12-18 dB over that noise from
+300 Hz to 10 kHz, the programme's own floor: the intro is under 5 % of the
+clip's windows (see "Real tape and limits" below). The third, potsworth,
+moves from -2.4 to -4.4 dB.
 
 ### The four Tata tapes
 
@@ -1201,6 +1207,42 @@ four (-14.5, -16.6, -16.0, -13.2 against -13.9, -15.2, -14.5, -14.3) at
 lkr 0.80, 0.71, 0.32, 0.38 (window 0.86, 1.25, 0.46, 0.46). Not judged by
 ear: the listening session gets `quantile` at alpha 1.0 and 1.25 against
 `window`, on the hunt clips that stop failing and on the Tata tapes.
+
+### Real tape and limits
+
+Read against the noise of the true pauses (the mean magnitude of cathar's
+frames lying wholly inside `pause_metrics.true_pause_mask`'s pauses, the
+left channel), the quantile print sits under the hiss above 3 kHz on real
+tape. On the four Tata tapes it reads 0.5, 1.1 and 1.6 dB under it at 3-6,
+6-10 and 10-16 kHz (medians); the stitched print reads +4.3, +1.2 and
++0.1 dB there and +8 to +11 dB under 3 kHz, where its pauses carry speech.
+On the 52 IA hunt clips with at least 40 such frames it reads 0.2, 1.0 and
+1.8 dB under, the window print (which found a pause there) -0.1 to +0.05.
+On the 51 realistic-v2 speech and music-bed fixtures with pauses the same
+reading puts the quantile print +0.3 dB over the pause noise at 3-6 and at
+6-10 kHz, so the calibrated +0.62 dB leaves it 0.5-0.8 dB lower at 3-6 kHz
+and 1.3-1.5 dB lower at 6-10 kHz on real tape than on the bank, whose noise
+spreads wider than real hiss (above). Part of the hiss the quantile
+print leaves is that offset: recheck the correction on real tape before a
+default moves.
+
+Limits, measured on the hunt clips and on synthetic 15 s material (hiss at
+-50 dBFS):
+
+- The 5th percentile needs noise-only material in 5 % of the windows, about
+  1.1 s of a 15 s clip in runs longer than the moving mean; with less, the
+  print is the programme's own floor (itv-continuity, above).
+- A digital mute is left out frame by frame, but a near-silent stretch over
+  -90 dBFS whose bins a lossy codec emptied is learned as it is:
+  gogs-vhs-collection's 3 s at -73 to -84 dBFS put the print at the
+  histogram floor above 300 Hz, so nothing is subtracted there (its window
+  print was as empty).
+- A fade to digital silence counts until it passes -90 dBFS: a 100 dB fade
+  over 2 s at each end pulls the print 4.2 dB down in every band, over 1 s
+  0.1 dB.
+- A partial held through 95 % of the windows is learned in full (a chord
+  held 15 s reads +52 dB over the hiss at its partials) and subtracted, as
+  the window pick does on such material.
 
 ## Event Log
 
