@@ -24,8 +24,9 @@ audio alignment, or FFmpeg multiplexing.
 - **`auto_pure_linear`** -> `*_PureLinear_Cleaned.<ext>`
   - Scan $\\rightarrow$ pre-conditioning $\\rightarrow$ `modules/apl_chain.py`
     (surgical notches, gated repair, hum canceller, plosive tamer, optional
-    subtraction) $\\rightarrow$ neural denoiser $\\rightarrow$ sibilant
-    guard, polish (expander, air shelf), pause floor $\\rightarrow$
+    subtraction) $\\rightarrow$ neural denoiser (level restore, off)
+    $\\rightarrow$ sibilant guard, post-neural suppressor (gated, off),
+    polish (expander, air shelf, its gate off), pause floor $\\rightarrow$
     shift/DTW $\\rightarrow$ remux.
   - The engine the harness's loops tune beside `cathar`.
 - **`cathar`** / **`cathar_vhs`** -> `*_Cathar_Cleaned.<ext>`
@@ -140,7 +141,8 @@ audio alignment, or FFmpeg multiplexing.
 1. **`modules/event_log.py`**: the engine's event log
    (`AI_RESTORE_EVENT_LOG=<dir>`, unset by default, and then nothing is
    written or computed). The sibilant guard, the plosive tamer and the pause
-   floor keeper each write
+   floor keeper each write (and APL's post-neural hiss gate, when its key is
+   on, writes its decision and reading as `post_neural_suppress__...json`)
    `<stage>__<recording>__<mode>__<track>.json`: the stage, the recording
    (the `.temp_work_<stem>` folder name, else the track's stem), the
    configured `process_mode`, the
@@ -203,9 +205,10 @@ audio alignment, or FFmpeg multiplexing.
      (`stage_cache_key.prime`, with the cache on), when the process loads
      its code; `stage_cache_key.drift` refuses a store when a module source
      was written after the process started or the sources or packages no
-     longer hash as then. The four post-cache modules' import-time code
-     (`import_time_code`) is in the key, since processing imports `sync`
-     and `mastering` at start-up; only their function bodies are left out.
+     longer hash as then. The seven post-cache modules' import-time code
+     (`import_time_code`) is in the key, since processing imports `sync`,
+     `mastering`, `post_neural_suppress` and `neural_level` at start-up;
+     only their function bodies are left out.
    - The environment is keyed by prefix (`ENV_PREFIXES`), deny by default:
      a numerics variable with another prefix goes into the list. The model
      files are keyed in the folder audio-separator really loads from
@@ -398,6 +401,47 @@ audio alignment, or FFmpeg multiplexing.
   frames are noise; and no fill touches the RoFormer's residual hiss bursts
   near speech (2-11 % of pause frames, most of the pause hiss energy) or
   its weak 3-4.8 kHz removal under the programme.
+- **APL post-neural hiss stages (2026-10-12)**: three opt-in keys, each off
+  (`docs/configuration.md`, "auto_pure_linear Hiss After the Neural
+  Stage"). `modules/hiss_floor.py` reads the restored floor under the
+  programme the way the diagnosis's `measure.py` did (20 ms Hann frames, ERB
+  bands 3-16 kHz, a four-band activity detector on the source, the p10 over
+  +-0.75 s of programme frames, then the median; the restored file matched
+  by the loud-frame projection gain in 100-4000 Hz) against the
+  pre-conditioned audio, the reference the pause floor uses. That reference
+  is the right one: on a dead-channel tape the extracted source's downmix
+  carries the dead side's hiss and read the neural stage at -9.9 dB in
+  3-4.8 kHz where its own input says -3.7. A band is read only 10 dB over
+  16-bit dither: an absolute -90 dB cut let one tape's empty 14.3-16 kHz
+  band (-96 dB on the source, -67 dB after pre-conditioning) move its
+  8-16 kHz stationarity from 2.5 to 4.6. The pair is assumed sample-aligned
+  (the separator's output is); a lag only lowers the projection, so both the
+  gate and the level restore err towards doing less, and under a
+  correlation of 0.5 they refuse (6 of 235 hunt clips, one a 31-sample
+  shift). `modules/post_neural_suppress.py` opens the suppressor and the air
+  gate on one reading; its output is bit-identical to the prototype P2's
+  `p2_suppress.wav` on all 13 diagnosis clips, so the replay's 61-clip match
+  of P2's numbers is exact, not approximate (the gate opens on 9 of P2's
+  10; commercials-qtq reads a 3.3 dB gap). Two interactions found on
+  replay: the shipped pause floor refills the pauses the suppressor empties
+  (pause hiss +2.0 dB at the median, up on 19 of 27 clips with pauses and
+  by 29-81 dB on 7, where its deficit rule switched on; the floor under
+  the programme up on 6, by up to 19 dB), so never switch the suppressor on
+  with today's pause floor: judge it with the per-frame fill. With the
+  level restored the floor's quiet-cluster rule can find nothing to fill
+  (fourstarrevue's true pauses stay at -55 dB) and the expander's knee
+  lifts musical noise on two hot clips (chuckle-toons lkr 0.84 to 2.10).
+  The adversarial review (2026-10-12) re-ran the replay through
+  `processing._denoise_and_polish_full_audio_step` itself, only the model
+  and the cleanup stood in: the defaults rendered the shipped bytes on all
+  248 work folders, and every number above came back exact. The
+  suppressor reuses `apl_suppress_*` and `apl_noiseprint_duration_s`, which
+  the subtraction stage reads before the cached point, so a loop tuning
+  them misses the stage cache; twins would replay it. On an 8 s synthetic
+  fixture the probe holds programme and the suppressor takes 2 dB, against
+  8.9 dB on tape: test its effect on real stage WAVs, not on fixtures. The
+  air gate reads nothing when `enable_linear_air` is off or
+  `linear_air_gain_db` is 0: there is no shelf to skip.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

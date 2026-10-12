@@ -488,6 +488,110 @@ harness's true pauses, before the mux.
   new ones keep their pause low band at -5 to -13 dB. 3000 Hz and 18 dB are
   the prototype's guesses, for `scripts/audibility_check.py` and a blind A/B.
 
+## auto_pure_linear Hiss After the Neural Stage
+
+Three `auto_pure_linear` settings added on 2026-10-12 for the hiss the
+Mel-RoFormer denoiser passes, all defaulting to what every earlier release
+ran, so every output keeps its bytes until a GPU render and a listening
+session decide otherwise (`tests/unit/test_post_neural_hiss_identity.py`
+renders the step with and without the new opt-ins and compares the samples).
+`cathar` cannot reach them, and `denoise_only` does not opt in.
+
+The diagnosis of 2026-10-11 (the IA hunt's 235 clips and two Tata excerpts)
+found the neural stage the only one in the mode that removes hiss: strong
+where a tape's 8-16 kHz band is hiss-dominated, nearly an identity on music
+and adverts, and weakest in 3-4.8 kHz, where in energy it took -4.4 and
+-7.7 dB under the programme against cathar's -8.0 and -9.2 (a median over
+bands hides that). The separator's peak normalisation also drops the
+programme up to 10.7 dB across the stage on a hot or declipped tape.
+
+- `apl_post_neural_suppress` (false), with
+  `apl_post_neural_suppress_floor_gap_db` (3.0) and
+  `apl_post_neural_suppress_min_residual_db` (6.0): the mode's own MMSE-LSA
+  suppressor (`modules/spectral_suppress.py`) after the sibilant guard, at
+  `apl_suppress_noise_bias`, `apl_suppress_gain_floor_db` and
+  `apl_suppress_dd_alpha`, its noise learned from the quietest
+  `apl_noiseprint_duration_s` of the post-neural audio. It runs on a tape
+  only when one reading of that audio against the pre-conditioned source
+  (`modules/hiss_floor.py`) opens both halves of a gate: the source's
+  8-16 kHz band is hiss-dominated (median minus p10 of its frame energy,
+  median over the bands that stand 10 dB over 16-bit dither, at or under the
+  floor gap), and the restored floor under the programme stands within the
+  residual threshold of the source's, on the 3-16 kHz band median or on the
+  3-4.8 kHz bands' energy. The decision and its numbers go to the run log
+  and, with `AI_RESTORE_EVENT_LOG`, to a `post_neural_suppress__...json`
+  record.
+- `apl_neural_level_restore` (false): the neural output scaled back by the
+  least-squares projection gain of its input onto it on the input's loud
+  frames in 100-4000 Hz (`modules/neural_level.py`), so the expander's knee
+  and the pause floor's target read the level they were set for. A gain
+  under 0.5 dB, or a pair whose programmes correlate under 0.5, is left
+  alone. The intermediates are float, so a restored peak over full scale
+  reaches the mux's limiter unclipped.
+- `linear_air_gate` (`none`, or `hiss_dominated`): `hiss_dominated` skips
+  the +1 dB air shelf on a tape the hiss gate opens on. With the shelf
+  switched off (`enable_linear_air` false or `linear_air_gain_db` 0) there
+  is nothing to skip, and the gate reads nothing.
+
+CPU replay on the diagnosis's work folders (the stage WAVs it kept, its own
+measurement code, no GPU and no new restoration), against the source:
+
+- Gate: it opens on 47 of the 235 hunt clips, 10 of them on the band median
+  alone (the prototype's count) and 37 more on the 3-4.8 kHz energy. It
+  agrees with the diagnosis's own readings on 229 clips (233 on the band
+  median alone); the rest sit within 0.3 dB of a threshold, or read the
+  pre-conditioned reference where the diagnosis read the extracted source
+  (a dead-channel tape the mirror cleans: -3.7 dB at 3-4.8 kHz against
+  -9.9). Of the 13 diagnosis clips it opens on one (abc-primetime 1991,
+  -1.6 dB at 3-4.8 kHz) and stays shut on both Tata excerpts and every music
+  clip. Six hunt clips give no reading (programme correlation under 0.5: a
+  31-sample shift across the neural stage, noise-dominated tapes, a slate)
+  and stay shut.
+- Suppressor: its output is bit-identical to the prototype's on all 13
+  clips, and the chain (suppressor, the shipped polish, the prototype's
+  shelved fill) reproduces the prototype's numbers on all 61 clips
+  replayed. On the prototype's 10 (the gate opens on 9 of them;
+  commercials-qtq reads a 3.3 dB gap on the pre-conditioned audio, 2.7 dB on
+  the extracted source): the floor under the programme -15.7 dB (band
+  median), `residual_noise_db` -5.3, loud-frame 8-16 kHz -3.5 dB, musical
+  noise (lkr) 0.39.
+- Against today's output at the same point (air shelf, shipped pause floor,
+  before the mux), on the 48 clips the gate opens on (median, p10 to p90):
+  the floor under the programme -8.9 dB on the band median (-13.8 to +1.4)
+  and -8.3 dB at 3-4.8 kHz (-11.5 to -5.7); loud-frame 8-16 kHz -0.6 dB
+  (-4.8 to +1.4); programme level -1.1 dB (-1.8 to -0.5); lkr +0.18 (0.0 to
+  +0.3). The pauses get worse, +2.0 dB (-0.1 to +54.6): the pause floor's
+  absolute target now sees a deficit and refills it with source hiss. The
+  tails matter: the pause hiss rose on 19 of the 27 clips with true pauses,
+  by 29-81 dB on 7, which end between -16 and +0.3 dB against the source
+  (capture-a-1128202105 -85.7 to -4.3 dB), and the floor under the programme
+  rose on 6, by up to 19 dB (f-1-1980-08-british-gp). With the prototype's
+  per-frame shelved fill instead, the pauses go -18.0 dB and lkr +0.28, so
+  this stage is never switched on with today's pause floor: it is judged
+  together with the per-frame fill.
+- Air gate: -0.35 dB under the programme on the band median (-0.5 to -0.3),
+  -0.04 dB at 3-4.8 kHz, -0.67 dB in the loud frames' 8-16 kHz; the pauses do
+  not move.
+- Level restore: on the 26 clips whose neural input peaked over 0.9 the gain
+  matched the separator's peak ratio within 0.1 dB (fourstarrevue +10.68 dB,
+  fun-song +10.05, f1-1953 +8.14); on the other 218 it read +0.004 dB at the
+  median (p95 +0.15), and 7 passed 0.5 dB, the model's own level change.
+  Through the real sibilant guard, polish and pause floor, six hot clips end
+  within 0.4 dB of the source's programme level; fun-song's
+  `residual_noise_db` goes +6.37 to -0.32 dB, everton's pause 100-1000 Hz
+  +6.39 to -0.30, pugwash's pause hiss -5.9 to -11.3. On fourstarrevue the
+  pause floor then finds nothing to fill on its quiet cluster and the true
+  pauses stay at the neural stage's -55 dB (their 100-1000 Hz body at
+  -0.7 dB, `gap_air_db` -9.7 dB, clear of the -25 dB dead-air flag). With
+  the expander's knee where it was set, musical noise rose on two hot clips
+  whose floor the neural stage had emptied: chuckle-toons lkr 0.84 to 2.10,
+  hogan-show 0.99 to 1.19; a listening question.
+
+All three act after the stage cache's cached point
+(`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only them replays
+the neural stage. The suppressor's own settings stay keyed, because the
+subtraction stage before the cached point reads them too.
+
 ## Event Log
 
 `AI_RESTORE_EVENT_LOG=<dir>` in the environment (not a `config.yaml` key)
@@ -496,7 +600,9 @@ JSON record each, `<stage>__<recording>__<mode>__<track>.json`: the
 sibilant guard and the plosive tamer (the spans they detected, on the
 pre-neural audio's timeline, with their thresholds), the pause floor keeper
 (the pauses it found and the frames it filled, on the restored file's
-timeline), and the mux's loudness stage (the measured values, the mode
+timeline), `auto_pure_linear`'s post-neural hiss gate (its decision, its
+thresholds and the reading it decided on, when its key is on), and the mux's
+loudness stage (the measured values, the mode
 ffmpeg's rule predicts, the fallback, and what the applied pass reported,
 `normalization_type` included; also written beside the track it masters).
 A stage that did not look records why (switched off, refused material, or
@@ -537,8 +643,9 @@ it off, with a warning, because each candidate runs in its own working folder.
   in their bytes), its name and layout; every argument of the stage, the
   scanner's whole strategy and the seven stage switches included; the
   resolved configuration minus the keys below; the sources of every module
-  but `sibilant_guard`, `pause_floor`, `mastering` and `sync`, what importing
-  those four runs (their import-time code, without the bodies of the
+  but `sibilant_guard`, `pause_floor`, `mastering`, `sync`, `hiss_floor`,
+  `post_neural_suppress` and `neural_level`, what importing those seven runs
+  (their import-time code, without the bodies of the
   functions import never calls) and `restore_audio_hybrid.py`, read when the
   process starts; ffmpeg (content and `-version` output) and cathar
   (content), which the chain runs; the model files the stage can load (name,
@@ -552,7 +659,7 @@ it off, with a warning, because each candidate runs in its own working folder.
   `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
   `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
   own two and `AI_RESTORE_EVENT_LOG`.
-- The 26 keys left out of the key, each read only after the denoiser
+- The 31 keys left out of the key, each read only after the denoiser
   (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
   code by `tests/unit/test_stage_cache_allowlist.py` and
   `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
@@ -562,8 +669,10 @@ it off, with a warning, because each candidate runs in its own working folder.
   `apl_enable_sibilant_guard`, `apl_sibilant_mix`, `apl_sibilant_guard_hz`,
   `apl_sibilant_hf_share_min`, `enable_pause_floor`, `pause_floor_fill_db`,
   `pause_floor_quiet_percentile`, `pause_floor_target`, `pause_floor_shape`,
-  `pause_floor_shelf_hz`, `pause_floor_hf_cut_db`, `enable_loudnorm`,
-  `loudnorm_target_lra`,
+  `pause_floor_shelf_hz`, `pause_floor_hf_cut_db`, `apl_post_neural_suppress`,
+  `apl_post_neural_suppress_floor_gap_db`,
+  `apl_post_neural_suppress_min_residual_db`, `linear_air_gate`,
+  `apl_neural_level_restore`, `enable_loudnorm`, `loudnorm_target_lra`,
   `loudnorm_linear_fallback`, `preserve_original_audio_track`,
   `dtw_resolution` and `apl_music_bg_floor_db`. Every other key, one the code
   does not know included, is in the key; the `cathar_*` keys among them,

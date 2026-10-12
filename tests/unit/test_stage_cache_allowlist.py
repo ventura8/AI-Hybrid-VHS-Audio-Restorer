@@ -20,8 +20,9 @@ WHOLE = "*"
 
 # key -> (constant in modules/config.py, the sites allowed to read it: "<module>:<qualified function>" or "<module>:*").
 READ_SITES = {
-    "enable_linear_air": ("ENABLE_LINEAR_AIR", {"filters.py:_build_linear_air_filter"}),
-    "linear_air_gain_db": ("LINEAR_AIR_GAIN_DB", {"filters.py:_build_linear_air_filter"}),
+    # The post-neural air gate reads whether the polish has a shelf to skip.
+    "enable_linear_air": ("ENABLE_LINEAR_AIR", {"filters.py:_build_linear_air_filter", "post_neural_suppress.py:_shelf_on"}),
+    "linear_air_gain_db": ("LINEAR_AIR_GAIN_DB", {"filters.py:_build_linear_air_filter", "post_neural_suppress.py:_shelf_on"}),
     "linear_air_freq_hz": ("LINEAR_AIR_FREQ_HZ", {"filters.py:_build_linear_air_filter"}),
     # The polish expander; processing's background expander runs only in hybrid and auto_pure.
     "enable_dynamic_expander": ("ENABLE_DYNAMIC_EXPANDER", {"filters.py:_append_expander_stage", "processing.py:_expand_background_step"}),
@@ -50,6 +51,12 @@ READ_SITES = {
     "pause_floor_shape": ("PAUSE_FLOOR_SHAPE", {"pause_floor.py:*"}),
     "pause_floor_shelf_hz": ("PAUSE_FLOOR_SHELF_HZ", {"pause_floor.py:*"}),
     "pause_floor_hf_cut_db": ("PAUSE_FLOOR_HF_CUT_DB", {"pause_floor.py:*"}),
+    # The post-neural hiss stages: the suppressor's gate and the air shelf's gate, and the level restore.
+    "apl_post_neural_suppress": ("APL_POST_NEURAL_SUPPRESS", {"post_neural_suppress.py:*"}),
+    "apl_post_neural_suppress_floor_gap_db": ("APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB", {"post_neural_suppress.py:*"}),
+    "apl_post_neural_suppress_min_residual_db": ("APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB", {"post_neural_suppress.py:*"}),
+    "linear_air_gate": ("LINEAR_AIR_GATE", {"post_neural_suppress.py:*"}),
+    "apl_neural_level_restore": ("APL_NEURAL_LEVEL_RESTORE", {"neural_level.py:*"}),
     # processing's <module> reads are the re-exports at the end of the file.
     "enable_loudnorm": ("ENABLE_LOUDNORM", {"mastering.py:*", "processing.py:<module>"}),
     "loudnorm_target_lra": ("LOUDNORM_TARGET_LRA", {"mastering.py:*", "processing.py:<module>"}),
@@ -62,7 +69,10 @@ READ_SITES = {
     "apl_music_bg_floor_db": ("APL_MUSIC_BG_FLOOR_DB", {"apl_stems.py:_background_pass"}),
 }
 
-POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py"}
+# processing and cathar's mode run the post-cache stages; the two post-neural hiss stages import the
+# hiss-floor reading, itself a post-cache module. processing imports those two at start-up and
+# calls them after the cached point; each returns at once unless its caller opted in.
+POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py", "post_neural_suppress.py", "neural_level.py"}
 
 
 def _module_files():

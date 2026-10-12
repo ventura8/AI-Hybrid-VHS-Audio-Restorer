@@ -95,7 +95,21 @@ The engine supports 10 execution modes configured in `config.yaml`:
     `AI_RESTORE_STAGE_CACHE=<absolute dir>` (the loop's `--stage-cache`)
     the neural stage's output is stored and replayed while only
     post-neural settings change (`modules/stage_cache.py`, deny-by-default
-    key; off by default, never used by `cathar`).
+    key; off by default, never used by `cathar`). Post-neural hiss stages
+    (2026-10-12, each off and opt-in, every output keeping its bytes):
+    `apl_post_neural_suppress` runs the mode's MMSE-LSA suppressor after the
+    sibilant guard on a tape whose 8-16 kHz source band is hiss-dominated
+    and whose floor the neural stage left within
+    `apl_post_neural_suppress_min_residual_db` on the band median or the
+    3-4.8 kHz energy (`modules/post_neural_suppress.py`,
+    `modules/hiss_floor.py`); `apl_neural_level_restore` undoes the
+    separator's peak normalisation (`modules/neural_level.py`);
+    `linear_air_gate` `hiss_dominated` skips the air shelf where that gate
+    opens. On CPU replay the gate opens on 47 of 235 hunt clips and on no
+    Tata or music clip (`docs/configuration.md`). The suppressor is never
+    switched on with today's pause floor, which refills what it lowers
+    with source hiss (pauses up 29-81 dB on 7 of 27 gated clips); it is
+    judged with the per-frame pause fill.
 - **`auto`** (`*_Auto_Cleaned.<ext>`, the default):
   - Stages: AI acoustic profiling (speech, music, rhythm, tonality, noise
     floor, hum) $\\rightarrow$ engine & model selection $\\rightarrow$ the

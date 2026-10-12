@@ -389,6 +389,18 @@ _NUMERIC_CONFIG_FIELDS = (
     ("apl_suppress_noise_bias", float, 1.0, 0.0),
     ("apl_suppress_gain_floor_db", float, -20.0, None),
     ("apl_suppress_dd_alpha", float, 0.96, 0.0, 1.0),
+    # The post-neural suppressor's gate (apl_post_neural_suppress, modules/post_neural_suppress.py),
+    # read on the audio after the sibilant guard against the pre-conditioned source
+    # (modules/hiss_floor.py). The first half: the source's 8-16 kHz band is hiss-dominated when
+    # its stationarity (median minus p10 of the frame energy, median over the bands) is at or under
+    # this many dB; hiss reads 2-4, programme more. The second half: the neural stage left a
+    # residual when the restored floor under the programme stands within this many dB of the
+    # source's, on the 3-16 kHz band median or on the 3-4.8 kHz bands' energy. Measured on the
+    # diagnosis's hunt (2026-10-11, 235 clips): 78 hiss-dominated; the band median admits 10 of
+    # them (the prototype P2's gate) and the 3-4.8 kHz energy 43, the band where the RoFormer
+    # removes -4.4/-7.7 dB against cathar's -8.0/-9.2. Not yet judged by ear.
+    ("apl_post_neural_suppress_floor_gap_db", float, 3.0, 0.0),
+    ("apl_post_neural_suppress_min_residual_db", float, 6.0, 0.0),
     # Plosive control: how far the low band must rise over its own running level, in dB,
     # to be read as a plosive burst. 0 switches detection off, like `apl_depop_threshold`.
     # Set by the measurement in `apl_enable_plosive_tamer`.
@@ -625,6 +637,24 @@ _BOOL_CONFIG_FIELDS = (
     ("azimuth_reject_inverted_pair", False),
     ("apl_music_stem_path", False),
     ("apl_enable_sibilant_guard", True),
+    # The hiss the RoFormer passes (diagnosis of 2026-10-11, modules/post_neural_suppress.py): the
+    # mode's MMSE-LSA suppressor after the neural stage, gated per file on a hiss-dominated source
+    # whose floor the neural stage left within apl_post_neural_suppress_min_residual_db. On the 10
+    # hunt clips the prototype's gate admitted (this gate opens on 9), followed by the prototype's
+    # per-frame shelved pause fill, the floor under the programme went from -1.8 to -15.7 dB under
+    # the source's (medians) for loud-frame 8-16 kHz from -0.9 to -3.5 dB and musical noise from lkr
+    # 0.01 to 0.39 (up to 1.28); ungated it ate music's highs. Followed by today's pause floor it
+    # makes the pauses worse: the floor refills what the suppressor lowered with the source's hiss
+    # (CPU replay, the 48 clips the gate opens on: pause hiss up on 19 of 27, by 29-81 dB on 7; the
+    # floor under the programme up on 6, by up to 19 dB). Off: every output keeps its bytes until a
+    # GPU render with the per-frame pause fill and a listening session judge it.
+    ("apl_post_neural_suppress", False),
+    # The separator peak-normalises to 0.9, so on a hot or declipped source the programme leaves
+    # the neural stage up to 10.7 dB under its input (fourstarrevue; 11 of 235 hunt clips 3 dB or
+    # more) and the expander's knee and the pause floor's target read the wrong level. On, the
+    # neural output is scaled back by the loud-frame projection gain (modules/neural_level.py).
+    # Off: every output keeps its bytes.
+    ("apl_neural_level_restore", False),
     ("cathar_enable_deesser", True),
     ("cathar_enable_dereverb", False),
     ("cathar_dereverb_wpe", True),
@@ -678,6 +708,12 @@ CATHAR_DEHUM_FREQ_SCANNER = "scanner"
 VALID_PAUSE_FLOOR_TARGETS = {"cluster", "frame"}
 VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass"}
 
+# linear_air_gate: 'none' keeps auto_pure_linear's air shelf on every tape, as every release has;
+# 'hiss_dominated' skips it on a tape the post-neural hiss gate opens on (a hiss-dominated source
+# whose floor the neural stage left within apl_post_neural_suppress_min_residual_db), where the
+# +1 dB shelf lifted that residual 0.3-0.9 dB under the programme (modules/post_neural_suppress.py).
+VALID_LINEAR_AIR_GATES = {"none", "hiss_dominated"}
+
 
 def _reject_config_value(param_name, raw_value, default):
     """Logs a normalisation warning and returns the field's default."""
@@ -718,6 +754,10 @@ def _normalize_pause_floor_target(raw_value):
 
 def _normalize_pause_floor_shape(raw_value):
     return _normalize_choice(raw_value, VALID_PAUSE_FLOOR_SHAPES, "pause_floor_shape", "flat")
+
+
+def _normalize_linear_air_gate(raw_value):
+    return _normalize_choice(raw_value, VALID_LINEAR_AIR_GATES, "linear_air_gate", "none")
 
 
 def _is_zero(raw_value):
@@ -845,6 +885,7 @@ def _apply_user_config(defaults, user_config):
     defaults["cathar_dehum_freq"] = _normalize_cathar_dehum_freq(defaults.get("cathar_dehum_freq"))
     defaults["pause_floor_target"] = _normalize_pause_floor_target(defaults.get("pause_floor_target"))
     defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
+    defaults["linear_air_gate"] = _normalize_linear_air_gate(defaults.get("linear_air_gate"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -894,6 +935,9 @@ def load_config():
         # listening session decide (see PAUSE_FLOOR_TARGET below).
         "pause_floor_target": "cluster",
         "pause_floor_shape": "flat",
+        # auto_pure_linear's air shelf on every tape ('none', as every release has run) or skipped
+        # where the post-neural hiss gate opens ('hiss_dominated'); not yet judged by ear.
+        "linear_air_gate": "none",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1122,4 +1166,9 @@ CATHAR_MUSIC_CRT_NOTCH_Q = float(CONFIG.get("cathar_music_crt_notch_q", 60.0))
 CATHAR_MUSIC_ENABLE_DEESSER = bool(CONFIG.get("cathar_music_enable_deesser", False))
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 1.0))
 LINEAR_AIR_FREQ_HZ = float(CONFIG.get("linear_air_freq_hz", 7500.0))
+LINEAR_AIR_GATE = str(CONFIG.get("linear_air_gate", "none"))
+APL_POST_NEURAL_SUPPRESS = bool(CONFIG.get("apl_post_neural_suppress", False))
+APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB = float(CONFIG.get("apl_post_neural_suppress_floor_gap_db", 3.0))
+APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB = float(CONFIG.get("apl_post_neural_suppress_min_residual_db", 6.0))
+APL_NEURAL_LEVEL_RESTORE = bool(CONFIG.get("apl_neural_level_restore", False))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))
