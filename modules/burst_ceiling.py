@@ -22,8 +22,9 @@ restored programme's level:
   HEADROOM_DB, so the restored cell keeps all of that programme;
 - between the two, in power, by how surely it carries programme: its envelope averaged over three
   neighbouring bands from PROGRAMME_DB over the floor, a cell on its own from
-  PROGRAMME_CELL_DB, each surely so RAMP_DB further on. The envelope is closed over three
-  blocks (a one-block dip is filled; a word's edge is not moved).
+  PROGRAMME_CELL_DB, each surely so RAMP_DB further on; a sure programme cell's tail, the cells
+  joined to it along time in its band that stand over TAIL_DB, from TAIL_DB. The envelope is
+  closed over three blocks (a one-block dip is filled; a word's edge is not moved).
 
 A cell under its ceiling passes untouched, so a restored cell already in the floor is never
 lifted and a word's tail keeps what the source shows it carried. 'gaps' acts in the source's
@@ -35,9 +36,10 @@ or music, keeps every sample), and only where the source's floor stands over 16-
 
 Everything is read and applied on one STFT of about 23 ms (a power of two, periodic Hann, hop a
 quarter), the readings summed over blocks of four frames (one STFT length), so a burst between
-two frames is read whole. The cuts are interpolated from the blocks to the frames and spread
-over three bins, and the output is the restored audio plus the overlap-added STFT of
-`X * (gain - 1)`: every sample no capped frame reaches is the input's exactly.
+two frames is read whole. The cuts are interpolated from the blocks to the frames, never deeper
+than a frame's own block, and spread over three bins; the output is the restored audio plus the
+overlap-added STFT of `X * (gain - 1)`: every sample no capped frame reaches is the input's
+exactly.
 
 The CPU replay on the diagnosis's stage WAVs is in `docs/configuration.md` ("auto_pure_linear
 Burst Ceiling"). Every decision is logged, and written to the event log
@@ -73,6 +75,17 @@ FLOOR_PERCENTILE = 10.0
 PROGRAMME_DB = 6.0
 PROGRAMME_CELL_DB = 10.0
 RAMP_DB = 3.0
+# A word's tail decays through PROGRAMME_DB: a cell whose three-band average stands over TAIL_DB
+# above the floor and that joins a sure programme cell along time in its band, through such
+# cells, is that programme's tail, its share ramping from TAIL_DB to PROGRAMME_DB. TAIL_DB is the
+# hiss's own p95 in the Tata excerpts' gaps away from speech (2.9-3.3 dB). Read as hiss, the tails
+# the RoFormer kept at the source's level were cut to the depth (abc-primetime at 3.88 s: five
+# 3-5.3 kHz bands 5.4-7.1 dB over the floor, the three whose neighbourhood read under 6 dB cut
+# 34-37 dB): 22-48 % of the energy the stage removed on five of the six replayed clips it acted
+# on, and the word-edge cells 3-6 dB over the floor lost 3.7-6.1 dB.
+TAIL_DB = 3.0
+# Joins cells along time only (axis 0), never across bands.
+ALONG_TIME = ((0, 1, 0), (0, 1, 0), (0, 1, 0))
 # A cell that surely carries programme may keep the source's closed envelope plus this.
 HEADROOM_DB = 3.0
 # The source's envelope is closed (dilated, then eroded) over this many blocks.
@@ -100,8 +113,12 @@ BLOCK_FRAMES = 4
 CHUNK_BLOCKS = 1024
 BLOCK_SAMPLES = 1 << 20
 MAX_LENGTH_DIFF_S = 0.5
-# Every filter along time or bands repeats its edge value outward.
+# Every filter along time or bands repeats its edge value outward, but the floor's percentile,
+# which mirrors the blocks at the file's ends: repeated, the last block (partly past the end,
+# 1-8 dB under the band's median on the unit test's tape) held the floor up to 6 dB low over the
+# last 0.8 s, so the hiss there read as programme and its bursts were kept.
 EDGE_MODE = "nearest"
+FLOOR_EDGE_MODE = "mirror"
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
 
 
@@ -232,7 +249,7 @@ def read_blocks(handles, blocks, stft):
 def band_floor(src_bands, block_s):
     """The source's floor per block and band: the FLOOR_PERCENTILE of the band over +-FLOOR_HALF_S."""
     half = max(1, int(round(FLOOR_HALF_S / block_s)))
-    return scipy.ndimage.percentile_filter(src_bands, FLOOR_PERCENTILE, size=(2 * half + 1, 1), mode=EDGE_MODE)
+    return scipy.ndimage.percentile_filter(src_bands, FLOOR_PERCENTILE, size=(2 * half + 1, 1), mode=FLOOR_EDGE_MODE)
 
 
 def closed_envelope(src_bands):
@@ -248,12 +265,28 @@ def programme_share(envelope, floor):
     averaged alike) from PROGRAMME_DB, and on the cell alone from PROGRAMME_CELL_DB, each rising
     to 1 over RAMP_DB; the larger counts. A cell's hiss fluctuates on its own while a tail or a
     breath spans its neighbours, so one band's chance peak in a gap is not programme, and a
-    narrow partial the neighbourhood would dilute still is.
+    narrow partial the neighbourhood would dilute still is. The programme's tails keep a share
+    down to TAIL_DB (`tail_share`).
     """
     spread = db(scipy.ndimage.uniform_filter1d(envelope, size=BAND_SMOOTH, axis=1, mode=EDGE_MODE))
     spread -= db(scipy.ndimage.uniform_filter1d(floor, size=BAND_SMOOTH, axis=1, mode=EDGE_MODE))
     alone = db(envelope) - db(floor)
-    return np.clip(np.maximum(spread - PROGRAMME_DB, alone - PROGRAMME_CELL_DB) / RAMP_DB, 0.0, 1.0)
+    share = np.clip(np.maximum(spread - PROGRAMME_DB, alone - PROGRAMME_CELL_DB) / RAMP_DB, 0.0, 1.0)
+    return tail_share(share, spread)
+
+
+def tail_share(share, spread):
+    """`share` with its programme's tails: the cells over TAIL_DB joined along time, in their band, to a sure programme cell.
+
+    Such a cell takes at least its spread's ramp from TAIL_DB (0) to PROGRAMME_DB (1); a cell of
+    the same level that no sure programme cell (share 1) reaches through its band stays hiss, so a
+    chance peak of the hiss (the p99 of a gap's spread stands at 3.8-6.6 dB) starts no tail.
+    """
+    seed = share >= 1.0
+    labels, _count = scipy.ndimage.label(seed | (spread > TAIL_DB), structure=ALONG_TIME)
+    joined = np.isin(labels, labels[seed])
+    ramp = np.clip((spread - TAIL_DB) / (PROGRAMME_DB - TAIL_DB), 0.0, 1.0)
+    return np.where(joined, np.maximum(share, ramp), share)
 
 
 def ceiling_db(src_bands, floor, depth_db):
@@ -354,11 +387,18 @@ def plan(reference_wav, restored_wav, scope, depth_db):
 
 
 def frame_cuts(the_plan, centres):
-    """The band cuts (dB) at STFT frame centres (samples), interpolated between the blocks' centres."""
+    """The band cuts (dB) at STFT frame centres (samples), interpolated between the blocks' centres.
+
+    No frame is cut deeper than the block its reading belongs to: interpolated toward a deep
+    neighbour, the last frame of a word's block lost 0.375 of that neighbour's cut (13 dB beside
+    a 35 dB cut) of the programme it read.
+    """
     hop = the_plan.stft.hop
-    block_centres = (np.arange(the_plan.cut_db.shape[0]) * BLOCK_FRAMES + (BLOCK_FRAMES - 1) / 2.0) * hop
+    blocks = the_plan.cut_db.shape[0]
+    block_centres = (np.arange(blocks) * BLOCK_FRAMES + (BLOCK_FRAMES - 1) / 2.0) * hop
     columns = [np.interp(centres, block_centres, the_plan.cut_db[:, band]) for band in range(the_plan.cut_db.shape[1])]
-    return np.stack(columns, axis=1)
+    own = the_plan.cut_db[np.clip(np.asarray(centres) // (BLOCK_FRAMES * hop), 0, blocks - 1)]
+    return np.maximum(np.stack(columns, axis=1), own)
 
 
 def bin_gains(cuts, stft):

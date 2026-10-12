@@ -793,72 +793,106 @@ lose 2.1 dB).
   restored cell (one ERB band of 3-16 kHz over a 23 ms block) is held to a
   ceiling read on the pre-conditioned source, at the restored programme's
   level: `apl_burst_ceiling_depth_db` under the source's band floor (the
-  p10 of the band over +-1 s) where the source holds only hiss; the source's
-  closed envelope plus 3 dB where it surely carries programme; between the
-  two, in power, by how surely (the envelope averaged over three
-  neighbouring bands from 6 dB over the floor, a cell on its own from
-  10 dB, each surely so 3 dB further on). A cell under its ceiling passes
-  untouched; a cell of hiss alone takes the deepest cut of its block and
-  the blocks either side, so a burst's onset and tail go with it. A band
-  acts only where the neural stage emptied the gaps (its restored energy at
-  least the depth under the source's floor, the median over the non-speech
-  blocks) and where the source's floor stands 10 dB over 16-bit dither. The
-  output is the restored audio plus the overlap-added STFT of
-  `X * (gain - 1)`, so every sample no capped frame reaches keeps its
-  bytes; it is named `capped_<scope><depth>_<input>`. The depth is the
-  shelved pause fill's own level (12 + 18 dB). The run log and, with
-  `AI_RESTORE_EVENT_LOG`, a `burst_ceiling__...json` record carry the
-  decision, the active bands, the gaps' restored floor and the blocks
-  capped.
+  p10 of the band over +-1 s, the blocks mirrored at the file's ends) where
+  the source holds only hiss; the source's closed envelope plus 3 dB where
+  it surely carries programme; between the two, in power, by how surely
+  (the envelope averaged over three neighbouring bands from 6 dB over the
+  floor, a cell on its own from 10 dB, each surely so 3 dB further on). A
+  sure programme cell's tail, the cells joined to it along time in its band
+  whose three-band average stands over 3 dB (the hiss's own p95 in the Tata
+  gaps), counts from 3 dB. A cell under its ceiling passes untouched; a cell
+  of hiss alone takes the deepest cut of its block and the blocks either
+  side, so a burst's onset and tail go with it; no STFT frame is cut deeper
+  than the block it was read in. A band acts only where the neural stage
+  emptied the gaps (its restored energy at least the depth under the
+  source's floor, the median over the non-speech blocks) and where the
+  source's floor stands 10 dB over 16-bit dither. The output is the
+  restored audio plus the overlap-added STFT of `X * (gain - 1)`, so every
+  sample no capped frame reaches keeps its bytes; it is named
+  `capped_<scope><depth>_<input>`. The depth is the shelved pause fill's
+  own level (12 + 18 dB). The run log and, with `AI_RESTORE_EVENT_LOG`, a
+  `burst_ceiling__...json` record carry the decision, the active bands, the
+  gaps' restored floor and the blocks capped.
 
 CPU replay on the diagnosis's stage WAVs (`pause_off`, the 13 clips, the
 polished WAV, then the `frame` + `shelf` pause floor; no GPU, no new
 restoration), read with the diagnosis's own `measure.py` against the
 extracted source. "Hiss-only cells" are the cells where the source stands
-under 3 dB over its p10 floor (output minus source, energy); "signal" the
-non-speech cells where it stands 10 dB over (output against the input).
+under 3 dB over its p10 floor (output minus source, energy); "tail" the
+word-edge cells where it stands 3-6 dB over (output against the same chain
+without the ceiling, the fill alone against the polished WAV: what the
+stage took from the word's edges).
 
 ```text
-clip           variant       prog sum  3-4.8k   edge   gaps   near  pause mean  gap air   lkr  signal
-Tele7abc       fill alone       -25.2   -17.4  -20.5  -16.5  -27.2       -18.7    -11.7  0.18       -
-Tele7abc       gaps + fill      -25.6   -17.8  -21.5  -25.1  -29.2       -19.5    -11.7  0.18   -0.46
-Tele7abc       edges + fill     -26.8   -19.0  -27.7  -25.2  -29.2       -19.5    -12.9  0.19   -0.46
-SOTI           fill alone       -37.4   -31.8  -24.6  -22.5  -28.6       -27.5    -20.0  2.36       -
-SOTI           gaps + fill      -37.5   -31.9  -24.7  -28.5  -29.2       -27.6    -20.0  2.36    0.00
-SOTI           edges + fill     -39.5   -33.9  -29.1  -28.5  -29.2       -27.6    -22.3  2.37    0.00
-abc-primetime  fill alone        -3.6    -2.1   -5.5   -3.7   -5.9       -20.1     -5.0  0.00       -
-abc-primetime  edges + fill      -4.5    -3.0  -22.1  -27.7  -28.2       -20.3     -5.1  0.00       -
-barry          fill alone       -17.1   -12.2  -14.6  -17.4  -23.3           -     -3.9  0.21       -
-barry          edges + fill     -17.6   -12.4  -24.6  -21.3  -28.0           -     -3.9  0.21   -1.08
+clip           variant       prog sum  3-4.8k   edge   gaps   near  pause mean  gap air   lkr   tail
+Tele7abc       fill alone       -25.2   -17.4  -20.5  -16.5  -27.2       -18.7    -11.7  0.18   0.07
+Tele7abc       gaps + fill      -25.5   -17.6  -20.8  -17.2  -28.8       -19.2    -11.7  0.18  -0.08
+Tele7abc       edges + fill     -26.1   -18.3  -22.9  -17.2  -28.9       -19.2    -11.8  0.18  -0.91
+SOTI           fill alone       -37.4   -31.8  -24.6  -22.5  -28.6       -27.5    -20.0  2.36   0.25
+SOTI           gaps + fill      -37.5   -31.9  -24.7  -28.5  -29.2       -27.6    -20.0  2.36  -0.01
+SOTI           edges + fill     -39.1   -33.5  -25.9  -28.5  -29.2       -27.6    -20.8  2.42  -1.27
+abc-primetime  fill alone        -3.6    -2.1   -5.5   -3.7   -5.9       -20.1     -5.0  0.00   0.00
+abc-primetime  edges + fill      -4.2    -2.8  -15.5  -26.8  -27.5       -20.2     -5.0  0.00  -2.60
+barry          fill alone       -17.1   -12.2  -14.6  -17.4  -23.3           -     -3.9  0.21   0.03
+barry          edges + fill     -17.4   -12.3  -18.5  -17.7  -24.3           -     -3.9  0.21  -1.43
 ```
 
 Columns: the floor under the programme (3-16 kHz energy sum) and its
 3-4.8 kHz bands; the hiss-only cells at the word edges (speech frames within
 150 ms of a gap); the short gaps' energy mean (non-speech frames outside the
 true pauses); the hiss-only cells of the non-speech frames within 300 ms of
-speech; the true pauses' energy mean; `gap_air_db` (output); lkr; the
-signal cells. All in dB against the source, but lkr.
+speech; the true pauses' energy mean; `gap_air_db` (output); lkr; the tail
+cells. All in dB against the source, but lkr and the tail.
 
 - The stage acts on six of the 13 clips. It skips the seven whose gaps
   the RoFormer left at the source's level (c4-2009, dvd-205405-0, cj96,
   itv1230819: "every band's gaps within 30 dB") or that hold under 0.2 s of
   gap (c4-1999, fun-song, agatha), and those keep every sample;
   fourstarrevue and bbc-news act in 8 and 6 bands and move under 0.1 dB.
-- No guard moved: the loud frames' 4-8 and 8-16 kHz within 0.01 dB on every
-  clip, sibilance (R2 level and texture, the body ratio) unchanged, gap air
-  at -22.3 dB at the lowest (SOTI, -20.0 with the fill alone; the dead-air
-  flag is -25), lkr up 0.01 with the fill and 0.04 at most without, the
-  pause low band unchanged.
+- Guards: the loud frames' 4-8 and 8-16 kHz within 0.04 dB on every clip,
+  sibilance (R2 level and texture, the body ratio) unchanged, gap air at
+  -20.8 dB at the lowest (SOTI, -20.0 with the fill alone; the dead-air
+  flag is -25), lkr up 0.06 at most, the pause low band unchanged. The
+  word-edge cells 6-10 dB over the floor lose 1.0 dB at most
+  (abc-primetime; 0.7 dB on SOTI).
 - The true pauses' median and energy mean barely move: what carries the
-  energy mean is the programme the ceiling keeps (the tail on Tele7abc,
-  the first frame on abc-primetime), and on SOTI the fill itself (-30 dB).
-  The hiss-only cells in the true pauses read -29.1 / -28.8 dB with the
-  ceiling and the fill, the fill's own level.
-- Alone (the pause floor off) the ceiling takes Tele7abc's word-edge hiss
-  from -20.8 to -29.3 dB and the short gaps from -16.7 to -26.7 dB, SOTI's
-  from -25.5 to -31.8 and -23.7 to -46.8 dB.
+  energy mean is programme the ceiling keeps (the tail on Tele7abc, the
+  first frame on abc-primetime), and on SOTI the fill itself (-30 dB). The
+  hiss-only cells in the true pauses read -29.0 / -28.8 dB with the ceiling
+  and the fill, the fill's own level.
+- Alone (the pause floor off) `edges` takes Tele7abc's word-edge hiss from
+  -20.8 to -23.4 dB and SOTI's from -25.5 to -27.0 dB, SOTI's short gaps
+  from -23.7 to -46.6 dB.
+- Pumping is the open risk. Where the RoFormer leaves the hiss under the
+  programme near the source's level, the ceiling makes it follow the words:
+  on abc-primetime the floor under the programme stays near the source's
+  (-3.6 dB with the fill alone, -4.2 with the ceiling) while the short gaps
+  go from -3.7 to -26.8 dB, and the frame-to-frame change of the
+  3-16 kHz level in the gaps and word edges rises from 2.6 to 4.3 dB (the
+  Tata excerpts 3.4 to 3.8 and 6.1 to 6.2 dB). A listening session needs
+  such a clip; a guard would hold the hiss ceiling no deeper than the
+  restored floor under the programme.
 - Cost: about 1.5 s per minute of tape on one CPU core (the reading and
   the writing, on the Tata excerpts).
+
+As first committed (2026-10-12) the ceiling read a word's decaying tail as
+hiss once the three-band average fell under 6 dB, and cut the cells the
+RoFormer had kept at the source's level to the depth: on abc-primetime at
+3.88 s five 3-5.3 kHz bands stood 5.4-7.1 dB over the floor and three were
+cut 34-37 dB. Such tail cells carried 22-48 % of the energy it removed on
+five of the six clips it acted on, the word-edge cells 3-6 dB over the floor
+lost 3.7-6.1 dB with `edges` (Tele7abc -3.65, SOTI -4.16, abc-primetime
+-5.81, barry -6.05) and 6-10 dB over 1.1-3.3 dB, and the short-gap and
+word-edge numbers it reported were mostly those tails (Tele7abc `edges` +
+fill: gaps -25.2, edge -27.7 dB, gap air -12.9 dB). The cuts were also
+interpolated in dB from block to block, so the last frame of a word's block
+lost 0.375 of the next block's cut, and the floor's percentile repeated the
+last block (partly past the end) over the last 0.8 s, holding the floor up
+to 6 dB low there on the unit test's tape. The tail rule, the frame rule
+and the mirrored floor
+replace them; with the tail threshold at 4 or 5 dB instead of 3 the
+word-edge hiss on Tele7abc reads -24.1 / -26.0 dB and the tail cells lose
+1.3 / 1.7 dB.
 
 The candidates prototyped on the same WAVs (Tele7abc, each followed by the
 shelf fill): a VAD-gated gain on everything over 3 kHz in the non-speech
@@ -868,17 +902,19 @@ a cap on the pause floor's quiet frames at the fill's own high band to
 -7.9 and -8.0 dB; the cap also took gap air to -18.1 dB, lkr to 0.53 and
 the quiet speech frames' highs). A per-band expander with a 4-10 dB source
 SNR knee cut the burst cells but also the tails beside them (non-speech
-cells 6 dB over the floor -17.4 dB on SOTI, -7.7 dB on barry); reading the
-programme on the closed envelope, over three bands and on the cell alone,
-is what keeps them. A ceiling that read programme 4 dB over the floor
-let enough hiss cells through as programme to leave the unit test's
-synthetic bursts 17.5 dB down instead of 31 (one of five within 11 dB);
-one that set the ceiling between the two levels in dB cut a clip's
-10-15 dB tails by 16-24 dB.
-Over every frame (scope "all") the prototype ceiling lowered the floor
-under the programme further (Tele7abc sum -34.8 dB) but raised the 's'
-body ratio 0.8 dB and its texture 0.16 dB and took 0.3 dB more off the loud
-8-16 kHz, so it is not offered.
+cells 6 dB over the floor, dilated over three frames, -17.4 dB on SOTI and
+-7.7 dB on barry; the ceiling as first committed read -23.7 and -3.7 dB on
+the same cells, the ceiling with the tail rule -22.1 and -0.05 dB; SOTI's
+are non-speech cells beside 6-10 dB peaks that no sure programme cell
+reaches, in pauses the RoFormer emptied, and read -1.8 dB with the fill).
+A ceiling that read programme 4 dB over the floor let
+enough hiss cells through as programme to leave the unit test's synthetic
+bursts 17.5 dB down instead of 31 (one of five within 11 dB); one that set
+the ceiling between the two levels in dB cut a clip's 10-15 dB tails by
+16-24 dB. Over every frame (scope "all") the prototype ceiling lowered the
+floor under the programme further (Tele7abc sum -34.8 dB) but raised the
+'s' body ratio 0.8 dB and its texture 0.16 dB and took 0.3 dB more off the
+loud 8-16 kHz, so it is not offered.
 
 Not rendered on the GPU or heard; `scripts/audibility_check.py` and a blind
 A/B decide `edges` against the fill alone. Both keys act after the stage

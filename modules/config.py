@@ -432,7 +432,7 @@ _NUMERIC_CONFIG_FIELDS = (
     ("apl_post_neural_suppress_floor_gap_db", float, 3.0, 0.0),
     ("apl_post_neural_suppress_min_residual_db", float, 6.0, 0.0),
     # The burst ceiling (apl_burst_ceiling, modules/burst_ceiling.py): in its scope, a restored
-    # cell (20 ms, one ERB band of 3-16 kHz) where the source holds only its hiss keeps at most
+    # cell (23 ms, one ERB band of 3-16 kHz) where the source holds only its hiss keeps at most
     # this many dB under the source's band floor, the shelved pause fill's own level (12 + 18 dB).
     # A band acts only where the neural stage left its gaps at least this deep. Read only with
     # the ceiling on; not yet judged by ear.
@@ -1322,12 +1322,14 @@ APL_NEURAL_LEVEL_RESTORE = bool(CONFIG.get("apl_neural_level_restore", False))
 # The burst ceiling (2026-10-12; VALID_APL_BURST_CEILINGS, modules/burst_ceiling.py). CPU replay on
 # the hiss diagnosis's stage WAVs (13 clips, after the polish, then the 'frame' + 'shelf' pause
 # floor): 'edges' took the hiss in the source's hiss-only cells at the word edges from -20.5 to
-# -27.7 dB on Tele7abc and -24.6 to -29.1 on SOTI, the short gaps' energy -16.5 to -25.2 and -22.5
-# to -28.5, with gap air at -12.9 / -22.3 dB (the dead-air flag is -25) and lkr, sibilance and the
-# loud frames' 4-8 / 8-16 kHz unchanged; the seven clips the RoFormer passed whole or that hold no
-# gap kept every sample. The true pauses' energy mean barely moves: what carries it is programme (a
-# word's tail on Tele7abc, the file's first frame on abc-primetime), which the ceiling keeps.
-# Not rendered on the GPU or judged by ear.
+# -22.9 dB on Tele7abc and -24.6 to -25.9 on SOTI, the short gaps' energy -16.5 to -17.2 and -22.5
+# to -28.5, with gap air at -11.8 / -20.8 dB (the dead-air flag is -25), lkr +0.06 at most,
+# sibilance and the loud frames' 4-8 / 8-16 kHz unchanged, and the word-edge cells 3-6 dB over the
+# source's floor 0.9-2.6 dB down (3.7-6.1 dB before the tail rule, which ate word tails); the seven
+# clips the RoFormer passed whole or that hold no gap kept every sample. The true pauses' energy
+# mean barely moves: what carries it is programme (a word's tail on Tele7abc, the file's first
+# frame on abc-primetime), which the ceiling keeps. Open: pumping where the hiss under the
+# programme stays near the source's level (abc-primetime). Not rendered on the GPU or judged by ear.
 APL_BURST_CEILING = str(CONFIG.get("apl_burst_ceiling", "none"))
 APL_BURST_CEILING_DEPTH_DB = float(CONFIG.get("apl_burst_ceiling_depth_db", 30.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

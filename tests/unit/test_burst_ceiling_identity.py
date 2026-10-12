@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from modules import burst_ceiling, stage_cache
+from modules import burst_ceiling, config, stage_cache
 from tests.unit.test_post_neural_hiss_identity import _render, make_bench
 from tests.unit.test_stage_cache_reach import _Graph, _sources
 
@@ -33,7 +33,11 @@ def _constant_plan(_reference, restored, _scope, _depth):
 
 
 def _key_on(monkeypatch):
+    """The scope on and a constant plan; `CONFIG` patched too, since the stage cache's key reads it, not the module copy."""
     monkeypatch.setattr(burst_ceiling, "APL_BURST_CEILING", "edges")
+    monkeypatch.setattr(burst_ceiling, "APL_BURST_CEILING_DEPTH_DB", 24.0)
+    monkeypatch.setitem(config.CONFIG, "apl_burst_ceiling", "edges")
+    monkeypatch.setitem(config.CONFIG, "apl_burst_ceiling_depth_db", 24.0)
     monkeypatch.setattr(burst_ceiling, "plan", _constant_plan)
 
 

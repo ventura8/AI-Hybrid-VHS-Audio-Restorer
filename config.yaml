@@ -753,19 +753,25 @@ cathar_dereverb_strength: 2.0
 #     within 150 ms of a gap ('edges'), each restored cell (one ERB band of
 #     3-16 kHz over 23 ms) keeps at most apl_burst_ceiling_depth_db (30) under
 #     the source's band floor where the source holds only hiss, and all of the
-#     source's programme where it carries some; a band acts only where the
-#     neural stage emptied the gaps that deep. A cell under its ceiling and
-#     every sample no capped frame reaches keep their bytes.
+#     source's programme where it carries some, a word's decaying tail
+#     included (3 dB over the floor, joined to sure programme); a band acts
+#     only where the neural stage emptied the gaps that deep. A cell under
+#     its ceiling and every sample no capped frame reaches keep their bytes.
 #   - 'none' (Default): nothing is read; every output keeps its bytes.
 #   - CPU replay on the hiss diagnosis's stage WAVs (2026-10-12), then the
 #     'frame' + 'shelf' pause floor: 'edges' took the hiss at the word edges
-#     from -20.5 to -27.7 dB (Tele7abc) and -24.6 to -29.1 dB (SOTI), the
-#     short gaps' energy from -16.5 to -25.2 and -22.5 to -28.5 dB, the floor
-#     under the programme 1.6-2.1 dB lower; gap air -12.9 / -22.3 dB (flag
-#     -25), loud-frame highs, sibilance and lkr unchanged (+0.01). It skips
-#     the seven of 13 clips the RoFormer passed whole or that hold no gap.
-#     The pauses' energy mean barely moves: what carries it is programme the
-#     ceiling keeps (a word's tail on Tele7abc). Not rendered or heard yet.
+#     from -20.5 to -22.9 dB (Tele7abc) and -24.6 to -25.9 dB (SOTI), the
+#     short gaps' energy from -16.5 to -17.2 and -22.5 to -28.5 dB, the floor
+#     under the programme 0.9-1.7 dB lower; gap air -11.8 / -20.8 dB (flag
+#     -25), loud-frame highs and sibilance unchanged, lkr +0.06 at most; the
+#     word-edge cells 3-6 dB over the source's floor lose 0.9-2.6 dB (as
+#     first committed, before the tail rule, 3.7-6.1 dB: it ate word tails).
+#     It skips the seven of 13 clips the RoFormer passed whole or that hold
+#     no gap. The pauses' energy mean barely moves: what carries it is
+#     programme the ceiling keeps (a word's tail on Tele7abc). Pumping risk
+#     where the hiss under the programme stays near the source's level
+#     (abc-primetime: short gaps -3.7 -> -26.8 dB under a -4 dB floor). Not
+#     rendered or heard yet.
 #
 # mux_limiter_latency_compensation:
 #   - The mux's limiter (alimiter at -1 dBFS) delays the audio by its lookahead: a

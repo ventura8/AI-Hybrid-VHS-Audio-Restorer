@@ -127,10 +127,14 @@ The engine supports 10 execution modes configured in `config.yaml`:
     the hiss the RoFormer leaves next to speech to
     `apl_burst_ceiling_depth_db` (30) under the source's band floor in the
     cells where the source holds only hiss, and keeps the programme where it
-    carries some: on replay with the shelved fill `edges` took the word-edge
-    hiss from -20.5 to -27.7 dB (Tele7abc) and -24.6 to -29.1 (SOTI), guards
-    unchanged. Most of the pause "bursts" are programme (a word's tail),
-    which it keeps (`docs/configuration.md`).
+    carries some, a word's decaying tail included: on replay with the
+    shelved fill `edges` took the word-edge hiss from -20.5 to -22.9 dB
+    (Tele7abc) and -24.6 to -25.9 (SOTI), guards unchanged. Most of the
+    pause "bursts" are programme (a word's tail), which it keeps; as first
+    committed it read tails under 6 dB as hiss and ate them (word-edge cells
+    3-6 dB over the floor 3.7-6.1 dB down). Open: pumping where the hiss
+    under the programme stays near the source's level
+    (`docs/configuration.md`).
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing

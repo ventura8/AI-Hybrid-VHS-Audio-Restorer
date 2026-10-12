@@ -200,6 +200,29 @@ def test_the_envelope_is_closed_one_dip_filled_and_edges_kept():
     assert closed[:, 0].tolist() == [1, 1, 9, 9, 9, 9, 9, 1, 1]
 
 
+def test_a_tail_joined_to_programme_keeps_a_share_and_a_lone_cell_of_its_level_stays_hiss():
+    """Band 0 decays from programme through 4.5 dB to the floor, then a lone 4.5 dB cell; band 1 never reaches programme."""
+    spread = np.array([[9.0, 4.5], [4.5, 4.5], [4.5, 4.5], [1.0, 1.0], [4.5, 4.5]])
+    share = np.zeros((5, 2))
+    share[0, 0] = 1.0
+    tails = burst_ceiling.tail_share(share, spread)
+    assert np.allclose(tails[:, 0], [1.0, 0.5, 0.5, 0.0, 0.0])
+    assert np.count_nonzero(tails[:, 1]) == 0
+
+
+def test_a_word_s_tail_under_the_neighbourhood_s_threshold_keeps_its_programme():
+    """Three bands at 20 dB, then 5 dB for two blocks (a decaying tail), then the floor: the tail is not cut to the depth."""
+    floor = np.ones((8, 3))
+    src = np.ones((8, 3))
+    src[1:3] = 100.0
+    src[3:5] = 10.0**0.5
+    ceiling, share = burst_ceiling.ceiling_db(src, floor, DEPTH_DB)
+    restored = src.copy()
+    cut = burst_ceiling.cut_db(restored, ceiling, share)
+    assert np.allclose(cut[1:5], 0.0)
+    assert np.all(cut[6:] < -DEPTH_DB + 1.0)
+
+
 def test_a_hiss_cell_takes_the_deepest_cut_beside_it_and_a_programme_cell_keeps_its_own():
     restored = np.array([1e-9, 1.0, 1e-9, 1e-9])[:, None]
     ceiling = np.full((4, 1), -DEPTH_DB)
@@ -273,6 +296,17 @@ def test_the_written_audio_does_not_depend_on_the_block_size(tmp_path, monkeypat
     monkeypatch.setattr(burst_ceiling, "BLOCK_SAMPLES", 3001)
     pieces = sf.read(str(burst_ceiling.write_capped(source, tmp_path / "pieces.wav", plan)))[0]
     assert np.array_equal(whole, pieces)
+
+
+def test_no_frame_is_cut_deeper_than_the_block_it_was_read_in():
+    """Blocks 0-4 keep everything, blocks 5-9 lose 30 dB: the frames of block 4 stay whole, block 5's ramp in from its edge."""
+    plan = _constant_plan(10 * 1024, 0.0)
+    plan.cut_db[5:] = -DEPTH_DB
+    centres = np.arange(10 * burst_ceiling.BLOCK_FRAMES) * plan.stft.hop
+    cuts = burst_ceiling.frame_cuts(plan, centres)[:, 0]
+    owner = centres // burst_ceiling.block_samples(plan.stft)
+    assert np.count_nonzero(cuts[owner < 5]) == 0
+    assert np.allclose(cuts[owner == 5], [-18.75, -26.25, -DEPTH_DB, -DEPTH_DB])
 
 
 def test_frames_over_a_span_are_every_window_that_reaches_it():

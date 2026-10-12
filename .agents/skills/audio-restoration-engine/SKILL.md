@@ -632,12 +632,38 @@ audio alignment, or FFmpeg multiplexing.
   untouched); a 15 s clip of dense speech has 0.2-0.6 s of gap, so the
   minimum is 0.2 s. (5) Test fixtures must measure inside 3-16 kHz: a white
   burst's energy over 16 kHz or under 3 kHz (a filter skirt) caps the
-  apparent cut at 5-14 dB. Scratch tools: `D:\ai_restore_work\scratch_bursts`
+  apparent cut at 5-14 dB. (6) Review fixes (2026-10-12), each found by
+  reading the cells the stage cut, not its summary readings: a word's
+  decaying tail falls through the 6 dB three-band threshold while the
+  RoFormer still holds it at the source's level, so the first commit cut
+  tails to the depth (abc-primetime 3.88 s: five 3-5.3 kHz bands 5.4-7.1
+  dB over the floor, three whose neighbourhood read 5.6-5.9 dB cut 34-37
+  dB; tail cells 22-48 % of the removed energy on five clips; word-edge
+  cells 3-6 dB over the floor -3.7 to -6.1 dB).
+  Now a cell over 3 dB (the hiss's own p95 in the Tata gaps) joined along
+  time in its band to a sure programme cell (share 1, so a chance hiss peak
+  starts no tail) ramps from 3 dB. No STFT frame is cut deeper than its own
+  block (the dB interpolation gave a word's last frame 0.375 of the next
+  block's cut), and the floor's percentile mirrors the file's ends
+  (`nearest` repeated the partial last block and held the floor up to 6 dB
+  low over the last 0.8 s). Most of the first commit's short-gap gain on
+  Tele7abc (-25.2 against -16.5 dB) was those tails: with the fixes -17.2,
+  word-edge hiss -22.9 (was -27.7), tail cells -0.9 dB. Read eaten
+  programme on the word-edge cells 3-6 and 6-10 dB over the source's floor,
+  against the stage's input; a 10 dB "signal" threshold in the gaps alone
+  hid it. (7) Pumping stays open: where the RoFormer keeps the hiss under
+  the programme near the source's level (abc-primetime -3.6 dB) the ceiling
+  takes the short gaps to -26.8 dB and the hiss follows the words
+  (frame-to-frame 3-16 kHz change in gaps and edges 2.6 -> 4.3 dB); a guard
+  would hold the hiss ceiling no deeper than the restored floor under the
+  programme. Scratch tools: `D:\ai_restore_work\scratch_bursts`
   (`tools/diag_bursts.py`, `cells.py`, `replay.py`, `evaluate.py`,
-  `sigloss.py`). Scope "all" lowered the floor under the programme further
-  but moved the 's' body (+0.8 dB) and the loud 8-16 kHz (-0.3 dB): not
-  offered. Open: a GPU render, `scripts/audibility_check.py`, a blind A/B of
-  `edges` + the shelved fill against the fill alone.
+  `sigloss.py`; the review's `review_tools/review.py`, `cells_at.py`,
+  `tails.py`, `variants.py`). Scope "all" lowered the floor under the
+  programme further but moved the 's' body (+0.8 dB) and the loud 8-16 kHz
+  (-0.3 dB): not offered. Open: a GPU render,
+  `scripts/audibility_check.py`, a blind A/B of `edges` + the shelved fill
+  against the fill alone, with a clip like abc-primetime.
 - **cathar noise-print mute guard (2026-10-12)**: the print's pick took the
   quietest window whatever it held (the single-window pick's only guard,
   `1e-6 < rms` with `rms = sqrt(ms + 1e-12)`, rejects an all-zero window
