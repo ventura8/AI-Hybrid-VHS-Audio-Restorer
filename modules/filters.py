@@ -416,23 +416,46 @@ def _try_auto_download_arnndn(model_name):
 
 
 def _resolve_arnndn_model_path(model_name=ARNNDN_MODEL):
-    """Resolves ARNNDN model file across candidate paths, auto-downloading if missing or corrupt."""
-    candidate = Path(model_name)
-    if candidate.is_file() and _validate_arnndn_file_integrity(candidate, candidate.name):
-        return candidate.resolve()
+    """Resolves an RNNoise model inside the model store, auto-downloading known names.
 
+    Only the bare filename is honoured, so a planted config.yaml cannot name a path
+    outside the store (a CWD-relative or absolute `arnndn_model`): the name is joined onto
+    the store search folders and never opened as given. modules.config also reduces
+    `arnndn_model` to a bare `.rnnn` filename before it reaches here.
+    """
+    safe_name = Path(str(model_name)).name
     search_dirs = [Path("models") / "arnndn", Path("models"), MODELS_DIR / "arnndn", MODELS_DIR]
-    found = _search_model_in_dirs(model_name, search_dirs)
+    found = _search_model_in_dirs(safe_name, search_dirs)
     if found is not None:
         return found
 
-    downloaded = _try_auto_download_arnndn(model_name)
-    return downloaded if downloaded is not None else candidate.resolve()
+    downloaded = _try_auto_download_arnndn(safe_name)
+    if downloaded is not None:
+        return downloaded
+    return (MODELS_DIR / "arnndn" / safe_name).resolve()
+
+
+# Characters that cannot be represented inside a single-quoted FFmpeg filter option. A
+# single quote terminates the quoted option (FFmpeg drops it across its two parse levels,
+# so it cannot round-trip), and once a quote has broken out `; , [ ]` would start new
+# filters or pads. A legitimate model path (a bare `.rnnn` filename under the model store)
+# never contains them, so the path is refused rather than risk filtergraph injection.
+_FILTER_PATH_FORBIDDEN = ("'", '"', ";", ",", "[", "]", "\n", "\r", "\0")
 
 
 def _escape_ffmpeg_filter_path(file_path):
-    """Escapes path characters (like colons in Windows drive paths) for FFmpeg filter syntax."""
-    return str(Path(file_path).resolve().as_posix()).replace("\\", r"\\").replace("'", r"\'").replace(":", r"\:")
+    """Escapes a model path for an FFmpeg single-quoted filter option (`...='<path>'`).
+
+    The caller wraps the value in single quotes. Inside those quotes a drive colon and a
+    backslash still split the filter option unless escaped (a bare `D:` truncates the value
+    to `D`), while spaces are literal. `.as_posix()` first turns every separator into `/`.
+    A single quote cannot survive FFmpeg's two parse levels, so a path carrying one (or
+    another filtergraph metacharacter) is refused outright.
+    """
+    posix = str(Path(file_path).resolve().as_posix())
+    if any(ch in posix for ch in _FILTER_PATH_FORBIDDEN):
+        raise ValueError(f"Unsafe character in FFmpeg filter path: {posix!r}")
+    return posix.replace("\\", r"\\").replace(":", r"\:")
 
 
 def _build_arnndn_filter_string(

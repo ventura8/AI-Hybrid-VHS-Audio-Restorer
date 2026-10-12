@@ -308,6 +308,10 @@ azimuth_estimate_method: "head"
 #
 # Custom Models:
 #   You can also specify custom model filenames placed inside 'models/arnndn/' or 'models/'.
+#   The value must be a bare '.rnnn' filename: a path separator, '..', a leading
+#   dot, a drive prefix, a non-'.rnnn' suffix, or a filtergraph metacharacter
+#   (' " ; , [ ]) is rejected and falls back to cb.rnnn. The name is passed to an
+#   FFmpeg filter, so this blocks a planted config.yaml from injecting filters.
 #
 # arnndn_highpass_freq:
 #   - Cuts sub-audible mechanical rumble before neural inference (Default: 80 Hz)

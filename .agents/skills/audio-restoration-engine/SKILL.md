@@ -125,9 +125,22 @@ audio alignment, or FFmpeg multiplexing.
      moderate width in the averaged spectral envelope, so speech formants and
      harmonic spikes are rejected.
    - `_resolve_arnndn_model_path`: Scans `models/arnndn/`, `models/`,
-     `MODELS_DIR/arnndn/`, and `MODELS_DIR/` for RNNoise `.rnnn` models.
-   - `_escape_ffmpeg_filter_path`: Escapes colons in Windows drive paths (e.g.
-     `C\:/...`) for FFmpeg filter expressions.
+     `MODELS_DIR/arnndn/`, and `MODELS_DIR/` for RNNoise `.rnnn` models. Only
+     the bare filename of the argument is honoured (`Path(name).name`), so a
+     planted `config.yaml` naming a CWD-relative or absolute path cannot reach
+     a file outside the store; the fallback when nothing is found is a
+     non-existent store path, so the caller fails with `FileNotFoundError`.
+   - `_escape_ffmpeg_filter_path`: The value is placed inside a single-quoted
+     FFmpeg option (`arnndn=m='<path>'`). Inside those quotes a drive colon and
+     a backslash still split the option unless escaped (`C\:/...`; a bare `D:`
+     truncates the value to `D`), while spaces are literal. A single quote
+     cannot round-trip FFmpeg's two parse levels (it is dropped and the
+     remainder becomes filtergraph syntax), so a path carrying `'`, `"`, `;`,
+     `,`, `[`, `]`, or a newline is refused with `ValueError` rather than
+     escaped. Never encode `'` as `\'` inside the quoted option: FFmpeg reads
+     `\'` as the quote terminator, which injects attacker-chosen filters
+     (an `amovie=` opening a local file). `arnndn_model` is also reduced to a
+     safe bare `.rnnn` filename at config load (`_arnndn_model_filename`).
    - `_run_ffmpeg_filter_step`: Atomic execution with CPU thread fallback.
 1. **`modules/processing.py`**:
    - `_separate_stems_step`: Invokes `audio-separator` with BS-Roformer /

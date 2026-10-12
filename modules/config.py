@@ -83,6 +83,7 @@ DEFAULT_DENOISE_MODEL = "UVR-DeNoise-Lite.pth"
 DEFAULT_APL_NEURAL_MODEL = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 DEFAULT_VOCALS_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 DEFAULT_BACKGROUND_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
+DEFAULT_ARNNDN_MODEL = "cb.rnnn"
 MAX_ENHANCE_NFE = 128
 
 
@@ -1044,7 +1045,7 @@ def load_config():
         "denoise_model": DEFAULT_DENOISE_MODEL,
         "sync_method": "shift",  # 'shift' or 'dtw'
         "process_mode": DEFAULT_PROCESS_MODE,  # includes aliases: 'multipass', 'pure', 'ffmpeg_native', 'auto_vhs_native'
-        "arnndn_model": "cb.rnnn",
+        "arnndn_model": DEFAULT_ARNNDN_MODEL,
         "cathar_denoise_method": "spectral",
         "cathar_azimuth_method": "gcc-phat",
         "cathar_enhance_method": "replicate",
@@ -1135,6 +1136,13 @@ BACKGROUND_MIX_VOL = float(CONFIG["background_mix_volume"])
 
 
 _MODEL_NAME_FORBIDDEN = ("/", "\\", ":", "\0")
+# An RNNoise model name also reaches an FFmpeg filtergraph as a quoted path, where a
+# quote or a filtergraph metacharacter could break out of the quoted option and inject
+# filters (see modules/filters._escape_ffmpeg_filter_path). Reject those too, and require
+# the `.rnnn` suffix so only an RNNoise model file is ever named.
+_ARNNDN_NAME_FORBIDDEN = _MODEL_NAME_FORBIDDEN + ("'", '"', ";", ",", "[", "]")
+_ARNNDN_SUFFIX = ".rnnn"
+_MODEL_REJECT_HINT = "model names must be a bare filename."
 
 
 def _is_bare_filename(name):
@@ -1142,25 +1150,41 @@ def _is_bare_filename(name):
     return bool(name) and not name.startswith(".") and not any(ch in name for ch in _MODEL_NAME_FORBIDDEN)
 
 
-def _model_filename(setting, value, default=""):
-    """A UVR model setting reduced to a bare filename inside the model store.
+def _is_bare_arnndn_name(name):
+    """True when an RNNoise name is a bare `.rnnn` filename safe inside an FFmpeg filtergraph."""
+    return name.endswith(_ARNNDN_SUFFIX) and not name.startswith(".") and not any(ch in name for ch in _ARNNDN_NAME_FORBIDDEN)
+
+
+def _sanitized_model_name(setting, value, default, validator):
+    """Reduces a model setting to a bare filename accepted by validator, else the default.
 
     Model names are joined onto MODELS_DIR (and unlinked from it on a failed load), so a
     path from a planted config.yaml must not be able to escape the store. Only a string
-    is a candidate: anything else, or a string with a separator, a parent reference, or a
-    leading dot, or a Windows drive prefix (`D:model.ckpt`), falls back to the default.
-    Unset and empty fall back silently.
+    is a candidate: anything else, or a string the validator rejects (a separator, a
+    parent reference, a leading dot, a Windows drive prefix `D:model.ckpt`, or an FFmpeg
+    filtergraph metacharacter), falls back to the default. Unset and empty fall back
+    silently.
     """
     if value is None or value == "":
         return default
     name = value.strip() if isinstance(value, str) else ""
-    if _is_bare_filename(name):
+    if validator(name):
         return name
     print(
-        f"[Config] Ignoring '{setting}' value {value!r}: model names must be a bare filename.",
+        f"[Config] Ignoring '{setting}' value {value!r}: {_MODEL_REJECT_HINT}",
         file=sys.stderr,
     )
     return default
+
+
+def _model_filename(setting, value, default=""):
+    """A UVR model setting reduced to a bare filename inside the model store."""
+    return _sanitized_model_name(setting, value, default, _is_bare_filename)
+
+
+def _arnndn_model_filename(setting, value, default):
+    """An arnndn_model setting reduced to a safe bare `.rnnn` filename inside the model store."""
+    return _sanitized_model_name(setting, value, default, _is_bare_arnndn_name)
 
 
 # AI Configs
@@ -1187,7 +1211,7 @@ ENABLE_ADECLICK = bool(CONFIG.get("enable_adeclick", True))
 NOTCH_FREQ = float(CONFIG.get("notch_freq", 50.0))
 
 # ARNNDN Speech configs
-ARNNDN_MODEL = str(CONFIG.get("arnndn_model", "cb.rnnn"))
+ARNNDN_MODEL = _arnndn_model_filename("arnndn_model", CONFIG.get("arnndn_model"), DEFAULT_ARNNDN_MODEL)
 ARNNDN_HIGHPASS_FREQ = int(CONFIG.get("arnndn_highpass_freq", 80))
 ARNNDN_ENABLE_ADECLICK = bool(CONFIG.get("arnndn_enable_adeclick", True))
 
