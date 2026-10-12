@@ -1235,7 +1235,7 @@ and the per-tape oracle (each tape's lowest rank), every oracle pick
 through `auditory.compare_files` against the best's render, `selectable`
 only when audible and above `--heard-db` (default -17.6 dB, Session 0's
 unheard control). Run on the five v6/v7 loops (report
-`D:i_restore_workariation_precheck_2026-10-11.json`):
+`D:/ai_restore_work/variation_precheck_2026-10-11.json`):
 
 - Speech (APL and cathar, `tata_v3`): the shipped settings rank first on
   every tape, oracle gain 0. Partly by construction: the v3 targets were
