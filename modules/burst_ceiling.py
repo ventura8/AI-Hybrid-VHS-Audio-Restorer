@@ -423,7 +423,9 @@ def correction(handle, span, the_plan):
     stft = the_plan.stft
     centres = frames_over(start, stop, stft)
     gains = bin_gains(frame_cuts(the_plan, centres), stft)
-    capped = np.flatnonzero(np.any(gains != 0.0, axis=1))
+    # A frame needs a correction only where some bin's gain moved; |g| > 0 is that test for finite gains
+    # without an equality on floats (Sonar S1244).
+    capped = np.flatnonzero(np.any(np.abs(gains) > 0.0, axis=1))
     base = start - stft.size
     out = np.zeros((stop - start + 2 * stft.size, handle.channels))
     if capped.size:
