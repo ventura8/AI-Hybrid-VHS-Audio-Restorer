@@ -154,7 +154,10 @@ def test_the_hum_reading_aligns_at_the_files_rate(tmp_path):
 
 
 def _stem_pair(tmp_path, output_key, **align):
-    return types.SimpleNamespace(cache_dir=tmp_path, source_wav=None, output_wav=None, source_key="src", output_key=output_key, **align)
+    source_wav = tmp_path / "src.wav"
+    return types.SimpleNamespace(
+        cache_dir=tmp_path, source_wav=source_wav, output_wav=None, source_key="src", output_key=output_key, **align
+    )
 
 
 def test_the_stems_are_aligned_with_the_pairs_method_and_prior(tmp_path, monkeypatch):
@@ -174,10 +177,8 @@ def test_the_stems_are_aligned_with_the_pairs_method_and_prior(tmp_path, monkeyp
 
     monkeypatch.setattr(stem_metrics.audio_io, "align_pair", spy)
     registry = types.SimpleNamespace(get=lambda _name, _loader: object())
-    src, out, rate = stem_metrics._stems(_stem_pair(tmp_path, "out", align_method="xcorr_head"), registry)
-    assert (calls, rate, len(src)) == ([("xcorr_head", None)], RATE, len(out))
+    stems_read = stem_metrics._stems(_stem_pair(tmp_path, "out", align_method="xcorr_head"), registry)
+    assert (calls, stems_read["rate"], len(stems_read["src"])) == ([("xcorr_head", None)], RATE, len(stems_read["out"]))
     # An unrelated stem pair abstains and is trimmed at the pair's prior, as the pair itself would be.
-    src, _out, _rate = stem_metrics._stems(
-        _stem_pair(tmp_path, "odd", align_method=None, align_prior_s=pair_alignment.MUX_DELAY_S), registry
-    )
-    assert (calls[-1], len(src)) == ((None, pair_alignment.MUX_DELAY_S), len(source) - MUX)
+    stems_read = stem_metrics._stems(_stem_pair(tmp_path, "odd", align_method=None, align_prior_s=pair_alignment.MUX_DELAY_S), registry)
+    assert (calls[-1], len(stems_read["src"])) == ((None, pair_alignment.MUX_DELAY_S), len(source) - MUX)

@@ -82,10 +82,10 @@ def test_the_card_keeps_the_profile_and_the_vad_that_ran(scored):
 
 
 def test_the_document_marks_uncalibrated_gates_and_two_sided_targets(scored):
-    """A starting threshold says it is one, and a two-sided reading carries its neutral target."""
+    """A starting threshold says it is one (every hand-set value but lkr's), and a two-sided reading carries its neutral target."""
     result, _card, _folder = scored
     assert result["gates"]["listener.bright"]["calibrated"] is False
-    assert result["gates"]["dsp.hf_4k8k"]["calibrated"] is True
+    assert result["gates"]["dsp.hf_4k8k"]["calibrated"] is False
     assert result["metrics"]["dsp.balance_air_db"]["target"] == 0.0
     assert "target" not in result["metrics"]["dsp.hf_4k8k"]
 

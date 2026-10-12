@@ -100,6 +100,24 @@ def _family_lines(status):
     return lines + [f"- {family}: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())) for family, counts in sorted(status.items())]
 
 
+def _refusal_lines(refusal):
+    """Why this run wrote no gates file, when it wrote none."""
+    return ["", f"**Gates files not written**: {refusal}"] if refusal else []
+
+
+def _oracle_lines(oracle):
+    """The oracle check: per hard gate, the oracle pairs it fails, overall and per output kind."""
+    if not oracle:
+        return []
+    head = f"{oracle['pairs']} pairs, each capture against the programme it was made from; a hard gate failing over 5% refuses denoising."
+    lines = ["", "## Oracle pairs", "", head, "", "| gate | failed | share | target | clean |", "|---|---|---|---|---|"]
+    by_output = oracle.get("by_output", {})
+    for name, row in oracle["gates"].items():
+        kinds = " | ".join(str(by_output.get(kind, {}).get(name, 0)) for kind in ("target", "clean"))
+        lines.append(f"| {name} | {row['failed']} | {row['share']:.1%} | {kinds} |")
+    return lines
+
+
 def _markdown(report):
     head = "| degradation | metric | expect | status | direction | monotonic / match | effect (x floor) | readings |"
     lines = [
@@ -115,6 +133,7 @@ def _markdown(report):
     lines += [_check_line(row) for row in report["checks"]] + _family_lines(report["families"]) + _floor_lines(report["floor"])
     lines += _ordering_lines("Known ordering (default gates)", report["ordering_records"])
     lines += _ordering_lines("Known ordering (derived gates)", report["ordering_after_records"])
+    lines += _refusal_lines(report.get("refusal")) + _oracle_lines(report.get("oracle"))
     lines += _gate_lines("Derived gates (pooled)", report["gates"], report["skipped_gates"])
     for route in ROUTES:
         lines += _gate_lines(f"Derived gates ({route})", report["route_gates"][route], report["route_skipped"][route])

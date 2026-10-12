@@ -5,29 +5,27 @@ source and the output; whatever the restoration did to the background then shows
 the instrumental stem alone: SI-SDR and log-spectral distance against the source's
 stem, the per-octave energy ratio (a stripped room tone is an octave that dropped),
 and the correlation of the two envelopes (pumping, gating).
+
+The per-octave energy ratio (`stems.octave_ratio_db`) is displayed only since 2026-10-12:
+it read hiss removal and the least-squares stem match as stripping. The gate and the music
+grid read `stems.octave_programme_db` (`stem_octave.py`), the mixes read on the cells where
+the source's level-true background leads the programme.
 """
 
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 
 from modules.utils import MODELS_DIR
-from scripts.restoration_quality import audio_io, dsp_metrics, judges
+from scripts.restoration_quality import audio_io, dsp_metrics, judges, stem_octave
 from scripts.restoration_quality.runner import UNAVAILABLE_ERRORS, row_slice
 from scripts.score_reference import _lsd_db, _si_sdr_db
 
 STEM_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
-# From 125 Hz: both engines run an 80 Hz rumble high-pass by design, so the 63-125 Hz octave
-# of a bass-heavy source always reads as lost and says nothing about the music above it.
-OCTAVES_HZ = (
-    (125.0, 250.0),
-    (250.0, 500.0),
-    (500.0, 1000.0),
-    (1000.0, 2000.0),
-    (2000.0, 4000.0),
-    (4000.0, 8000.0),
-    (8000.0, 16000.0),
-)
+OCTAVES_HZ = stem_octave.OCTAVES_HZ
+PROGRAMME_OCTAVE = "stems.octave_programme_db"
+PEAK_BLOCK = 1 << 20
 ENVELOPE_S = 0.02
 # The CRT line whistle is left out of every band reading (`dsp_metrics.band_bins`).
 CRT_LINE_HZ = dsp_metrics.CRT_LINE_HZ
@@ -97,7 +95,10 @@ def envelope_corr(source, output, rate):
 
 
 def _stems(pair, registry):
-    """Aligned, gain-matched mono instrumental stems of the pair."""
+    """`{src, out, rate, level_true}`: aligned, gain-matched mono instrumental stems, and the source stem at its mix's level.
+
+    `level_true` is None when the separator capped the source stem's peak (`stem_octave.stem_scale`).
+    """
     stems_dir = pair.cache_dir / "stems"
     stems_dir.mkdir(parents=True, exist_ok=True)
     separator = registry.get("separator", lambda _device, models_dir: load_separator(models_dir, stems_dir))
@@ -107,8 +108,30 @@ def _stems(pair, registry):
     out_audio, _rate = audio_io.load_audio(out_stem)
     # The pair's own aligner and prior, so a stem pair the aligner abstains on is trimmed where the pair was.
     method, prior_s = getattr(pair, "align_method", None), getattr(pair, "align_prior_s", None)
-    src, out, _lag = audio_io.align_pair(audio_io.to_mono(src_audio), audio_io.to_mono(out_audio), rate, method, prior_s)
-    return src, out, rate
+    src_mono = audio_io.to_mono(src_audio)
+    src, out, _lag = audio_io.align_pair(src_mono, audio_io.to_mono(out_audio), rate, method, prior_s)
+    scale = stem_octave.stem_scale(file_peak(pair.source_wav), file_peak(src_stem))
+    return {"src": src, "out": out, "rate": rate, "level_true": None if scale is None else src_mono * np.float32(scale)}
+
+
+def file_peak(path):
+    """The largest absolute sample of a sound file over every channel, read in blocks (an hour of tape is 1.3 GB)."""
+    return max(
+        (float(np.abs(block).max()) for block in sf.blocks(str(path), blocksize=PEAK_BLOCK, dtype="float32") if block.size), default=0.0
+    )
+
+
+def levelled(pair, stems):
+    """`(stem, mix_source, mix_output)` at the stem's rate on the pair's timeline, or None without a level-true stem.
+
+    The source stem shares the source file's timeline, so it takes the pair's own lag; the
+    output mix keeps its least-squares gain, which the reading's level match cancels.
+    """
+    stem, rate = stems["level_true"], stems["rate"]
+    if stem is None:
+        return None
+    lag = int(round(pair.lag * rate / pair.rate))
+    return (stem[-lag:] if lag < 0 else stem), pair.at("source", rate), pair.at("output", rate)
 
 
 def _window_readings(src, out, rate):
@@ -133,17 +156,28 @@ def has_background(stem, mix):
 
 
 def score(pair, card, registry):
-    """Fills every row that carries a background with the four stem readings (paired: output side, zero source)."""
-    src, out, rate = _stems(pair, registry)
+    """Fills every row that carries a background with the stem readings (paired: output side, zero source)."""
+    stems = _stems(pair, registry)
+    src, out, rate = stems["src"], stems["out"], stems["rate"]
+    mixes = levelled(pair, stems)
     for row in card.rows:
         begin, end = int(round(row.start_s * rate)), int(round(row.end_s * rate))
         mix = pair.source[row_slice(pair, row)]
         row.output["stems.has_background"] = float(end <= len(src) and has_background(src[begin:end], mix))
         if not row.output["stems.has_background"]:
             continue
-        for name, value in _window_readings(src[begin:end], out[begin:end], rate).items():
+        readings = {**_window_readings(src[begin:end], out[begin:end], rate), PROGRAMME_OCTAVE: programme_octave(mixes, begin, end, rate)}
+        for name, value in readings.items():
             row.source[name], row.output[name] = 0.0, value
     _mert(pair, card, registry)
+
+
+def programme_octave(mixes, begin, end, rate):
+    """`stem_octave.octave_programme_db` on one window of `levelled`'s arrays; None without them."""
+    if mixes is None:
+        return None
+    stem, mix_source, mix_output = mixes
+    return stem_octave.octave_programme_db(stem[begin:end], mix_source[begin:end], mix_output[begin:end], rate)
 
 
 def _mert(pair, card, registry):

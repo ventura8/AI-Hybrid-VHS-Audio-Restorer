@@ -12,7 +12,7 @@
 # (`experiments/autotune_music_v2/*/cands/*`, 12 clips each), whose renders the user called
 # "music fine on both" (round 2, 2026-10-05), and the realistic-v2 oracle (balance_metrics.py).
 # The finals spread widely per clip (APL attack tail -8.5..+0.85 dB, onset correlation
-# 0.48-0.94, worst-octave tail -38.8..-1.6 dB), so no per-clip target exists yet; Round 0 and
+# 0.48-0.94, raw worst-octave tail -38.8..-1.6 dB), so no per-clip target exists yet; Round 0 and
 # the music listening session (after A6) set them. Weights are all 1.0 (the speech-side 1.5
 # applies to speech).
 #
@@ -63,9 +63,16 @@ ranking:
   dsp.onset_corr.output.median: {target: 1.0, dead_zone: 0.0, scale: 0.05, weight: 1.0, family: transients}
 
   # --- background (DSP readings on the separated stems; stems.mert_dist is a learned judge and
-  # only vetoes). v2 finals: worst-octave tail -38.8..-1.55 dB, LSD 1.6-42 dB, envelope
-  # correlation 0.71-1.00. Scales [S].
-  stems.octave_ratio_db.output.tail: {target: 0.0, dead_zone: 2.0, scale: 1.0, weight: 1.0, family: background}
+  # only vetoes). v2 finals: LSD 1.6-42 dB, envelope correlation 0.71-1.00. Scales [S].
+  # The worst octave is read on the programme the source's background leads
+  # (stems.octave_programme_db, stem_octave.py, E1 2026-10-12). The raw octave it replaces read
+  # -38.8..-1.55 dB on the finals, 13 of the 21 it read under the -3 dB gate (hiss removal and
+  # the least-squares stem match read as stripping), and is displayed only. Read on CPU from the
+  # v6 music loop's cached source stems, 22 of the 24 finals span -2.42..0.00 dB (the separator
+  # capped x_the-adventures-of-captain-pu's source stem), so the 2 dB dead zone charges one
+  # accepted file, APL x_videoplayback-20260504-2342, by 0.42 scale units; it stays until the
+  # stems are re-scored on the GPU and the music listening session.
+  stems.octave_programme_db.output.tail: {target: 0.0, dead_zone: 2.0, scale: 1.0, weight: 1.0, family: background}
   stems.lsd_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.0, family: background}
   stems.envelope_corr.output.median: {target: 1.0, dead_zone: 0.0, scale: 0.02, weight: 1.0, family: background}
 

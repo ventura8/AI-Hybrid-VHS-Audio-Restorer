@@ -1,6 +1,7 @@
 """Each degradation changes the signal in its own way, at ordered levels, and the benign ones barely at all."""
 
 import numpy as np
+import pytest
 import scipy.signal
 
 from scripts import quality_degradations as deg
@@ -93,6 +94,7 @@ def test_every_degradation_and_benign_transform_applies():
         "donor": np.roll(voice, 1000),
         "voice": voice,
         "music": np.roll(voice, 5000),
+        deg.STEM_NOISE: 1e-3 * np.random.default_rng(6).standard_normal(len(voice)).astype(np.float32),
     }
     rng = np.random.default_rng(7)
     for name, spec in ((n, s) for n, s in deg.DEGRADATIONS.items() if n != "robotic"):
@@ -115,3 +117,52 @@ def test_listener_degradations_are_dispatched_and_name_registered_metrics():
         assert spec.base in ("speech", "music")
         assert len(spec.levels) == 3
         assert all(expectation.metric in scorecard.METRICS for expectation in spec.expects), name
+
+
+def test_the_planted_octave_mute_takes_one_octave_of_the_bed_down_and_keeps_the_hiss():
+    """Bed + recorded noise as the source; the output has 1000-2000 Hz of the bed 24 dB down, the noise and every other band kept."""
+    bed, noise = _voice(), 1e-4 * np.random.default_rng(3).standard_normal(int(3.0 * RATE))
+    source, output = deg.octave_muted(bed, noise, RATE, -24.0)
+    assert deg.STEM_MUTE_BAND_HZ == (1000.0, 2000.0)
+    assert _band_db(source, 1000.0, 2000.0) - _band_db(output, 1000.0, 2000.0) > 20.0
+    assert abs(_band_db(source, 500.0, 1000.0) - _band_db(output, 500.0, 1000.0)) < 0.01
+    assert np.allclose(source - deg.band_gain(bed, RATE, (0.0, 1.0), 0.0), noise, atol=1e-6)
+
+
+@pytest.mark.parametrize("name", ["stem_octave_muted", "music_hiss_removed"])
+def test_the_stems_cases_carry_the_beds_own_recorded_noise_not_the_speech_fixtures(name):
+    """Both are built on `music_bed` with `music_noise`: the source is bed + its own noise, whatever `noise` holds."""
+    bed = _voice()
+    own = 1e-3 * np.random.default_rng(8).standard_normal(len(bed))
+    materials = {"noise": np.roll(bed, 777), deg.STEM_NOISE: own}
+    spec = deg.DEGRADATIONS[name]
+    assert spec.base == deg.STEM_BED
+    source, _output = deg.apply(name, spec.levels[0], bed, RATE, materials, np.random.default_rng(1))
+    assert np.allclose(source, bed + own, atol=1e-6)
+
+
+def test_the_oracle_hiss_removal_leaves_the_bed_and_takes_the_noise_down():
+    """The difference between source and output is the noise times one minus the removal's gain."""
+    bed, noise = _voice(), 1e-3 * np.random.default_rng(4).standard_normal(int(3.0 * RATE))
+    source, output = deg.hiss_removed(bed, noise[:1000], -20.0)
+    assert len(source) == len(output) == 1000
+    assert np.allclose(source - output, noise[:1000] * (1.0 - 0.1), atol=1e-6)
+
+
+def _expects(name):
+    """`{metric: Expectation}` of one degradation."""
+    return {expectation.metric: expectation for expectation in deg.DEGRADATIONS[name].expects}
+
+
+@pytest.mark.parametrize("name", ["background_stripped", "stem_octave_muted", "music_hiss_removed"])
+def test_the_stems_checks_assert_the_programme_octave_and_report_the_raw_one(name):
+    """background_stripped, the planted mute and the oracle assert `stems.octave_programme_db`; the raw octave is blind."""
+    expects = _expects(name)
+    assert (expects[deg.STEM_OCTAVE].blind, expects[deg.RAW_OCTAVE].blind) == (False, True)
+    assert set(expects) <= set(scorecard.METRICS)
+    assert name in set(deg.NEEDS_REFERENCE) - set(deg.on_tape())
+
+
+def test_the_oracle_hiss_removal_asserts_the_octave_stays_flat():
+    """Removing the hiss alone must not move the programme octave."""
+    assert _expects("music_hiss_removed")[deg.STEM_OCTAVE].direction == "flat"

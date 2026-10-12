@@ -58,14 +58,14 @@ def test_speaker_floor_resolves_the_relative_threshold():
 
 
 def test_hard_failures_ignore_soft_gates():
-    aggregate = _aggregate(**{"file.lufs": (-20.0, -20.0, 4.0, 4.0), "dsp.lkr": (0.0, 0.0, 0.9, 0.9)})
+    aggregate = _aggregate(**{"file.lufs": (-20.0, -20.0, 4.0, 4.0), "dsp.lkr": (0.0, 0.0, 1.9, 1.9)})
     verdicts = g.evaluate_gates(aggregate, g.GATES)
     assert _status(verdicts, "file.lufs") == "failed"
     assert g.hard_failures(verdicts) == ["dsp.lkr"]
 
 
 def test_listener_flags_are_counted_apart_from_hard_failures():
-    aggregate = _aggregate(**{"dsp.gap_air_db": (-30.0, -30.0, -5.0, -5.0), "dsp.lkr": (0.0, 0.0, 0.9, 0.9)})
+    aggregate = _aggregate(**{"dsp.gap_air_db": (-30.0, -30.0, -5.0, -5.0), "dsp.lkr": (0.0, 0.0, 1.9, 1.9)})
     verdicts = g.evaluate_gates(aggregate, g.GATES)
     assert _status(verdicts, "listener.dead_air") == "failed"
     assert _status(verdicts, "listener.hiss") == "passed"

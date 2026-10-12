@@ -85,3 +85,23 @@ def test_the_previous_rounds_gates_files_are_read_back(tmp_path):
     (tmp_path / "gates_music.json").write_text(json.dumps({}), "utf-8")
     assert report_mod.previous_gates(tmp_path) == {"gates.json": {"x": {"threshold": 1.0}}, "gates_music.json": {}}
     assert report_mod.gate_files() == ["gates.json", "gates_speech.json", "gates_music.json", "gates_mixed.json"]
+
+
+def test_the_oracle_check_and_a_refusal_render(tmp_path):
+    """Per hard gate the oracle pairs it fails, overall and per output kind, and why no gates file was written."""
+    oracle = {
+        "pairs": 4,
+        "gates": {"dsp.whistle": {"failed": 3, "share": 0.75}},
+        "by_output": {"target": {"dsp.whistle": 2}, "clean": {"dsp.whistle": 1}},
+    }
+    report_mod.write_reports(tmp_path, {**_report(), "oracle": oracle, "refusal": "oracle: dsp.whistle fail"}, {})
+    markdown = (tmp_path / "report.md").read_text("utf-8")
+    assert "## Oracle pairs" in markdown
+    assert "| dsp.whistle | 3 | 75.0% | 2 | 1 |" in markdown
+    assert "**Gates files not written**: oracle: dsp.whistle fail" in markdown
+    assert not (tmp_path / "gates.json").exists()
+
+
+def test_a_report_without_the_oracle_check_renders_as_before(tmp_path):
+    """An older report shape (no oracle, no refusal) still renders."""
+    assert "## Oracle pairs" not in _rendered(tmp_path)

@@ -136,7 +136,9 @@ METRICS = {
         MetricSpec("dsp.gap_pause_s", "dsp", NONE, "s", SPEECH_ROUTES),
         MetricSpec("stems.si_sdr_db", "stems", HIGHER, "dB"),
         MetricSpec("stems.lsd_db", "stems", LOWER, "dB"),
+        # Displayed only: the raw worst octave reads hiss removal as stripping (`stem_octave.py`).
         MetricSpec("stems.octave_ratio_db", "stems", HIGHER, "dB"),
+        MetricSpec("stems.octave_programme_db", "stems", HIGHER, "dB"),
         MetricSpec("stems.envelope_corr", "stems", HIGHER, ""),
         MetricSpec("stems.has_background", "stems", HIGHER, ""),
         MetricSpec("stems.mert_dist", "stems", LOWER, ""),
