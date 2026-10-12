@@ -71,7 +71,16 @@ def execute(work_dir, clean_wav, original_wav, video_path, final_output_video, v
     background_dir.mkdir(parents=True, exist_ok=True)
     restored_vocals = denoise_step(Path(vocals), vocal_dir, total_duration=video_dur)
     restored_background = _background_pass(Path(background), background_dir, video_dur, strategy)
+    # Both stems keep the source's length and time base, so sync_dtw_enable may keep them off DTW.
     processing._align_and_mix_stems(
-        work_dir, original_wav, Path(restored_vocals), Path(restored_background), video_path, final_output_video, video_dur, strategy
+        work_dir,
+        original_wav,
+        Path(restored_vocals),
+        Path(restored_background),
+        video_path,
+        final_output_video,
+        video_dur,
+        strategy,
+        length_preserving=True,
     )
     return True

@@ -38,7 +38,12 @@ alignment:
 - **ARNNDN Neural Denoising**: FFmpeg RNNoise recurrent neural network denoiser
   (`.rnnn` models, with `cb.rnnn` as the canonical default).
 - **Sub-Sample Audio Synchronization**: Cross-correlation lag estimation and
-  Dynamic Time Warping (DTW) with GPU PyTorch and CPU fallback.
+  Dynamic Time Warping (DTW) with GPU PyTorch and CPU fallback. DTW plays
+  whole 40 ms frames at 0x or 2x: the ear's time-base reading (R12) found
+  frozen holds on 24 of 30 cathar and 16 of 30 APL hunt outputs sent to
+  DTW, none on 205 per engine sent to shift; `sync_dtw_enable: false` sends
+  the length-preserving chains to shift (default true until a blind block),
+  and the CPU DTW path falls back to shift today (`docs/configuration.md`).
 - **Lossless Mastering & Container Remux**: 32-bit float PCM (`pcm_f32le`)
   intermediates end-to-end, two-pass loudness normalization (ffmpeg
   `loudnorm`, EBU R128 measurement, -16 LUFS and -1 dBTP) followed by a

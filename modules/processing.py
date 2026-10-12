@@ -971,7 +971,8 @@ def _process_single_track_pipeline(
     log_msg(f"  [Step 3/4] Smart Audio Sync ({sync_label})...")
     aligned_audio = work_dir / f"aligned_{filtered_audio_wav.name}"
     sync_reference = ref_wav or original_wav
-    _align_stems(sync_reference, filtered_audio_wav, aligned_audio, sync_method=sync_method)
+    # Every single-track chain keeps the source's length and time base (sync.py, sync_dtw_enable).
+    _align_stems(sync_reference, filtered_audio_wav, aligned_audio, sync_method=sync_method, length_preserving=True)
 
     _final_mux_single_audio_step(video_path, aligned_audio, final_output_video, total_duration=video_dur)
 
@@ -1334,7 +1335,9 @@ def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, tota
     return polished
 
 
-def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None):
+def _align_and_mix_stems(
+    work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None, length_preserving=False
+):
     """Aligns polished stems to the source timing and renders the final 2-stem mix.
 
     Args:
@@ -1346,14 +1349,16 @@ def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, vid
         final_output_video (pathlib.Path): Output video file.
         video_dur (float): Duration in seconds.
         strategy (dict, optional): Pre-computed acoustic restoration strategy.
+        length_preserving (bool): Both stems keep the source's length and time base (auto_pure_linear's
+            stem path), so `sync_dtw_enable` may keep them off DTW; the stem modes leave it False.
     """
     sync_method = _strategy_value(strategy, "sync_method", None)
 
     aligned_vocals = work_dir / f"aligned_{vocals_wav.name}"
-    _align_stems(original_wav, vocals_wav, aligned_vocals, sync_method=sync_method)
+    _align_stems(original_wav, vocals_wav, aligned_vocals, sync_method=sync_method, length_preserving=length_preserving)
 
     aligned_background = work_dir / f"aligned_{background_wav.name}"
-    _align_stems(original_wav, background_wav, aligned_background, sync_method=sync_method)
+    _align_stems(original_wav, background_wav, aligned_background, sync_method=sync_method, length_preserving=length_preserving)
 
     _final_mix_step(
         video_path,
