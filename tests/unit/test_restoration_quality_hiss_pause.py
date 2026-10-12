@@ -92,9 +92,9 @@ def test_the_block_median_of_white_noise_is_bias_corrected_to_its_mean():
 
 
 def test_the_hiss_weight_and_the_loudness_below_threshold():
-    """w(f) reads 0.05 at 1.5 kHz, 0.22 at 2 kHz, 0.5 at 2.5 kHz and 0.94 at 4 kHz; a level under the threshold is 0 sone."""
-    weights = hiss_pause.hiss_weight([1500.0, 2000.0, 2500.0, 4000.0])
-    assert weights == pytest.approx([0.05, 0.216, 0.5, 0.938], abs=0.005)
+    """w(f) reads 0.01 at 2 kHz, 0.10 at 2.5 kHz, 0.5 at 3.15 kHz and 0.91 at 4 kHz; a level under the threshold is 0 sone."""
+    weights = hiss_pause.hiss_weight([2000.0, 2500.0, 3150.0, 4000.0])
+    assert weights == pytest.approx([0.0125, 0.098, 0.5, 0.909], abs=0.002)
     assert hiss_pause.specific_loudness(-10.0, 0.0) == 0.0
     assert hiss_pause.specific_loudness(40.0, 0.0) > 0.0
     assert hiss_pause.wilson_hilferty_median_ratio(0.01) == pytest.approx(0.05**3)
@@ -193,13 +193,88 @@ def test_the_anchor_becomes_band_power():
     assert [hiss_pause.anchor_band_power(found, np.ones(1), np.ones(1), 1) for found in (single, None)] == [None, None]
 
 
-def test_blocks_6_db_over_the_anchor_are_not_silent_from_1_khz_up():
-    """Only bands of 1 kHz and up are judged; a block 6 dB or more over the anchor's band power is programme there."""
-    rows = np.array([[100.0, 31.0, 64.0], [100.0, 33.0, 63.0]])
+def test_blocks_3_db_over_the_anchor_are_not_silent_from_1_khz_up():
+    """Only bands of 1 kHz and up are judged; a block 3 dB or more over the anchor's band power is programme there."""
+    rows = np.array([[100.0, 15.0, 33.0], [100.0, 17.0, 31.0]])
     centres = np.array([800.0, 2000.0, 6000.0])
     silent = hiss_pause.silent_rows(rows, np.array([4.0, 8.0, 16.0]), centres)
     assert silent.tolist() == [[True, True, False], [True, False, True]]
     assert hiss_pause.silent_rows(rows, None, centres).all()
+
+
+def _floor_rise(monkeypatch, programme_db):
+    """The 2.0-2.5 kHz source floor's rise over the hiss alone, dB, with `_hiss_pair`'s programme 16.5 dB down.
+
+    There the programme lifts half the blocks 3.7-4.3 dB over the anchor, between the two silent tests.
+    """
+    monkeypatch.setattr(hiss_pause, "PROGRAMME_DB", programme_db)
+    count = 4 * RATE
+    noise, anchor, programme = _hiss_pair(count)
+    mask = np.ones(count // int(hiss_pause.FRAME_S * RATE), dtype=bool)
+    plain = hiss_pause.pause_bands((noise, noise), RATE, mask, anchor)[2]
+    soft = noise + programme * 0.15
+    _edges, centres, src_floor, _out_floor = hiss_pause.pause_bands((soft, soft), RATE, mask, anchor)
+    return 10.0 * np.log10(src_floor / plain)[(centres > 2000.0) & (centres < 2500.0)]
+
+
+def test_soft_programme_3_to_6_db_over_the_hiss_leaves_the_floor(monkeypatch):
+    """Soft programme lifting half the blocks about 4 dB over the hiss (soft singing on a choir tape): it lifted the floor
+    1.8-2.4 dB under the 6 dB test; at 3 dB the floor reads the hiss alone."""
+    assert np.all(_floor_rise(monkeypatch, 6.0) > 1.5)
+    assert np.all(np.abs(_floor_rise(monkeypatch, 3.0)) < 0.5)
+
+
+def test_the_reading_judges_blocks_from_1_khz_at_3_db_and_reads_the_margin_from_2_khz():
+    """The silent test runs at 3 dB from 1 kHz up (6 dB let Gaudeamus5's soft singing through); the margin starts at 2 kHz."""
+    assert hiss_pause.PROGRAMME_DB == 3.0
+    assert hiss_pause.SILENT_FROM_HZ == 1000.0 < hiss_pause.HISS_FROM_HZ == 2000.0
+
+
+def _room_floor(count, cutoff_hz, seed=11):
+    """Seeded pink noise through a 4th-order low pass at `cutoff_hz`, zero phase: a hiss-free room floor (unit rms)."""
+    white = np.fft.rfft(np.random.default_rng(seed).standard_normal(count))
+    pink = np.fft.irfft(white / np.sqrt(np.maximum(np.arange(len(white)), 1.0)), count)
+    room = scipy.signal.sosfiltfilt(scipy.signal.butter(4, cutoff_hz, "low", fs=RATE, output="sos"), pink)
+    return room / np.std(room)
+
+
+def _room_level(source, room):
+    """The gain that puts `room`'s 100-1000 Hz power at the source's own (the room floor as loud as the tape there)."""
+    sos = scipy.signal.butter(4, [100.0, 1000.0], "bandpass", fs=RATE, output="sos")
+    return float(np.sqrt(np.mean(scipy.signal.sosfiltfilt(sos, source) ** 2) / np.mean(scipy.signal.sosfiltfilt(sos, room) ** 2)))
+
+
+def test_room_tone_under_2_khz_is_not_hiss_even_as_loud_as_the_tape():
+    """The user allows room tone mostly under 2-3 kHz: the hiss removed and a pink floor low-passed at 2 kHz put in its
+    place, as loud as the tape's own hiss at 100-1000 Hz, reads no audible pause hiss, while that hiss reads audible
+    and still does 6 dB down. The room guard sees the floor kept."""
+    programme, noise, source = capture()
+    room = _room_floor(len(source), 2000.0)
+    room = room * _room_level(noise[WINDOW], room[WINDOW])
+    readings = read(programme + room)
+    assert out_of(readings) <= 0.0
+    assert out_of(readings, "hiss_room_delta_db") > -6.0
+    assert out_of(read(source)) > out_of(read(programme + noise * 0.5)) > 0.0
+
+
+def test_the_weight_comes_before_the_smoothing():
+    """A floor that stops at 2.2 kHz: weighted first, its power does not reach the 2.5-2.7 kHz bands at their full weight."""
+    centres = auditory_centres()
+    rel = np.where(centres < 2200.0, -40.0, np.nan)
+    rel[centres >= 2200.0] = -120.0
+    weighted_first = hiss_pause.hiss_margin(rel, centres)
+    late = (
+        hiss_floor.L_CRIT_DB
+        + hiss_pause.smoothed(rel)
+        + 10.0 * np.log10(hiss_pause.hiss_weight(centres))
+        - hiss_pause.quiet_threshold(centres)
+    )
+    assert weighted_first < float(np.nanmax(np.where(centres >= hiss_pause.HISS_FROM_HZ, late, np.nan))) - 3.0
+
+
+def auditory_centres():
+    """The pause reading's band centres at 44.1 kHz with no brickwall."""
+    return hiss_pause.band_table(np.fft.rfftfreq(882, 1.0 / RATE), RATE, None)[2]
 
 
 def test_pauses_standing_far_over_the_anchor_everywhere_read_nothing():

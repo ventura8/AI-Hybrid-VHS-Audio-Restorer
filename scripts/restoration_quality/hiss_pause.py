@@ -18,36 +18,46 @@ and is the same for every candidate:
    block does not lift the floor, nor soft programme the source's hiss hid in its quiet frames
    and a clean output reveals (with the mean a perfect output's pauses read up to +43 dB on the
    fixtures); 200 ms is the ear's integration time for a noise. Only the source's silent blocks
-   count, band by band, on both sides: a block whose source band of 1 kHz and up stands 6 dB
+   count, band by band, on both sides: a block whose source band of 1 kHz and up stands 3 dB
    or more over the source's stationary hiss (the anchor, `anchor_band_power`) holds programme
    there, not hiss. On a choir tape R4's quiet frames are soft singing: Gaudeamus5's source
-   pause blocks stood +4.1 dB (median) over its anchor at 2-8 kHz and +5.6..+8.7 in the windows
-   every render kept unchanged, against +0.7..+1.2 on the speech tapes (their 90th percentile
-   +2.3..+7.1), and the singing pinned the pause tail at 39.53 for every keeper fill. A window
-   whose every such band held programme reads None.
+   pause blocks stood +4.1 dB (median) over its anchor at 2-8 kHz, against +0.2..+1.2 per
+   window on Tele7abc (SOTI -1.0..+2.0, Vaccin -1.2..+2.9). At 6 dB most singing blocks passed
+   the test, so the singing set the floor: the pause tail of the APL keeper ladder read 36.25 /
+   33.00 / 32.67 / 32.67 (fill 8 / 12 / 18 / keeper off, Gaudeamus5), and a render that took
+   the soft singing out would have won the family. At 3 dB it reads 34.66 / 31.21 / 25.09 /
+   20.50; the speech tapes move under 0.6 dB (adversarial review, docs/ear_v4_hiss.md). A
+   window whose every such band held programme reads None.
 4. Each side's floor relative to its own whole aligned file's loud frames (the listener sets
-   the volume once), at `hiss_floor.L_CRIT_DB`: rel_b = 10 log10 floor_b - loud; for the
-   margin each band takes the power mean of itself and its two neighbours either side (tape
-   hiss is smooth across bands, and the max over single bands picked their upward draws: three
-   bands halved the realisation scatter, sd 0.25 -> 0.13-0.18 dB on the fixtures; five, with
-   the silent blocks, took the fresh-realisation p95 of the fixtures' pause margin from
-   0.51-0.54 to 0.18-0.21 dB).
-5. The hiss weight w(f) = 1 / (1 + exp(-log2(f / 2500) / 0.25)): 0.05 at 1.5 kHz, 0.22 at
-   2 kHz, 0.5 at 2.5 kHz, 0.94 at 4 kHz. Tape hiss is the broadband, HF-heavy stationary
-   floor; room tone sits mostly under 2-3 kHz and the user allows it (they rejected dead
-   pauses: "silent in pauses").
-6. `hiss_pause_margin_db` = max over bands of 1 kHz and up holding a floor of
-   L_CRIT + rel_b + 10 log10 w - (Tq - 3) (Terhardt's threshold less 3 dB), never under
-   L_CRIT - 140 = -65. With no band holding anything it reads -65, never None: an empty output
-   is inaudible and loses nothing for being unread (a pause band-filtered to 1e-90 read -1843
-   before this floor held it). The ranked form is the excess, max(0, margin).
+   the volume once), at `hiss_floor.L_CRIT_DB`: rel_b = 10 log10 floor_b - loud, weighted by
+   the hiss weight (step 5) and then, for the margin, each band takes the power mean of itself
+   and its two neighbours either side (tape hiss is smooth across bands, and the max over
+   single bands picked their upward draws: three bands halved the realisation scatter, sd 0.25
+   -> 0.13-0.18 dB on the fixtures; five, with the silent blocks, took the fresh-realisation
+   p95 of the fixtures' pause margin from 0.51-0.54 to 0.18-0.21 dB). The weight comes first:
+   smoothed before it, a room floor under 2 kHz leaked into the 2.4-2.7 kHz bands at their
+   full weight.
+5. The hiss weight w(f) = 1 / (1 + exp(-log2(f / 3150) / 0.15)): 0.01 at 2 kHz, 0.10 at
+   2.5 kHz, 0.38 at 3 kHz, 0.5 at 3.15 kHz, 0.73 at 3.5 kHz, 0.91 at 4 kHz. Tape hiss is the
+   broadband, HF-heavy stationary floor, and the ear is most sensitive to it at 3-4 kHz, where
+   tape hiss set the margin on every fixture (3.5-3.9 kHz); room tone sits mostly under about
+   2-3 kHz and the user allows it (they rejected dead pauses: "silent in pauses"). The first
+   weight (0.5 at 2.5 kHz, a quarter octave per e-fold, smoothed before weighting) read a
+   hiss-free pink room floor low-passed at 2 kHz, at the source's own 100-1000 Hz pause level,
+   at +9.7 dB median (9 of 10 speech fixtures flagged); this one reads it at -4.2 (none), and
+   tape hiss 0.5 dB lower than before.
+6. `hiss_pause_margin_db` = max over bands of 2 kHz and up holding a floor of
+   L_CRIT + smoothed (rel_b + 10 log10 w) - (Tq - 3) (Terhardt's threshold less 3 dB), never
+   under L_CRIT - 140 = -65. With no band holding anything it reads -65, never None: an empty
+   output is inaudible and loses nothing for being unread (a pause band-filtered to 1e-90 read
+   -1843 before this floor held it). The ranked form is the excess, max(0, margin).
    `hiss_pause_onset_db` = L_CRIT - margin is the playback level (loud frames in dB SPL) at
    which the hiss becomes audible, level-free (display).
 7. Guards and display: `hiss_room_onset_db`, min over 100-2000 Hz of Tq - 3 - rel_b,
    unweighted (where room tone becomes audible); `hiss_room_delta_db`, the 100-1500 Hz floor
    relative to the loud frames, output minus source (dead air reads far under 0); and
    `hiss_pause_sone`, Zwicker's specific loudness at L_crit, x the Traunmuller Bark width and
-   w(f), summed over bands of 1 kHz and up.
+   w(f), summed over bands of 2 kHz and up.
 
 R4's HF excess ordered round one's hiss pair (+3.11 dB "has hiss" against +0.49 clean,
 Tele7abc) where the pause level alone did not (the accepted v2 outputs read gap air -8..-12 dB,
@@ -62,13 +72,14 @@ from scripts.restoration_quality import auditory, hiss_floor, pause_metrics
 
 FRAME_S = pause_metrics.FRAME_S
 SMOOTH_BANDS = 5
-PROGRAMME_DB = 6.0
+PROGRAMME_DB = 3.0
+SILENT_FROM_HZ = 1000.0
 BLOCK_FRAMES = 10
 MIN_BLOCK_FRAMES = 5
 TQ_MARGIN_DB = 3.0
-HISS_CENTRE_HZ = 2500.0
-HISS_WIDTH_OCT = 0.25
-HISS_FROM_HZ = 1000.0
+HISS_CENTRE_HZ = 3150.0
+HISS_WIDTH_OCT = 0.15
+HISS_FROM_HZ = 2000.0
 ROOM_DELTA_BAND_HZ = (100.0, 1500.0)
 ROOM_ONSET_BAND_HZ = (100.0, 2000.0)
 LO_HZ = 50.0
@@ -90,7 +101,7 @@ PAUSE_NAMES = (
 
 
 def hiss_weight(freq_hz):
-    """w(f): the logistic hiss weight, 0.5 at 2.5 kHz, a quarter octave per e-fold."""
+    """w(f): the logistic hiss weight, 0.5 at 3.15 kHz, 0.15 octave per e-fold."""
     octaves = np.log2(np.maximum(np.asarray(freq_hz, dtype=np.float64), 1.0) / HISS_CENTRE_HZ) / HISS_WIDTH_OCT
     return 1.0 / (1.0 + np.exp(-octaves))
 
@@ -190,14 +201,14 @@ def anchor_band_power(anchor, centres, counts, frame):
 
 
 def silent_rows(src_rows, expected, centres):
-    """Per row and band: True unless the source's band of 1 kHz and up stands 6 dB or more over the anchor's hiss there.
+    """Per row and band: True unless the source's band of 1 kHz and up stands 3 dB or more over the anchor's hiss there.
 
     Every row is silent without an anchor. A row's NaN band (no kept bin) stays silent; the median skips it anyway.
     """
     silent = np.ones(src_rows.shape, dtype=bool)
     if expected is None:
         return silent
-    judged = centres >= HISS_FROM_HZ
+    judged = centres >= SILENT_FROM_HZ
     silent[:, judged] = ~(src_rows[:, judged] >= expected[judged] * 10.0 ** (PROGRAMME_DB / 10.0))
     return silent
 
@@ -249,7 +260,7 @@ def side_rows(power, bands, spans):
 
 
 def hiss_read(bands):
-    """Whether the source's pause floor holds a band of 1 kHz and up: not every such band's blocks held programme."""
+    """Whether the source's pause floor holds a band of 2 kHz and up: not every such band's blocks held programme."""
     _edges, centres, src_floor, _out_floor = bands
     return bool(np.any((centres >= HISS_FROM_HZ) & np.isfinite(src_floor)))
 
@@ -270,14 +281,19 @@ def smoothed(rel):
     return np.where(held, 10.0 * np.log10(np.maximum(total / np.maximum(count, EPS), EPS)), np.nan)
 
 
+def weighted(rel, centres):
+    """`rel` with each band's hiss weight applied, 10 log10 w(f) dB (before the smoothing: module docstring, step 4)."""
+    return np.asarray(rel, dtype=np.float64) + 10.0 * np.log10(hiss_weight(centres))
+
+
 def hiss_margin(rel, centres):
-    """max over bands of 1 kHz and up of L_crit + smoothed rel + 10 log10 w - (Tq - 3), never under L_crit - 140."""
-    rel = smoothed(rel)
-    bands = (centres >= HISS_FROM_HZ) & np.isfinite(rel)
+    """max over bands of 2 kHz and up of L_crit + the smoothed weighted rel - (Tq - 3), never under L_crit - 140."""
+    level = smoothed(weighted(rel, centres))
+    bands = (centres >= HISS_FROM_HZ) & np.isfinite(level)
     if not bands.any():
         return hiss_floor.L_CRIT_DB - ONSET_CAP
-    level = hiss_floor.L_CRIT_DB + rel[bands] + 10.0 * np.log10(hiss_weight(centres[bands])) - quiet_threshold(centres[bands])
-    return float(max(np.max(level), hiss_floor.L_CRIT_DB - ONSET_CAP))
+    above = hiss_floor.L_CRIT_DB + level[bands] - quiet_threshold(centres[bands])
+    return float(max(np.max(above), hiss_floor.L_CRIT_DB - ONSET_CAP))
 
 
 def room_onset(rel, centres):
@@ -287,7 +303,7 @@ def room_onset(rel, centres):
 
 
 def hiss_sone(rel, centres, edges):
-    """Zwicker loudness at L_crit of the hiss-weighted floor, sone, over bands of 1 kHz and up."""
+    """Zwicker loudness at L_crit of the hiss-weighted floor, sone, over bands of 2 kHz and up."""
     bands = (centres >= HISS_FROM_HZ) & np.isfinite(rel)
     width = bark(edges[1:]) - bark(edges[:-1])
     loudness = specific_loudness(rel[bands] + hiss_floor.L_CRIT_DB, quiet_threshold(centres[bands]))
@@ -340,7 +356,7 @@ def paired(bands, context, pause_s):
 def pause_readings(src, out, rate, context):
     """`{name: (source, output)}` for `PAUSE_NAMES` on one aligned window; every name None with under 25 true-pause frames.
 
-    A window whose source pauses held programme in every band of 1 kHz and up (`hiss_read`) reads None too.
+    A window whose source pauses held programme in every band of 2 kHz and up (`hiss_read`) reads None too.
     """
     prepared = window_pair(src, out, rate)
     mask = None if prepared is None else pause_metrics.true_pause_mask(prepared[0][0], rate)[0]
