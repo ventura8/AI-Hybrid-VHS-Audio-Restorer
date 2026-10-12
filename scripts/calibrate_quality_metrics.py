@@ -158,14 +158,38 @@ def _fixture(fixtures_dir, language, stem, part):
 
 
 def _materials(fixtures_dir, language):
-    """Base signals for one language: the speech target, its recorded noise, a donor voice and a music bed."""
+    """Base signals for one language: the speech target, its recorded noise, a donor voice and a music bed (with its own noise)."""
     target, rate = _read(_fixture(fixtures_dir, language, SPEECH_FIXTURE, "target"))
     clean, _rate = _read(_fixture(fixtures_dir, language, SPEECH_FIXTURE, "clean"))
     vhs, _rate = _read(_fixture(fixtures_dir, language, SPEECH_FIXTURE, "vhs"))
     donor, _rate = _read(_fixture(fixtures_dir, language, DONOR_FIXTURE, "target"))
     music, _rate = _read(_fixture(fixtures_dir, language, MUSIC_FIXTURE, "target"))
     noise = (vhs - clean)[: len(target)]
-    return {"speech": target, "clean": clean, "vhs": vhs, "noise": noise, "donor": donor, "voice": target, "music": music, "rate": rate}
+    materials = {
+        "speech": target,
+        "clean": clean,
+        "vhs": vhs,
+        "noise": noise,
+        "donor": donor,
+        "voice": target,
+        "music": music,
+        "rate": rate,
+    }
+    return {**materials, **_music_capture(fixtures_dir, language)}
+
+
+def _music_capture(fixtures_dir, language):
+    """`{music_bed, music_noise}`: the music fixture's clean bed and the noise its own capture recorded (`vhs - clean`).
+
+    The stems' octave cases (`stem_octave_muted`, `music_hiss_removed`) are built on these, so
+    their source is the realistic-v2 music capture itself. The speech fixture's `noise` is no
+    hiss for a bed: it carries the speech chain's residual, so the planted mute's octave never
+    read on en / fr and removing it read -6.7 dB on de (E1 review, 2026-10-12).
+    """
+    bed, _rate = _read(_fixture(fixtures_dir, language, MUSIC_FIXTURE, "clean"))
+    capture, _rate = _read(_fixture(fixtures_dir, language, MUSIC_FIXTURE, "vhs"))
+    length = min(len(bed), len(capture))
+    return {"music_bed": bed[:length], "music_noise": capture[:length] - bed[:length]}
 
 
 def _write(path, data, rate):

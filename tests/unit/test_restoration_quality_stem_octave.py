@@ -82,6 +82,24 @@ def test_a_planted_octave_mute_fires_with_the_hiss_kept_or_removed(bed, hiss):
     assert _read(bed + hiss, bed + hiss, gone + 0.1 * hiss) < -10.0
 
 
+def _calibration_case(name, level, bed, hiss):
+    """The reading on one calibration stems case as `quality_degradations` builds it, the source as its own stem."""
+    source, output = deg.apply(name, level, bed, RATE, {deg.STEM_NOISE: hiss}, None)
+    return _read(source, source, output)
+
+
+def test_the_calibrations_planted_mute_reads_deeper_at_every_level(bed, hiss):
+    """`stem_octave_muted` at -6 / -12 / -24 dB reads ever lower, under the -3 dB gate from -12 dB."""
+    readings = [_calibration_case("stem_octave_muted", level, bed, hiss) for level in deg.STEM_MUTE_LEVELS]
+    assert readings[0] > readings[1] > readings[2]
+    assert readings[1] < -3.0
+
+
+def test_the_calibrations_oracle_stays_flat(bed, hiss):
+    """`music_hiss_removed` at its severest level stays inside the check's 0.5 dB."""
+    assert abs(_calibration_case("music_hiss_removed", deg.STEM_HISS_LEVELS[-1], bed, hiss)) <= deg.STEM_OCTAVE_TOLERANCE_DB
+
+
 @pytest.mark.parametrize("gain_db", [-6.0, -12.0, -24.0])
 def test_a_background_stripped_under_a_voice_reads_its_loss(bed, hiss, gain_db):
     """The voice holds the mix's level, so the bed's loss reads in full (the least-squares stem match cancelled most of it)."""

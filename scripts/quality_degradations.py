@@ -128,9 +128,15 @@ STEM_OCTAVE = "stems.octave_programme_db"
 RAW_OCTAVE = "stems.octave_ratio_db"
 # Hiss removal moves a cell standing guard (a)'s 18 dB over the noise by 0.07 dB; the realistic-v2 oracle reads -0.06 (median).
 STEM_OCTAVE_TOLERANCE_DB = 0.5
-# The octave the planted mute takes down, and its depths (mild to severe).
-STEM_MUTE_BAND_HZ = (500.0, 1000.0)
+# The octave the planted mute takes down, and its depths (mild to severe). 1000-2000 Hz is the octave the reading covers
+# most on the realistic-v2 musiconly beds (69 of 100 windows, against 36 for 500-1000 Hz); with the bed as its own stem
+# the mute reads on all five languages' music fixture, monotonic in depth (en -1.4 / -2.8 / -4.8 dB as the case median,
+# es -5.9 / -11.5 / -20.6), where 500-1000 Hz read nothing on en or fr (E1 review, 2026-10-12).
+STEM_MUTE_BAND_HZ = (1000.0, 2000.0)
 STEM_MUTE_LEVELS = (-6.0, -12.0, -24.0)
+# Their base: the music fixture's clean bed, built with the noise its own capture recorded (`music_noise`).
+STEM_BED = "music_bed"
+STEM_NOISE = "music_noise"
 # The oracle's hiss, mild to severe removal (the realistic-v2 oracle takes it 20 dB down).
 STEM_HISS_LEVELS = (-6.0, -12.0, -20.0)
 # The readings more than one expectation names (`scripts/restoration_quality` keys).
@@ -566,10 +572,10 @@ DEGRADATIONS = {
         ),
     ),
     # One octave of a hiss-bearing bed taken down, the hiss kept: the octave must read the loss where the bed reads.
-    "stem_octave_muted": Degradation("music", STEM_MUTE_LEVELS, (Expectation(STEM_OCTAVE, "down"), Expectation(RAW_OCTAVE, "down", True))),
+    "stem_octave_muted": Degradation(STEM_BED, STEM_MUTE_LEVELS, (Expectation(STEM_OCTAVE, "down"), Expectation(RAW_OCTAVE, "down", True))),
     # The hiss alone taken down (the oracle): the octave must not move; the raw octave reads it as stripping.
     "music_hiss_removed": Degradation(
-        "music",
+        STEM_BED,
         STEM_HISS_LEVELS,
         (Expectation(STEM_OCTAVE, "flat", tolerance=STEM_OCTAVE_TOLERANCE_DB), Expectation(RAW_OCTAVE, "down", True)),
     ),
@@ -1063,14 +1069,14 @@ def _underwater(level, base, rate, _materials, _rng):
 
 
 def _octave_muted(level, base, rate, materials, _rng):
-    return octave_muted(base, materials["noise"], rate, level)
+    return octave_muted(base, materials[STEM_NOISE], rate, level)
 
 
 def _hiss_removed(level, base, _rate, materials, _rng):
-    return hiss_removed(base, materials["noise"], level)
+    return hiss_removed(base, materials[STEM_NOISE], level)
 
 
-# Builders called with the level, the base and the materials; the stems' two (E1) need the fixture's recorded noise.
+# Builders called with the level, the base and the materials; the stems' two (E1) need the bed's own recorded noise.
 V1_BUILDERS = {
     "hiss": _hissed,
     "hum": _hummed,

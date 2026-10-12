@@ -1118,9 +1118,16 @@ scores read in place).
   `file.lra` 1, so today no run writes a gates file until the whistle and
   air readings are fixed.
 - **The degradation table:** `background_stripped` asserts the programme
-  octave (the raw one blind); `stem_octave_muted` plants a 500-1000 Hz mute
+  octave (the raw one blind); `stem_octave_muted` plants a 1000-2000 Hz mute
   of the hiss-bearing bed at -6 / -12 / -24 dB; `music_hiss_removed` is the
-  oracle, the programme octave flat within 0.5 dB.
+  oracle, the programme octave flat within 0.5 dB. Both are built on the
+  music fixture's clean bed and its own recorded noise (`vhs - clean`,
+  `calibrate_quality_metrics._music_capture`), never on the speech
+  fixture's `noise`: that residual carries the speech chain, so on it the
+  500-1000 Hz mute read nothing on en or fr and its removal read -6.7 dB on
+  de. With the bed as its own stem the mute's case median reads -1.4 /
+  -2.8 / -4.8 dB (en) to -5.9 / -11.5 / -20.6 (es), monotonic on all five
+  languages, and the oracle stays within 0.17 dB.
 - **Re-gated offline** (the hunt, 235 clips per engine, the v2 file):
   clips failing a hard gate 216 to 112 (cathar), 205 to 161 (APL); with the
   programme octave read from the cached stems, 146 and 169.

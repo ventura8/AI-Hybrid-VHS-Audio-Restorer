@@ -26,8 +26,8 @@ most 2 of 40 windows (`runner.dropout_entry`), and the v2 file's 57.3 belongs to
 count 1d644fb replaced: `file.dropouts` reads the count over the whole aligned pair.
 `stems.octave` read the raw worst octave of the non-vocal stem, which reads hiss removal
 as a stripped background (the accepted APL final of x_vid-20230606-121054 at -38.8 dB):
-`stems.octave_programme` reads `stem_metrics.octave_programme_db`, and the raw octave is
-displayed only.
+`stems.octave_programme` reads `stems.octave_programme_db` (`stem_octave.octave_programme_db`),
+and the raw octave is displayed only.
 
 Soft until calibrated (2026-10-12): `speech.cer_median` and `mos.audiobox_pc` read the
 denoising itself on hissy tape (the hunt's shipped cathar: CER over 0.05 on 127 of its 235
