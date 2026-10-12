@@ -180,14 +180,14 @@ def band_profile(source, output, rate, bandwidth_hz=None):
     if spectra is None:
         return None
     freqs, src_power, out_power = spectra
-    over = _over_noise(src_power)
+    over = over_noise(src_power)
     cells = auditory.programme_cells(src_power) & over
     gain = auditory.programme_gain_db(src_power, out_power, freqs, cells)
     if gain is None or gain < MIN_PROGRAMME_GAIN_DB:
         return None
     ratio = auditory.cell_ratio_db(src_power, out_power) - gain
     edges = auditory.erb_band_edges(BAND_FLOOR_HZ, _ceiling_hz(rate, bandwidth_hz))
-    levels = _band_levels(ratio, cells, _chance_cells(src_power, freqs, over), _band_index(freqs, edges), len(edges) - 1)
+    levels = _band_levels(ratio, cells, chance_cells(src_power, freqs, over), _band_index(freqs, edges), len(edges) - 1)
     return _centres_hz(edges), levels
 
 
@@ -197,7 +197,7 @@ def guarded_cells(src_power):
     `band_profile` matches its gain on these; R11 (`lf_metrics`) takes the same gain match on
     its own frames.
     """
-    return auditory.programme_cells(src_power) & _over_noise(src_power)
+    return auditory.programme_cells(src_power) & over_noise(src_power)
 
 
 def _spectra(source, output, rate):
@@ -239,14 +239,19 @@ def _power(mono, rate):
     return freqs, np.abs(spec) ** 2
 
 
-def _over_noise(src_power):
-    """Cells (every frame) standing the margin over the bin's mean noise and within `DYNAMIC_RANGE_DB` of the loudest cell."""
+def over_noise(src_power, margin_db=None):
+    """Cells (every frame) standing `margin_db` over the bin's mean noise and within `DYNAMIC_RANGE_DB` of the loudest cell.
+
+    Guard (a), at `NOISE_MARGIN_DB` unless told otherwise; the stems' octave reading
+    (`stem_octave.octave_programme_db`) takes it on the separated stem.
+    """
+    margin = NOISE_MARGIN_DB if margin_db is None else margin_db
     floor = np.percentile(src_power, auditory.PROGRAMME_FLOOR_PERCENTILE, axis=1, keepdims=True)
-    over_noise = src_power >= floor * NOISE_MEAN_OVER_FLOOR * 10.0 ** (NOISE_MARGIN_DB / 10.0)
-    return over_noise & (src_power > src_power.max() * 10.0 ** (-DYNAMIC_RANGE_DB / 10.0))
+    over = src_power >= floor * NOISE_MEAN_OVER_FLOOR * 10.0 ** (margin / 10.0)
+    return over & (src_power > src_power.max() * 10.0 ** (-DYNAMIC_RANGE_DB / 10.0))
 
 
-def _chance_cells(src_power, freqs, over):
+def chance_cells(src_power, freqs, over):
     """Per bin, how many loud-frame cells would pass on noise alone: the quiet frames' pass rate times the loud frames.
 
     The quiet frames are picked on the 300-3000 Hz programme core, so noise bursts elsewhere

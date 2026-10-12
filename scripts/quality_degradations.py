@@ -123,6 +123,16 @@ QUIET_SHARE = 0.2
 SIGMOS_NOISE = "mos.sigmos_noise"
 SIGMOS_DISC = "mos.sigmos_disc"
 DROPOUTS = "file.dropouts"
+# The stems' octave readings: the gate reads the programme-cell one; the raw one is displayed only (`stem_octave.py`).
+STEM_OCTAVE = "stems.octave_programme_db"
+RAW_OCTAVE = "stems.octave_ratio_db"
+# Hiss removal moves a cell standing guard (a)'s 18 dB over the noise by 0.07 dB; the realistic-v2 oracle reads -0.06 (median).
+STEM_OCTAVE_TOLERANCE_DB = 0.5
+# The octave the planted mute takes down, and its depths (mild to severe).
+STEM_MUTE_BAND_HZ = (500.0, 1000.0)
+STEM_MUTE_LEVELS = (-6.0, -12.0, -24.0)
+# The oracle's hiss, mild to severe removal (the realistic-v2 oracle takes it 20 dB down).
+STEM_HISS_LEVELS = (-6.0, -12.0, -20.0)
 # The readings more than one expectation names (`scripts/restoration_quality` keys).
 HF_TOP = "dsp.hf_8k16k"
 SIGMOS_COL = "mos.sigmos_col"
@@ -268,6 +278,32 @@ def music_attenuated(voice, music, gain_db):
     length = min(len(voice), len(music))
     voice, music = np.asarray(voice[:length], dtype=np.float32), np.asarray(music[:length], dtype=np.float32)
     return voice + music, voice + music * np.float32(10.0 ** (gain_db / 20.0))
+
+
+def _bed_and_noise(music, noise):
+    """The music bed and the fixture's recorded tape noise, cut to one length (float64)."""
+    length = min(len(music), len(noise))
+    return np.asarray(music[:length], dtype=np.float64), np.asarray(noise[:length], dtype=np.float64)
+
+
+def band_gain(mono, rate, band_hz, gain_db):
+    """`mono` with `band_hz` scaled by `gain_db`, zero phase (an FFT gain over the whole signal)."""
+    spectrum = np.fft.rfft(np.asarray(mono, dtype=np.float64))
+    freqs = np.fft.rfftfreq(len(mono), 1.0 / rate)
+    spectrum[(freqs >= band_hz[0]) & (freqs < band_hz[1])] *= 10.0 ** (gain_db / 20.0)
+    return np.fft.irfft(spectrum, len(mono))
+
+
+def octave_muted(music, noise, rate, gain_db, band_hz=STEM_MUTE_BAND_HZ):
+    """Hiss-bearing music with one octave of the bed taken down: bed + noise, and the bed `gain_db` lower in `band_hz` + the same noise."""
+    bed, tape_noise = _bed_and_noise(music, noise)
+    return (bed + tape_noise).astype(np.float32), (band_gain(bed, rate, band_hz, gain_db) + tape_noise).astype(np.float32)
+
+
+def hiss_removed(music, noise, gain_db):
+    """The oracle restoration of hiss-bearing music: bed + noise, and the bed with the noise `gain_db` lower."""
+    bed, tape_noise = _bed_and_noise(music, noise)
+    return (bed + tape_noise).astype(np.float32), (bed + tape_noise * 10.0 ** (gain_db / 20.0)).astype(np.float32)
 
 
 def crackle(clean, rate, per_second, rng):
@@ -516,14 +552,26 @@ DEGRADATIONS = {
         ),
     ),
     "words_spliced": Degradation("speech", (0.5, 1.0, 2.0), (Expectation("speech.cer", "up"), Expectation(SPEAKER_COS, "down", True))),
+    # The stems family (E1, 2026-10-12): the gate's reading is asserted, the raw octave reported. On the 2026-09-20
+    # calibration's own BS-RoFormer stems of the en cases the programme-cell octave reads -5.9 / -11.1 / -14.9 dB where
+    # the raw octave read -0.9 / -2.6 / -14.3: the least-squares stem match had cancelled most of the strip.
     "background_stripped": Degradation(
         "music",
         (-6.0, -12.0, -24.0),
         (
-            Expectation("stems.octave_ratio_db", "down"),
+            Expectation(STEM_OCTAVE, "down"),
+            Expectation(RAW_OCTAVE, "down", True),
             Expectation("stems.si_sdr_db", "down", True),
             Expectation("mos.audiobox_pc", "down", True),
         ),
+    ),
+    # One octave of a hiss-bearing bed taken down, the hiss kept: the octave must read the loss where the bed reads.
+    "stem_octave_muted": Degradation("music", STEM_MUTE_LEVELS, (Expectation(STEM_OCTAVE, "down"), Expectation(RAW_OCTAVE, "down", True))),
+    # The hiss alone taken down (the oracle): the octave must not move; the raw octave reads it as stripping.
+    "music_hiss_removed": Degradation(
+        "music",
+        STEM_HISS_LEVELS,
+        (Expectation(STEM_OCTAVE, "flat", tolerance=STEM_OCTAVE_TOLERANCE_DB), Expectation(RAW_OCTAVE, "down", True)),
     ),
     "clicks": Degradation("speech", (2.0, 8.0, 20.0), (Expectation("dsp.clicks_per_s", "up"), Expectation(SIGMOS_DISC, "down", True))),
     "dropouts": Degradation("speech", (3, 6, 12), (Expectation(DROPOUTS, "up"), Expectation(SIGMOS_DISC, "down", True))),
@@ -868,7 +916,7 @@ def benign_changes(name):
 # Degradations a real tape excerpt cannot carry: they need the fixture's own recorded noise, a
 # second voice or a separate music bed, which only the fixtures have (`linear_bandwidth` runs
 # on a tape with the cut capture as its output: R0's reading of the cut is what it tests there).
-NEEDS_REFERENCE = ("hiss", "hiss_in_pauses", "words_spliced", "background_stripped")
+NEEDS_REFERENCE = ("hiss", "hiss_in_pauses", "words_spliced", "background_stripped", "stem_octave_muted", "music_hiss_removed")
 TAPE_BASES = ("speech", "vhs")
 
 
@@ -1014,7 +1062,22 @@ def _underwater(level, base, rate, _materials, _rng):
     return base, lowpass(base, rate, level)
 
 
-V1_BUILDERS = {"hiss": _hissed, "hum": _hummed, "underwater": _underwater}
+def _octave_muted(level, base, rate, materials, _rng):
+    return octave_muted(base, materials["noise"], rate, level)
+
+
+def _hiss_removed(level, base, _rate, materials, _rng):
+    return hiss_removed(base, materials["noise"], level)
+
+
+# Builders called with the level, the base and the materials; the stems' two (E1) need the fixture's recorded noise.
+V1_BUILDERS = {
+    "hiss": _hissed,
+    "hum": _hummed,
+    "underwater": _underwater,
+    "stem_octave_muted": _octave_muted,
+    "music_hiss_removed": _hiss_removed,
+}
 
 
 def apply(name, level, base, rate, materials, rng):
