@@ -1123,5 +1123,14 @@ library's own code (audio-separator 0.47.0's `MDXCSeparator.separate` and
 `demix`, with a stub in place of the network) through the app's own denoise
 runner, on a synthetic 150 s stereo file cut into three 60 s chunks: every
 body sample equal to the whole-file render, the seams at -161 dB, at input
-peaks of 0.6 and 1.2; cut to the VR grid it drifted to -33 and -23 dB. The
-real network has not yet been run chunked against its whole-file render.
+peaks of 0.6 and 1.2; cut to the VR grid it drifted to -33 and -23 dB.
+
+Checked on the GPU with the real network (2026-10-12): a 374 s cut of the
+SOTI tape in `auto_pure_linear`, rendered whole (`neural_chunk_seconds: 0`)
+and in four 120 s chunks (`neural_chunk_seconds: 120`; on bb5fa2a the same
+run failed on its first chunk, "no clean stem"). The chunked `(dry)` output
+equals the whole-file one on 99.67 % of its samples; the rest sit in the
+seconds around the three seams, at most -150.5 dBFS (-167.8 dB against the
+signal overall). Both renders peaked at 2.3-2.4 GB of process memory on
+this host, the model and the interpreter included, so the RoFormer is far
+below UVR's 32 GB per hour, which still sets the chunk length.

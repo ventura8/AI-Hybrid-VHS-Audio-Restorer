@@ -384,9 +384,12 @@ audio alignment, or FFmpeg multiplexing.
   VR grid drifted to -47 dB), and again with audio-separator 0.47.0's own
   `MDXCSeparator.separate` / `demix` and a stub network driven through
   `_run_denoise_separator` (synthetic 150 s, three 60 s chunks: body equal,
-  seams -161 dB; VR grid -23 to -33 dB); the real network has not been run
-  chunked yet. The chunk length still rests on UVR's measured 32 GB/h: the
-  MDXC separator's memory per hour is unmeasured.
+  seams -161 dB; VR grid -23 to -33 dB). On the GPU with the real network
+  (2026-10-12, a 374 s SOTI cut, four 120 s chunks against the whole file):
+  99.67 % of the `(dry)` samples equal, the rest within -150.5 dBFS around
+  the seams; both renders peaked at 2.3-2.4 GB of process memory, so the
+  chunk length, still set by UVR's 32 GB/h, is conservative for the
+  RoFormer.
 - **Video Stream Copy**: Never re-encode the video stream (`-c:v copy`) during
   audio extraction or remuxing.
 - **cathar bit-identity**: after any change under `modules/`, restore the five
