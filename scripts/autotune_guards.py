@@ -37,7 +37,9 @@ applies; a v1 or v2 grid has none of them (`NO_GUARDS`) and its rounds are judge
 - `constraints:` (ear v4, 2026-10-12) the grid's hard guards (`reward.parse_constraints`):
   `{reading: {worse: up|down, max_move?, bound?}}`. A candidate whose reading, on some tape, is
   worse than the incumbent's by more than `max_move` (default 0) and lies beyond `bound`
-  (default: none) cannot win, and neither can one that lost a reading the incumbent has
+  (default: none) cannot win, nor can one worse than the incumbent's and more than `max_move`
+  past the bound (`reward.Constraint`: the limit does not follow the incumbent round by round),
+  nor one that lost a reading the incumbent has
   (`mark_constraints`, `reward.gate_constraints(dsp_guard=...)`). The readings are stage-1 dsp
   readings, so every candidate is checked in both judgements. A key that does not split as
   `metric.side.stat`, with a registered metric, side output or delta and a stat the runner

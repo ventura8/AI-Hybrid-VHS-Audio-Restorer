@@ -96,8 +96,10 @@ Ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss) adds two piec
 - `constraints:` (`parse_constraints`, `Constraint`, `constrained_readings`): a grid's hard
   guards, applied by the self-driving loop alone (`autotune_guards.mark_constraints`). A
   candidate trips one when its reading, on some tape, is worse than the incumbent's by more
-  than `max_move` (default 0) and lies beyond `bound` (default: none); losing a reading the
-  incumbent has trips it too. A tripped candidate is "excluded" (`Constraints.dsp_guard`).
+  than `max_move` (default 0) and lies beyond `bound` (default: none), or is worse than the
+  incumbent's and more than `max_move` past the bound (the limit does not follow the incumbent
+  round by round); losing a reading the incumbent has trips it too. A tripped candidate is
+  "excluded" (`Constraints.dsp_guard`).
   They keep "no hiss" from being won by deleting programme: no new audible hiss, no dead air,
   no gated hiss, no dulling, no musical noise.
 
@@ -480,22 +482,34 @@ class Constraint:
     max_move: float = 0.0
     bound: float | None = None
 
-    def _beyond(self, value):
-        """Whether `value` lies past the bound the worse way (always, without a bound)."""
-        return self.bound is None or WORSE_SIGN[self.worse] * (value - self.bound) > 0.0
+    def _past(self, value):
+        """How far `value` lies past the bound the worse way, None without a bound."""
+        return None if self.bound is None else WORSE_SIGN[self.worse] * (value - self.bound)
 
     def trips(self, value, incumbent):
-        """Whether `value` is worse than `incumbent` by more than `max_move` and beyond `bound`, or was lost while it was read."""
+        """Whether `value` trips the constraint against `incumbent` (`_worse_past_limit`), or was lost while it was read."""
         if not _finite(incumbent):
             return False
         if not _finite(value):
             return True
-        move = WORSE_SIGN[self.worse] * (float(value) - float(incumbent))
-        return move > self.max_move and self._beyond(float(value))
+        return self._worse_past_limit(float(value), float(incumbent))
+
+    def _worse_past_limit(self, value, incumbent):
+        """Worse than the incumbent and past the bound, by more than `max_move` either way; without a bound, the move alone.
+
+        Past the bound the limit does not follow the incumbent: with the move alone a loop could creep `max_move` further
+        on every accepted round (pump 11 -> 14 -> 17 against a bound of 11: dead air in three steps), so a candidate that
+        is worse than its incumbent and more than `max_move` past the bound trips whatever the incumbent read.
+        """
+        move = WORSE_SIGN[self.worse] * (value - incumbent)
+        past = self._past(value)
+        if past is None:
+            return move > self.max_move
+        return move > 0.0 and past > 0.0 and max(move, past) > self.max_move
 
     def describe(self, value, incumbent):
         """Why `value` trips the constraint against `incumbent`, for the loop's log."""
-        where = "" if self.bound is None else f" and past {self.bound:g}"
+        where = "" if self.bound is None else f" and past {self.bound:g}, or worse and more than {self.max_move:g} past it"
         return f"{value} against the incumbent's {incumbent}: worse ({self.worse}) by more than {self.max_move:g}{where}"
 
 

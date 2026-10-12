@@ -24,8 +24,9 @@ floor stops the loop before the first render.
 Ear v4 (`tune_grids/tata_v4.yaml`, `music_v4.yaml`, the default grid since 2026-10-12: the
 user's rule, be very critical of VHS hiss under the programme and in the pauses) adds
 `constraints:`, the grid's hard guards (`autotune_guards.mark_constraints`): a candidate whose
-reading, on some tape, is worse than the incumbent's by more than `max_move` and beyond `bound`
-cannot win. They are stage-1 dsp readings, so `judge` marks them on every candidate in both
+reading, on some tape, is worse than the incumbent's by more than `max_move` and beyond `bound`,
+or worse and more than `max_move` past `bound` (the limit does not follow the incumbent round by
+round), cannot win. They are stage-1 dsp readings, so `judge` marks them on every candidate in both
 passes; they keep "no hiss" from being won by deleting programme or emptying the pauses.
 
 Inert candidates are found twice. Before rendering, `INERT_WHEN` leaves out the knobs the

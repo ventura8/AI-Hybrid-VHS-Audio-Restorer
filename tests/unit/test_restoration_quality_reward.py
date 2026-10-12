@@ -272,6 +272,17 @@ def test_a_constraint_with_both_needs_both():
     assert "past 12" in rule.describe(16.0, 10.0)
 
 
+def test_a_bounded_constraint_cannot_be_crept_past_round_by_round():
+    """Each accepted round may move max_move, so the incumbent drifts: past the bound by more than max_move a worse
+    candidate trips whatever its incumbent read; an incumbent already past it may still improve or hold."""
+    rule = rw.Constraint("up", 3.0, 11.0)
+    creep = [(13.9, 10.9), (16.8, 13.9), (19.7, 16.8)]
+    assert [rule.trips(value, incumbent) for value, incumbent in creep] == [False, True, True]
+    assert [rule.trips(18.0, 20.0), rule.trips(20.0, 20.0)] == [False, False]
+    dull = rw.Constraint("down", 0.25, -1.0)
+    assert [dull.trips(-1.2, -1.0), dull.trips(-1.5, -1.3), dull.trips(-1.1, -1.3)] == [False, True, False]
+
+
 def test_constrained_readings_name_what_the_candidate_tripped():
     """Only the readings whose constraint trips against the incumbent's flat readings."""
     rules = rw.parse_constraints({HISS: {"worse": "up", "max_move": 0.65}, AIR: {"worse": "down", "bound": -2.0}})
