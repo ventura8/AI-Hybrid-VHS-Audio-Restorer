@@ -900,7 +900,10 @@ A print shallower than the key is programme:
 - `drop` runs `denoise` without `--noiseprint`, as the music profile does.
 
 A print at least D dB down is handed on untouched, and a depth that
-cannot be measured keeps the learned print with a WARNING. The log names
+cannot be measured keeps the learned print with a WARNING: no window to
+read, or material whose loud level is 0 (digital silence on nine frames
+in ten, or shorter than one frame), which would otherwise read as a
+print 0 dB down, or scale it by hundreds of dB. The log names
 the depth, both levels and the action. At 0 nothing is measured and the
 slice, the noiseprint run and every command line are HEAD 57bfdb8's
 (`tests/unit/test_cathar_print_depth_guard.py`). The depth is read on the

@@ -218,7 +218,10 @@ def _band_limited_tape(tone_dbfs):
 
 
 def test_et_els_case_cells_at_minus_94_dbfs_no_longer_read_as_a_loss():
-    """Cells at -94 dBFS (et-el's level as the octave investigation gave it) that the output leaves out read no loss."""
+    """Cells at -94 dBFS (et-el's level as the octave investigation gave it) that the output leaves out read no loss.
+
+    The real clip still reads -54 dB: its 4-16 kHz cells are window 0's edge frames at -68 dBFS (module docstring).
+    """
     source, output = _band_limited_tape(-94.0)
     assert _read(source, source, output) == pytest.approx(0.0, abs=0.3)
 

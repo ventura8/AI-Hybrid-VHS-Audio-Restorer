@@ -101,6 +101,32 @@ def test_the_depth_is_the_windows_under_the_loud_frames(tmp_path):
     assert loud_db - probe_db == pytest.approx(depth)
 
 
+def test_the_depth_of_a_mono_source_is_read_on_its_one_channel(tmp_path):
+    """A one-channel file: the loud frames and the windows are that channel's, by the same arithmetic."""
+    path = tmp_path / "mono.wav"
+    sf.write(str(path), np.repeat(FRAME_LEVELS, FRAME).astype(np.float32), RATE, subtype="FLOAT")
+    assert npd.print_depth_db(path, ([9 * FRAME, 29 * FRAME], FRAME))[0] == pytest.approx(_depth_of([9, 29]), abs=1e-4)
+
+
+@pytest.mark.parametrize(("frames", "level"), [(100, 0.5), (10 * FRAME, 0.0)])
+def test_material_without_a_loud_level_is_refused(tmp_path, frames, level):
+    """Shorter than one frame, or digital silence: no loud frames to measure against, so no depth (never -240 dBFS)."""
+    path = tmp_path / "quiet.wav"
+    sf.write(str(path), np.full((frames, 2), level, dtype=np.float32), RATE, subtype="FLOAT")
+    with pytest.raises(ValueError, match="no loud frame"):
+        npd.print_depth_db(path, ([0], FRAME))
+
+
+def test_a_silent_material_keeps_the_learned_print_with_a_warning(tmp_path):
+    """A digitally silent stage: the guard cannot call its print programme, so the learned print goes on."""
+    path = tmp_path / "silent.wav"
+    sf.write(str(path), np.zeros((10 * FRAME, 2), dtype=np.float32), RATE, subtype="FLOAT")
+    print_json, log = _print(tmp_path), MagicMock()
+    with patch("modules.noiseprint_depth.log_msg", log):
+        assert npd.guard_print(print_json, path, lambda: ([0], FRAME), 20.0, "scale") is print_json
+    assert log.call_args.kwargs == {"level": "WARNING"}
+
+
 def test_db_floors_digital_silence():
     assert npd.db(0.0) == pytest.approx(-240.0)
 

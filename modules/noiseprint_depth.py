@@ -86,10 +86,18 @@ def windows_level(wav_path, starts, frames):
 
 
 def print_depth_db(wav_path, windows):
-    """`(depth, loud dBFS, print dBFS)`: how far the print's windows sit under the loud frames. `windows` is `(starts, frames)`."""
+    """`(depth, loud dBFS, print dBFS)`: how far the print's windows sit under the loud frames. `windows` is `(starts, frames)`.
+
+    Material whose loud level is 0 (digital silence on nine frames in ten or more, or shorter
+    than one frame) has nothing to measure the print against: that is refused, so the guard keeps
+    the learned print rather than call a silent print programme or scale a print by hundreds of dB.
+    """
     starts, frames = windows
     probe_db = db(windows_level(wav_path, starts, frames))
-    loud_db = db(loud_level(wav_path))
+    loud = loud_level(wav_path)
+    if loud <= 0.0:
+        raise ValueError("no loud frame to measure the print against")
+    loud_db = db(loud)
     return loud_db - probe_db, loud_db, probe_db
 
 

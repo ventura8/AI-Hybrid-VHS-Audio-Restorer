@@ -273,6 +273,23 @@ def test_the_guard_measures_the_pauses_the_stitched_pick_took(tmp_path):
     assert cathar._probe_windows(wav, 4.5, True, False) == (picked, window)
 
 
+@pytest.mark.parametrize(
+    ("seconds", "rate", "total", "mode"), [(10, CLIP_RATE, 10.0, "single_0.75s"), (40, TAPE_RATE, 600.0, "stitched_4.5s")]
+)
+def test_a_mono_source_is_guarded_on_both_paths(tmp_path, seconds, rate, total, mode):
+    """A one-channel stage with no pause: both picks read its one channel, and the denoise gets the scaled print."""
+    wav = tmp_path / "mono.wav"
+    sf.write(str(wav), np.random.default_rng(5).normal(0.0, 0.05, seconds * rate).astype(np.float32), rate, subtype="FLOAT")
+    with (
+        patch("modules.cathar.run_command_with_progress", side_effect=_fake_tool),
+        patch("modules.cathar.log_msg"),
+        patch.object(noiseprint_depth, "log_msg"),
+        _keys(noiseprint_min_depth_db=20.0),
+    ):
+        result = cathar._learned_print(wav, tmp_path, total)
+    assert result == tmp_path / f"noise_mono_{mode}_depth20db.np.json"
+
+
 def test_the_guard_follows_the_mute_guard_pick(tmp_path):
     """With the mute guard on, the windows measured are the guarded pick's (None from the single search: no window)."""
     wav = _dense_clip(tmp_path / "dense.wav")
