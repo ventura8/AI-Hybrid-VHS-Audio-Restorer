@@ -36,6 +36,15 @@ Ear v3 (2026-10-09):
   broken sync stage. The 32 v2 final pairs read drift 0.02-0.26 ms, offset 4.7-5.4 ms and
   no unmatched anchor.
 - `dsp.hf_4k8k` / `dsp.hf_8k16k` stay as backstops only; the v3 grids never rank them.
+
+R12 (2026-10-12, backlog B1): `timebase.holds` and `timebase.rate_jumps` veto an output that
+froze or jumped against the source's time base (`timebase_metrics.py`), the app's DTW sync
+playing a 40 ms frame at 0x or 2x. Both start at none at all, uncalibrated: on the IA hunt's
+stored outputs (`experiments/tune_ia_hunt_v3`) they fail 24 of the 30 cathar and 16 of the 30
+`auto_pure_linear` outputs the scanner sent to DTW, and none of the 205 per engine it sent to
+shift; on the 32 accepted v2 finals they fail one, the APL final of the one music clip that
+took DTW (`x_videoplayback-20260504-2342`, one hold; round two heard the music clips as fine,
+unblinded). A calibration with the `sync_holds` degradation, and a verdict, decide them.
 """
 
 import json
@@ -106,6 +115,17 @@ GATES = {
     "file.sync_drift": Gate("file.sync_drift_ms", "median", "<=", 40.0, "the sync drifts a PAL video frame along the file"),
     "file.sync_offset": Gate("file.sync_offset_ms", "median", "<=", 40.0, "the output runs a PAL video frame off the source"),
     "file.sync_unmatched": Gate("file.sync_unmatched", "median", "<=", 0.0, "the output no longer follows the source"),
+    # R12, the time base (timebase_metrics.py): starting values, no verdict behind them yet.
+    "timebase.holds": Gate("file.timebase_holds", "median", "<=", 0.0, "the output froze where the source plays: a sync hold", HARD, False),
+    "timebase.rate_jumps": Gate(
+        "file.timebase_rate_jumps",
+        "median",
+        "<=",
+        0.0,
+        "the output's time base jumps against the source's: a frame at 0x or 2x",
+        HARD,
+        False,
+    ),
     # Listener flags; starting values from the Tata listening set, re-derived by calibration.
     "listener.hiss": Gate("dsp.gap_air_db", "median", "<=", -20.0, "air left in the inter-word gaps (display-only: R4 decides)", SOFT),
     "listener.dead_air": Gate("dsp.gap_air_db", "median", ">=", -25.0, "the gaps emptied: silent pauses", FLAG),

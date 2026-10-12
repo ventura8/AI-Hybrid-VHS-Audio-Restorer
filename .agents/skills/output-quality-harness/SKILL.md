@@ -480,6 +480,47 @@ their module docstrings hold the full measurements.
   without `--grid` (`RANKING_EXCLUDED`): there it would add every variant's
   low-end noise removal to its score, speech tapes included. The round's
   orchestrator decides.
+- **R12, the time base** (`timebase_metrics.py`, backlog B1, 2026-10-12;
+  complaint: the app's DTW sync playing 40 ms frames at 0x or 2x). Per file,
+  on the raw pair at the runner's lag (`runner.timebase_entry`):
+  `file.timebase_holds` / `_holds_per_min` (a 25 dB dip of the output's
+  300 Hz high-passed 5 ms level against the source's, 20 ms or longer, the
+  source not dipping 20 dB under its own 205 ms median, over which the output
+  sat at one value: mean 10 dB over its spread, within 50 dB of its p99),
+  `file.timebase_plateaus` (a 10 ms lag track, 60 ms windows over +-100 ms,
+  confident at a peak of 0.85 and 0.1 over the best peak 2 ms away, displaced
+  by exactly 40 or 80 ms from a 4.5 s running local lag),
+  `file.timebase_rate_jumps` (confident lags at most 200 ms apart, through a
+  five-frame median, differing by one or two whole frames),
+  `file.timebase_speed_dev_pct` (shown) and `file.timebase_tracked_share`.
+  Hard gates `timebase.holds` and `timebase.rate_jumps` at none,
+  `calibrated: false`. IA hunt (`tune_ia_hunt_v3`, all 30 DTW and 205 shift
+  clips per engine): cathar 177 holds on 24 DTW clips, APL 49 on 15, the
+  gates fail 24 and 16; shift clips read nothing. The 32 accepted v2 finals
+  read nothing but one hold on the APL final of the one music clip that took
+  DTW, which round two heard as fine (unblinded): a single hold in 15 s of
+  music may pass this listener, so the gate stays uncalibrated until a blind
+  block. What each constant cost to choose, on the same data: a peak of 0.8
+  read one cathar shift clip's pitch-lock excursion (11.4 ms, three frames)
+  as two jumps and another a plateau; a rate jump of any 5 ms read a sound
+  repeating 96 ms apart at the start of one shift clip (both engines) as one,
+  while 136 of the 137 DTW jumps were whole frames; a 100 ms pair gap missed
+  every 2x catch-up, whose windows stay unconfident 120-140 ms; the frozen
+  test replaced a raw-over-high-passed rule that read 14 holds on four APL
+  shift clips (digital silence holding the loader's DC residue, LF left
+  where the highs were cut). The calibration's `sync_holds` case (1 / 3 / 6
+  glitches) reads holds 1 / 3 / 6 on en and fr and on the three tape cuts
+  (Vaccin, SOTI, Tele7abc); `sync_drift` on the stored v3b tape-cut cases
+  reads its speed error and no event, though the drift outruns the track's
+  +-100 ms search (tracked share 0.10-0.26 at 0.2 %); `SCORE_SCHEMA` 7.
+- Read a signed correlation on the raw pair at the lag, never on the
+  gain-matched pair: `score_reference._match_gain`'s least-squares scale came
+  out negative on the 0.1 % slow en fixture (-0.016) and on the hunt's APL
+  output of `frequently-asked-questions-about-time-travel` (-0.45), so the
+  aligned output is inverted there. Magnitude readings do not care; R12's lag
+  track went blind on both until it moved to the raw pair. Reading the
+  correlation's magnitude instead read a periodic stretch half a period away
+  (one shift clip: a 9.6 % speed error and a jump).
 
 Also changed: the scorecard's direction "two-sided" (its tail is whichever
 of p10 and p90 sits further from the neutral target), counts report `max`
@@ -845,10 +886,11 @@ loosened:
   most; a track that moves no window by half a 1 ms step leaves the old
   reading exactly.
 
-`SCORE_SCHEMA` is 6 (2026-10-10: 5 added R11, which a schema-4 score lacks
-and the benign cases would give no floor; 6 moved R11's band to its own STFT
-and paired `dsp.attack_db` on the onsets), so every cached v3 score is read
-again. Cases are written once and reused, so a rerun deletes the cases these
+`SCORE_SCHEMA` is 7 (2026-10-12: R12's `file.timebase_*` readings are new;
+2026-10-10: 5 added R11, which a schema-4 score lacks and the benign cases
+would give no floor; 6 moved R11's band to its own STFT and paired
+`dsp.attack_db` on the onsets), so every cached v3 score is read again.
+Cases are written once and reused, so a rerun deletes the cases these
 changes rebuild (`hum`, `dropouts`, `sibilant_islands`, `sibilants_*`;
 `dropouts` no longer draws from the shared generator, so every later
 rng-driven case of a language changes on a fresh build: delete `cases/` to
@@ -1109,6 +1151,12 @@ that threshold is measured, re-run the pre-check with it as `--heard-db`.
   self-driving loop").
 - The listener's blind threshold (Session 0 left it unmeasured; Session 1
   Block 1 is prepared), and `audibility_check.py` recalibrated on it.
+- R12's verdict: a blind block of a DTW render against its
+  `sync_dtw_enable: false` render on a hunt clip with many holds (cathar's
+  `bicentennialinauguration` reads 19 in 15 s), before the key's default or
+  the time-base gates move; the stored DTW renders came from the GPU path,
+  and the app's CPU DTW path falls back to shift today
+  (`docs/configuration.md`, "DTW Sync on Length-Preserving Chains").
 - Plan 3.2b (GRPO) and its Optuna baseline wait on the variation pre-check
   above; plan 3.3 (the Mel-RoFormer fine-tune in `tools/msst/`) is not
   started.

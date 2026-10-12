@@ -102,6 +102,9 @@ live in `scripts/degradations_v3.py`; their measured effect on the realistic-v2 
   `words_muted` 2 / 3 / 4 (en, Tele7abc), 1 / 2 / 3 (Vaccin), 2 / 3 / 5 (SOTI); benign 0.
 - `sibilant_islands` and `sync_drift` (the R2 and R7 owners' requests) and the R2 readings on
   the v2 `sibilants_*` pair: measured beside their table entries.
+- `sync_holds` (1 / 3 / 6 DTW glitches, R12's own case, 2026-10-12) asserts R12's holds and
+  rate jumps, and the 3-anchor sync under its 40 ms gate: measured beside its table entry.
+  `sync_drift` also asserts R12's speed error up and its holds and rate jumps flat at 0.
 - `--excerpts` in the calibration runs `on_tape()`, the degradations a real excerpt can carry.
 """
 
@@ -123,6 +126,11 @@ QUIET_SHARE = 0.2
 SIGMOS_NOISE = "mos.sigmos_noise"
 SIGMOS_DISC = "mos.sigmos_disc"
 DROPOUTS = "file.dropouts"
+# R12's readings (`timebase_metrics`): the holds and rate jumps its gates read, the 40 ms plateaus, the speed error.
+TIMEBASE_HOLDS = "file.timebase_holds"
+TIMEBASE_JUMPS = "file.timebase_rate_jumps"
+TIMEBASE_PLATEAUS = "file.timebase_plateaus"
+TIMEBASE_SPEED = "file.timebase_speed_dev_pct"
 # The readings more than one expectation names (`scripts/restoration_quality` keys).
 HF_TOP = "dsp.hf_8k16k"
 SIGMOS_COL = "mos.sigmos_col"
@@ -618,6 +626,8 @@ DROPOUT_COUNT_TOLERANCE = 1.0
 # peak by up to 0.8 ms (en fixture), the compander by 0.08; the sync gates sit at 40 ms.
 SYNC_TOLERANCE_MS = 2.0
 SYNC_FLAT = Expectation("file.sync_drift_ms", "flat", tolerance=SYNC_TOLERANCE_MS)
+# The sync gate itself (`gates.py`, one PAL video frame): a fault it must not see.
+SYNC_GATE_MS = 40.0
 # A static filter makes no musical noise: the shelf reads lkr under 1e-4 on every speech and music fixture measured.
 NO_ISLANDS = Expectation(LKR, "flat", tolerance=UNTOUCHED_DB)
 AIR_LEVELS = (0.5, 1.0, 2.0)
@@ -832,7 +842,12 @@ V3_DEGRADATIONS = {
     # it as dulling (tilt -0.1 / -0.4 / -0.6 dB/oct en and fr): one lag per 15 s window cannot
     # follow 30 ms of drift, and the fast-moving highs decorrelate first. On the 300 s tape cuts (146-587
     # ms of drift) R7 read the drift as a ride (calibration v3) until it read along the sync's lag track
-    # (`file_metrics.lag_track`): 0.032 LU at most against the 0.1 allowed.
+    # (`file_metrics.lag_track`): 0.032 LU at most against the 0.1 allowed. R12 reads the speed error
+    # 0.056 / 0.108 / 0.217 % (fr 0.058 / 0.116 / 0.239: the p95 of the local speed sits a little over
+    # the drift) and no hold, plateau or rate jump (2026-10-12). On the stored v3b cases of the tape
+    # cuts (Vaccin and SOTI 60-360 s, Tele7abc whole) it reads 0.054-0.056 / 0.105-0.114 / 0.210-0.234 %
+    # and no event, although the drift outruns the track's +-100 ms search and its tracked share falls
+    # to 0.10-0.26 at 0.2 %.
     "sync_drift": Degradation(
         "speech",
         (0.05, 0.1, 0.2),
@@ -842,6 +857,31 @@ V3_DEGRADATIONS = {
             Expectation("file.gain_ride_lu", "flat", tolerance=SHAPE_TOLERANCE_DB),
             Expectation("file.sync_unmatched", "flat", tolerance=0.0),
             Expectation(TILT, "down", True),
+            Expectation(TIMEBASE_SPEED, "up"),
+            Expectation(TIMEBASE_HOLDS, "flat", tolerance=0.0),
+            Expectation(TIMEBASE_JUMPS, "flat", tolerance=0.0),
+        ),
+    ),
+    # The app's DTW sync at its worst (backlog B1, R12): 1 / 3 / 6 frames held, each caught up at 2x
+    # 0.3 s later (`degradations_v3.sync_holds`). On the en / fr speech targets (2026-10-12, the
+    # runner's paths) R12 reads holds 1 / 3 / 6 and plateaus 1 / 3 / 6 on both, rate jumps 1 / 5 /
+    # 10 (fr 2 / 6 / 10: a catch-up whose unread stretch passes 0.2 s goes uncounted); the 3-anchor
+    # sync reads drift 0.14-0.54 ms (fr 2.37 at six), far under its 40 ms gate, which is why R12
+    # exists; `file.dropouts` reads 1 / 1 / 1 (fr 0 / 1 / 2): a frozen hold keeps its level, so the
+    # hole count misses most of them. The speed reading jumps between 0 and 4 % as a 300 ms plateau
+    # does or does not fill half a 0.5 s block, so it is not asserted. Built on the tape cuts' base
+    # (Vaccin, SOTI, Tele7abc) it reads holds 1 / 3 / 6 on each, plateaus 1 / 3 / 6 (Tele7abc 5 at
+    # six) and rate jumps 2 / 4-6 / 9-11; their benign cases read nothing.
+    "sync_holds": Degradation(
+        "speech",
+        (1, 3, 6),
+        (
+            Expectation(TIMEBASE_HOLDS, "up"),
+            Expectation(TIMEBASE_JUMPS, "up"),
+            Expectation(TIMEBASE_PLATEAUS, "up", True),
+            Expectation(DROPOUTS, "up", True),
+            Expectation("file.sync_drift_ms", "flat", tolerance=SYNC_GATE_MS),
+            Expectation("file.sync_unmatched", "flat", tolerance=0.0),
         ),
     ),
 }
@@ -976,6 +1016,11 @@ def _drifting(level, base, _rate, _materials, _rng):
     return base, v3.speed_drift(base, level)[: len(base)]
 
 
+def _sync_held(level, base, rate, _materials, _rng):
+    """The output through `level` DTW glitches (a frame held, caught up 0.3 s later), nested from their own seed."""
+    return base, v3.sync_holds(base, rate, int(level))
+
+
 # Builder per ear v3 family; a degradation's name starts with its family (`air_shelf_cut_music`).
 V3_BUILDERS = {
     "air_shelf": _air,
@@ -994,6 +1039,7 @@ V3_BUILDERS = {
     "treble_dropouts": _lifted,
     "sibilant_islands": _sib_islands,
     "sync_drift": _drifting,
+    "sync_holds": _sync_held,
 }
 
 

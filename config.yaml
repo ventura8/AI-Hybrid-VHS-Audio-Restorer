@@ -142,9 +142,23 @@ enhance_tau: 0.3
 #   - Min behavior (25 Hz): Faster processing, lower timing precision (~40ms).
 #   - Max behavior (100 Hz): Highest timing precision (~10ms), slower processing.
 #   - Practical default: 25 (faster); use 50 for better precision in drift-heavy audio.
+#
+# sync_dtw_enable:
+#   - Type: Boolean
+#   - true (default): a tape the scanner reads as drifting (has_drift) takes DTW
+#     sync, as every release has run.
+#   - false: auto_pure_linear (its stem path too), cathar and every single-track
+#     mode take shift sync instead, whatever the scanner or sync_method says. Their
+#     chains keep the source's length and time base, so a warp can only add error:
+#     the DTW path plays whole 40 ms frames at 0x or 2x. On the IA hunt's stored
+#     outputs (2026-10-12) 24 of 30 cathar and 15 of 30 auto_pure_linear outputs
+#     sent to DTW carry frozen holds, none of the 205 per engine sent to shift.
+#     The stem modes (hybrid, multipass_auto, auto_pure) keep DTW. Not yet heard
+#     by a listener, so the default keeps every output's bytes.
 # ------------------------------------------------------------------------------
 sync_method: "shift"
 dtw_resolution: 25
+sync_dtw_enable: true
 
 # ------------------------------------------------------------------------------
 # Processing Mode & Multi-Pass Cascaded Engine

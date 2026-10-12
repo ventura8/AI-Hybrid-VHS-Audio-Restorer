@@ -69,6 +69,7 @@ READ_SITES = {
         {"processing.py:_final_mix_output_command", "processing.py:_build_single_audio_mux_command"},
     ),
     "dtw_resolution": ("DTW_RESOLUTION", {"sync.py:*"}),
+    "sync_dtw_enable": ("SYNC_DTW_ENABLE", {"sync.py:*"}),
     "apl_music_bg_floor_db": ("APL_MUSIC_BG_FLOOR_DB", {"apl_stems.py:_background_pass"}),
 }
 

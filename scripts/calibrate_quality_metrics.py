@@ -90,7 +90,9 @@ GATES = import_module("scripts.restoration_quality.gates").GATES
 # would then give it no floor at all (every R11 check would clear "three floors" of zero).
 # 6 (2026-10-10): R11 reads its band on a rate-scaled STFT (1.35 Hz bins) and `dsp.attack_db` is paired on the
 # source's onsets: a schema-5 score (the R11 subset runs before either) reads both the old way.
-SCORE_SCHEMA = 6
+# 7 (2026-10-12): R12's time-base readings (`file.timebase_*`) are new; a schema-6 score lacks them, so
+# the benign cases would give the new hard gates and the `sync_holds` / `sync_drift` checks no floor.
+SCORE_SCHEMA = 7
 SPEECH_FIXTURE = "mid00_speech_m15"
 DONOR_FIXTURE = "mid01_speech_m15"
 MUSIC_FIXTURE = "mid00_musiconly_m15"

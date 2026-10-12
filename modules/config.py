@@ -685,6 +685,16 @@ _BOOL_CONFIG_FIELDS = (
     # impulse stayed at 10000, ffmpeg 9.0.1); off by default, since the shift changes every
     # output's bytes and cathar's identity check compares them (modules/mastering.py).
     ("mux_limiter_latency_compensation", False),
+    # The scanner sends a tape it reads as drifting (`has_drift`) to DTW sync. The chains of
+    # auto_pure_linear (its stem path too), cathar and every single-track mode keep the length and
+    # the time base of the source they sync against, so a warp can only add error: the DTW path's
+    # whole 40 ms frames play at 0x or 2x. On the IA hunt's stored outputs (2026-10-12, the ear's
+    # time-base reading) 24 of the 30 cathar and 15 of the 30 auto_pure_linear outputs sent to DTW
+    # carry frozen holds (177 and 49 in all), none of the 205 per engine sent to shift. False sends
+    # those chains to shift sync whatever the scanner or `sync_method` says; the stem modes (hybrid,
+    # multipass, auto_pure) keep DTW. True keeps every output's bytes until a listening session
+    # accepts the change.
+    ("sync_dtw_enable", True),
     ("apl_music_stem_path", False),
     ("apl_enable_sibilant_guard", True),
     # The hiss the RoFormer passes (diagnosis of 2026-10-11, modules/post_neural_suppress.py): the
@@ -1079,6 +1089,7 @@ NEURAL_CHUNK_SECONDS = float(CONFIG.get("neural_chunk_seconds", 0.0))
 ENHANCE_NFE = str(CONFIG["enhance_nfe"])
 ENHANCE_TAU = str(CONFIG["enhance_tau"])
 SYNC_METHOD = CONFIG["sync_method"]
+SYNC_DTW_ENABLE = bool(CONFIG.get("sync_dtw_enable", True))
 DTW_RESOLUTION = int(CONFIG["dtw_resolution"])
 PROCESS_MODE = CONFIG["process_mode"]
 ENABLE_MULTIPASS = bool(CONFIG.get("enable_multipass", True))

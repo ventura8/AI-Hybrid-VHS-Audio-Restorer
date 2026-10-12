@@ -852,6 +852,33 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   APL's -0.74. No grid ranks it yet, and the calibration's stand-in grid
   (`calibration_ordering.default_grid`, used without `--grid`) leaves it out
   (`RANKING_EXCLUDED`); round C3 needs it in `music_v3.yaml` before it runs.
+- **The time base (R12)**, `timebase_metrics.py` (backlog B1, 2026-10-12):
+  whether the output plays the source frame for frame. The app's DTW sync
+  interpolates its warp between whole 40 ms chroma frames, so every
+  off-diagonal step of the path plays a frame at 0x (a hold) or at 2x; the
+  three-anchor sync reading cannot see a 40 ms event. Per file, on the raw
+  pair at the runner's lag (the least-squares gain match came out negative on
+  a drifting fixture and on one hunt output, which inverts it):
+  `file.timebase_holds` and `_holds_per_min` (a 25 dB dip of the output's
+  300 Hz high-passed 5 ms level against the source's, 20 ms or longer, where
+  the output sat at one value: a muted hole is `file.dropouts`' business),
+  `file.timebase_plateaus` (a dense 10 ms lag track displaced by exactly 40
+  or 80 ms), `file.timebase_rate_jumps` (confident lags 200 ms apart or less
+  that differ by one or two whole frames), `file.timebase_speed_dev_pct`
+  (the local speed error, shown) and `file.timebase_tracked_share` (the
+  coverage). Hard gates `timebase.holds` and `timebase.rate_jumps` at none,
+  uncalibrated. On the IA hunt's stored outputs the 30 DTW clips read 177
+  holds on 24 clips for cathar and 49 on 15 for `auto_pure_linear` (the
+  gates fail 24 and 16), the 205 shift clips per engine read nothing; of
+  the 32 accepted v2 finals only the APL final of the one music clip that
+  took DTW reads a hold. The calibration's `sync_holds` case (1 / 3 / 6 DTW
+  glitches) reads holds 1 / 3 / 6 on the en and fr targets and on the three
+  tape cuts, `sync_drift` reads its speed error and no event (the tape cuts'
+  stored v3b cases too), every benign case nothing. The app
+  key `sync_dtw_enable` (`docs/configuration.md`) sends the length-preserving
+  chains to shift sync; on five of the hunt's DTW clips rendered with cathar
+  on the CPU the shift output reads 0 holds where the DTW warp replayed on
+  the same pre-sync audio reads 71.
 
 The engine side of the coverage check is built: with
 `AI_RESTORE_EVENT_LOG=<dir>` set, the sibilant guard, the plosive tamer,
@@ -1177,11 +1204,13 @@ traced to its cause:
   a difference of two medians that landed on different onsets. Paired on
   the onsets it reads every window negative and orders on both languages.
 
-The score cache's schema is 6 (R11 is new and reads its band on its own
-STFT, and the attack is paired, 2026-10-10), so every v3 score is read
-again; cases are built once and reused, so delete the cases a change
-rebuilds (or all of `cases/`, since `dropouts` no longer draws from the
-shared generator).
+The score cache's schema is 7 (R12's time-base readings are new,
+2026-10-12; 6 had R11 read on its own STFT and the attack paired), so every
+v3 score is read again; cases are built once and reused, so delete the
+cases a change rebuilds (or all of `cases/`, since `dropouts` no longer
+draws from the shared generator). The new `sync_holds` case asserts R12's
+holds and rate jumps and holds the three-anchor sync under its 40 ms gate;
+`sync_drift` also asserts R12's speed error up and its gated counts at 0.
 
 The calibration writes its gate files under `--out`; the tuning drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`,

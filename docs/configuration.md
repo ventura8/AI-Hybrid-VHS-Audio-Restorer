@@ -435,6 +435,43 @@ session decides otherwise:
   pre-conditioning would apply as a delay. A pair at r -0.3 or below is
   always logged as inverted; with the key on, no skew is read from it.
 
+## DTW Sync on Length-Preserving Chains
+
+`sync_dtw_enable` (true) was added on 2026-10-12 (backlog B1). The scanner
+sends a tape it reads as drifting (`has_drift`) to DTW sync instead of
+shift. The chains of `auto_pure_linear` (its music stem path too),
+`cathar` and every single-track mode (`denoise_only`, `vhs_native`,
+`auto_ffmpeg_native`, `arnndn_speech`, and `auto`, which runs one of them)
+keep the length and the time base of the source they sync against, so a
+warp can only add error. The DTW path interpolates linearly between whole
+40 ms chroma frames (`dtw_resolution` 25), so every off-diagonal step plays
+a frame at 0x (the output holds one sample's value) or at 2x. The ear's
+time-base reading (R12, `docs/validation.md`) counts it on the IA hunt's
+stored outputs: of the 30 clips sent to DTW, 24 cathar outputs carry 177
+frozen holds and 15 `auto_pure_linear` outputs 49; none of the 205 per
+engine sent to shift carries one.
+
+- `true` keeps the scanner's choice, as every release has, so every output
+  keeps its bytes.
+- `false` sends those chains to shift sync whatever the scanner or
+  `sync_method` says, and the run log says so ("DTW sync is off for
+  length-preserving chains"). The stem modes (`hybrid`, `multipass_auto`,
+  `auto_pure`) keep DTW. On five of the hunt's DTW clips rendered with
+  cathar on the CPU the shift output reads 0 holds; the DTW warp, replayed
+  offline on the same pre-sync audio, reads 71 (the hunt's GPU renders of
+  those clips read 72).
+
+Not yet heard by a listener: the default changes only after a blind block.
+The key is read in `modules/sync.py` only, after the stage cache's point,
+so it is one of the keys the cache leaves out of its key (below).
+
+The app's own CPU DTW path does not run today: its process pool cannot
+take the `multiprocessing.Event` each chunk is handed ("Condition objects
+should only be shared between processes through inheritance"), every chunk
+fails, and the clip falls back to shift. A machine without a CUDA GPU of
+4 GB or more therefore already syncs drift clips by shift; the hunt's DTW
+outputs came from the GPU path.
+
 ## cathar Declip and Dehum
 
 Two `cathar` keys added on 2026-10-10 for round C4, both defaulting to what
@@ -889,7 +926,7 @@ it off, with a warning, because each candidate runs in its own working folder.
   `OPENBLAS_`, `GOTO`, `BLIS_`, `VECLIB_`, `NUMEXPR_`, `NUMBA_`, `NPY_`,
   `RAYON_`, `ORT_` or `ONNXRUNTIME`, and `PYTHONHASHSEED`, but the cache's
   own two and `AI_RESTORE_EVENT_LOG`.
-- The 33 keys left out of the key, each read only after the denoiser
+- The 34 keys left out of the key, each read only after the denoiser
   (`POST_NEURAL_CONFIG_KEYS` in `modules/stage_cache_key.py`, held to the
   code by `tests/unit/test_stage_cache_allowlist.py` and
   `tests/unit/test_stage_cache_reach.py`): `enable_linear_air`,
@@ -904,11 +941,11 @@ it off, with a warning, because each candidate runs in its own working folder.
   `apl_post_neural_suppress_min_residual_db`, `linear_air_gate`,
   `apl_neural_level_restore`, `enable_loudnorm`, `loudnorm_target_lra`,
   `loudnorm_linear_fallback`, `mux_limiter_latency_compensation`,
-  `mux_sample_rate`, `preserve_original_audio_track`, `dtw_resolution` and
-  `apl_music_bg_floor_db`. Every other key, one the code
-  does not know included, is in the key; the `cathar_*` keys among them,
-  because the chain's repair and subtraction run cathar's stages at those
-  settings.
+  `mux_sample_rate`, `preserve_original_audio_track`, `dtw_resolution`,
+  `sync_dtw_enable` and `apl_music_bg_floor_db`. Every other key, one the
+  code does not know included, is in the key; the `cathar_*` keys among
+  them, because the chain's repair and subtraction run cathar's stages at
+  those settings.
 - Nothing is stored from a render during which a stage logged a warning or
   an error (a fallback after a failure is never frozen), audio-separator's
   own included (it logs through Python logging; the line

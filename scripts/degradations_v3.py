@@ -81,6 +81,13 @@ a mono float signal and returns a float32 array of the same length.
   whole pair read 1 / 2 / 2 on Vaccin and 1 / 0 / 3 on SOTI at 3 / 6 / 12 (calibration v3).
   These read 3 / 6 / 12 on en and on every tape cut. They draw nothing from the caller's
   generator, which shifted the shared stream of every later rng-driven case once.
+- `sync_holds`: the app's DTW sync at its worst (backlog B1): the output read through a warp
+  that holds one 40 ms chroma frame (0x: every sample of it the same value) and plays one at 2x
+  0.3 s later, so the output runs one frame late in between. `count` glitches open programme
+  frames 1 s apart, drawn from their own seed (nested levels, as the holes); each hold starts
+  on the loudest sample of its first 10 ms frame, so it sits at a value R12's frozen test can
+  see (a real hold lands near zero about one time in sixteen and reads as a mute instead: 94 %
+  of the hunt's stood 20 dB or more over their high-passed level).
 - `window_fricatives`: the 's' frames each 15 s runner window finds on its own percentiles,
   joined; what `quality_degradations.fricative_ramp` weights, so the R2 degradations reach
   the frames R2 reads (the whole-file mask reached 0.80-0.82 of them on Tele7abc).
@@ -143,6 +150,12 @@ HOLE_SEED = 20261009
 HOLE_MS = (30.0, 50.0)
 HOLE_SPACING_S = 0.25
 HOLE_EDGE_S = 0.0005
+# The DTW sync glitch (`sync_holds`): one 25 Hz chroma frame held, caught up 0.3 s later, glitches
+# 1 s apart from their own seed.
+SYNC_HOLD_SEED = 20261012
+SYNC_FRAME_S = 0.04
+SYNC_CATCH_UP_S = 0.3
+SYNC_HOLD_SPACING_S = 1.0
 # The runner's windows (`runner.score_pair`'s defaults): R2 finds the 's' frames per window.
 RUNNER_WINDOW_S = 15.0
 RUNNER_HOP_S = 7.5
@@ -435,6 +448,35 @@ def _hole(out, start, length, edge):
     span[:edge] *= ramp
     span[edge:-edge] = 0.0
     span[-edge:] *= ramp[::-1]
+
+
+def sync_holds(mono, rate, count):
+    """`mono` read through the app's DTW warp at its worst: `count` frames held (0x), each caught up at 2x 0.3 s later.
+
+    The glitches open programme frames 1 s apart from their own seed (nested levels, as the
+    holes), each hold starting on the loudest sample of its first 10 ms frame (module docstring).
+    """
+    speed = np.ones(len(mono))
+    frame = int(round(SYNC_FRAME_S * rate))
+    catch_up = int(round(SYNC_CATCH_UP_S * rate))
+    for start in sync_hold_starts(mono, rate, count):
+        held_end, catch = start + frame, start + catch_up
+        speed[start:held_end] = 0.0
+        caught = catch + frame
+        speed[catch:caught] = 2.0
+    position = np.concatenate(([0.0], np.cumsum(speed)[:-1]))
+    return np.interp(position, np.arange(len(mono)), _float(mono)).astype(np.float32)
+
+
+def sync_hold_starts(mono, rate, count):
+    """The first `count` glitch starts the sync-hold seed draws: programme frames 1 s apart whose catch-up fits the signal."""
+    frame = int(dsp_metrics.DROPOUT_FRAME_S * rate)
+    room = int(round((SYNC_CATCH_UP_S + 2.0 * SYNC_FRAME_S) * rate))
+    candidates = [index for index in programme_starts(mono, frame) if (index + 1) * frame + room <= len(mono)]
+    order = np.random.default_rng(SYNC_HOLD_SEED).permutation(np.asarray(candidates, dtype=np.int64))
+    starts = spaced_starts(order, frame, count, SYNC_HOLD_SPACING_S * rate)
+    frames = np.lib.stride_tricks.sliding_window_view(np.asarray(mono), frame)
+    return [start + int(np.argmax(np.abs(frames[start]))) for start in starts]
 
 
 def window_fricatives(mono, rate):

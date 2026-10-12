@@ -111,6 +111,7 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "mux_sample_rate",
         "preserve_original_audio_track",
         "dtw_resolution",
+        "sync_dtw_enable",
         # The stem path's background pass, which never enters the cached stages.
         "apl_music_bg_floor_db",
     }

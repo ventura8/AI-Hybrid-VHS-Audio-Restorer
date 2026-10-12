@@ -332,6 +332,27 @@ audio alignment, or FFmpeg multiplexing.
    - Cross-correlation lag estimation for linear delay.
    - Dynamic Time Warping (DTW) with GPU PyTorch tensor acceleration and CPU
      `fastdtw` fallback to correct analog VHS tape speed drift.
+   - The DTW warp is linear between whole 40 ms chroma frames
+     (`dtw_resolution` 25) and smoothed over 51 samples, so every
+     off-diagonal step of the path plays a frame at 0x (the output holds one
+     sample's value) or at 2x. Every chain that syncs against `original_wav`
+     and keeps its length (`auto_pure_linear`, cathar, the single-track modes)
+     shares the source's time base: a warp can only add error. Measured
+     2026-10-12 with the harness's time-base reading (R12) on the IA hunt:
+     24 of 30 cathar and 15 of 30 APL outputs sent to DTW carry frozen holds
+     (177 and 49 in all), none of 205 per engine sent to shift. On five of
+     those clips rendered with cathar on the CPU, the DTW warp replayed on the
+     kept pre-sync WAV (`AI_RESTORE_TEST_MODE=1`) reads 71 holds (the hunt's
+     GPU renders of those clips read 72), the shift output 0.
+     `sync_dtw_enable: false` sends `_process_single_track_pipeline` and the
+     APL stem path (`length_preserving=True`) to shift; the stem modes keep
+     DTW. Default true, outputs unchanged, until a blind block.
+   - The CPU DTW path never runs: `_collect_dtw_results` hands every chunk a
+     `multiprocessing.Event`, which a `ProcessPoolExecutor` cannot pickle
+     ("Condition objects should only be shared between processes through
+     inheritance"), so each chunk fails and the clip falls back to shift.
+     Only a machine whose CUDA GPU has 4 GB or more (`_should_use_gpu_dtw`)
+     warps today. Fixing it would bring the holds to CPU machines.
 1. **`modules/hardware.py`**:
    - Hardware detection for NVIDIA CUDA 13.2, Intel XPU, Apple MPS, and CPU.
    - Dynamic thread and batch allocation (`GPU_BATCH_SIZE`, `CPU_THREADS`).
