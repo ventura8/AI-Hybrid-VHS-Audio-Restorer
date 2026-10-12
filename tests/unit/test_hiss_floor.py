@@ -108,7 +108,8 @@ def test_the_programme_frames_follow_a_burst_and_its_hangover():
     speech = hiss_floor.programme_frames(vad, RATE, 882)
     assert speech[40:50].all()
     assert not speech[:30].any()
-    assert speech[36:40].any() and speech[50:54].any()
+    assert speech[36:40].any()
+    assert speech[50:54].any()
 
 
 def test_the_floor_of_a_long_programme_is_read_on_a_spread_of_frames(monkeypatch):

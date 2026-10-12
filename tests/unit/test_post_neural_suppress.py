@@ -42,7 +42,8 @@ def test_the_defaults_read_nothing_and_hand_back_both_values_unchanged(tmp_path)
     restored = tmp_path / "restored.wav"
     with patch.object(hiss_floor, "read", side_effect=AssertionError("read")):
         result = post_neural_suppress.apply_when_needed(tmp_path / "s.wav", restored, tmp_path, ALL)
-    assert result[0] is restored and result[1] is True
+    assert result[0] is restored
+    assert result[1] is True
     assert not (tmp_path / post_neural_suppress.STAGE).exists()
 
 
@@ -117,7 +118,9 @@ def test_the_decision_is_logged_with_its_numbers_and_recorded(tmp_path, keys_on,
     monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(tmp_path / "events"))
     _apply(tmp_path, OPEN, **ALL)
     log = (tmp_path / "session_log.txt").read_text(encoding="utf-8")
-    assert "[Post-Neural Hiss Gate] Open" in log and "+2.2 dB" in log and "-2.5 dB (3-4.8 kHz)" in log
+    assert "[Post-Neural Hiss Gate] Open" in log
+    assert "+2.2 dB" in log
+    assert "-2.5 dB (3-4.8 kHz)" in log
     assert "[Air Gate] Skipping the air shelf" in log
     (record,) = (tmp_path / "events").glob("post_neural_suppress__*.json")
     payload = json.loads(record.read_text(encoding="utf-8"))
