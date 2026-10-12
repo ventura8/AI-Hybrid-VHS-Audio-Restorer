@@ -508,10 +508,13 @@ def _report(context, suite):
 
 
 def main(argv=None):
-    """Runs the calibration and writes its report and gates; exit 1 when a non-blind sensitivity check fails.
+    """Runs the calibration and writes its report and gates; exit 1 when a non-blind sensitivity check or the oracle check fails.
 
     The grid is read first: a wrong `--grid` stops the run before the synthetic suite, which
-    takes hours on every family, not after it.
+    takes hours on every family, not after it. The gates files are left unwritten without
+    `--known-ordering` or when the oracle check refuses them (`refusal_reason`); a gates file
+    an earlier run left in `--out` stays where it is, so the report's refusal line is the
+    record of this run.
     """
     args = _parse_args(argv)
     grid = load_grid(args)

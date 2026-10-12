@@ -1133,13 +1133,18 @@ only; no restoration default moved.
   median octave. The output is never separated for it. On CPU from cached
   stems: the 24 v2 music finals the user accepted read -2.42..0.00 dB on
   the 22 that read (the raw octave failed 13 of 21, APL
-  x_vid-20230606-121054 at -38.8); `background_stripped` reads -5.9 /
-  -11.1 / -14.9 dB at -6 / -12 / -24 (raw -0.9 / -2.6 / -14.3); a planted
-  one-octave mute of a hiss-bearing realistic-v2 bed fails 118 of the 122
-  windows where the muted octave reads, and the oracle 1 of 174. Blind spot:
-  a bed that never falls to a floor inside the window reads None (a
-  sustained chord, stripped or not; the realistic-v2 beds' 250-500 Hz octave
-  reads on 17 of 100 windows). The real-separator checks run on the GPU.
+  x_vid-20230606-121054 at -38.8); `background_stripped` (en, the
+  2026-09-20 stems) reads -5.9 / -11.1 / -14.9 dB at -6 / -12 / -24 (raw
+  -0.9 / -2.6 / -14.3), on one window of two and through one octave whose
+  guard (b) passes narrowly; a planted one-octave mute of a hiss-bearing
+  realistic-v2 bed fails 118 of the 122 windows where the muted octave
+  reads, and the oracle 1 of 174. Blind spot: a bed that never falls to a
+  floor inside the window reads None (a sustained chord, stripped or not;
+  the realistic-v2 beds' 250-500 Hz octave reads on 17 of 100 windows).
+  The calibration's `stem_octave_muted` (1000-2000 Hz) and
+  `music_hiss_removed` cases are built on the music fixture's clean bed and
+  its own recorded noise, not the speech fixture's `noise`, on which the
+  mute's octave never read. The real-separator checks run on the GPU.
 - `speech.cer_median` and `mos.audiobox_pc` are soft until a verdict sets
   them; the grids' learned vetoes on both stay.
 - `Gate.calibrated` is False for every hand-set threshold (lkr's 1.747, a
