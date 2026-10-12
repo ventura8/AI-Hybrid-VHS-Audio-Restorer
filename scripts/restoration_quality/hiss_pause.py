@@ -15,17 +15,23 @@ and is the same for every candidate:
    each contiguous mask run, a tail of 5 frames or more kept, divided by the Wilson-Hilferty
    median/mean ratio of a Gamma with k = max(kept bins / 1.5, 0.5) x 10 degrees (z = 0):
    max(1 - 1 / (9k), 0.05)^3. The median, not the mean, so a word tail or a breath in one
-   block does not lift the floor; 200 ms is the ear's integration time for a noise.
+   block does not lift the floor, nor soft programme the source's hiss hid in its quiet frames
+   and a clean output reveals (with the mean a perfect output's pauses read up to +43 dB on the
+   fixtures); 200 ms is the ear's integration time for a noise.
 4. Each side's floor relative to its own whole aligned file's loud frames (the listener sets
-   the volume once), at `hiss_floor.L_CRIT_DB`: rel_b = 10 log10 floor_b - loud.
+   the volume once), at `hiss_floor.L_CRIT_DB`: rel_b = 10 log10 floor_b - loud; for the
+   margin each band takes the power mean of itself and its two neighbours (tape hiss is
+   smooth across bands, and the max over single bands picked their upward draws: the
+   smoothing halved the realisation scatter, sd 0.25 -> 0.13-0.18 dB on the fixtures).
 5. The hiss weight w(f) = 1 / (1 + exp(-log2(f / 2500) / 0.25)): 0.05 at 1.5 kHz, 0.22 at
    2 kHz, 0.5 at 2.5 kHz, 0.94 at 4 kHz. Tape hiss is the broadband, HF-heavy stationary
    floor; room tone sits mostly under 2-3 kHz and the user allows it (they rejected dead
    pauses: "silent in pauses").
 6. `hiss_pause_margin_db` = max over bands of 1 kHz and up holding a floor of
-   L_CRIT + rel_b + 10 log10 w - (Tq - 3) (Terhardt's threshold less 3 dB). With no band
-   holding anything it reads L_CRIT - 140 = -65, never None: an empty output is inaudible and
-   loses nothing for being unread. The ranked form is the excess, max(0, margin).
+   L_CRIT + rel_b + 10 log10 w - (Tq - 3) (Terhardt's threshold less 3 dB), never under
+   L_CRIT - 140 = -65. With no band holding anything it reads -65, never None: an empty output
+   is inaudible and loses nothing for being unread (a pause band-filtered to 1e-90 read -1843
+   before this floor held it). The ranked form is the excess, max(0, margin).
    `hiss_pause_onset_db` = L_CRIT - margin is the playback level (loud frames in dB SPL) at
    which the hiss becomes audible, level-free (display).
 7. Guards and display: `hiss_room_onset_db`, min over 100-2000 Hz of Tq - 3 - rel_b,
@@ -41,10 +47,12 @@ weighs the floor's high bands at their audibility rather than its level.
 """
 
 import numpy as np
+import scipy.ndimage
 
 from scripts.restoration_quality import auditory, hiss_floor, pause_metrics
 
 FRAME_S = pause_metrics.FRAME_S
+SMOOTH_BANDS = 3
 BLOCK_FRAMES = 10
 MIN_BLOCK_FRAMES = 5
 TQ_MARGIN_DB = 3.0
@@ -183,13 +191,23 @@ def relative_levels(floor, loud_db):
     return np.where(held, 10.0 * np.log10(np.where(held, floor, 1.0)) - loud_db, np.nan)
 
 
+def smoothed(rel):
+    """`rel` (dB per band) as the power mean of each band and its two neighbours; NaN bands neither give nor take."""
+    held = np.isfinite(rel)
+    power = np.where(held, 10.0 ** (np.where(held, rel, 0.0) / 10.0), 0.0)
+    total = scipy.ndimage.uniform_filter1d(power, SMOOTH_BANDS, mode="nearest")
+    count = scipy.ndimage.uniform_filter1d(held.astype(np.float64), SMOOTH_BANDS, mode="nearest")
+    return np.where(held, 10.0 * np.log10(np.maximum(total / np.maximum(count, EPS), EPS)), np.nan)
+
+
 def hiss_margin(rel, centres):
-    """max over bands of 1 kHz and up of L_crit + rel + 10 log10 w - (Tq - 3); L_crit - 140 when no band holds anything."""
+    """max over bands of 1 kHz and up of L_crit + smoothed rel + 10 log10 w - (Tq - 3), never under L_crit - 140."""
+    rel = smoothed(rel)
     bands = (centres >= HISS_FROM_HZ) & np.isfinite(rel)
     if not bands.any():
         return hiss_floor.L_CRIT_DB - ONSET_CAP
     level = hiss_floor.L_CRIT_DB + rel[bands] + 10.0 * np.log10(hiss_weight(centres[bands])) - quiet_threshold(centres[bands])
-    return float(np.max(level))
+    return float(max(np.max(level), hiss_floor.L_CRIT_DB - ONSET_CAP))
 
 
 def room_onset(rel, centres):

@@ -49,7 +49,7 @@ def test_an_empty_pause_reads_the_cap_never_none():
     """The programme alone empties the pauses: margin L_crit - 140 = -65, onset 140, sone 0, room delta far under 0."""
     readings = read(capture()[0])
     assert out_of(readings) == hiss_floor.L_CRIT_DB - hiss_pause.ONSET_CAP == -65.0
-    assert out_of(readings, "hiss_pause_onset_db") == 140.0 and out_of(readings, "hiss_pause_sone") == 0.0
+    assert (out_of(readings, "hiss_pause_onset_db"), out_of(readings, "hiss_pause_sone")) == (140.0, 0.0)
     assert out_of(readings, "hiss_pause_excess_db") == 0.0
     assert out_of(readings, "hiss_room_delta_db") <= -54.0
 
@@ -123,6 +123,21 @@ def test_the_band_edge_cases():
     assert hiss_pause.block_means(np.ones((4, 2)), [(0, 2), (2, 4)]) is None
     floor = hiss_pause.stationary_floor(np.ones((4, 2)), np.array([3.0, 3.0]), [(0, 2)])
     assert floor == pytest.approx(1.0 / hiss_pause.wilson_hilferty_median_ratio(2.0))
+
+
+def test_a_pause_filtered_near_to_nothing_reads_the_floor_not_below_it():
+    """The capture's hiss 600 dB down (a band-filtered pause's 1e-30 residue) reads the -65 floor, never far under it."""
+    programme, noise, _source = capture()
+    assert out_of(read(programme + noise * 1e-30)) == hiss_floor.L_CRIT_DB - hiss_pause.ONSET_CAP
+
+
+def test_the_margin_never_reads_under_its_floor_and_bands_are_smoothed():
+    """A band at -1900 dB reads the -65 floor; one band 30 dB over two neighbours at 0 reads their power mean."""
+    assert hiss_pause.hiss_margin(np.array([-1900.0]), np.array([3000.0])) == hiss_floor.L_CRIT_DB - hiss_pause.ONSET_CAP
+    smooth = hiss_pause.smoothed(np.array([0.0, 30.0, 0.0, np.nan]))
+    assert smooth[1] == pytest.approx(10.0 * np.log10((1.0 + 1000.0 + 1.0) / 3.0))
+    assert np.isnan(smooth[3])
+    assert smooth[2] == pytest.approx(10.0 * np.log10((1000.0 + 1.0) / 2.0))
 
 
 def test_a_band_without_a_kept_bin_and_a_window_without_a_room_band():
