@@ -79,7 +79,8 @@ def test_the_oracle_ladder_is_monotone_and_a_perfect_output_is_inaudible():
     """Each step of removal reads no more hiss than the one before (0.05 dB slack); the programme alone reads <= 0."""
     margins = ladder()
     assert all(later <= earlier + 0.05 for earlier, later in zip(margins, margins[1:]))
-    assert margins[0] > margins[2] + 6.0 and margins[-1] <= 0.0
+    assert margins[0] > margins[2] + 6.0
+    assert margins[-1] <= 0.0
 
 
 def test_the_removal_reads_the_oracle_step():
@@ -128,13 +129,102 @@ def test_a_low_pass_trips_the_dulling_guard():
 
 
 def test_a_mismatched_window_reads_nothing():
-    """Correlation under 0.5, a programme gain over 6 dB, a dead output or a NaN: every name reads None."""
+    """An unrelated programme envelope, a programme gain over 24 dB, a dead output or a NaN: every name reads None."""
     source = capture()[2]
     stranger = np.random.default_rng(11).standard_normal(len(source)) * 0.05
     broken = source.copy()
     broken[100] = np.nan
-    for output in (stranger, source * 10.0 ** (8.0 / 20.0), np.zeros(len(source)), broken):
+    for output in (stranger, source * 10.0 ** (30.0 / 20.0), np.zeros(len(source)), broken):
         assert all(pair == (None, None) for pair in read(output).values())
+
+
+def test_a_polarity_inverted_late_programme_still_reads():
+    """The guard reads power envelopes: the source inverted, 2 ms late and 8 dB down reads like the source itself."""
+    source = capture()[2]
+    late = -np.concatenate([np.zeros(88), source[:-88]]) * 10.0 ** (-8.0 / 20.0)
+    assert out_of(read(late), "hiss_prog_validated") == 1.0
+    assert out_of(read(late)) == pytest.approx(out_of(read(source)), abs=1.0)
+
+
+def test_a_fresh_realisation_of_the_hiss_reads_like_the_hiss():
+    """The programme with another draw of the same noise reads the identity's margin within 0.5 dB (no own-cell selection)."""
+    programme, noise, source = capture()
+    fresh = np.random.default_rng(23).permutation(noise.reshape(-1, RATE // 10)).reshape(-1)
+    assert out_of(read(programme + fresh)) == pytest.approx(out_of(read(source)), abs=0.5)
+
+
+def test_hiss_left_only_in_the_gaps_between_words_is_read_there():
+    """The hiss kept (12 dB down) only where the VAD calls no speech reads more hiss than the hiss gone everywhere."""
+    programme, noise, source = capture()
+    gaps = programme + noise * 10.0 ** (-12.0 / 20.0) * (~_speech_gate(source)) + noise * 10.0 ** (-40.0 / 20.0)
+    assert out_of(read(gaps)) > out_of(read(programme + noise * 10.0 ** (-40.0 / 20.0))) + 3.0
+
+
+def test_a_cut_of_the_programme_band_edge_trips_the_dulling_guard():
+    """A -6 dB cut of 3-4.5 kHz alone (no low pass) reads the kept programme highs at -1 dB or less."""
+    source = capture()[2]
+    band = scipy.signal.sosfiltfilt(scipy.signal.butter(4, [3000.0, 4500.0], "bandpass", fs=RATE, output="sos"), source)
+    assert out_of(read(source + band * (10.0 ** (-6.0 / 20.0) - 1.0)), "hiss_prog_kept_hf_db") <= -1.0
+
+
+def test_the_anchor_is_filled_across_its_unread_bands():
+    """Unread anchor bands take the log-interpolated level of their neighbours; fewer than two read, or none unread, stay as they are."""
+    filled = hiss_programme.filled_anchor(np.array([1.0, np.nan, 100.0, 0.0, 100.0]))
+    assert filled.tolist() == pytest.approx([1.0, 10.0, 100.0, 100.0, 100.0])
+    assert np.isnan(hiss_programme.filled_anchor(np.array([np.nan, 2.0, np.nan]))).sum() == 2
+    assert hiss_programme.capped(np.full((1, 3), 50.0), np.array([1.0, np.nan, 100.0])).tolist() == [[1.0, 10.0, 50.0]]
+
+
+def test_the_spectral_cap_holds_a_band_within_6_db_of_the_other_bands():
+    """A band reading 20 dB over its pool is held at the pool plus 6 dB; a thin pool or a NaN leaves it as it is."""
+    ratio = np.array([[1.0, 1.0, np.nan]])
+    pool = np.array([[[0.01, 0.01, 0.01]], [[0.001, 0.0001, 0.001]], [[100.0, 10.0, 100.0]]])
+    capped = hiss_programme.spectral_cap(ratio, pool)
+    assert capped[0, 0] == pytest.approx(10.0**0.6 * 0.1, rel=1e-6)
+    assert capped[0, 1] == 1.0
+    assert np.isnan(capped[0, 2])
+
+
+def test_the_pool_leaves_out_the_band_and_its_neighbours():
+    """Band 4 of 9 pools the free cells of bands 0-1 and 7-8 only (two bands either side out), frames +-1 summed."""
+    layout = types_layout(np.full(9, 2000.0))
+    src = np.zeros((3, 9))
+    src[1] = np.arange(1.0, 10.0)
+    pool = hiss_programme.pool_sums((src, src * 0.5, np.ones((3, 9))), layout)
+    assert pool[0][1, 4] == pytest.approx(1 + 2 + 8 + 9)
+    assert pool[1][1, 4] == pytest.approx(0.5 * (1 + 2 + 8 + 9))
+
+
+def types_layout(centres):
+    """A stand-in layout holding only `centres` (what `pool_sums` reads)."""
+    return type("Stub", (), {"centres": np.asarray(centres, dtype=np.float64)})()
+
+
+def test_a_band_is_free_when_two_frames_away_it_holds_only_the_floor():
+    """A frame is free when the band holds only its floor two frames before and after: frames 0 and 4 see the loud frame 2."""
+    layout = type("Stub", (), {"nbins": np.array([1.0]), "band_power": staticmethod(lambda power: power)})()
+    power = np.array([[1.0], [1.0], [5.0], [1.0], [1.0], [1.0]])
+    free = hiss_programme.free_band_frames(power, np.ones((6, 1)), layout)[:, 0]
+    assert free.tolist() == [False, True, True, True, False, True]
+
+
+def test_the_window_ratio_falls_back_with_too_few_cells():
+    """Under 40 cells the class ratio is the fallback; with enough it is sum O / sum S."""
+    sums = (np.full((2, 2), 10.0), np.full((2, 2), 5.0), np.array([[30.0, 1.0], [30.0, 1.0]]))
+    assert hiss_programme.window_ratio(sums, np.array([0.7, 0.7])).tolist() == pytest.approx([0.5, 0.7])
+
+
+def test_the_output_plays_at_its_own_loud_frames():
+    """An output 3 dB quieter at its loud frames plays 3 dB louder; the programme gain moves it back."""
+    context = hiss_floor.HissContext(None, None, 10.0, -20.0, -23.0)
+    assert hiss_programme.output_spl_db(context, 0.0) == pytest.approx(hiss_floor.L_CRIT_DB + 23.0)
+    assert hiss_programme.output_spl_db(context, -3.0) == pytest.approx(hiss_floor.L_CRIT_DB + 20.0)
+
+
+def test_a_constant_envelope_correlates_nothing():
+    """Either side holding one level in every frame reads correlation 0 (no envelope to match)."""
+    freqs = np.array([500.0, 1000.0])
+    assert hiss_programme.envelope_correlation(freqs, np.ones((4, 2)), np.arange(8.0).reshape(4, 2)) == 0.0
 
 
 def test_an_unvalidated_anchor_abstains_on_the_margins_but_keeps_the_guards():
@@ -178,7 +268,8 @@ def test_a_held_chord_with_vibrato_and_reverb_is_not_heard_as_hiss():
     """
     chord = _chord()
     readings = read(chord, source=chord)
-    assert out_of(readings, "hiss_prog_bands") >= 2.0 and out_of(readings, "hiss_prog_validated") == 1.0
+    assert out_of(readings, "hiss_prog_bands") >= 2.0
+    assert out_of(readings, "hiss_prog_validated") == 1.0
     assert out_of(readings) <= 0.0
 
 

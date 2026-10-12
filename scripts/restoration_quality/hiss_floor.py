@@ -12,8 +12,9 @@ separates them on Tele7abc (cathar alpha 2 on 0.7.3 +2.39, its beta 0.005 +2.16,
 cleared 0.7.5 alpha 2 -0.70, alpha 2.25 -0.98 and baseline -3.01) and orders single4s ("light
 hiss", +0.01) over stitched (-3.01). The prototype's fixture check (worst perfect output -8.79,
 fresh realisation p95 0.617) ran with its shaped noise 30.1 dB under the tape's relation; at the
-tape relation the anchor errs -0.1 dB (median) and the perfect output reads +9..+22 dB, because the
-programme reading saturates 13-14 dB under the source (docs/ear_v4_hiss.md).
+tape relation the anchor errs -0.1 dB (median), and validation round 1 found the first build's
+programme reading saturating 13-14 dB under the source (a perfect output read +9..+22 dB), which
+`hiss_programme.py`'s spectral cap fixed (docs/ear_v4_hiss.md).
 
 This module holds what both readings share:
 
