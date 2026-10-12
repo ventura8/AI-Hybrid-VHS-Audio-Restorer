@@ -127,10 +127,15 @@ audio alignment, or FFmpeg multiplexing.
      as hum-free and 29 of the 200 hum-free realistic-v2 speech and chord
      fixtures. `confirmed` (`modules/mains_vote.py`) keeps that notch only
      where `spectral_denoise.harmonic_excess_db` at its family reaches 6 dB
-     over the whole analysed signal and never adds one; it clears 122 of the
-     123 and 17 of the 29 and keeps the 35 right-family notches on the hum
-     tapes (the least reads 6.07 dB, hey-abbott). Do not build a vote that
-     adds notches on that reading: chord partials near multiples of 50 Hz
+     over the whole analysed signal and never adds one. On the labelled
+     fixtures it clears 17 of the 29 and drops 5 of the 71 right-family hum
+     notches (their 50 Hz hum reads 3.9-5.9 dB). Its IA counts (122 of the
+     123 cleared, all 35 right-family notches kept) agree with R0 by
+     construction: R0's `mains_excess_db` is `measure_hum.hum_excess_db`,
+     the same computation at the same 6 dB (0.002 dB apart, median of 284
+     IA sources). Never judge a harmonic-excess gate against R0's hum
+     excess; use fixture labels or R0's frame evidence. Do not build a vote
+     that adds notches on that reading: chord partials near multiples of 50 Hz
      read as hum (musicled / musiconly targets 13.4 / 15.2 dB median excess
      with no hum), so it notched 112 of the 200; hum_cancel's quiet-frame
      reading fires on 99 because the beds never pause. R0's frame-median
@@ -568,8 +573,10 @@ audio alignment, or FFmpeg multiplexing.
   hum-free, 31 unchanged, three readable tapes +2.9-6.1 dB of excess removed
   (wives-and-daughters, vid-20230624-142023, channel-4-continuity; low-band
   deviation +0.05-0.66 dB, R11 0.1-2.6 dB lower), and two notched tapes did
-  worse (diamonds-are-forever -0.61 dB). Medians +0.05 / +0.40 dB (source
-  excess 6-12 / 12+): no flip. The adaptive dehum gave `--freq 0` the
+  worse (diamonds-are-forever -0.61 dB). Paired change on the readable
+  scanner-zero hum tapes 0.0 dB (17 of 20 and 5 of 7 unchanged; the group
+  medians moved +0.05 / +0.40 dB, source excess 6-12 / 12+): no flip. The
+  adaptive dehum gave `--freq 0` the
   family's output on 37 of the 39 notched hum tapes and passed 31 of the 38
   unnotched ones through untouched, so the scanner's vote reaches cathar
   mostly through the Q 15 notches. Those notches alone take a median
@@ -584,7 +591,15 @@ audio alignment, or FFmpeg multiplexing.
   fixture through the app: mux it to an mkv with pcm_f32le audio and a black
   video (`run_hardware_validation._make_video_fixture`), run from a folder
   holding only a `config.yaml`, and the scratch `render_cathar.py`
-  reproduced `cathar_ab_head.json` 5/5 at 24 s a clip.
+  reproduced `cathar_ab_head.json` 5/5 at 24 s a clip. Adversarial review
+  (same day, scratch `review/`): every vote count re-ran through the
+  committed `_detect_mains_buzz_notch`; the real key's renders equal the
+  patched head / none renders on 105 of 105 fixtures (both runs); a second
+  reading (Welch power within 6 Hz of f0 and 2f0, gain-matched on
+  300-3000 Hz) puts the no-notch render nearer the target on 16 of the 17
+  cleared false fires (median 1.9 dB); identity 5/5 at the default, and
+  `confirmed` changes only tugs (50 Hz, 1.93 dB) and vid-20220331 (100 Hz,
+  4.20 dB).
 - **Pause floor target and shape (2026-10-12)**: the hiss diagnosis of
   2026-10-11 found the pause floor is where `auto_pure_linear` puts the tape
   hiss back. The Mel-RoFormer takes the true pauses to about -93 dB; the

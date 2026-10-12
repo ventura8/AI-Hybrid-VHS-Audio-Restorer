@@ -835,8 +835,10 @@ VALID_AZIMUTH_ESTIMATE_METHODS = {"head", "spans"}
 # (2026-10-12, cathar 0.8.0 on CPU) it notched 123 of the 203 clips R0 reads as hum-free, and cathar without those
 # notches moved R11 nearer 0 on 100 of 122. 'confirmed' keeps the head's notch only where the whole analysed
 # signal's eight mains harmonics stand 6 dB (mains_vote.MIN_EXCESS_DB) over their neighbourhood at its family
-# (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on): it drops 122 of those 123 and keeps
-# every right-family notch on the hum tapes. Not judged by ear yet.
+# (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on). R0 reads hum with the same
+# computation at the same 6 dB, so on the IA sets it agrees with R0 by construction (122 of those 123 dropped, every
+# right-family notch kept) and that does not test it; against realistic-v2's labels it clears 17 of the 29 false
+# fires and drops 5 of the 71 right-family hum notches. Not judged by ear yet.
 VALID_SCANNER_MAINS_VOTES = {"head", "confirmed"}
 
 

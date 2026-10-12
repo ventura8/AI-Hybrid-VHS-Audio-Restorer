@@ -565,6 +565,21 @@ music fixtures with 50 Hz hum.
 | fixtures without hum, notched | 29 / 200 | 12 / 200 |
 | hum fixtures, right / wrong / none | 71 / 5 / 24 | 66 / 0 / 34 |
 
+The two IA rows do not test the gate. R0's `mains_excess_db` is
+`measure_hum.hum_excess_db`, the same computation as
+`harmonic_excess_db` (same Welch frame, windows and sum; at R0's family
+the two read a median 0.002 dB apart on the 284 IA sources), held to the
+same 6 dB. So on the IA sets `confirmed` agrees with R0 by construction:
+on 163 of the 166 head notches, the three others being where R0's family
+is not the head's (the-lion-king twice, cj96video). The fixture rows are
+the test, since their labels do not come from the reading. There the
+gate clears 17 of the 29 false fires and keeps 12, which read 6.1-10.7 dB
+(8 of them music fixtures). It also drops 5 of the 71 right-family
+notches, where the injected 50 Hz hum reads 3.9-5.9 dB over the whole
+15 s. The 6 dB line itself calls 132 of the 200 hum-free fixtures hum at
+50 Hz, so an IA clip R0 reads under 6 dB may carry mild hum and one over
+it may carry none.
+
 - What the pair costs a programme with no hum: on the 200 hum-free
   targets the two notches alone move LSD 40-400 Hz by a median 1.73 dB at
   50 Hz and 1.58 dB at 60 Hz, and R11 by -0.22 and -0.36 dB (down to -2.2
@@ -578,9 +593,10 @@ music fixtures with 50 Hz hum.
   of 17, and R11 nears 0 on 14. The real key renders those fixtures, and the
   ones it keeps, bit for bit as the measured variant (105 of 105).
 - The 35 right-family notches on hum tapes read 6.07 dB of excess at the
-  least (hey-abbott), so the gate's margin there is thin. The one hum-tape
-  change drops the wrong-family 50 Hz notch of the-lion-king (R0: 60 Hz,
-  6.2 dB, no frame evidence).
+  least (hey-abbott) only because those tapes were chosen at 6 dB on the
+  same reading; the fixtures, not this, show the gate's margin. The one
+  hum-tape change drops the wrong-family 50 Hz notch of the-lion-king
+  (R0: 60 Hz, 6.2 dB, no frame evidence).
 - On the realistic-v2 hum fixtures it drops 10 of 76 notches, 5 of the
   right family. The fixtures cannot price a lost catch: dropping any notch
   there reads nearer the target (LSD 40-400 Hz on 51 of the 71
@@ -705,8 +721,10 @@ listening session decides otherwise:
   moved within 0.12 dB and one unreadable tape 3.06 dB. Of the 39 the
   scanner notched, 37 came out unchanged and two did worse
   (diamonds-are-forever 0.61 dB less removed and 1.44 dB less line drop,
-  hey-abbott 0.17 dB). The medians over the scanner-zero hum tapes moved
-  +0.05 dB (6-12 dB of source excess) and +0.40 dB (12 dB and over): not
+  hey-abbott 0.17 dB). Over the readable scanner-zero hum tapes the paired
+  change was 0.0 dB: 17 of 20 at 6-12 dB of source excess and 5 of 7 at
+  12 dB and over came out unchanged, and the group medians moved only
+  +0.05 and +0.40 dB because changed tapes crossed the median. That is not
   the consistent gain of 1.5 dB or more a flip needs, so `scanner` stays
   and the three tapes go to the listening session.
 

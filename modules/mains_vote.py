@@ -8,6 +8,13 @@ analysed signal's eight harmonics of its family stand `MIN_EXCESS_DB` over their
 neighbourhood (`spectral_denoise.harmonic_excess_db`, the reading `detect_mains_hz` votes on):
 the vote never adds a notch, so the chord beds a whole-signal vote reads as hum (13.4-15.2 dB of
 excess on targets that carry none) cannot gain one.
+
+R0 names the IA clips' hum with `measure_hum.hum_excess_db`, the same computation at the same
+6 dB (0.002 dB apart at R0's family, median of the 284 hunt and catalog_hum48 sources), so on the
+IA sets this gate agrees with R0 by construction and those counts do not test it. The fixture
+labels do: it clears 17 of the 29 false fires on hum-free realistic-v2 fixtures (the 12 it keeps
+read 6.1-10.7 dB, 8 of them music) and drops 5 of the 71 right-family notches on hum fixtures,
+whose injected 50 Hz hum reads 3.9-5.9 dB over the whole 15 s.
 """
 
 from . import spectral_denoise
@@ -15,8 +22,10 @@ from .filters import MAINS_FUNDAMENTAL_BY_HARMONIC
 from .utils import log_msg
 
 # measure_hum's "carries hum" line and the gate detect_mains_hz holds auto_pure_linear's canceller to.
-# At the head's family, 122 of the 123 hunt false fires read under it, while the 35 right-family
-# notches on the 75 hum tapes of the hunt and catalog_hum48 read 6.07 dB or more.
+# R0 names the IA hum tapes by the same reading at this line, so the IA sets cannot place it (163 of
+# the 166 head notches there fall on R0's side of it by construction; the three others are where R0's
+# family is not the head's). The labelled fixtures put 12 of the 29 false fires over it and 5 of the
+# 71 right-family hum notches under it.
 MIN_EXCESS_DB = 6.0
 
 

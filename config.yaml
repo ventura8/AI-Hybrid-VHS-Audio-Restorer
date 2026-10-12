@@ -295,14 +295,18 @@ batch_jobs: 8
 #   - 'confirmed': the head's notch kept only where the whole analysed signal's eight
 #     harmonics of its family stand 6 dB over their neighbourhood
 #     (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on); it
-#     never adds one. cathar 0.8.0 on CPU: it cleared 122 of the 123 hunt false fires
-#     (R11 nearer 0 on 99 of 121, a median 0.12 dB; the output's hum excess rose a
-#     median 0.03 dB, at most 1.38 dB over the source), kept all 35 right-family
-#     notches on the 75 hum tapes of the hunt and catalog_hum48 (the least read
-#     6.07 dB) and dropped one wrong-family notch. On realistic-v2 it cleared 17 of
-#     the 29 false fires (LSD 40-400 Hz nearer the target on 14, a median 0.23 dB)
-#     and 10 of the 76 notches on hum fixtures, 5 of the right family, which those
-#     fixtures cannot price (dropping any notch reads nearer their targets). A vote
+#     never adds one. R0 names the IA hum tapes by measure_hum.hum_excess_db, the same
+#     computation at the same 6 dB, so on the hunt and catalog_hum48 it agrees with R0
+#     by construction (122 of the 123 hunt false fires cleared, all 35 right-family
+#     notches on the 75 hum tapes kept, one wrong-family notch dropped): those counts
+#     do not test it. cathar 0.8.0 on CPU without the cleared notches: R11 nearer 0 on
+#     99 of 121 hunt clips (a median 0.12 dB; the output's hum excess rose a median
+#     0.03 dB, at most 1.38 dB over the source). realistic-v2's labels test it: it
+#     cleared 17 of the 29 false fires (LSD 40-400 Hz nearer the target on 14, a
+#     median 0.23 dB) and kept 12 (6.1-10.7 dB, 8 of them music), and it dropped 10 of
+#     the 76 notches on hum fixtures, 5 of the right family (their injected 50 Hz hum
+#     reads 3.9-5.9 dB over the whole 15 s), which those fixtures cannot price
+#     (dropping any notch reads nearer their targets). A vote
 #     that also adds notches was measured and not built: the chord beds read as hum
 #     (13.4-15.2 dB of excess on targets without any), so it notched 112 of the 200.
 #     auto_pure_linear was not rendered (GPU). Not judged by ear yet.
@@ -493,8 +497,9 @@ arnndn_enable_adeclick: true
 #     excess (lines 2.8-6.7 dB) at 0.05-0.66 dB more low-band deviation and R11
 #     0.1-2.6 dB lower, 3 moved within 0.12 dB, one unreadable 3.1 dB. 2 of the 39
 #     notched hum clips did worse (diamonds-are-forever -0.61 dB, lines -1.44). Over
-#     the scanner-zero hum tapes the median moved +0.05 dB (6-12 dB of source excess)
-#     and +0.40 dB (12 and over): no consistent gain, so 'scanner' stays.
+#     the readable scanner-zero hum tapes the paired change was 0.0 dB (17 of 20 at
+#     6-12 dB of source excess and 5 of 7 at 12 and over unchanged; the group medians
+#     moved +0.05 and +0.40 dB): no consistent gain, so 'scanner' stays.
 #
 # cathar_noiseprint_mute_guard (2026-10-12):
 #   - false (Default): the noise print is learned from the quietest window
