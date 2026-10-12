@@ -390,7 +390,8 @@ def valley_bound(valley, calib, nbins):
 
 def power_bound(power, layout):
     """Per frame and band, the side's own band power averaged over three frames: no more hiss than the side holds there."""
-    return scipy.ndimage.uniform_filter1d(layout.band_power(power), POWER_BOUND_FRAMES, axis=0, mode="nearest")
+    # Clamped at 0 like every running mean of power here (a rounding error under 0 would bound the hiss below nothing).
+    return np.maximum(scipy.ndimage.uniform_filter1d(layout.band_power(power), POWER_BOUND_FRAMES, axis=0, mode="nearest"), 0.0)
 
 
 def zbark(freq_hz):

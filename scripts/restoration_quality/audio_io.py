@@ -25,6 +25,8 @@ SPEECH_RATE = 16000
 SIGMOS_RATE = 48000
 MIN_TAIL_WINDOW_S = 5.0
 SILENCE_DBFS = -50.0
+# The polyphase fallback's anti-alias window when librosa (soxr) is not installed (`_resample`).
+FALLBACK_WINDOW = ("kaiser", 16.0)
 SPEECH_RATIO_MIN = 0.25
 MUSIC_RATIO_MIN = 0.20
 # The scanner's music ratio reads 0.03-0.06 on the music of a 1991 VHS (Gaudeamus), so the
@@ -204,8 +206,11 @@ def _resample(mono, rate, target_rate):
 
         from scipy.signal import resample_poly
 
+        # A Kaiser window of beta 16 instead of resample_poly's default (beta 5): its images sit near
+        # -60 dB, where they land in the hiss readings' noise cells; a CI without the ml group (no
+        # librosa) read a soxr-less round trip at -58 dB against the -60 dB its test asks of soxr.
         factor = gcd(rate, target_rate)
-        return resample_poly(mono, target_rate // factor, rate // factor).astype(np.float32)
+        return resample_poly(mono, target_rate // factor, rate // factor, window=FALLBACK_WINDOW).astype(np.float32)
 
 
 def windows(n_samples, rate, seconds=15.0, hop=7.5):

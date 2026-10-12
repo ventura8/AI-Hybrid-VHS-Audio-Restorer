@@ -632,7 +632,10 @@ def _band_active(power, freqs, band, smooth):
     bins = (freqs >= band[0]) & (freqs < band[1])
     if not bins.any():
         return np.zeros(power.shape[0], dtype=bool)
-    averaged = scipy.ndimage.uniform_filter1d(power[:, bins].sum(axis=1), size=smooth, mode="nearest")
+    # A running sum's cancellation leaves the average of a stretch of digital silence slightly
+    # under 0, by an amount the platform's floating point decides (Linux CI read NaN levels and a
+    # NaN percentile where Windows read none, 2026-10-12): an average of power is never negative.
+    averaged = np.maximum(scipy.ndimage.uniform_filter1d(power[:, bins].sum(axis=1), size=smooth, mode="nearest"), 0.0)
     level = 10.0 * np.log10(averaged + EPS)
     return level > np.percentile(level, VAD_FLOOR_PERCENTILE) + VAD_MARGIN_DB
 

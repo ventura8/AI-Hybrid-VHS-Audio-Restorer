@@ -113,7 +113,8 @@ def onset_samples(mono, rate):
 def envelope_db(percussive, rate):
     """Sliding 10 ms RMS envelope of the percussive part, per sample, in dB."""
     size = max(1, int(ENVELOPE_S * rate))
-    rms = np.sqrt(scipy.ndimage.uniform_filter1d(np.asarray(percussive, dtype=np.float64) ** 2, size, mode="nearest"))
+    # Clamped at 0: a running mean of squares can fall a rounding error under 0 after a loud burst (NaN root).
+    rms = np.sqrt(np.maximum(scipy.ndimage.uniform_filter1d(np.asarray(percussive, dtype=np.float64) ** 2, size, mode="nearest"), 0.0))
     return 20.0 * np.log10(rms + 1e-9)
 
 

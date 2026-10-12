@@ -100,6 +100,23 @@ poetry run python tests/tooling/quality_gate.py
   failed; the file was restored from `HEAD`. Run pytest, radon and the
   linters from the repository root or from an empty directory, and keep
   probe scripts in a folder of their own, run by path.
+- **A test that passes on Windows and fails on the Linux CI.** Two causes
+  met on 2026-10-12, both fixed at the source:
+  - A running mean (`scipy.ndimage.uniform_filter1d`, a cumulative sum)
+    over power falls a rounding error under 0 after a loud stretch next to
+    digital silence, by an amount the platform's floating point decides;
+    `log10` or `sqrt` of it is NaN, and one NaN turns a percentile NaN.
+    Clamp every running mean of power at 0 (`np.maximum(..., 0.0)`) before
+    a log or a root.
+  - CI installs `main,dev` only, so code that prefers an `ml`-group package
+    (librosa's soxr) runs its fallback there; give the fallback the same
+    quality bar its tests ask of the preferred path.
+  - Reproduce such a failure in WSL Ubuntu with a minimal venv pinned to
+    the repository's numpy and scipy (`python3 -m venv ~/hissvenv`, then pip
+    install the pinned versions, pytest and what the test imports), and run
+    pytest with `PYTHONPATH=.` from the worktree's `/mnt/...` path. Keep the
+    venv in the home directory: WSL wipes `/tmp` when the distribution
+    stops.
 
 ## Mocking Conventions and Invariants
 
