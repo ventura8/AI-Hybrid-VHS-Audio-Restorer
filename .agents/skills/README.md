@@ -39,7 +39,9 @@ the Antigravity agent system.
   human ear": listener-like scoring, calibration, real-tape tuning and the
   self-driving loop that asks the user only at its plateau. Ear v3 adds the
   capture profile and the balance, absolute-sibilance, pause-residual,
-  gain-ride and sync readings, and these scripts:
+  gain-ride, sync and time-base readings (R12,
+  `restoration_quality/timebase_metrics.py`: DTW holds, 40 ms plateaus and
+  rate jumps, hard-gated, uncalibrated), and these scripts:
   - `scripts/audibility_check.py`: is a candidate audibly different from
     the incumbent (hash, null test, noise-to-mask ratio; "inaudible" is a
     tie, "audible" proves nothing);

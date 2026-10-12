@@ -10,7 +10,7 @@ of the file the user accepted) and the dead zone around it live in the tuning gr
 point, no change from the source (0) unless the reading says otherwise.
 
 Ear v3 families: `dsp` (per window), `file` (one reading per file: loudness, the gain ride
-and the sync of `file_metrics.py`) and `meta` (what the capture itself carries, the source
+and the sync of `file_metrics.py`, the time base of `timebase_metrics.py`) and `meta` (what the capture itself carries, the source
 profile of `source_profile.py`; source side only, displayed). Counts (clicks, dropouts) also
 report their worst window (`max`) and `p95` beside the median and tail, so one click in one
 window is not diluted by the median of the windows around it.
@@ -184,6 +184,15 @@ METRICS = {
         MetricSpec("file.sync_lag_start_ms", "file", NONE, "ms"),
         MetricSpec("file.sync_lag_middle_ms", "file", NONE, "ms"),
         MetricSpec("file.sync_lag_end_ms", "file", NONE, "ms"),
+        # R12 (timebase_metrics.py): the aligned pair's time base, once per file. Holds (the output
+        # frozen where the source plays) and rate jumps are gated in gates.py; the 40 ms plateaus
+        # and the speed error are shown; `tracked_share` is the coverage the track stands on.
+        MetricSpec("file.timebase_holds", "file", LOWER, "count"),
+        MetricSpec("file.timebase_holds_per_min", "file", LOWER, "1/min"),
+        MetricSpec("file.timebase_plateaus", "file", LOWER, "count"),
+        MetricSpec("file.timebase_rate_jumps", "file", LOWER, "count"),
+        MetricSpec("file.timebase_speed_dev_pct", "file", LOWER, "%"),
+        MetricSpec("file.timebase_tracked_share", "file", NONE, ""),
         # R0 (source_profile.py): the capture's own profile, read once per source, displayed.
         MetricSpec("meta.prog_bandwidth_hz", "meta", NONE, "Hz"),
         MetricSpec("meta.brickwall_hz", "meta", NONE, "Hz"),

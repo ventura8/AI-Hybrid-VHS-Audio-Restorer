@@ -83,6 +83,10 @@ Ear v3 wiring (the dsp family):
 - R7 and the sync (`file_metrics.file_entries`) run once per pair on the raw, un-matched
   mono pair; the pause VAD that ran (`pause_metrics.resolved_vad_name`) goes into
   `card.meta["pause_vad"]`.
+- R12, the time base (`timebase_entry`), runs once per pair on the raw pair at the alignment's
+  lag (not gain-matched: see `timebase_entry`): holds, 40 ms plateaus, rate jumps and the speed
+  error the source does not have. About 0.25 s per 15 s pair and 9 s on the 7.7 min Vaccin pair
+  (2026-10-12, its batched FFTs on every core).
 """
 
 import gc
@@ -104,6 +108,7 @@ from scripts.restoration_quality import (
     pause_metrics,
     sibilance,
     source_profile,
+    timebase_metrics,
     transient_metrics,
 )
 from scripts.restoration_quality.gates import GATES, evaluate_gates, flag_failures, hard_failures
@@ -131,6 +136,8 @@ MUTE_MEDIAN_WINDOWS = 7
 MUTE_SPAN_PERCENTILE = 25.0
 MUTE_MARGIN_DB = 15.0
 MUTE_MAX_SHARE = 0.05
+# `median_floor_db`'s percentile method: the mean of the two middle p10s, or the higher one (`upper`).
+MEDIAN_METHODS = {False: "linear", True: "higher"}
 LEVEL_EPS = 1e-9
 
 
@@ -365,11 +372,8 @@ def median_floor_db(pair, windows, upper=False):
     over exactly half the windows of a short pair otherwise sets the floor half-way between itself
     and the hiss in dB, which caught a -90 dBFS lead-in but not a -65 dBFS one under -40 dBFS hiss.
     """
-    floors = [quiet_level_db(pair.source[w.slice_of(pair.rate)], pair.rate) for w in windows]
-    floors = [floor for floor in floors if floor is not None]
-    if not floors:
-        return None
-    return float(np.percentile(floors, 50, method="higher" if upper else "linear"))
+    floors = [floor for floor in (quiet_level_db(pair.source[w.slice_of(pair.rate)], pair.rate) for w in windows) if floor is not None]
+    return float(np.percentile(floors, 50, method=MEDIAN_METHODS[upper])) if floors else None
 
 
 def span_floor_db(pair, windows):
@@ -466,6 +470,7 @@ def _dsp_family(pair, card, _registry):
         card.file[f"file.{key}"] = {"source": 0.0, "output": value, "delta": value}
     card.file.update(file_metrics.file_entries(pair.raw_source, pair.raw_output, pair.rate))
     card.file.update(dropout_entry(pair))
+    card.file.update(timebase_entry(pair))
     card.file.update(profile_entries(profile))
     card.meta.update({"source_profile": profile, "pause_vad": pause_metrics.resolved_vad_name()})
 
@@ -478,6 +483,18 @@ def dropout_entry(pair):
     """
     holes = float(dsp_metrics.dropout_count(pair.source, pair.output, pair.rate))
     return {"file.dropouts": {"source": 0.0, "output": holes, "delta": holes}}
+
+
+def timebase_entry(pair):
+    """R12's `file.timebase_*` entries, read on the raw pair at the alignment's lag.
+
+    Not on the gain-matched pair: the least-squares gain of a pair that drifts apart can come out
+    negative (-0.016 on the 0.1 % slow en calibration fixture), which inverts the output, and the
+    lag track's correlation is signed (`timebase_metrics.peak_readings`). Every R12 reading is
+    gain-free, so the raw pair at the same lag reads what the aligned one would with its sign kept.
+    """
+    source, output = file_metrics.shifted(pair.raw_source, pair.raw_output, pair.lag)
+    return timebase_metrics.timebase_entries(source, output, pair.rate)
 
 
 def profile_entries(profile):
