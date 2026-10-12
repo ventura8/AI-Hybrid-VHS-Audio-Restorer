@@ -12,9 +12,12 @@ one timeline:
    match then shrinks it in every window (Gaudeamus1 8.2-8.3 dB, Gaudeamus5 14.6-14.9 dB, at
    envelope correlations of 0.995-0.998), which R1's gain undoes; the gain bound is only a
    sanity limit once the envelopes match.
-2. `hiss_floor` layout and valley levels on the source; the floor under the programme is
-   C_b x P10 of the valley over the active frames of each 1 s block (+-1.5 s), held no higher
-   than the source's anchor, whose unread bands take the anchor interpolated across them (a
+2. The STFT frames wholly inside the window (`whole_frames`: the centred first and last are half
+   padding), the two at either end neither active nor pause (`edge_frames`: their tests two
+   frames away read past the window); validation round 2 found a 0.37-sample shift of the output
+   moving a window 0.26-2.4 dB through those frames. `hiss_floor` layout and valley levels on the
+   source; the floor under the programme is C_b x P10 of the valley over the active frames of
+   each 1 s block (+-1.5 s), held no higher than the source's anchor, whose unread bands take the anchor interpolated across them (a
    held note in the quiet frames left a band of a music fixture unread and its floor
    uncapped: the note, 15 dB over the hiss). A true pause (a DSP-VAD non-speech run of 200 ms
    or more whose kept-band power sits within 6 dB of the floor) is not active.
@@ -115,6 +118,7 @@ ISLAND_MIN_FRAMES = 25
 ISLAND_MIN_BINS = 16
 ISLAND_TOP_FACTOR = 1.06
 MIN_READABLE_BANDS = 2
+MIN_WINDOW_FRAMES = 4
 MIN_ENV_CORR = 0.5
 ENV_BAND_HZ = (300.0, 4000.0)
 MAX_GAIN_DB = 24.0
@@ -183,8 +187,8 @@ def _moving(side):
 
 
 def window_usable(src, out):
-    """Step 1's sample half: finite samples, both sides moving."""
-    return _moving(src) and _moving(out)
+    """Step 1's sample half: at least four STFT frames of finite samples, both sides moving."""
+    return min(len(src), len(out)) >= MIN_WINDOW_FRAMES * hiss_floor.FRAME and _moving(src) and _moving(out)
 
 
 def envelope_correlation(freqs, src_power, out_power):
@@ -233,13 +237,37 @@ def output_spl_db(context, gain_db):
     return hiss_floor.L_CRIT_DB - context.out_loud_db + gain_db
 
 
+def whole_frames(power):
+    """The STFT frames that lie wholly inside the window: the centred first and last frames are half padding.
+
+    A half-padded frame reads the masker 3 dB low under the full hiss estimate, and it sits among the quietest frames
+    that set the shape, the tonal bins and the P10 floor: one sample more or less at the end of a window (the runner's
+    alignment, under a 0.37-sample shift of the output) moved a band of Gaudeamus5 across the leak test and the window's
+    margin 2.4 dB.
+    """
+    return power[1:-1]
+
+
+def edge_frames(count):
+    """Per STFT frame, whether it lies within two frames of either end of the window (step 2).
+
+    The tests two frames away read past the window there; on Tele7abc a 0.37-sample shift of the output moved one
+    window's margin 0.26 dB through its first two frames alone.
+    """
+    edge = np.zeros(count, dtype=bool)
+    tail = max(0, count - LED_OFFSET)
+    edge[:LED_OFFSET] = True
+    edge[tail:] = True
+    return edge
+
+
 def true_pauses(src, rate, power, layout, floor0):
     """Per STFT frame: inside a DSP-VAD non-speech run of 200 ms or more, with kept-band power within 6 dB of the floor."""
     frame20 = max(1, int(pause_metrics.FRAME_S * rate))
     speech = pause_metrics.dsp_vad(src, rate, frame20)
     runs = pause_metrics.long_runs(~speech, max(1, int(round(pause_metrics.MIN_RUN_S * rate / frame20))))
     near = power[:, layout.kindex >= 0].sum(axis=1) <= np.nansum(floor0 * layout.nbins) * 10.0 ** (PAUSE_SNR_DB / 10.0)
-    return hiss_floor.frame_map(rate, len(power), runs) & near
+    return hiss_floor.frame_map(rate, len(power), runs, start=hiss_floor.HOP) & near
 
 
 def ring_mean(power):
@@ -497,9 +525,12 @@ def island_top_hz(layout, readable):
 
 
 def active_20ms(active, count, frame, rate):
-    """The STFT frames' activity mapped onto `count` 20 ms frames of `frame` samples (by each one's centre)."""
+    """The STFT frames' activity mapped onto `count` 20 ms frames of `frame` samples (by each one's centre).
+
+    The window keeps its STFT frames from the second on (`whole_frames`), so frame j is centred at (j + 1) x HOP.
+    """
     centres = (np.arange(count) * frame + frame / 2.0) / rate * rate / hiss_floor.HOP
-    return active[np.minimum(centres.astype(int), len(active) - 1)]
+    return active[np.clip(centres.astype(int) - 1, 0, len(active) - 1)]
 
 
 def island_kurt(pair, rate, active, top_hz, gain_db):
@@ -525,7 +556,7 @@ class Window:
         freqs, src_power = hiss_floor.stft_power(src, rate)
         out_power = hiss_floor.stft_power(out, rate)[1]
         count = min(len(src_power), len(out_power))
-        self.freqs, self.src_power, self.out_power = freqs, src_power[:count], out_power[:count]
+        self.freqs, self.src_power, self.out_power = freqs, whole_frames(src_power[:count]), whole_frames(out_power[:count])
         self.layout = Layout(freqs, self.src_power, rate, context.top_hz)
         self.valley = hiss_floor.valley_levels(self.src_power, self.layout.kindex, self.layout.nb, self.layout.shape)
 
@@ -538,8 +569,9 @@ class Window:
         """`(true pauses, active frames, floor under the programme)`, or None with under 0.45 s of active frames."""
         anchor = anchor_level(self.context)
         floor0 = capped(hiss_floor.percentile_floor(self.valley) * self.layout.calib, anchor)
-        pause = true_pauses(self.pair[0], self.rate, self.src_power, self.layout, floor0)
-        active = ~pause
+        edge = edge_frames(len(self.src_power))
+        pause = true_pauses(self.pair[0], self.rate, self.src_power, self.layout, floor0) & ~edge
+        active = ~pause & ~edge
         if active.sum() < max(3.0, hiss_floor.MIN_SPAN_S * self.rate / hiss_floor.HOP):
             return None
         return pause, active, capped(hiss_floor.block_floor(self.valley, active, self.rate, self.layout.calib), anchor)

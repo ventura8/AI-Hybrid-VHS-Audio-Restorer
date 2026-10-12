@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import scipy.signal
 
+from scripts import same_percept
 from scripts.restoration_quality import hiss_floor, hiss_programme, pause_metrics
 from tests.unit.test_restoration_quality_hiss_floor import RATE, anchor_of, capture, context_for
 
@@ -288,3 +289,28 @@ def test_the_guards_edge_cases():
     assert hiss_programme.island_kurt((np.zeros(10), np.zeros(10)), RATE, np.ones(1, dtype=bool), None, 0.0) is None
     assert hiss_programme.band_summary(np.array([np.nan]), np.array([2000.0]), 1000.0) is None
     assert hiss_programme.capped(np.ones(3), np.ones(2)).tolist() == [1.0, 1.0, 1.0]
+
+
+def test_the_window_keeps_whole_frames_and_leaves_its_edges_out():
+    """The half-padded first and last STFT frames are dropped; two frames at either end are neither active nor pause."""
+    assert hiss_programme.whole_frames(np.arange(6.0)).tolist() == [1.0, 2.0, 3.0, 4.0]
+    assert hiss_programme.edge_frames(6).tolist() == [True, True, False, False, True, True]
+    assert hiss_programme.edge_frames(1).tolist() == [True]
+
+
+def test_a_fraction_of_a_sample_moves_nothing():
+    """The output 0.37 samples late and a sample shorter reads every margin within 0.02 dB of the output as it was."""
+    programme, noise, source = capture()
+    output = programme + noise * 0.25
+    late = same_percept.fractional_delay(output, 0.37)[:-1]
+    names = ("hiss_prog_margin_db", "hiss_prog_margin_all_db")
+    plain, shifted = read(output), read(np.concatenate([late, [0.0]]))
+    assert [out_of(shifted, name) for name in names] == pytest.approx([out_of(plain, name) for name in names], abs=0.02)
+
+
+def test_a_window_under_four_frames_reads_nothing():
+    """Under four STFT frames of samples there is no whole frame to read."""
+    short = capture()[2][: 3 * hiss_floor.FRAME]
+    assert hiss_programme.programme_readings(short, short, RATE, context_for(short, short)) == hiss_floor.none_pairs(
+        hiss_programme.PROGRAMME_NAMES
+    )
