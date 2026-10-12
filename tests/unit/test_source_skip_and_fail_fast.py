@@ -73,10 +73,9 @@ def _child(script):
 
 
 def test_a_failed_command_carries_its_tail_on_the_error(capsys):
+    command = _child("print('Output file does not contain any stream'); raise SystemExit(3)")
     with pytest.raises(subprocess.CalledProcessError) as caught:
-        utils.run_command_with_progress(
-            _child("print('Output file does not contain any stream'); raise SystemExit(3)"), description="Probe"
-        )
+        utils.run_command_with_progress(command, description="Probe")
     assert caught.value.returncode == 3
     assert "does not contain any stream" in caught.value.output
     capsys.readouterr()

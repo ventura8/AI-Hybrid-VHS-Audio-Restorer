@@ -39,7 +39,8 @@ def test_the_level_true_stem_takes_the_pairs_lag_at_its_own_rate():
     pair = _pair(lag=-20, rate=88200)
     trimmed, source, output = stem_metrics.levelled(pair, {"level_true": stem, "rate": RATE})
     assert trimmed[0] == 10.0
-    assert source[1] == 1.0 and output[1] == -1.0
+    assert source[1] == 1.0
+    assert output[1] == -1.0
     assert pair.calls == [("source", RATE), ("output", RATE)]
 
 

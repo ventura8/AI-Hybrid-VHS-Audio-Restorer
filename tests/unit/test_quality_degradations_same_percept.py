@@ -83,7 +83,8 @@ def test_fresh_noise_keeps_the_recorded_noises_level_wander_frame_by_frame():
 def test_a_silent_or_short_recorded_noise_gives_a_finite_realisation():
     for noise in (np.zeros(RATE), _noise(0.01)):
         envelope = deg.noise_envelope(noise, RATE)
-        assert envelope.shape == noise.shape and np.all(envelope > 0.0)
+        assert envelope.shape == noise.shape
+        assert np.all(envelope > 0.0)
         assert np.all(np.isfinite(deg.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))))
 
 

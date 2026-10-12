@@ -142,7 +142,8 @@ def test_the_single_track_step_probes_once_and_hands_the_plan_on(tmp_path):
     plan_for, kwargs, cmd = _mux_with_plan(tmp_path, lambda v, voc, _bg, out: processing._final_mux_single_audio_step(v, voc, out, 9.0))
     plan_for.assert_called_once_with(tmp_path / "tape.mpg", ".mpg")
     assert kwargs["sample_rate"] == 48000
-    assert "-itsoffset" in cmd and "-copyts" in cmd
+    assert "-itsoffset" in cmd
+    assert "-copyts" in cmd
 
 
 def test_the_mix_step_probes_once_and_hands_the_plan_on(tmp_path):

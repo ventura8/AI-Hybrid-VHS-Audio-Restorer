@@ -72,7 +72,8 @@ def test_a_retired_gate_in_a_stored_file_is_left_out(tmp_path):
         tmp_path,
         {"dsp.dropouts": {"threshold": 57.3, "severity": "hard", "source": "known good bound"}, "stems.octave": {"threshold": -9.0}},
     )
-    assert "dsp.dropouts" not in merged and "stems.octave" not in merged
+    assert "dsp.dropouts" not in merged
+    assert "stems.octave" not in merged
     assert merged["file.dropouts"].threshold == g.DROPOUT_BOUND
     assert set(g.RETIRED.values()) <= set(merged)
 

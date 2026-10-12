@@ -176,7 +176,8 @@ def test_a_periodic_programme_is_not_tracked():
     t = np.arange(int(5.0 * RATE)) / RATE
     tone = (0.1 * sum(np.sin(2 * np.pi * 100.0 * k * t + k) / k for k in range(1, 10))).astype(np.float32)
     readings = _read(tone, tone.copy())
-    assert readings["plateaus"] is None and readings["tracked_share"] is None
+    assert readings["plateaus"] is None
+    assert readings["tracked_share"] is None
     assert readings["holds"] == 0.0
 
 

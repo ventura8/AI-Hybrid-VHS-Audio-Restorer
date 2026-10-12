@@ -124,7 +124,8 @@ def test_a_default_stream_outranks_any_channel_count():
     assert picked.sample_rate == 32000
 
 
-def test_probe_source_audio_asks_ffprobe_for_the_audio_streams(monkeypatch):
+def _probed(monkeypatch):
+    """`probe_source_audio("tape.mpg")` against a stand-in ffprobe: its result, and the command and keywords it ran."""
     calls = []
 
     def fake_run(cmd, **kwargs):
@@ -132,12 +133,25 @@ def test_probe_source_audio_asks_ffprobe_for_the_audio_streams(monkeypatch):
         return SimpleNamespace(stdout=_probe_json(_stream()), returncode=0)
 
     monkeypatch.setattr(mux_format.subprocess, "run", fake_run)
-    assert mux_format.probe_source_audio("tape.mpg") == AT_48K_LATE
+    result = mux_format.probe_source_audio("tape.mpg")
     cmd, kwargs = calls[0]
-    assert cmd[0] == mux_format.FFPROBE_BIN and cmd[-1] == "tape.mpg"
-    entries = cmd[cmd.index("-show_entries") + 1]
-    assert "codec_type" in entries and "start_time" in entries and "format=format_name" in entries
+    return result, cmd, kwargs
+
+
+def test_probe_source_audio_asks_ffprobe_for_the_audio_streams(monkeypatch):
+    result, cmd, kwargs = _probed(monkeypatch)
+    assert result == AT_48K_LATE
+    assert cmd[0] == mux_format.FFPROBE_BIN
+    assert cmd[-1] == "tape.mpg"
     assert (kwargs["encoding"], kwargs["errors"]) == ("utf-8", "replace")
+
+
+def test_probe_source_audio_asks_for_the_stream_kind_its_start_and_the_container(monkeypatch):
+    _result, cmd, _kwargs = _probed(monkeypatch)
+    entries = cmd[cmd.index("-show_entries") + 1]
+    assert "codec_type" in entries
+    assert "start_time" in entries
+    assert "format=format_name" in entries
 
 
 @pytest.mark.parametrize(

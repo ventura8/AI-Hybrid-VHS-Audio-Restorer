@@ -333,8 +333,10 @@ def test_the_chunk_step_raises_when_only_residuals_came_back(tmp_path):
             _wav(out_dir / f"chunk_0000_(other)_{MODEL_STEM}.wav", 3)
 
     build, load = _separators(_ResidualOnly, [])
+    denoise_chunk = processing._denoise_one_chunk(MODEL)
+    chunk = _wav(tmp_path / "chunk_0000.wav", 3)
     with build, load, pytest.raises(RuntimeError, match="no clean stem"):
-        processing._denoise_one_chunk(MODEL)(_wav(tmp_path / "chunk_0000.wav", 3), out_dir)
+        denoise_chunk(chunk, out_dir)
 
 
 # --------------------------------------------------------------------------- what a previous run left
@@ -368,6 +370,8 @@ def test_the_whole_file_pass_refuses_an_output_that_is_only_a_residual(tmp_path)
     out_dir = tmp_path / "whole"
     out_dir.mkdir()
     _wav(out_dir / f"in_(other)_{MODEL_STEM}.wav", 3)
+    candidates = list(out_dir.glob("*.wav"))
+    source = tmp_path / "in.wav"
     with pytest.raises(RuntimeError, match="no denoised output"):
-        processing._select_denoised_candidate(list(out_dir.glob("*.wav")), "no denoised output", tmp_path / "in.wav", False, MODEL)
-    assert processing._select_denoised_candidate([], "warn", tmp_path / "in.wav", True, MODEL) == tmp_path / "in.wav"
+        processing._select_denoised_candidate(candidates, "no denoised output", source, False, MODEL)
+    assert processing._select_denoised_candidate([], "warn", source, True, MODEL) == source
