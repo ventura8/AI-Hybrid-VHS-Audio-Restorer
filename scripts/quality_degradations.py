@@ -147,6 +147,8 @@ QUIET_SHARE = 0.2
 SIGMOS_NOISE = "mos.sigmos_noise"
 SIGMOS_DISC = "mos.sigmos_disc"
 DROPOUTS = "file.dropouts"
+# The sync reading the gate reads: the drift of the lag along the file (`gates.py`, `file.sync_drift`).
+SYNC_DRIFT = "file.sync_drift_ms"
 # R12's readings (`timebase_metrics`): the holds and rate jumps its gates read, the 40 ms plateaus, the speed error.
 TIMEBASE_HOLDS = "file.timebase_holds"
 TIMEBASE_JUMPS = "file.timebase_rate_jumps"
@@ -810,7 +812,7 @@ DROPOUT_COUNT_TOLERANCE = 1.0
 # The sync reading on a pair with no time shift: a full phase randomisation smears the envelope
 # peak by up to 0.8 ms (en fixture), the compander by 0.08; the sync gates sit at 40 ms.
 SYNC_TOLERANCE_MS = 2.0
-SYNC_FLAT = Expectation("file.sync_drift_ms", "flat", tolerance=SYNC_TOLERANCE_MS)
+SYNC_FLAT = Expectation(SYNC_DRIFT, "flat", tolerance=SYNC_TOLERANCE_MS)
 # The sync gate itself (`gates.py`, one PAL video frame): a fault it must not see.
 SYNC_GATE_MS = 40.0
 # A static filter makes no musical noise: the shelf reads lkr under 1e-4 on every speech and music fixture measured.
@@ -1037,7 +1039,7 @@ V3_DEGRADATIONS = {
         "speech",
         (0.05, 0.1, 0.2),
         (
-            Expectation("file.sync_drift_ms", "up"),
+            Expectation(SYNC_DRIFT, "up"),
             Expectation("file.sync_offset_ms", "up", True),
             Expectation("file.gain_ride_lu", "flat", tolerance=SHAPE_TOLERANCE_DB),
             Expectation("file.sync_unmatched", "flat", tolerance=0.0),
@@ -1065,7 +1067,7 @@ V3_DEGRADATIONS = {
             Expectation(TIMEBASE_JUMPS, "up"),
             Expectation(TIMEBASE_PLATEAUS, "up", True),
             Expectation(DROPOUTS, "up", True),
-            Expectation("file.sync_drift_ms", "flat", tolerance=SYNC_GATE_MS),
+            Expectation(SYNC_DRIFT, "flat", tolerance=SYNC_GATE_MS),
             Expectation("file.sync_unmatched", "flat", tolerance=0.0),
         ),
     ),

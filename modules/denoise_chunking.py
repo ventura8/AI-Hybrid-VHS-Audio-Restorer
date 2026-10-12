@@ -287,9 +287,10 @@ def _copy_range(source, span, out, fades=(False, False), gain=1.0):
     position = 0
     while remaining > 0:
         block = source.read(min(BLOCK_FRAMES, remaining), dtype="float32", always_2d=True)
-        block = _faded(block, position, stop - start, fade_in, fade_out)
-        if gain != 1.0:
-            block = block * gain
+        # Scaled unconditionally: a float times exactly 1.0 is the same float in IEEE 754, so an
+        # unscaled range (the anchor, a chunk the whole file is not peak-matched for) keeps its
+        # samples bit for bit without a float equality test on the gain.
+        block = _faded(block, position, stop - start, fade_in, fade_out) * gain
         out.write(block)
         position += len(block)
         remaining -= len(block)

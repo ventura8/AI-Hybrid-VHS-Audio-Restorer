@@ -99,6 +99,8 @@ FLOOR_SOURCE = "floor"
 # (cathar SOTI 16 holes, APL SOTI 9), and a hard gate there would refuse exactly the stronger hiss removal the
 # user asked for. R12's holds (`timebase.holds`) catch the sync step's frozen frames; this count is reported.
 DROPOUT_BOUND = 4.0
+# The hole count's reading, and the name of the gate that reads it (the retired `dsp.dropouts` maps to it).
+FILE_DROPOUTS = "file.dropouts"
 
 
 @dataclass(frozen=True)
@@ -144,7 +146,7 @@ GATES = {
     "dsp.lkr": Gate("dsp.lkr", MEDIAN, "<=", 1.747, "musical noise", HARD, True),
     "dsp.hum": Gate("dsp.hum_excess_db", MEDIAN, "<=", 3.0, "hum must not appear"),
     "dsp.clicks": Gate("dsp.clicks_per_s", TAIL, "<=", 0.5, "clicks must not appear"),
-    "file.dropouts": Gate("file.dropouts", MEDIAN, "<=", DROPOUT_BOUND, "no new holes in the programme, counted over the whole pair", SOFT),
+    FILE_DROPOUTS: Gate(FILE_DROPOUTS, MEDIAN, "<=", DROPOUT_BOUND, "no new holes in the programme, counted over the whole pair", SOFT),
     "dsp.whistle": Gate("dsp.whistle_db", MEDIAN, "<=", 3.0, "line whistle must not appear"),
     "file.lra": Gate("file.lra", MEDIAN, ">=", -3.0, "dynamics squashed"),
     "file.lufs": Gate("file.lufs", MEDIAN, "abs<=", 1.5, "level moved", SOFT),
@@ -190,7 +192,7 @@ DISPLAY_ONLY = frozenset({"listener.hiss"})
 
 # Gate names a gates file may still carry from before their reading changed, and what replaced each.
 RETIRED = {
-    "dsp.dropouts": "file.dropouts",
+    "dsp.dropouts": FILE_DROPOUTS,
     "stems.octave": "stems.octave_programme",
 }
 

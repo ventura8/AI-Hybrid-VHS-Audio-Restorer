@@ -106,7 +106,8 @@ class Floors:
 
     def source(self, reading):
         """Where `floor(reading)` comes from, for the round's log."""
-        if self.floor(reading) == 0.0:
+        # `_number` makes every floor 0.0 (unknown) or positive, so `<= 0` is the exact zero test without a float equality.
+        if self.floor(reading) <= 0.0:
             return "none"
         if is_hiss_reading(reading) or _number(self.jitter.get(reading)) > _number(self.benign.get(reading)):
             return "jitter"
@@ -165,7 +166,8 @@ class Entry:
         """`UNMOVED` (same distance), `BANDED` (inside the tie band) or `MOVED` against `other`."""
         if self.distances[cid] == self.distances[other]:
             return UNMOVED
-        return BANDED if self.points_behind(cid, other) == 0.5 else MOVED
+        # `points_behind` returns exactly 0, 0.5 or 1, so `isclose` picks out the tie just as an equality would.
+        return BANDED if math.isclose(self.points_behind(cid, other), 0.5) else MOVED
 
 
 def _unread_points(mine, theirs):
@@ -269,7 +271,8 @@ def tape_table(flats, ranking, incumbent_id, floors=NO_FLOORS):
 
 def improved_readings(entries, cids, incumbent_id):
     """`{cid: [reading, ...]}`: the entries on which each candidate is ahead of the incumbent beyond the tie band."""
-    return {cid: [item.key for item in entries if item.points_behind(incumbent_id, cid) == 1.0] for cid in cids}
+    # `points_behind` returns exactly 0, 0.5 or 1, so `isclose` picks out the full point just as an equality would.
+    return {cid: [item.key for item in entries if math.isclose(item.points_behind(incumbent_id, cid), 1.0)] for cid in cids}
 
 
 def reading_status(tables, cid):
