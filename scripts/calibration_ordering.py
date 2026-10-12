@@ -68,7 +68,9 @@ MUFFLED_GATES = ("dsp.hf_4k8k", "dsp.hf_8k16k", "mos.sigmos_col", "listener.dull
 ALTERED_GATES = ("speech.speaker", "speech.cer_median", "speech.cer_tail")
 # A lower reading of any of these on the single 4 s probe than on the stitched print is "duller".
 DULL_READINGS = ("dsp.hf_4k8k", "mos.sigmos_col", "dsp.balance_top_db", "dsp.sib_abs_level_db")
-RANKING_EXCLUDED = ("dsp.gap_atten_db", "dsp.balance_top_db", "dsp.lf_programme_db")
+# `dsp.hiss_room_delta_db` (ear v4) is a dead-air guard, two-sided only for display: ranked at no change it would
+# charge every pause floor that differs from the source's in the room band.
+RANKING_EXCLUDED = ("dsp.gap_atten_db", "dsp.balance_top_db", "dsp.lf_programme_db", "dsp.hiss_room_delta_db")
 FAMILY_BY_PREFIX = {"dsp.balance_": "timbre", "dsp.lf_": "timbre", "dsp.sib_": "sibilance", "dsp.gap_": "pauses"}
 RANKED_STAT = "delta.median"
 GRID_SECTIONS = ("reward", "ranking")

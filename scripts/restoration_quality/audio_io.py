@@ -188,6 +188,11 @@ def resample_cached(mono, rate, target_rate, cache_dir, key):
     return resampled
 
 
+def resample(mono, rate, target_rate):
+    """`mono` at `target_rate` (`_resample`): the public name the same-percept transforms call."""
+    return _resample(mono, rate, target_rate)
+
+
 def _resample(mono, rate, target_rate):
     """soxr through librosa when it is installed, scipy's polyphase resampler otherwise."""
     try:

@@ -68,7 +68,17 @@ the Antigravity agent system.
     `--benign-pair SOURCE OUTPUT_A OUTPUT_B [LEDGER_ID]` measures the
     vetoes' floors on pairs a blind listener could not tell apart, in a
     report of their own (`experiments/reward/noise_floor_benign.json`;
-    points pool only with `--pool`);
+    points pool only with `--pool`). `--transforms hiss` scores ear v4's
+    same-percept transforms (`scripts/same_percept.py`: +-0.1 dB, a
+    0.37-sample delay, a soxr round trip, 16-bit requantisation, fresh
+    realisations of the floor), the tie bands of the hiss readings
+    (`experiments/reward/noise_floor_hiss.json`; each tie the reading's
+    `tie_floor`, the widest transform's p95), never a benign pair;
+  - `scripts/check_hiss_fixtures.py` (`python -m scripts.check_hiss_fixtures`):
+    ear v4's acceptance probe on the realistic-v2 fixtures, gapped linear
+    programmes with corpus, tape-hiss, flat or tape-shaped noise
+    (`--shape-from` a capture), scored through both hiss readings, the
+    acceptance table's fixture rows printed;
   - `scripts/variation_precheck.py` (`python -m scripts.variation_precheck`):
     plan 3.2a's pre-check on finished loop rounds, the per-tape oracle
     against the single best candidate, each pick through the audibility
@@ -82,22 +92,38 @@ the Antigravity agent system.
   - `scripts/autotune_guards.py` (a module of the self-driving loop, not a
     script): the v3 grids' guards, the verdict-reversal refusal, the
     audibility tie (stored verdicts keyed on `auditory.VERDICT_RULE`) and
-    the learned median veto;
+    the learned veto (family-wise), and the v4 grids' `constraints:` (hard
+    guards on dsp readings, any one tape: no new hiss, no dead air, no gated
+    hiss, no dulling, no musical noise);
   - `scripts/pair_alignment.py` (a module under every paired reading, not a
     script): the lag by GCC-PHAT on the loudest spans voting, abstention
     and polarity; `AI_RESTORE_ALIGN_METHOD=xcorr_head` (or
     `--align-method` on `validate_restoration.py` and
     `measure_tradeoff.py`) reproduces scores stored before 2026-10-11.
+    The hiss readings sit on its pair too;
   - `scripts/autotune_judging.py` (a module of the self-driving loop): the
     judging resolution, the tie band and the dead zones' floor from the
     Session 0 benign pairs, the hiss exemption (hiss readings take only
-    the scorer's jitter floor, `--jitter-floors`), the per-reading distance
-    table and the round's label in `log.md`, and the family-wise learned
-    veto (sign test across tapes, Holm across readings);
+    the scorer's jitter floor, `--jitter-floors`, and a v4 entry its grid
+    `tie`, with its dead zone kept), the per-reading distance table and the
+    round's label in `log.md`, and the family-wise learned veto (sign test
+    across tapes, Holm across readings); its docstring says which layer of
+    the loop owns what;
   - `scripts/rejudge_autotune.py` (`python -m scripts.rejudge_autotune`):
     the stored rounds of finished loops re-judged offline from their score
     files, old rule against new, with the vetoes' null simulation
-    (`--null-draws`); CPU only, decides nothing by itself.
+    (`--null-draws`); CPU only, decides nothing by itself;
+  - ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss under
+    the programme and in the pauses): the hiss readings
+    (`restoration_quality/hiss_floor.py`, `hiss_programme.py`,
+    `hiss_pause.py`), the grids `scripts/tune_grids/tata_v4.yaml` and
+    `music_v4.yaml` (the loop's and the sweep's default) with their `tie`
+    bands and `constraints:`, and the hiss degradations
+    (`scripts/degradations_hiss.py`);
+  - `scripts/same_percept.py` (a module, not a script): every same-percept
+    transform, the calibration's (`fresh_noise`, all-pass, fractional
+    delay, +-0.1 dB, dither) beside the hiss ties' (`fresh_floor`, soxr
+    round trip), and which consumer reads which subset.
 - [sonarqube-quality-gate/SKILL.md](sonarqube-quality-gate/SKILL.md): SonarQube
   Cloud on this repository: the CI scan, reading and fixing findings without
   suppressions, project settings on sonarcloud.io, failure triage.

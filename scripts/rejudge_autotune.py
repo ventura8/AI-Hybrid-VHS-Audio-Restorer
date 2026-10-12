@@ -98,11 +98,13 @@ def round_scores(loop_dir, record):
 def judge_with(scores, incumbent_id, context, rule):
     """The round's verdicts under one rule (`RULES`): ranking floors or none, then the veto rule on every candidate.
 
-    `context` holds the grid's `ranking`, its `guards` and the `floors`."""
-    veto_rule, floors = RULES[rule][1], context["floors"]
-    verdicts = at.judge(scores, incumbent_id, context["ranking"], floors=_ranking_floors(floors, rule))
+    `context` holds the grid's `ranking`, its `guards` and the `floors`. A v4 grid's `constraints:` apply under every
+    rule, as the loop applies them, and a grid `tie` bands its reading under every rule too: neither is what the four
+    rules compare."""
+    veto_rule, floors, guards = RULES[rule][1], context["floors"], context["guards"]
+    verdicts = at.judge(scores, incumbent_id, context["ranking"], floors=_ranking_floors(floors, rule), constraints=guards.constraints)
     for cid, verdict in verdicts.items():
-        vetoed = veto_rule(scores[cid], scores[incumbent_id], context["guards"].vetoes, floors)
+        vetoed = veto_rule(scores[cid], scores[incumbent_id], guards.vetoes, floors)
         if vetoed:
             verdict["vetoed"] = vetoed
     at.qualify(verdicts, incumbent_id, len(scores[incumbent_id]))

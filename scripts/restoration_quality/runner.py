@@ -93,6 +93,32 @@ Ear v3 wiring (the dsp family):
   lag (not gain-matched: see `timebase_entry`): holds, 40 ms plateaus, rate jumps and the speed
   error the source does not have. About 0.25 s per 15 s pair and 9 s on the 7.7 min Vaccin pair
   (2026-10-12, its batched FFTs on every core).
+
+Ear v4 wiring (the user's rule of 2026-10-11: be very critical of VHS hiss under speech or
+singing and in the pauses):
+
+- The hiss anchor (`hiss_floor.source_anchor`, the source's stationary floor per band from
+  R4's true pauses) is read once per source on the RAW source mono (a property of the source
+  file alone) with R0's programme bandwidth and brickwall, and cached as
+  `<cache>/profile/<source key>_hiss_<code hash>.json`; the hash covers `HISS_CODE`, so a
+  change to either reading or the modules they read with re-reads it (0.3-0.6 s per 134 s).
+- Every window not routed as silence reads `hiss_programme.programme_readings` and
+  `hiss_pause.pause_readings` on the aligned pair (`dsp.hiss_*`): `Pair.source` / `Pair.output`
+  as `audio_io.aligned_pair` returns them (the aligner above, its lag and polarity, the
+  least-squares gain match; the readings are gain-free, `hiss_programme.py` step 1 and 6), the
+  pair every other paired reading reads, never the level-matched copy the output's routes
+  are read on. They read at the critical playback level: the source's loud frames at
+  75 dB SPL for the programme reading (the output in the source's gain), each whole aligned
+  file's own loud frames for the pause reading. About 0.13 s + 0.03-0.1 s per 15 s window
+  per output.
+- `dsp.pause_depth_speech_db` repeats `dsp.pause_depth_db` on the speech route alone (the
+  dead-air guard of the v4 grids); `meta.hiss_anchor_pause_s`, `meta.hiss_anchor_validated`
+  and `card.meta["hiss_anchor"]` say what the anchor stands on.
+- The trade (`dsp_metrics.trade`, `measure_tradeoff.measure`) reads both files at their
+  native rates, so a 48 kHz source against a 44.1 kHz output read `file.noise_removed_db`
+  -23.49 dB, a meaningless number: on a rate mismatch it is skipped and
+  `card.meta["trade_skipped"]` says why; otherwise it re-reads the files with the pair's
+  aligner (`align_options`).
 """
 
 import gc
@@ -107,9 +133,13 @@ import numpy as np
 from scripts import measure_hum, pair_alignment
 from scripts.restoration_quality import (
     audio_io,
+    auditory,
     balance_metrics,
     dsp_metrics,
     file_metrics,
+    hiss_floor,
+    hiss_pause,
+    hiss_programme,
     lf_metrics,
     pause_metrics,
     sibilance,
@@ -147,6 +177,7 @@ MUTE_MAX_SHARE = 0.05
 # `median_floor_db`'s percentile method: the mean of the two middle p10s, or the higher one (`upper`).
 MEDIAN_METHODS = {False: "linear", True: "higher"}
 LEVEL_EPS = 1e-9
+SILENCE = "silence"
 
 
 class ModelRegistry:
@@ -184,6 +215,8 @@ class Pair:
         self.output_wav = audio_io.dc_free_copy(output_wav, self.cache_dir)
         source_audio, self.rate = audio_io.load_audio(self.source_wav)
         output_audio, output_rate = audio_io.load_audio(self.output_wav)
+        # The output's own rate: the trade reads the files as stored, so it is skipped when the rates differ.
+        self.output_rate = output_rate
         if output_rate != self.rate:
             output_audio = audio_io._resample(audio_io.to_mono(output_audio), output_rate, self.rate)[:, None]
         self.raw_source, self.raw_output = audio_io.to_mono(source_audio), audio_io.to_mono(output_audio)
@@ -220,14 +253,26 @@ class Pair:
 
 
 PROFILE_CODE = (source_profile, measure_hum, dsp_metrics, pause_metrics)
+# The code a hiss anchor comes from (ear v4): a cached anchor from other code is never served.
+HISS_CODE = (hiss_floor, hiss_programme, hiss_pause, pause_metrics, source_profile, dsp_metrics, auditory)
+
+
+def _code_hash(modules):
+    """A short hash of the source files of `modules`."""
+    digest = hashlib.sha256()
+    for module in modules:
+        digest.update(Path(module.__file__).read_bytes())
+    return digest.hexdigest()[:12]
 
 
 def profile_code_hash():
     """A short hash of the code a capture profile comes from: a cached profile from other code is never served."""
-    digest = hashlib.sha256()
-    for module in PROFILE_CODE:
-        digest.update(Path(module.__file__).read_bytes())
-    return digest.hexdigest()[:12]
+    return _code_hash(PROFILE_CODE)
+
+
+def hiss_code_hash():
+    """A short hash of the code a hiss anchor comes from (`HISS_CODE`)."""
+    return _code_hash(HISS_CODE)
 
 
 def profile_path(cache_dir, source_key):
@@ -245,13 +290,24 @@ def read_profile(path):
 
 
 def write_profile(path, profile):
-    """Writes `profile` to `path` through a temporary file, so a parallel scorer never reads half of it."""
+    """Writes `profile` to `path` through a temporary file, so a parallel scorer never reads half of it.
+
+    Windows refuses `os.replace` onto a file another process is replacing or reading at that moment (WinError 5): two
+    scorers that computed the same missing profile or hiss anchor at once (six parallel scorings of one source's IA
+    excerpts hit it). The other one wrote the same content, so the temporary file is dropped; without a file at `path`
+    the error stands.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     with os.fdopen(handle, "w", encoding="utf-8") as stream:
         stream.write(json.dumps(profile, default=_json_default))
-    os.replace(temporary, path)
+    try:
+        os.replace(temporary, path)
+    except PermissionError:
+        os.remove(temporary)
+        if not path.exists():
+            raise
 
 
 def load_profile(pair):
@@ -264,6 +320,51 @@ def load_profile(pair):
         write_profile(path, profile)
     pair.profile = profile
     return profile
+
+
+def hiss_anchor_path(cache_dir, source_key):
+    """Where the hiss anchor of the source with `source_key` is cached."""
+    return Path(cache_dir) / PROFILE_DIR / f"{source_key}_hiss_{hiss_code_hash()}.json"
+
+
+def _stored_anchor(path):
+    """The anchor cached at `path`, or None when it is missing or not an anchor."""
+    stored = read_profile(path)
+    try:
+        return None if stored is None else hiss_floor.Anchor.from_dict(stored)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def load_hiss_anchor(pair, profile):
+    """The source's hiss anchor: from the cache, else read on the raw source mono with R0's band and brickwall, and cached."""
+    path = hiss_anchor_path(pair.cache_dir, pair.source_key)
+    anchor = _stored_anchor(path)
+    if anchor is None:
+        anchor = hiss_floor.source_anchor(pair.raw_source, pair.rate, profile.get("prog_bandwidth_hz"), profile.get("brickwall_hz"))
+        write_profile(path, anchor.to_dict())
+    return anchor
+
+
+def hiss_context(pair, profile, anchor):
+    """What every window's hiss readings share: the anchor, R0's brickwall and each whole aligned file's loud-frame level."""
+    source_loud = hiss_floor.loud_db(pair.source)
+    return hiss_floor.HissContext(
+        anchor, profile.get("brickwall_hz"), hiss_floor.L_CRIT_DB - source_loud, source_loud, hiss_floor.loud_db(pair.output)
+    )
+
+
+def anchor_entries(anchor):
+    """The anchor's coverage as source-side `meta.*` file entries."""
+    return {
+        "meta.hiss_anchor_pause_s": {"source": float(anchor.pause_s)},
+        "meta.hiss_anchor_validated": {"source": float(anchor.validated)},
+    }
+
+
+def anchor_meta(anchor):
+    """`card.meta["hiss_anchor"]`: how the anchor was read and the playback level the readings assume."""
+    return {"how": anchor.how, "pause_s": float(anchor.pause_s), "validated": bool(anchor.validated), "l_crit_db": hiss_floor.L_CRIT_DB}
 
 
 def _profile(pair):
@@ -387,7 +488,7 @@ def median_floor_db(pair, windows, upper=False):
     and the hiss in dB, which caught a -90 dBFS lead-in but not a -65 dBFS one under -40 dBFS hiss.
     """
     floors = [floor for floor in (quiet_level_db(pair.source[w.slice_of(pair.rate)], pair.rate) for w in windows) if floor is not None]
-    return float(np.percentile(floors, 50, method=MEDIAN_METHODS[upper])) if floors else None
+    return float(np.percentile(floors, 50, method=MEDIAN_METHODS[bool(upper)])) if floors else None
 
 
 def span_floor_db(pair, windows):
@@ -406,7 +507,7 @@ def span_floor_db(pair, windows):
 
 def programme_windows(pair):
     """The windows not routed as silence, or every window when all of them are."""
-    kept = [w for w, route in zip(pair.windows, pair.routes) if route != "silence"]
+    kept = [w for w, route in zip(pair.windows, pair.routes) if route != SILENCE]
     return kept or list(pair.windows)
 
 
@@ -436,12 +537,29 @@ def _listener_window(pair, row):
     src, out = pair.source[sl], pair.output[sl]
     brickwall = _field(pair, "brickwall_hz")
     readings = {**pause_metrics.pause_readings(src, out, pair.rate), **sibilance.sib_readings(src, out, pair.rate, brickwall)}
+    readings["pause_depth_speech_db"] = readings["pause_depth_db"]
     readings.update(_route_readings(row.route, src, out, pair.rate, brickwall))
+    _store(row, readings)
+    _abs_delta(row, "dsp.sib_centroid_hz", "dsp.sib_centroid_abs_hz")
+    silent = row.output_route == SILENCE and row.route != SILENCE
+    row.source["dsp.output_silent"], row.output["dsp.output_silent"] = 0.0, 1.0 if silent else 0.0
+
+
+def _store(row, readings):
+    """Paired `{name: (source, output)}` readings onto the row as `dsp.<name>`."""
     for name, (src_value, out_value) in readings.items():
         row.source[f"dsp.{name}"], row.output[f"dsp.{name}"] = src_value, out_value
-    _abs_delta(row, "dsp.sib_centroid_hz", "dsp.sib_centroid_abs_hz")
-    silent = row.output_route == "silence" and row.route != "silence"
-    row.source["dsp.output_silent"], row.output["dsp.output_silent"] = 0.0, 1.0 if silent else 0.0
+
+
+def _hiss_window(pair, row, context):
+    """Ear v4's hiss readings on one window not routed as silence: under the programme and in the pauses."""
+    if row.route == SILENCE:
+        return
+    sl = row_slice(pair, row)
+    src, out = pair.source[sl], pair.output[sl]
+    _store(
+        row, {**hiss_programme.programme_readings(src, out, pair.rate, context), **hiss_pause.pause_readings(src, out, pair.rate, context)}
+    )
 
 
 def _route_readings(route, src, out, rate, brickwall):
@@ -471,22 +589,37 @@ def row_slice(pair, row):
 def _dsp_family(pair, card, _registry):
     profile = load_profile(pair)
     mute_floor = mute_floor_db(pair)
+    anchor = load_hiss_anchor(pair, profile)
+    context = hiss_context(pair, profile, anchor)
     for row in card.rows:
         _dsp_window(pair, row, mute_floor)
         _listener_window(pair, row)
+        _hiss_window(pair, row, context)
     _zimtohrli(pair, card)
     src_lufs, src_lra = dsp_metrics.loudness(pair.raw_source, pair.rate)
     out_lufs, out_lra = dsp_metrics.loudness(pair.raw_output, pair.rate)
     card.file["file.lufs"] = {"source": src_lufs, "output": out_lufs, "delta": out_lufs - src_lufs}
     card.file["file.lra"] = {"source": src_lra, "output": out_lra, "delta": out_lra - src_lra}
-    trade = dsp_metrics.trade(pair.source_wav, pair.output_wav, *align_options(pair)) or {}
-    for key, value in trade.items():
-        card.file[f"file.{key}"] = {"source": 0.0, "output": value, "delta": value}
+    card.file.update(trade_entries(pair, card))
     card.file.update(file_metrics.file_entries(pair.raw_source, pair.raw_output, pair.rate))
     card.file.update(dropout_entry(pair))
     card.file.update(timebase_entry(pair))
     card.file.update(profile_entries(profile))
-    card.meta.update({"source_profile": profile, "pause_vad": pause_metrics.resolved_vad_name()})
+    card.file.update(anchor_entries(anchor))
+    card.meta.update({"source_profile": profile, "pause_vad": pause_metrics.resolved_vad_name(), "hiss_anchor": anchor_meta(anchor)})
+
+
+def trade_entries(pair, card):
+    """`file.noise_removed_db` and `file.programme_deviation_db` (the branch's arbiter), or none when the files' rates differ.
+
+    `measure_tradeoff.measure` reads both files at their native rates, unchanged here; on a 48 kHz source against a
+    44.1 kHz output it read -23.49 dB of noise removed, so the pair records `trade_skipped` instead of a wrong number.
+    """
+    if getattr(pair, "output_rate", pair.rate) != pair.rate:
+        card.meta["trade_skipped"] = "sample rates differ"
+        return {}
+    trade = dsp_metrics.trade(pair.source_wav, pair.output_wav, *align_options(pair)) or {}
+    return {f"file.{key}": {"source": 0.0, "output": value, "delta": value} for key, value in trade.items()}
 
 
 def align_options(pair):

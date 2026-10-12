@@ -1031,8 +1031,9 @@ could not tell apart, A as the reference and B as `benign_pair`, so the
 floor is a difference nobody heard; the ledger record that says so is kept
 beside the pair. A report holds one operating point (identity, output or
 benign_pair) unless `--pool` is given, because a pooled percentile depends
-on how many deviations each point brought; `by_transform` shows each kind's
-share. The learned vetoes read the benign-pair report (see "The loop's v3
+on how many deviations each point brought; `by_transform` (the largest
+deviation) and `percentile_by_transform` show each kind's share. The
+learned vetoes read the benign-pair report (see "The loop's v3
 guards"), the group reward's tie band the output-point one.
 `scripts/restoration_quality/reward.py` turns a group of candidates into
 rewards: two-sided distances per reading, a missing reading counted as the
@@ -1062,6 +1063,57 @@ $env:AI_RESTORE_DATA_ROOTS = 'D:\ai_restore_work'
 .\.venv\Scripts\python.exe -m scripts.variation_precheck `
   D:\ai_restore_work\autotune_v6_music\apl\state.json --json precheck.json
 ```
+
+#### Critical of hiss (ear v4)
+
+The user's rule of 2026-10-11, in capitals: the ear must be very critical of
+VHS hiss under speech or singing and in silence and pauses. The user heard
+hiss on every Tata tape for weeks while no reading moved. Ear v4 reads both
+places at one declared critical playback level, each file's loud frames at
+75 dB SPL (`hiss_floor.L_CRIT_DB`):
+
+- `dsp.hiss_prog_margin_db` (`restoration_quality/hiss_programme.py`): the
+  hiss left under the programme over its masked threshold. The source's
+  stationary floor (the hiss anchor, read once per source from R4's true
+  pauses) and the output's removal on noise-dominated cells give the hiss;
+  the programme masks it (Johnston's tonal and noise offsets, spread across
+  ERB bands and forward in time). Programme the source's hiss hid, which a
+  clean output reveals, is told from hiss by a spectral cap: a band's
+  residual stands at most 6 dB over what the other bands show at the same
+  instant (validation round 1: the first build read a perfect fixture output
+  +9..+22 dB, the fixed one at or under 0 on 41 of 43 linear fixtures). It
+  reads the STFT frames wholly inside each window only (validation round 2:
+  the half-padded edge frames moved a window 2.4 dB under a 0.37-sample
+  shift of the output).
+- `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
+  floor over Terhardt's threshold in quiet, read where the source's pause
+  is silent apart from its hiss (a 200 ms block standing 3 dB over the
+  anchor holds programme: soft singing on a choir tape stood about 4 dB
+  over it). The hiss weight is half at 3.15 kHz and applied before the
+  band smoothing, so room tone mostly under 2-3 kHz, which the user
+  allows, does not read as hiss (a pink room floor low-passed at 2 kHz,
+  as loud as the tape's own floor at 100-1000 Hz, reads none); dead air is
+  a guard of its own.
+- Both are dB over audibility. Their excess, max(0, margin), is ranked
+  one-sided with target 0 by `scripts/tune_grids/tata_v4.yaml` and
+  `music_v4.yaml`, the loop's and the sweep's default, with tie bands from
+  same-percept transforms (`scripts/reward_noise_floor.py` with
+  `--transforms hiss`; each tie the widest transform's p95, the report's
+  `tie_floor`), never from Session 0's benign pairs. The fresh
+  realisation (`same_percept.fresh_floor`) keeps the floor's power within
+  0.04 dB and redraws it (correlation 0.07 with the old draw); the first
+  build's lost 0.32 dB of a white noise and correlated 0.26 with its draw,
+  so every fresh pause reading came out low and widened the ties.
+- The flags `listener.hiss_programme` (median) and `listener.hiss_pause`
+  (tail) fire at 0 dB and are the user's rule: no gates file and no
+  calibration moves them (`gates.USER_RULE_FIXED`).
+- Hard guards in the v4 grids' `constraints:` keep a loop from winning by
+  deleting programme or emptying the pauses (see "The loop's v3 guards").
+
+The output-quality-harness skill ("Critical of hiss") holds every step and
+constant; the acceptance record with each measured row is
+`docs/ear_v4_hiss.md`. `python -m scripts.check_hiss_fixtures` runs the
+fixture rows on `artifacts/realistic-v2`.
 
 ### Calibrating the output-quality metrics
 
@@ -1508,9 +1560,9 @@ family gives, since a veto can only take a qualification away.
 ### The loop's v3 guards
 
 An ear v3 grid adds three sections the loop applies (plan 1.5,
-`scripts/autotune_guards.py`); the v1 and v2 grids have none of them, so
-their rounds are judged as before, and `tune_restoration.py` reads none of
-them:
+`scripts/autotune_guards.py`), and an ear v4 grid a fourth; the v1 and v2
+grids have none of them, so their rounds are judged as before, and
+`tune_restoration.py` reads none of them:
 
 - `reversals:`, the verdict-reversal guard, one ledger boundary per entry:
   `{key: linear_air_gain_db, rejected_above: 2.0, verdict: r3-air-preference}`
@@ -1561,6 +1613,21 @@ them:
   the families it was run with; `python -m scripts.reward_noise_floor` runs dsp
   alone by default). A floor of 0 stops it with `reward.NO_BENIGN_FLOOR`, which
   asks for `--repeats 2` or more, or `resample_roundtrip` in `--transforms`.
+- `constraints:` (ear v4, `tata_v4.yaml` and `music_v4.yaml`): hard guards
+  on dsp readings, `{reading: {worse: up | down, max_move, bound}}`. A
+  candidate whose reading, on some tape, is worse than the incumbent's by
+  more than `max_move` (default 0) and lies beyond `bound` (default: none)
+  cannot win, and neither can one that lost a reading the incumbent has.
+  Past the bound the limit does not follow the incumbent: a candidate worse
+  than its incumbent and more than `max_move` past the bound cannot win
+  either, or a loop could creep `max_move` further every accepted round.
+  They are stage-1 readings, so every candidate is checked in both
+  judgements; `log.md` marks it `guarded` with the tape, the reading and its
+  move. A key that is not `metric.side.stat` with a registered metric stops
+  the loop as a typo. The v4 grids use them for no new audible hiss over
+  the incumbent or the raw tape, no dead air on speech windows, no room
+  band emptied, no hiss gated out of the pauses but kept under speech, no
+  dulling and no musical noise.
 
 Before a v3 round, write that report on the shipped APL and cathar outputs
 of the tuning tapes, with every family the vetoes name (`tata_v3`: speech
@@ -1627,7 +1694,13 @@ pause depth 5.8 dB): the user's rule of 2026-10-11 that the ear be very
 critical of VHS hiss. Their tie band, dead-zone floor and veto limit come
 from `--jitter-floors` (default `experiments\reward\noise_floor.json`, the
 reference repeat, `shift_1` and `requantise_16`); a report holding a benign
-pair is refused there.
+pair is refused there. The hiss flags (`listener.hiss_programme`,
+`listener.hiss_pause`) fall under the same rule. Ear v4's hiss entries
+carry a grid `tie` (the same-percept p95): their band is the larger of the
+tie and the jitter floor, with or without a floors file, and their dead
+zone stays as the grid sets it (0), so the tie forgives once; H1's
+`max_move` is the same tie (`scripts/autotune_judging.py`, "The hiss ear's
+ties").
 
 `log.md` gains, per round, a table of every scored candidate's distance per
 reading and tape, the floor and its source under each reading, and a `*`
@@ -1636,7 +1709,7 @@ every scored candidate stayed level with the incumbent and nothing else
 held one back ends
 `every move below the Session 0 benign-pair floor (N readings unmoved)`;
 otherwise it is a plateau, with how many candidates were level, moved and
-lost, or were held back by a veto, a gate or a reversal.
+lost, or were held back by a veto, a grid constraint, a gate or a reversal.
 
 `python -m scripts.rejudge_autotune` (command below) re-judges stored
 rounds from their score files four ways (old, band only, family-wise veto

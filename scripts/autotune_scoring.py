@@ -169,8 +169,9 @@ def reading_family(key):
 
 
 def grid_families(grid, gate_names=()):
-    """The scorer families a grid reads, in scoring order: dsp always, plus each ranking entry's, veto's and gate's family."""
-    keys = [*grid.get("ranking", {}), *(grid.get("vetoes") or {}), *gate_names]
+    """The scorer families a grid reads, in scoring order: dsp always, plus each ranking entry's, veto's, constraint's and
+    gate's family (the v4 constraints read dsp readings)."""
+    keys = [*grid.get("ranking", {}), *(grid.get("vetoes") or {}), *(grid.get("constraints") or {}), *gate_names]
     wanted = {"dsp", *map(reading_family, keys)}
     return tuple(name for name in tune.runner.ALL_FAMILIES if name in wanted)
 

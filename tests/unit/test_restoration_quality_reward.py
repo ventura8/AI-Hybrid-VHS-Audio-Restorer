@@ -204,3 +204,115 @@ def test_gate_constraints_mirror_the_incumbents_gate_counts():
     assert (worse.hard_gate, worse.listener_flag, worse.inaudible) == (True, False, True)
     assert rw.gate_constraints({rw.FLAG_KEY: 2.0}, incumbent).status() == "capped"
     assert rw.gate_constraints({rw.HARD_KEY: math.nan}, None).status() == "ok"
+
+
+# ----------------------------------------------------------------------------- ear v4: tie, constraints, tie_floors
+
+HISS = "dsp.hiss_prog_excess_db.output.median"
+
+
+def test_a_tie_key_widens_the_tie_band_and_a_floor_wider_than_it_wins():
+    """`tie` joins the number keys (0 by default); the band is the larger of the floor and the tie; neither adds nothing."""
+    grid = {HISS: {"target": 0.0, "family": "hiss_programme", "tie": 0.65}}
+    assert rw.parse_grid(grid)[HISS].tie == 0.65
+    assert rw.tolerance({HISS: 2.0}, grid) == {HISS: pytest.approx(0.65)}
+    assert rw.tolerance({HISS: 2.0}, grid, {HISS: 0.9}) == {HISS: pytest.approx(0.9)}
+    assert rw.tolerance({AIR: 2.0}, _grid(timbre=AIR)) == {}
+
+
+def test_a_negative_tie_is_refused():
+    """A tie band below zero is out of range, named with the reading."""
+    with pytest.raises(ValueError, match="tie out of range"):
+        rw.parse_grid({HISS: {"target": 0.0, "family": "hiss_programme", "tie": -0.1}})
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ({"worse": "sideways", "bound": 1.0}, "worse must be up or down"),
+        ({"worse": "up"}, "name max_move, bound or both"),
+        ({"worse": "up", "max_move": -0.5}, "max_move must be a finite number"),
+        ({"worse": "up", "max_move": float("inf")}, "max_move must be a finite number"),
+        ({"worse": "up", "bound": float("nan")}, "bound must be a finite number"),
+        ("up", "worse must be up or down"),
+    ],
+)
+def test_a_constraint_the_loop_cannot_apply_is_refused(entry, message):
+    """parse_constraints names the entry and what is wrong with it."""
+    with pytest.raises(ValueError, match=f"constraint {HISS}: {message}"):
+        rw.parse_constraints({HISS: entry})
+
+
+def test_a_constraints_section_must_be_a_mapping():
+    """A list is refused; nothing or an empty mapping is no constraint."""
+    with pytest.raises(ValueError, match="constraints must map"):
+        rw.parse_constraints([HISS])
+    assert rw.parse_constraints(None) == rw.parse_constraints({}) == {}
+
+
+def test_a_bound_only_constraint_trips_past_the_bound_and_never_on_an_improvement():
+    """G1-like: worse than the incumbent and past 35 trips; worse but under 35, or better past it, does not."""
+    rule = rw.parse_constraints({HISS: {"worse": "up", "bound": 35.0}})[HISS]
+    assert [rule.trips(value, incumbent) for value, incumbent in ((36.0, 30.0), (34.0, 30.0), (36.0, 37.0))] == [True, False, False]
+
+
+def test_a_max_move_only_constraint_trips_on_a_move_past_the_jitter():
+    """H1-like: a rise over 0.65 trips, one of 0.5 does not; down-worse constraints read the other way."""
+    rule = rw.parse_constraints({HISS: {"worse": "up", "max_move": 0.65}})[HISS]
+    dulling = rw.Constraint("down", 1.0)
+    assert [rule.trips(9.0, 8.0), rule.trips(8.5, 8.0)] == [True, False]
+    assert [dulling.trips(-2.5, -1.0), dulling.trips(-1.5, -1.0)] == [True, False]
+
+
+def test_a_constraint_with_both_needs_both():
+    """The pump rule: more than 3 over the incumbent and past 12, both; a lost reading trips, an unread incumbent never does."""
+    rule = rw.Constraint("up", 3.0, 12.0)
+    cases = ((16.0, 10.0), (11.5, 5.0), (13.0, 11.0), (None, 4.0), (40.0, None))
+    assert [rule.trips(value, incumbent) for value, incumbent in cases] == [True, False, False, True, False]
+    assert "past 12" in rule.describe(16.0, 10.0)
+
+
+def test_a_bounded_constraint_cannot_be_crept_past_round_by_round():
+    """Each accepted round may move max_move, so the incumbent drifts: past the bound by more than max_move a worse
+    candidate trips whatever its incumbent read; an incumbent already past it may still improve or hold."""
+    rule = rw.Constraint("up", 3.0, 11.0)
+    creep = [(13.9, 10.9), (16.8, 13.9), (19.7, 16.8)]
+    assert [rule.trips(value, incumbent) for value, incumbent in creep] == [False, True, True]
+    assert [rule.trips(18.0, 20.0), rule.trips(20.0, 20.0)] == [False, False]
+    dull = rw.Constraint("down", 0.25, -1.0)
+    assert [dull.trips(-1.2, -1.0), dull.trips(-1.5, -1.3), dull.trips(-1.1, -1.3)] == [False, True, False]
+
+
+def test_constrained_readings_name_what_the_candidate_tripped():
+    """Only the readings whose constraint trips against the incumbent's flat readings."""
+    rules = rw.parse_constraints({HISS: {"worse": "up", "max_move": 0.65}, AIR: {"worse": "down", "bound": -2.0}})
+    assert rw.constrained_readings({HISS: 9.0, AIR: -1.0}, {HISS: 8.0, AIR: -1.5}, rules) == [HISS]
+    assert rw.constrained_readings(None, None, rules) == []
+
+
+def test_a_tripped_constraint_excludes_the_candidate():
+    """`dsp_guard` is counted as excluded, like a hard gate or a learned veto."""
+    assert rw.Constraints(dsp_guard=True).status() == "excluded"
+    assert rw.gate_constraints({}, {}, dsp_guard=True).status() == "excluded"
+
+
+def test_tie_floors_refuse_a_benign_pair_report_for_a_hiss_grid():
+    """GRPO and the preference head take tie bands through tie_floors: a benign-pair report and a hiss family are refused."""
+    benign = {"operating_points": ["benign_pair"], "readings": {AIR: {"floor": 0.1}}}
+    grid = {HISS: {"target": 0.0, "family": "hiss_programme"}, AIR: {"target": 0.0, "family": "timbre"}}
+    with pytest.raises(ValueError, match=f"tie band {HISS}: .*same-percept"):
+        rw.tie_floors(benign, grid)
+    assert rw.tie_floors(benign, _grid(timbre=AIR)) == {AIR: 0.1}
+
+
+def test_tie_floors_take_an_output_point_report_for_a_hiss_grid():
+    """The same-percept report (the output point) gives the hiss readings their floors."""
+    report = {"operating_points": ["output"], "readings": {HISS: {"floor": 0.6}}}
+    assert rw.tie_floors(report, {HISS: {"target": 0.0, "family": "hiss_programme"}}) == {HISS: 0.6}
+
+
+def test_tie_floors_take_the_widest_transform_over_the_pooled_floor():
+    """A report's `tie_floor` (the widest transform's p95) is the tie band; `noise_floors` keeps the pooled floor for vetoes."""
+    report = {"operating_points": ["output"], "readings": {HISS: {"floor": 0.17, "tie_floor": 0.6}, AIR: {"floor": None}}}
+    assert rw.tie_floors(report, {HISS: {"target": 0.0, "family": "hiss_pause"}}) == {HISS: 0.6}
+    assert rw.noise_floors(report) == {HISS: 0.17}

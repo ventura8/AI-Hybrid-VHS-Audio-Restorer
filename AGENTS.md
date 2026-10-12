@@ -379,17 +379,69 @@ user set, with their reasons:
   head search, which read 68 of 205 cathar hunt outputs more than 8 samples
   off their true lag: re-score them before they decide anything, and leave
   out a clip whose alignment abstained.
-- The ear must be very critical of VHS hiss, under speech or singing and in
-  the pauses (2026-10-11). A reading of hiss or residual noise never takes a
-  tie band, a dead-zone floor or a veto limit from the Session 0 benign
-  pairs: those pairs differed grossly there (residual noise 16.4 dB, pause
-  depth 5.8 dB) and would blind the ear to hiss. Its floors come only from
-  scorer repeat jitter and same-percept transforms
-  (`scripts/autotune_judging.py`, `--jitter-floors`).
 - Learned training goes only where it fits (2026-10-08): GRPO for a
   per-tape settings policy, later, and only if it beats the single best
   preset; an anchored fine-tune for the Mel-RoFormer denoiser; a
   Bradley-Terry preference head as the judge. No generative engines.
+- Be very critical of VHS hiss in two places: under speech or singing, and
+  in silence and pauses (the user, 2026-10-11, in capitals). The user heard
+  hiss on every Tata tape for weeks while the harness never moved. Its one
+  ranked pause-level entry tied 3 dB of cleaning with 30 dB, the hiss flag
+  was display-only, and nothing measured hiss under the programme. Ear v4
+  (`scripts/tune_grids/tata_v4.yaml`, `music_v4.yaml`, the loop's and the
+  sweep's default) ranks the audibility of the residual hiss one-sided, with
+  inaudible as the target and a heavy weight. `dsp.hiss_prog_excess_db`
+  reads the hiss left under the programme over its masked threshold.
+  `dsp.hiss_pause_excess_db` reads the hiss-weighted pause floor over the
+  threshold in quiet. Both are read at a declared critical playback level:
+  each file's loud frames at 75 dB SPL. The flags `listener.hiss_programme`
+  and `listener.hiss_pause` fire at 0 dB.
+- "No hiss" never means dead air or a damaged programme. The user rejected
+  silent pauses (round one) and an underwater 's'. A quiet floor mostly
+  below about 2-3 kHz (room tone) may stay: the pause reading weighs a band
+  by w(f), half at 3.15 kHz, applied before its band smoothing, so a
+  hiss-free room floor low-passed at 2 kHz reads no audible hiss even as
+  loud as the tape's own floor. Hard guards (`constraints:` in the v4
+  grids) keep a loop from winning by deleting programme:
+  - no new audible hiss over the incumbent or the raw tape;
+  - pause depth on speech windows at most 35 dB, and the room band never
+    emptied;
+  - no hiss gated out of the pauses but kept under speech
+    (`dsp.hiss_pump_db`, medians over the pause frames, bound midway
+    between the cleared and the dead round-one renders: an expander that
+    empties the true pauses 20 dB is excluded);
+  - no musical noise;
+  - no dulling (`dsp.hiss_prog_kept_hf_db`, R1, R2);
+  - the learned vetoes, where DNSMOS BAK and SIGMOS NOISE only veto.
+- A bounded guard does not follow the incumbent past its bound: a candidate
+  worse than its incumbent and more than `max_move` past the bound is
+  excluded, or a loop could creep `max_move` further every accepted round
+  (the adversarial review of ear v4, 2026-10-12).
+- A reading of hiss or residual noise never takes a tie band, a dead-zone
+  floor or a veto limit from the Session 0 benign pairs: those pairs
+  differed grossly (residual noise 16.4 dB, pause depth 5.8 dB) and would
+  blind the ear to hiss. In the loop (`scripts/autotune_judging.py`) every
+  such reading (each `dsp.hiss_*`, the hiss flags, residual noise, the gap
+  and pause readings, DNSMOS BAK, SIGMOS NOISE) takes its floors from
+  scorer repeat jitter and same-percept near-copies (`--jitter-floors`).
+  A v4 hiss entry's band is its grid `tie`: the widest same-percept
+  transform's p95 (a fresh realisation of the same noise, a 0.37-sample
+  delay, +-0.1 dB, a soxr round trip, 16-bit requantisation; the
+  noise-floor report's `tie_floor`). Pooling the transforms that barely
+  move a hiss reading diluted the fresh draws' scatter, and H1 then refused
+  a same-percept redraw (validation round 2). The tie forgives once: the
+  entry keeps its dead zone of 0, and its H1 guard takes the same tie as
+  `max_move`, so a move inside it ties and passes and one past it the worse
+  way loses and is excluded. GRPO and the preference head take ties through
+  `reward.tie_floors`, which refuses a benign-pair report. The transforms
+  live in `scripts/same_percept.py`, which names the subset each consumer
+  reads. The pauses are read where the source is silent apart from its
+  hiss (blocks within 3 dB of its stationary hiss): R4's quiet frames on a
+  choir tape are soft singing, and a render that took the singing out would
+  otherwise win the pause family. The two hiss flags' thresholds are the
+  user's rule, which no calibration and no gates file moves
+  (`gates.USER_RULE_FIXED`). Only a blind session at a recorded device and
+  volume moves the 75 dB SPL level.
 
 ______________________________________________________________________
 
@@ -504,8 +556,10 @@ The repository defines the following modular skills in `.agents/skills/`.
   (`scripts/audibility_check.py`), the verdict ledger and the listening tool
   (`scripts/listen_ab.py`), the reward pieces
   (`scripts/reward_noise_floor.py`), the loop's judging resolution and its
-  offline re-judge (`scripts/rejudge_autotune.py`), and the variation
-  pre-check that gates the settings policy (`scripts/variation_precheck.py`).
+  offline re-judge (`scripts/rejudge_autotune.py`), the variation pre-check
+  that gates the settings policy (`scripts/variation_precheck.py`), and the
+  critical hiss readings of ear v4 (`dsp.hiss_*`, the v4 grids and their
+  constraints, `scripts/check_hiss_fixtures.py`).
 - [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
   SonarQube Cloud on this repository: the CI scan, reading and fixing its
   findings without suppressions, project settings on sonarcloud.io, and the

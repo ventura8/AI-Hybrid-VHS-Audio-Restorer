@@ -6,6 +6,9 @@ import pytest
 
 from scripts.restoration_quality import gates as g
 
+# The `source` a calibration entry derived from the known ordering names.
+KNOWN_ORDERING = "known ordering"
+
 
 def _aggregate(**entries):
     """`{metric: {...}}` from `metric=(output_median, output_tail, delta_median, delta_tail)`."""
@@ -149,7 +152,7 @@ def test_a_sync_fault_of_a_video_frame_is_a_hard_failure(entries, failed):
 def test_a_calibration_entry_that_names_its_source_is_calibrated(tmp_path):
     """A threshold a calibration derived carries its `source`; a hand override without one keeps the default."""
     path = tmp_path / "gates.json"
-    entries = {"listener.bright": {"threshold": 0.3, "source": "known ordering"}, "listener.dull": {"threshold": -0.4}}
+    entries = {"listener.bright": {"threshold": 0.3, "source": KNOWN_ORDERING}, "listener.dull": {"threshold": -0.4}}
     path.write_text(json.dumps(entries), encoding="utf-8")
     merged = g.load_gates(path)
     assert (merged["listener.bright"].threshold, merged["listener.bright"].calibrated) == (0.3, True)
@@ -159,7 +162,7 @@ def test_a_calibration_entry_that_names_its_source_is_calibrated(tmp_path):
 def test_a_stored_v2_gates_file_cannot_make_the_hiss_reading_count_again(tmp_path):
     """The v2 gates.json lists listener.hiss as a flag; its threshold merges, its severity does not (display-only)."""
     path = tmp_path / "gates.json"
-    entry = {"threshold": -19.95, "severity": "flag", "source": "known ordering"}
+    entry = {"threshold": -19.95, "severity": "flag", "source": KNOWN_ORDERING}
     path.write_text(json.dumps({"listener.hiss": entry, "listener.dead_air": {"threshold": -26.0, "severity": "hard"}}), encoding="utf-8")
     merged = g.load_gates(path)
     assert (merged["listener.hiss"].threshold, merged["listener.hiss"].severity, merged["listener.hiss"].calibrated) == (
@@ -179,3 +182,33 @@ def test_a_base_without_the_display_only_gate_takes_the_file_entry_whole(tmp_pat
     hiss = {"metric": "dsp.gap_air_db", "stat": "median", "op": "<=", "threshold": -20.0, "severity": "flag"}
     path.write_text(json.dumps({"listener.hiss": hiss}), encoding="utf-8")
     assert g.load_gates(path, base={})["listener.hiss"].severity == g.FLAG
+
+
+PROGRAMME_FLAG, PAUSE_FLAG = "listener.hiss_programme", "listener.hiss_pause"
+HISS_FLAGS = (PROGRAMME_FLAG, PAUSE_FLAG)
+
+
+def test_the_hiss_flags_fire_at_the_audibility_threshold():
+    """Ear v4: hiss under the programme (median) and in the pauses (tail) flag at 0 dB, uncalibrated, as listener flags."""
+    programme, pause = g.GATES[PROGRAMME_FLAG], g.GATES[PAUSE_FLAG]
+    assert (programme.metric, programme.stat, programme.op, programme.threshold) == ("dsp.hiss_prog_margin_db", "median", "<=", 0.0)
+    assert (pause.metric, pause.stat, pause.op, pause.threshold) == ("dsp.hiss_pause_margin_db", "tail", "<=", 0.0)
+    assert {(gate.severity, gate.calibrated) for gate in (programme, pause)} == {(g.FLAG, False)}
+
+
+def test_audible_hiss_is_counted_as_a_listener_flag():
+    """A margin over 0 dB fails the flag and counts; one under it passes."""
+    audible = _aggregate(**{"dsp.hiss_prog_margin_db": (1.0, 2.0, -5.0, -4.0), "dsp.hiss_pause_margin_db": (-3.0, -1.0, -9.0, -8.0)})
+    verdicts = g.evaluate_gates(audible)
+    assert g.flag_failures(verdicts).count(PROGRAMME_FLAG) == 1
+    assert _status(verdicts, PAUSE_FLAG) == "passed"
+
+
+def test_a_gates_file_cannot_move_the_users_hiss_rule(tmp_path):
+    """An entry for a hiss flag is ignored whole: threshold, statistic, severity and calibration stay the user's rule."""
+    path = tmp_path / "gates.json"
+    entry = {"threshold": 9.0, "stat": "delta.median", "severity": "hard", "source": KNOWN_ORDERING}
+    path.write_text(json.dumps(dict.fromkeys(HISS_FLAGS, entry)), encoding="utf-8")
+    merged = g.load_gates(path)
+    assert [merged[name] for name in HISS_FLAGS] == [g.GATES[name] for name in HISS_FLAGS]
+    assert g.USER_RULE_FIXED == frozenset(HISS_FLAGS)

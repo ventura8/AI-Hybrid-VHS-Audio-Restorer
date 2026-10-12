@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from scripts import autotune_guards as ag
 from scripts import autotune_restoration as at
 from scripts import autotune_scoring as scoring
 from scripts.restoration_quality import reward
@@ -47,7 +48,7 @@ def _judge(monkeypatch, score, families=("dsp", "speech")):
     monkeypatch.setattr(at, "score_round", score)
     args = SimpleNamespace(families=families, gates=None, language="ro", parallel=1)
     scorable = {cid: {} for cid in FIRST}
-    return at.score_and_judge(args, scorable, ({"t1": "t1.mov"}, Path(".")), RANKING, "inc", VETOES)
+    return at.score_and_judge(args, scorable, ({"t1": "t1.mov"}, Path(".")), RANKING, "inc", ag.Guards(vetoes=VETOES))
 
 
 def test_the_learned_families_run_only_on_the_incumbent_and_the_contenders(monkeypatch):

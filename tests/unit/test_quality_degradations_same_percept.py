@@ -10,6 +10,7 @@ import soundfile as sf
 from scripts import calibrate_quality_metrics as cal
 from scripts import calibration_checks as checks
 from scripts import quality_degradations as deg
+from scripts import same_percept
 
 RATE = 16000
 
@@ -35,7 +36,8 @@ def test_the_same_percept_transforms_join_the_benign_set_on_speech_and_on_tape()
     assert set(deg.SAME_PERCEPT) <= set(deg.BENIGN)
     assert set(deg.SAME_PERCEPT) <= set(deg.on_tape_benign())
     assert all(deg.benign_base(name) == "speech" and not deg.benign_changes(name) for name in deg.SAME_PERCEPT)
-    assert deg.BENIGN[: len(deg.BENIGN) - len(deg.SAME_PERCEPT)][-1] == "identity_music"
+    old = deg.BENIGN[: deg.BENIGN.index("identity_music") + 1]
+    assert deg.BENIGN == (*old, *deg.SAME_PERCEPT, *deg.LINEAR_BENIGN)
 
 
 def test_each_case_is_seeded_from_its_language_name_and_level():
@@ -72,20 +74,20 @@ def _frame_db(signal, seconds=0.1):
 def test_fresh_noise_keeps_the_recorded_noises_level_wander_frame_by_frame():
     """The fresh realisation follows the wobble within a decibel or so and is new noise; a plain phase surrogate is steady."""
     noise = _wobbling_noise()
-    fresh = deg.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))
+    fresh = same_percept.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))
     assert np.max(np.abs(_frame_db(fresh) - _frame_db(noise))) < 1.5
     assert abs(np.corrcoef(fresh, noise)[0, 1]) < 0.2
     assert np.max(np.abs(_band_db(fresh) - _band_db(noise))) < 1.0
-    steady = deg.resynthesised_noise(noise, deg.benign_rng("en", "fresh_noise"))
+    steady = same_percept.resynthesised_noise(noise, deg.benign_rng("en", "fresh_noise"))
     assert np.ptp(_frame_db(steady)) < 0.5 * np.ptp(_frame_db(noise))
 
 
 def test_a_silent_or_short_recorded_noise_gives_a_finite_realisation():
     for noise in (np.zeros(RATE), _noise(0.01)):
-        envelope = deg.noise_envelope(noise, RATE)
+        envelope = same_percept.noise_envelope(noise, RATE)
         assert envelope.shape == noise.shape
         assert np.all(envelope > 0.0)
-        assert np.all(np.isfinite(deg.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))))
+        assert np.all(np.isfinite(same_percept.fresh_realisation(noise, RATE, deg.benign_rng("en", "fresh_noise"))))
 
 
 def test_without_a_recorded_noise_two_realisations_of_the_excerpts_own_floor_are_added():
@@ -100,7 +102,7 @@ def test_without_a_recorded_noise_two_realisations_of_the_excerpts_own_floor_are
 @pytest.mark.parametrize("frequency", [200.0, 2000.0])
 def test_the_all_pass_filters_keep_every_magnitude_and_turn_the_phase(frequency):
     noise = _noise(4.0).astype(np.float64)
-    filtered = deg.allpass(noise, RATE, frequency).astype(np.float64)
+    filtered = same_percept.allpass(noise, RATE, frequency).astype(np.float64)
     assert np.max(np.abs(_band_db(filtered) - _band_db(noise))) < 0.3
     assert not np.allclose(filtered, noise, atol=1e-3)
 
@@ -108,7 +110,7 @@ def test_the_all_pass_filters_keep_every_magnitude_and_turn_the_phase(frequency)
 def test_the_fractional_delay_moves_a_tone_by_037_samples():
     t = np.arange(4 * RATE)
     tone = np.sin(2 * np.pi * 440.0 * t / RATE)
-    delayed = deg.fractional_delay(tone, deg.FRACTIONAL_DELAY_SAMPLES).astype(np.float64)
+    delayed = same_percept.fractional_delay(tone, same_percept.FRACTIONAL_DELAY_SAMPLES).astype(np.float64)
     expected = np.sin(2 * np.pi * 440.0 * (t - 0.37) / RATE)
     middle = slice(RATE, 3 * RATE)
     assert np.max(np.abs(delayed[middle] - expected[middle])) < 1e-3
@@ -140,8 +142,10 @@ def test_every_same_percept_case_applies_with_and_without_the_fixtures_noise(nam
 
 
 def _materials():
+    """The speech, music and recorded noise, and ear v4's linear capture the `*_linear` cases start from."""
     voice, noise = _voice(1.0), _noise(1.0)
-    return {"speech": voice, "music": voice, "noise": noise, "rate": RATE}
+    linear = dict(zip(cal.LINEAR_KEYS, deg.linear_capture(voice, noise, RATE)))
+    return {"speech": voice, "music": voice, "noise": noise, "rate": RATE, **linear}
 
 
 def _outputs(tmp_path, seed):

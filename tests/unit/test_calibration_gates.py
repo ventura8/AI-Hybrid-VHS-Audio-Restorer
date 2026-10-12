@@ -249,3 +249,16 @@ def test_a_floor_threshold_rests_on_no_round():
     floor_entry = {"listener.dead_air": {"source": cg.FLOOR, "severity": FLAG, "n_verdicts": 0}}
     ordering = _listed(-33.0, -11.0, rounds=("1",))
     assert cg.with_rounds(floor_entry, None, "1", ordering)["listener.dead_air"]["rounds"] == []
+
+
+HISS_FLOOR = {"dsp.hiss_prog_margin_db": {"centre": 0.0, "floor": 0.1}, "dsp.hiss_pause_margin_db": {"centre": 0.0, "floor": 0.1}}
+
+
+def test_the_hiss_flags_are_never_derived_even_from_wildcard_clean_records():
+    """Records accepted with no complaint (clean "*") predate the user's rule: the hiss flags are skipped with the reason."""
+    ordering = _listed(-33.0, -11.0, {"flags": {}, "clean": {"*": ["good"]}})
+    gates = {name: GATES[name] for name in ("listener.hiss_programme", "listener.hiss_pause")}
+    derived, skipped = cg.derive_gates(HISS_FLOOR, ordering, gates)
+    assert derived == {}
+    assert set(skipped.values()) == {cg.USER_RULE_REASON}
+    assert cg.USER_RULE_REASON.startswith("fixed by the user's rule of 2026-10-11")

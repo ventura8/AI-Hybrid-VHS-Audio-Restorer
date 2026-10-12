@@ -113,7 +113,7 @@ under-state. The calibration's v3b floor under `dsp.gap_hf_excess_db` was 0.0080
 fresh hiss realisation reads 0.67 (`pause_metrics`), so an effect could clear "three floors"
 on a difference no listener would call a change. They are: `fresh_noise` (the fixture's own
 recorded noise, `vhs - clean`, against a fresh realisation of it: the noise divided by its
-`NOISE_ENVELOPE_S` level trajectory, given new phases over the whole signal, and multiplied by
+`same_percept.NOISE_ENVELOPE_S` level trajectory, given new phases over the whole signal, and multiplied by
 that trajectory again, so the spectrum and the level wander both stay; the recorded noise wanders
 8.5-8.7 dB p5-p95 over 100 ms frames on en and fr, realistic-v2's +-3 dB wobble included, and a
 plain phase surrogate flattened that to 1.6-1.9 dB, a steadier hiss than the source's; on a real
@@ -125,7 +125,24 @@ from (language, name, level) (`benign_rng`), so adding them left every other cas
 Their floor feeds the effect-versus-floor sensitivity checks only
 (`calibrate_quality_metrics.synthetic`, `check_floor`): the gates,
 the known-ordering stand-in grid and the report's floor keep the old benign set, and nothing
-here reaches the tuning grids' dead zones.
+here reaches the tuning grids' dead zones. The transforms themselves live in
+`scripts/same_percept.py`, beside ear v4's (one set, three consumers: its docstring says which
+reads which); this module keeps the cases, their seeding and their dispatch (`_same_percept`).
+The fractional delay and the gain are the same functions the hiss ties use
+(`same_percept.fractional_delay`, symmetric 8192-sample padding; `same_percept.gain_db`).
+
+Ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss) adds `HISS_DEGRADATIONS`
+on a linear-track capture built from the fixture (`linear_capture`, base `vhs_linear`;
+builders in `scripts/degradations_hiss.py`): hiss changed under the programme alone or in the
+pauses alone, an HF-tilted residual, a hiss-free quiet room floor that must not read as hiss,
+dead pauses, islands and hiss removed by dulling. They need the fixture's own noise, so they
+run on fixtures only (`NEEDS_REFERENCE`). Two directions join for them (`calibration_checks`):
+`steady` (the levels' medians span no more than the tolerance or three floors) and `below`
+(every level under the benign centre by that much). The hiss readings' benign floor comes only
+from the `*_linear` benign cases (`benign_only`), the same-percept transforms on that capture
+(identity, requantisation, a soxr round trip, +0.1 dB, a 0.37-sample delay, a fresh
+realisation of the noise, `LINEAR_BENIGN`); every other reading's floor comes from the other
+benign cases, the speech-target `SAME_PERCEPT` set included in the checks' floor.
 """
 
 import contextlib
@@ -136,8 +153,10 @@ import numpy as np
 import scipy.ndimage
 import scipy.signal
 
+from scripts import degradations_hiss as hiss_gen
 from scripts import degradations_v3 as v3
 from scripts import realistic_defects as defects
+from scripts import same_percept
 from scripts.restoration_quality import audio_io, source_profile
 
 WHISTLE_HZ = 15625.0
@@ -186,6 +205,8 @@ GAP_SLOPE = "dsp.gap_slope_db_oct"
 GAP_LSD = "dsp.gap_lsd_db"
 GAP_ISLAND_KURT = "dsp.gap_island_kurt"
 GAP_MOD_DIST = "dsp.gap_mod_dist_db"
+GAP_HF_EXCESS = "dsp.gap_hf_excess_db"
+PAUSE_DEPTH = "dsp.pause_depth_db"
 COMPRESS_ATTACK_S = 0.01
 COMPRESS_RELEASE_S = 0.1
 MUTE_SPACING_S = 1.0
@@ -205,15 +226,6 @@ SIB_BODY_HZ = (1000.0, 4000.0)
 SIB_TOP_HZ = (6000.0, 12000.0)
 SMEAR_PRE_S = 0.03
 SMEAR_ENVELOPE_S = 0.01
-# The same-percept transforms: a Butterworth-Q all-pass, the fractional delay and its zero padding (longer than the
-# delay's ringing at a fraction of a sample, so the tail never wraps onto the head).
-ALLPASS_Q = 0.7071
-FRACTIONAL_DELAY_SAMPLES = 0.37
-FRACTIONAL_DELAY_PAD = 4096
-# The frame an excerpt's own noise floor is read on when it carries no recorded noise.
-NOISE_FRAME = 1024
-# The frame a recorded noise's level trajectory is read on: a fresh realisation keeps the wander slower than this.
-NOISE_ENVELOPE_S = 0.05
 
 
 @contextlib.contextmanager
@@ -420,95 +432,33 @@ def benign_rng(language, name, level=None):
     return np.random.default_rng(int(digest[:16], 16))
 
 
-def resynthesised_noise(noise, rng):
-    """The noise's whole-signal magnitude spectrum with new phases (a phase surrogate): its power spectrum exactly, and a
-    steady level. A frame-wise STFT re-synthesis loses about 6 dB to the incoherent overlap-add, so the whole signal is
-    used; `fresh_realisation` puts a recorded noise's level wander back."""
-    spectrum = np.fft.rfft(np.asarray(noise, dtype=np.float64))
-    phases = rng.uniform(-np.pi, np.pi, len(spectrum))
-    phases[[0, -1]] = 0.0
-    return np.fft.irfft(np.abs(spectrum) * np.exp(1j * phases), len(noise))
-
-
-def noise_envelope(noise, rate):
-    """`noise`'s level trajectory: the RMS of `NOISE_ENVELOPE_S` frames, interpolated to every sample, never 0."""
-    data = np.asarray(noise, dtype=np.float64)
-    size = max(int(rate * NOISE_ENVELOPE_S), 1)
-    count = max(len(data) // size, 1)
-    rms = np.sqrt(np.mean(np.resize(data, count * size).reshape(count, size) ** 2, axis=1))
-    rms = np.maximum(rms, max(float(np.max(rms)) * 1e-6, 1e-12))
-    return np.interp(np.arange(len(data)), (np.arange(count) + 0.5) * size, rms)
-
-
-def fresh_realisation(noise, rate, rng):
-    """A fresh realisation of a recorded noise: the phase surrogate of the noise with its level trajectory divided out,
-    under that same trajectory (`noise_envelope`). The recorded tape noise is not steady: realistic-v2 wobbles it +-3 dB
-    at 0.3-1 Hz on top of the tape's own wander (8.5-8.7 dB p5-p95 over 100 ms frames on en and fr), and a plain
-    surrogate held it within 1.6-1.9 dB, a different hiss."""
-    envelope = noise_envelope(noise, rate)
-    return resynthesised_noise(np.asarray(noise, dtype=np.float64) / envelope, rng) * envelope
-
-
-def floor_noise(mono, rng):
-    """Noise with the spectrum of `mono`'s quietest tenth of `NOISE_FRAME` frames, at their power (an excerpt's own hiss)."""
-    data = np.asarray(mono, dtype=np.float64)
-    frames = data[: len(data) // NOISE_FRAME * NOISE_FRAME].reshape(-1, NOISE_FRAME)
-    power = np.mean(frames**2, axis=1)
-    quiet = frames[power <= np.percentile(power, 10.0)]
-    psd = np.mean(np.abs(np.fft.rfft(quiet * np.hanning(NOISE_FRAME), axis=1)) ** 2, axis=0)
-    shape = np.sqrt(np.interp(np.fft.rfftfreq(len(data)), np.fft.rfftfreq(NOISE_FRAME), psd))
-    noise = np.fft.irfft(np.fft.rfft(rng.standard_normal(len(data))) * shape, len(data))
-    return noise * np.sqrt(np.mean(quiet**2) / max(float(np.mean(noise**2)), 1e-30))
-
-
 def fresh_noise(mono, rate, rng, noise=None):
     """`(source, output)`: the programme under its recorded noise and under a fresh realisation of it.
 
-    With one, the output carries `fresh_realisation` of it: its spectrum and its level wander,
-    new fine structure. Without a recorded noise (a real excerpt) both sides add their own noise
-    shaped like the excerpt's quietest frames, at that level: two realisations of the same added
-    hiss.
+    With one, the output carries `same_percept.fresh_realisation` of it: its spectrum and its
+    level wander, new fine structure. Without a recorded noise (a real excerpt) both sides add
+    their own noise shaped like the excerpt's quietest frames, at that level
+    (`same_percept.floor_noise`): two realisations of the same added hiss.
     """
     base = np.asarray(mono, dtype=np.float64)
     if noise is None:
-        return (base + floor_noise(base, rng)).astype(np.float32), (base + floor_noise(base, rng)).astype(np.float32)
+        added = (same_percept.floor_noise(base, rng) for _side in range(2))
+        return tuple((base + draw).astype(np.float32) for draw in added)
     recorded = np.resize(np.asarray(noise, dtype=np.float64), len(base))
-    return (base + recorded).astype(np.float32), (base + fresh_realisation(recorded, rate, rng)).astype(np.float32)
-
-
-def allpass(mono, rate, frequency_hz, q=None):
-    """A 2nd-order all-pass biquad (RBJ): every magnitude kept, the phase turned around `frequency_hz`."""
-    w0 = 2.0 * np.pi * frequency_hz / rate
-    alpha = np.sin(w0) / (2.0 * (q or ALLPASS_Q))
-    b = [1.0 - alpha, -2.0 * np.cos(w0), 1.0 + alpha]
-    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]
-    return scipy.signal.lfilter(b, a, np.asarray(mono, dtype=np.float64)).astype(np.float32)
-
-
-def fractional_delay(mono, samples):
-    """`mono` delayed by a fraction of a sample: a linear phase in the spectrum, zero-padded so nothing wraps."""
-    data = np.concatenate([np.asarray(mono, dtype=np.float64), np.zeros(FRACTIONAL_DELAY_PAD)])
-    spectrum = np.fft.rfft(data) * np.exp(-2j * np.pi * np.fft.rfftfreq(len(data)) * samples)
-    return np.fft.irfft(spectrum, len(data))[: len(mono)].astype(np.float32)
-
-
-def tpdf_dither(mono, rng):
-    """TPDF dither of one 16-bit LSB added, without re-quantising (`benign_requantise` rounds as well)."""
-    dither = (rng.random(len(mono)) + rng.random(len(mono)) - 1.0) / 32768.0
-    return (np.asarray(mono, dtype=np.float64) + dither).astype(np.float32)
+    return (base + recorded).astype(np.float32), (base + same_percept.fresh_realisation(recorded, rate, rng)).astype(np.float32)
 
 
 def _same_percept(name, base, rate, rng, noise):
-    """The `(source, output)` pair of one same-percept transform."""
+    """The `(source, output)` pair of one same-percept transform of `SAME_PERCEPT` (`scripts/same_percept.py`)."""
     if name == "fresh_noise":
         return fresh_noise(base, rate, rng, noise)
     if name in ALLPASS_HZ:
-        return base, allpass(base, rate, ALLPASS_HZ[name])
+        return base, same_percept.allpass(base, rate, ALLPASS_HZ[name])
     if name in BENIGN_GAIN_DB:
-        return base, gain(base, BENIGN_GAIN_DB[name])
+        return base, same_percept.gain_db(base, BENIGN_GAIN_DB[name]).astype(np.float32)
     if name == "frac_delay_0p37":
-        return base, fractional_delay(base, FRACTIONAL_DELAY_SAMPLES)
-    return base, tpdf_dither(base, rng)
+        return base, same_percept.fractional_delay(base, same_percept.FRACTIONAL_DELAY_SAMPLES).astype(np.float32)
+    return base, same_percept.tpdf_dither(base, rng)
 
 
 # --- the listener degradations: what the user heard on the Tata tapes, one at a time ---------
@@ -619,7 +569,10 @@ class Expectation:
 
     `direction` is "up" or "down" (it must move that way), "flat" (it must not move: within
     `tolerance` or three benign floors, or strictly under the move of its absolute `twin`),
-    or "match" (a source reading within `tolerance` octaves of the level the condition built).
+    "match" (a source reading within `tolerance` octaves of the level the condition built),
+    "steady" (the levels' medians span no more than `tolerance` or three floors, wherever they
+    sit) or "below" (every level's median under the benign centre by `tolerance` or three
+    floors, whichever is larger).
     """
 
     metric: str
@@ -668,6 +621,7 @@ DEGRADATIONS = {
             Expectation(SIGMOS_COL, "down"),
             Expectation(UTMOS, "down"),
             Expectation("mos.audiobox_pq", "down", True),
+            Expectation("dsp.hiss_prog_kept_hf_db", "down", True),
         ),
     ),
     # Ear v3: R4's island and modulation readings are reported here too. On the fr fixture they
@@ -681,6 +635,7 @@ DEGRADATIONS = {
             Expectation(SIGMOS_DISC, "down", True),
             Expectation(GAP_ISLAND_KURT, "up", True),
             Expectation(GAP_MOD_DIST, "up", True),
+            Expectation("dsp.hiss_island_kurt", "up", True),
         ),
     ),
     "robotic": Degradation(
@@ -730,7 +685,7 @@ DEGRADATIONS = {
         "speech",
         (-15.0, -30.0, -45.0),
         (
-            Expectation("dsp.pause_depth_db", "up"),
+            Expectation(PAUSE_DEPTH, "up"),
             Expectation("dsp.pause_pumping_db", "up"),
             Expectation("dsp.gap_air_db", "down"),
             Expectation(SIGMOS_DISC, "down", True),
@@ -934,14 +889,14 @@ V3_DEGRADATIONS = {
     "pause_residual_hiss": Degradation(
         "vhs",
         (2.0, 4.0, 6.0),
-        _residual((Expectation(GAP_SLOPE, "up"), Expectation("dsp.gap_hf_excess_db", "up"), Expectation(GAP_LSD, "up"))),
+        _residual((Expectation(GAP_SLOPE, "up"), Expectation(GAP_HF_EXCESS, "up"), Expectation(GAP_LSD, "up"))),
     ),
     "pause_residual_dull": Degradation(
         "vhs",
         (6000.0, 4000.0, 3000.0),
         _residual(
             (
-                Expectation("dsp.gap_hf_excess_db", "down"),
+                Expectation(GAP_HF_EXCESS, "down"),
                 Expectation(GAP_SLOPE, "down"),
                 Expectation(GAP_LSD, "up"),
             ),
@@ -957,7 +912,7 @@ V3_DEGRADATIONS = {
         "vhs",
         (3.0, 6.0, 10.0),
         (
-            Expectation("dsp.pause_depth_db", "up"),
+            Expectation(PAUSE_DEPTH, "up"),
             Expectation("dsp.pause_pumping_db", "up"),
             Expectation(GAP_ATTEN, "up"),
             Expectation(GAP_MOD_DIST, "up", True),
@@ -1073,17 +1028,106 @@ V3_DEGRADATIONS = {
     ),
 }
 DEGRADATIONS.update(V3_DEGRADATIONS)
+
+# --- ear v4: the critical hiss readings (scripts/degradations_hiss.py builds the cases) ------
+
+HISS_PREFIX = "dsp.hiss_"
+HISS_PROGRAMME = "dsp.hiss_prog_margin_db"
+HISS_PAUSE = "dsp.hiss_pause_margin_db"
+HISS_PUMP = "dsp.hiss_pump_db"
+HISS_KEPT_HF = "dsp.hiss_prog_kept_hf_db"
+ROOM_DELTA = "dsp.hiss_room_delta_db"
+# The programme reading's tie band (the fresh realisation's p95 at 75 dB), its pause twin's and the guards' benign moves.
+PROGRAMME_STEADY_DB = 0.65
+PAUSE_STEADY_DB = 0.5
+PAUSE_FLAT_DB = 0.3
+KEPT_HF_FLAT_DB = 0.5
+LINEAR = "vhs_linear"
+PROGRAMME_STEADY = Expectation(HISS_PROGRAMME, "steady", tolerance=PROGRAMME_STEADY_DB)
+REMOVED_DB = (6.0, 12.0, 20.0)
+HISS_DEGRADATIONS = {
+    "hiss_under_programme": Degradation(
+        LINEAR,
+        REMOVED_DB,
+        (
+            Expectation(HISS_PROGRAMME, "down"),
+            Expectation("dsp.hiss_prog_excess_db", "down", True),
+            Expectation(HISS_PAUSE, "flat", tolerance=PAUSE_FLAT_DB),
+            Expectation(HISS_PUMP, "down"),
+            Expectation(HISS_KEPT_HF, "flat", tolerance=KEPT_HF_FLAT_DB),
+            Expectation(TILT, "flat", tolerance=PAUSE_FLAT_DB),
+        ),
+    ),
+    "hiss_in_pauses_only": Degradation(
+        LINEAR,
+        REMOVED_DB,
+        (Expectation(HISS_PAUSE, "down"), PROGRAMME_STEADY, Expectation(GAP_ATTEN, "up"), Expectation(HISS_PUMP, "up", True)),
+    ),
+    "hiss_hf_tilt": Degradation(
+        LINEAR,
+        (6.0, 3.0, 0.0),
+        (
+            Expectation(HISS_PROGRAMME, "down"),
+            Expectation(HISS_PAUSE, "down"),
+            Expectation(GAP_HF_EXCESS, "down", True),
+            Expectation(HISS_KEPT_HF, "flat", tolerance=KEPT_HF_FLAT_DB),
+        ),
+    ),
+    "low_floor_kept": Degradation(
+        LINEAR,
+        (-18.0, -12.0, -6.0),
+        (
+            Expectation(HISS_PAUSE, "steady", tolerance=PAUSE_STEADY_DB),
+            Expectation(HISS_PAUSE, "below"),
+            PROGRAMME_STEADY,
+            Expectation(ROOM_DELTA, "up", True),
+            Expectation("dsp.hiss_room_onset_db", "down", True),
+        ),
+    ),
+    "dead_pauses": Degradation(
+        LINEAR,
+        (30.0, 45.0, 60.0),
+        (
+            Expectation(HISS_PAUSE, "down"),
+            Expectation(ROOM_DELTA, "down"),
+            Expectation(PAUSE_DEPTH, "up"),
+            Expectation(HISS_PUMP, "up"),
+            PROGRAMME_STEADY,
+        ),
+    ),
+    "hiss_islands": Degradation(
+        LINEAR,
+        (0.3, 0.1, 0.03),
+        (Expectation("dsp.hiss_island_kurt", "up"), Expectation(GAP_ISLAND_KURT, "up", True), Expectation(LKR, "up", True)),
+    ),
+    "hiss_removed_dulled": Degradation(
+        LINEAR, (3500.0, 2500.0, 1500.0), (Expectation(HISS_KEPT_HF, "down"), Expectation(HISS_PROGRAMME, "below"))
+    ),
+}
+DEGRADATIONS.update(HISS_DEGRADATIONS)
 # Planned readings a v3 degradation pre-registers before they exist (R9's flicker is P1).
 UNBUILT_READINGS = ("dsp.hf_flicker_db",)
 
 
 LISTENER = ("gated_pauses", "hiss_in_pauses", "sibilants_thinned", "sibilants_dulled", "transient_smear")
-# Same-percept transforms (see the module docstring): their floor recalibrates the sensitivity checks only.
+# Same-percept transforms on the speech target (see the module docstring): their floor recalibrates the sensitivity
+# checks only, every reading's but the hiss ones (`benign_only`), and never a gate (`calibrate_quality_metrics`).
 ALLPASS_HZ = {"allpass_200hz": 200.0, "allpass_2khz": 2000.0}
-BENIGN_GAIN_DB = {"gain_up_0p1db": 0.1, "gain_down_0p1db": -0.1}
+BENIGN_GAIN_DB = {"gain_up_0p1db": same_percept.GAIN_STEP_DB, "gain_down_0p1db": -same_percept.GAIN_STEP_DB}
 SAME_PERCEPT = ("fresh_noise", *ALLPASS_HZ, "frac_delay_0p37", *BENIGN_GAIN_DB, "tpdf_dither")
-# `identity_music` gives the stem and transient readings a benign floor of their own.
-BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music", *SAME_PERCEPT)
+# The same-percept transforms on the linear capture (ear v4): the hiss readings' floor and nothing else (`benign_only`), in
+# the checks and in the gates' floor alike (the hiss flags are the user's rule, so it sets no gate).
+LINEAR_BENIGN = (
+    "identity_linear",
+    "requantise_linear",
+    "resample_linear",
+    "gain_0_1_linear",
+    "delay_0_37_linear",
+    "fresh_noise_linear",
+)
+# `identity_music` gives the stem and transient readings a benign floor of their own. Both same-percept sets follow the
+# older cases, so those keep their order and their draws from the shared generator.
+BENIGN = ("identity", "requantise", "resample", "shift_5ms", "shift_30ms", "shift_60ms", "identity_music", *SAME_PERCEPT, *LINEAR_BENIGN)
 # A shift is benign to every lag-aligned reading, not to the raw pair's: `file_metrics` reads the
 # sync on the raw pair, so its lags and offset read the shift itself (5.0 / 30.0 / 60.0 ms), the
 # fault the 40 ms `file.sync_offset` gate stands for. The drift (one constant lag) stays benign.
@@ -1099,7 +1143,15 @@ def benign_changes(name):
 # Degradations a real tape excerpt cannot carry: they need the fixture's own recorded noise, a
 # second voice or a separate music bed, which only the fixtures have (`linear_bandwidth` runs
 # on a tape with the cut capture as its output: R0's reading of the cut is what it tests there).
-NEEDS_REFERENCE = ("hiss", "hiss_in_pauses", "words_spliced", "background_stripped", "stem_octave_muted", "music_hiss_removed")
+NEEDS_REFERENCE = (
+    "hiss",
+    "hiss_in_pauses",
+    "words_spliced",
+    "background_stripped",
+    "stem_octave_muted",
+    "music_hiss_removed",
+    *HISS_DEGRADATIONS,
+)
 TAPE_BASES = ("speech", "vhs")
 
 
@@ -1114,8 +1166,19 @@ def on_tape_benign():
 
 
 def benign_base(name):
-    """The material a benign case starts from: the music bed for the `*_music` cases, the speech target otherwise."""
+    """The material a benign case starts from: the linear capture for `*_linear`, the bed for `*_music`, else the speech."""
+    if name.endswith(hiss_gen.LINEAR_SUFFIX):
+        return LINEAR
     return "music" if name.endswith("_music") else "speech"
+
+
+def benign_only(name):
+    """The reading prefixes a benign case's floor is limited to: the hiss readings for `*_linear`, None (every other) otherwise."""
+    return (HISS_PREFIX,) if name.endswith(hiss_gen.LINEAR_SUFFIX) else None
+
+
+# The linear capture (ear v4) and its builders, named as the calibration reads them.
+linear_capture = hiss_gen.linear_capture
 
 
 def _pause_pair(base, rate, residual):
@@ -1271,6 +1334,8 @@ V1_BUILDERS = {
 
 def apply(name, level, base, rate, materials, rng):
     """The (source, output) pair for one degradation at one level."""
+    if name in hiss_gen.BUILDERS:
+        return hiss_gen.BUILDERS[name](level, base, rate, materials, rng)
     if name in V3_DEGRADATIONS:
         return v3_builder(name)(level, base, rate, materials, rng)
     if name in LISTENER:
@@ -1322,11 +1387,22 @@ def _apply_level(name, level, base, rate):
     return base, compress(base, rate, level)
 
 
+def _linear_benign(name, base, rate, rng, materials):
+    """One same-percept transform of the linear capture: the requantisation draws from `rng`, the rest from their own seeds."""
+    if name == "requantise_linear":
+        return benign_requantise(base, rng)
+    return hiss_gen.LINEAR_BENIGN[name](base, rate, materials)
+
+
 def apply_benign(name, base, rate, rng, materials=None):
     """The (source, output) pair for one benign transform: every metric must read nothing.
 
-    A same-percept transform takes `materials["noise"]` (the fixture's recorded noise) when there is one.
+    A `*_linear` case (ear v4, `LINEAR_BENIGN`) needs the calibration's `materials` only for `fresh_noise_linear` (the
+    noise apart); a same-percept transform (`SAME_PERCEPT`) takes `materials["noise"]` (the fixture's recorded noise)
+    when there is one.
     """
+    if name in LINEAR_BENIGN:
+        return base, _linear_benign(name, base, rate, rng, materials)
     if name in SAME_PERCEPT:
         return _same_percept(name, base, rate, rng, (materials or {}).get("noise"))
     return _near_copy(name, base, rate, rng)

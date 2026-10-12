@@ -1,5 +1,18 @@
 """Judging resolution for the self-driving loop: the tie band, the dead zones' floor, the hiss exemption, family-wise vetoes.
 
+Who owns what in the loop's ranking path (merge of ear v4, 2026-10-12): this module owns the
+ranking (each reading's distance, tie band and dead-zone floor, tape wins, the round's label and
+distance table) and the family-wise learned veto. `restoration_quality/reward.py` owns the
+primitives both branches share: `ReadingSpec` (distance, tie-band share, the grid's `tie`),
+`Veto`, `Constraint` and the constraint status. `autotune_guards` owns what is decided outside
+the ranking: the reversals before rendering, the audibility tie, the marking of the vetoes (here,
+family-wise) and of the grid's `constraints:` (any one tape, explicit limits, no floor), and
+`allowed`. `autotune_restoration.judge` composes them: tables, then constraints, then vetoes,
+then `qualify` (`_beats` and `allowed`). Nothing is applied twice: a reading's tie forgives once,
+in the band, never in its dead zone as well; a constraint never takes a floor and a veto never
+reads a grid `tie`. The sweep (`tune_restoration.rank_variants`) is not the loop: it ranks a
+whole group in tie buckets (`tune_restoration.tie_buckets`) where this module bands each pair.
+
 `scripts/autotune_restoration.judge` ranks candidates per tape by a weighted mean rank over the
 grid's readings. Until 2026-10-11 two candidates tied on a reading only when their two-sided
 distances were exactly equal (`tune_restoration._ranks`), and a learned veto fired on any one
@@ -36,7 +49,21 @@ limit from the benign pairs: those pairs differed grossly (residual noise floor 
 removed 19.9 dB, pause depth 5.8 dB, gap HF excess 4.5 dB) and would blind the ear to hiss.
 Their floors come only from scorer repeat jitter and same-percept near-copies
 (`experiments/reward/noise_floor.json`: the reference repeat, `shift_1`, `requantise_16`;
-`--jitter-floors`), and a report holding a benign pair is refused there.
+`--jitter-floors`), and a report holding a benign pair is refused there. The user's hiss flags
+(`listener.hiss_programme`, `listener.hiss_pause`, `gates.USER_RULE_FIXED`) fall under the
+same prefixes, so no floor reaches them either.
+
+The hiss ear's ties (ear v4, `tune_grids/tata_v4.yaml`, `music_v4.yaml`). A v4 reading spec may
+carry `tie`, in the reading's units: the p95 of same-percept transforms (a fresh realisation of
+the same noise, a 0.37-sample delay, +-0.1 dB, a soxr round trip, 16-bit requantisation;
+`scripts/reward_noise_floor.py --transforms hiss`, its `tie_floor` rounded up). Its band is the
+larger of that tie and the reading's floor (`Floors.band`), with or without a floors file, as
+`reward.tolerance` widens it. Such an entry keeps the dead zone its grid sets (`_zone_floor`): the
+hiss excess is one-sided, target 0, dead zone 0, so any audible hiss is charged and the most a
+tie forgives is the tie itself; a dead zone raised to the jitter floor beside a band of the tie
+would forgive the jitter twice. The grids' H1 constraints take the same tie as `max_move`, so a
+hiss move inside the tie is a tie in the ranking and passes H1, and one past it the worse way is
+behind in the ranking and excluded by H1: the two layers agree.
 
 Family-wise vetoes (E3 b). In `autotune_v6_music` a learned veto fired on any one clip-reading
 at 1x a p95 floor, about 48 tests per candidate (12 clips x 4 readings): in the cathar music
@@ -64,9 +91,19 @@ from scripts.restoration_quality import reward
 # Where `python -m scripts.reward_noise_floor` writes the output point's floors (reference repeat, shift_1, requantise_16).
 DEFAULT_JITTER_FLOORS = Path("experiments/reward/noise_floor.json")
 BENIGN_PAIR = "benign_pair"
-# The readings of hiss the user named (2026-10-11); `dsp.hiss_` covers every hiss reading the hiss branch adds.
-USER_HISS_PREFIXES = ("dsp.hiss_", "dsp.residual_noise_db.", "dsp.gap_", "dsp.pause_depth_db.", "dsp.hf_8k16k.", "mos.sigmos_noise.")
-# The other readings of the residual noise, on the same rule: pause pumping and tilt, the file's noise removed, DNSMOS BAK.
+# The readings of hiss the user named (2026-10-11): `dsp.hiss_` covers every reading of ear v4 (margins, excesses, the
+# guards), `listener.hiss` the flags on them (and the display-only gap-air flag).
+USER_HISS_PREFIXES = (
+    "dsp.hiss_",
+    "listener.hiss",
+    "dsp.residual_noise_db.",
+    "dsp.gap_",
+    "dsp.pause_depth_db.",
+    "dsp.hf_8k16k.",
+    "mos.sigmos_noise.",
+)
+# The other readings of the residual noise, on the same rule: pause pumping and tilt, ear v4's speech-route pause depth,
+# the file's noise removed, DNSMOS BAK.
 SAME_RULE_PREFIXES = ("dsp.pause_", "file.noise_removed_db.", "mos.dnsmos_bak.")
 HISS_PREFIXES = USER_HISS_PREFIXES + SAME_RULE_PREFIXES
 ALPHA = 0.05
@@ -104,11 +141,17 @@ class Floors:
         jitter = _number(self.jitter.get(reading))
         return jitter if is_hiss_reading(reading) else max(_number(self.benign.get(reading)), jitter)
 
-    def source(self, reading):
-        """Where `floor(reading)` comes from, for the round's log."""
+    def band(self, reading, tie=0.0):
+        """The tie band of `reading`: the larger of its floor and the grid's `tie` (ear v4), 0 with neither."""
+        return max(self.floor(reading), _number(tie))
+
+    def source(self, reading, tie=0.0):
+        """Where `band(reading, tie)` comes from, for the round's log."""
         # `_number` makes every floor 0.0 (unknown) or positive, so `<= 0` is the exact zero test without a float equality.
-        if self.floor(reading) <= 0.0:
+        if self.band(reading, tie) <= 0.0:
             return "none"
+        if _number(tie) >= self.floor(reading):
+            return "grid tie"
         if is_hiss_reading(reading) or _number(self.jitter.get(reading)) > _number(self.benign.get(reading)):
             return "jitter"
         return "benign pair"
@@ -138,7 +181,7 @@ def jitter_floors(report, where=""):
 def describe_floors(floors):
     """One line for the console: where the ranking's floors come from."""
     if floors == NO_FLOORS:
-        return "none: exact ties, every dead zone as the grid sets it"
+        return "none: exact ties, every dead zone as the grid sets it (a grid `tie` still bands its reading)"
     return f"{len(floors.benign)} benign-pair readings, {len(floors.jitter)} jitter readings (hiss readings: jitter only)"
 
 
@@ -194,18 +237,26 @@ def _signed(value, direction):
 
 def _floored(spec, floor):
     """The spec with its dead zone bounded from below by `floor`, at unit weight (the weight multiplies the rank)."""
-    return reward.ReadingSpec(spec.target, spec.family, max(spec.dead_zone, floor), spec.scale, 1.0)
+    return reward.ReadingSpec(spec.target, spec.family, max(spec.dead_zone, floor), spec.scale, 1.0, spec.tie)
+
+
+def _zone_floor(spec, floor):
+    """What bounds a spec's dead zone from below: its floor, or nothing for an entry with a grid `tie` (module docstring)."""
+    return 0.0 if spec.tie > 0.0 else floor
 
 
 def entry(key, spec, values, floors=NO_FLOORS):
-    """The `Entry` of one ranking entry over `{cid: value}`; a bad v3 spec raises ValueError naming `key`."""
+    """The `Entry` of one ranking entry over `{cid: value}`; a bad v3 spec raises ValueError naming `key`.
+
+    The band is `floors.band(key, tie)`: a hiss reading's jitter floor or a grid `tie`, never a benign pair's floor.
+    """
     if not isinstance(spec, dict):
         return Entry(key, 1.0, {cid: _signed(v, spec) for cid, v in values.items()}, dict.fromkeys(values, 0.0))
     reading = reward.parse_grid({key: spec})[key]
-    floor = floors.floor(key)
-    unit = _floored(reading, floor)
+    band = floors.band(key, reading.tie)
+    unit = _floored(reading, _zone_floor(reading, floors.floor(key)))
     return Entry(
-        key, reading.weight, {cid: unit.distance(v) for cid, v in values.items()}, {cid: unit.noise(v, floor) for cid, v in values.items()}
+        key, reading.weight, {cid: unit.distance(v) for cid, v in values.items()}, {cid: unit.noise(v, band) for cid, v in values.items()}
     )
 
 
@@ -308,8 +359,9 @@ def _ahead(table, cid, incumbent_id):
 
 
 def _held_back(verdict, base):
-    """Whether something other than the ranking kept a candidate out: a reversal, a veto, more failures or flags."""
-    if verdict.get("refused") or verdict.get("vetoed"):
+    """Whether something other than the ranking kept a candidate out: a reversal, a veto, a grid constraint (ear v4), more
+    failures or flags."""
+    if verdict.get("refused") or verdict.get("vetoed") or verdict.get("constrained"):
         return True
     return any(verdict.get(key, 0.0) > base.get(key, 0.0) for key in ("failures", "flags"))
 
@@ -381,19 +433,31 @@ def _ranked_keys(ordered):
     return list(keys)
 
 
-def _table_head(keys, floors):
+def _reading_specs(ranking):
+    """The ranking's v3 entries (`{reading: spec dict}`), the v1 / v2 direction entries left out."""
+    return {key: spec for key, spec in (ranking or {}).items() if isinstance(spec, dict)}
+
+
+def grid_ties(ranking):
+    """`{reading: tie}` of the ranking's v3 entries that carry a grid `tie` (ear v4); a bad spec raises ValueError."""
+    return {key: spec.tie for key, spec in reward.parse_grid(_reading_specs(ranking)).items() if spec.tie > 0.0}
+
+
+def _table_head(keys, floors, ties):
     head = ["", "per-reading distances (per tape; * moved past the tie band against the incumbent):", ""]
     head += ["| candidate | change | " + " | ".join(keys) + " |", "|---|---|" + "---|" * len(keys)]
-    return head + ["| floor | | " + " | ".join(f"{floors.floor(key):.3g} ({floors.source(key)})" for key in keys) + " |"]
+    cells = (f"{floors.band(key, ties.get(key, 0.0)):.3g} ({floors.source(key, ties.get(key, 0.0))})" for key in keys)
+    return head + ["| floor | | " + " | ".join(cells) + " |"]
 
 
-def distance_lines(ordered, described, floors=NO_FLOORS):
-    """The round's per-reading distance table: one row per scored candidate, the floor and its source under each reading."""
+def distance_lines(ordered, described, floors=NO_FLOORS, ranking=None):
+    """The round's per-reading distance table: one row per scored candidate, the band and its source under each reading
+    (the floor, or the grid `tie` of `ranking` where it is wider)."""
     keys = _ranked_keys(ordered)
     if not keys:
         return []
     rows = [(cid, verdict) for cid, verdict in ordered if verdict.get("distances")]
-    return _table_head(keys, floors) + [
+    return _table_head(keys, floors, grid_ties(ranking)) + [
         f"| {cid} | {described(cid)} | " + " | ".join(_reading_cells(verdict, keys)) + " |" for cid, verdict in rows
     ]
 

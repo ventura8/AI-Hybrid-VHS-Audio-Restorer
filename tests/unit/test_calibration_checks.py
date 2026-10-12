@@ -27,8 +27,8 @@ class _Case:
 
 
 def _benign():
-    """One case per benign name; the hf_4k8k deltas sit on a symmetric 0.1 grid, so the centre is 0 and the floor its edge."""
-    cases = [_Case("benign", name, None) for name in deg.BENIGN]
+    """One case per benign name but the hiss set's; the hf_4k8k deltas sit on a symmetric 0.1 grid (centre 0, floor its edge)."""
+    cases = [_Case("benign", name, None) for name in deg.BENIGN if deg.benign_only(name) is None]
     half = (len(cases) - 1) / 2.0
     readings = {
         c.case_id: {"dsp.hf_4k8k": 0.1 * (i - half), "speech.cer": 0.02, "meta.prog_bandwidth_hz": 4000.0} for i, c in enumerate(cases)

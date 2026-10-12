@@ -1,7 +1,8 @@
 """The self-driving loop's ear v3 guards (plan 1.5): what a v3 grid adds to `autotune_restoration`'s verdict.
 
 A v3 grid (`tune_grids/tata_v3.yaml`, `music_v3.yaml`) carries three sections the loop
-applies; a v1 or v2 grid has none of them (`NO_GUARDS`) and its rounds are judged as before:
+applies and a v4 grid (`tata_v4.yaml`, `music_v4.yaml`) a fourth, `constraints:`; a v1 or v2
+grid has none of them (`NO_GUARDS`) and its rounds are judged as before:
 
 - `reversals:` the verdict-reversal guard, one ledger boundary per entry
   (`{key, rejected_above | rejected_below, verdict}`, `reward.parse_reversals`). A move that
@@ -39,9 +40,27 @@ applies; a v1 or v2 grid has none of them (`NO_GUARDS`) and its rounds are judge
   points to `--families` (the report reads only the families it was run with, dsp by
   default), a zero floor to `--repeats 2` or more or `resample_roundtrip`
   (`reward.NO_FLOOR`, `reward.NO_BENIGN_FLOOR`). A hiss reading's veto limit takes its jitter
-  floor instead (`autotune_judging.veto_floors`, the user's rule of 2026-10-11).
+  floor instead (`autotune_judging.veto_floors`, the user's rule of 2026-10-11): the v4 grids'
+  DNSMOS BAK and SIGMOS NOISE vetoes are measured in `--jitter-floors`, never in a benign pair.
+- `constraints:` (ear v4, 2026-10-12) the grid's hard guards (`reward.parse_constraints`):
+  `{reading: {worse: up|down, max_move?, bound?}}`. A candidate whose reading, on some tape, is
+  worse than the incumbent's by more than `max_move` (default 0) and lies beyond `bound`
+  (default: none) cannot win, nor can one worse than the incumbent's and more than `max_move`
+  past the bound (`reward.Constraint`: the limit does not follow the incumbent round by round),
+  nor one that lost a reading the incumbent has
+  (`mark_constraints`, `reward.gate_constraints(dsp_guard=...)`). The readings are stage-1 dsp
+  readings, so every candidate is checked in both judgements. A key that does not split as
+  `metric.side.stat`, with a registered metric, side output or delta and a stat the runner
+  flattens, stops the loop as a typo. The v4 grids use them to keep "no hiss" from being won
+  by deleting programme: no new audible hiss over the incumbent or the raw tape, no dead air,
+  no hiss gated out of the pauses but kept under speech, no dulling, no musical noise.
+  A constraint trips on any one tape, unlike the family-wise veto: its limits are explicit
+  numbers in the reading's own units (a hiss guard's `max_move` is its reading's `tie`, the
+  same-percept jitter report's p95), so neither a floors file nor a sign test moves them, and
+  a candidate it excludes counts as held back in the round's label
+  (`autotune_judging.plateau_label`).
 
-Each refused, tied or vetoed candidate gets a cell in the round's table and a line in
+Each refused, tied, vetoed or guarded candidate gets a cell in the round's table and a line in
 `log.md` with the reason: the boundary and its ledger verdict, or the tape, the reading and
 its move.
 """
@@ -57,7 +76,7 @@ import scipy.signal
 
 from scripts import autotune_judging as judging
 from scripts import degradations_v3
-from scripts.restoration_quality import audio_io, auditory, reward
+from scripts.restoration_quality import audio_io, auditory, reward, runner, scorecard
 
 # The air shelf as the ledger heard it: every round-3 render ran `treble=f=7500` (`linear_air_freq_hz` was hard-coded
 # until 2026-10-09), so a reversal on `linear_air_gain_db` is a gain at this corner.
@@ -92,7 +111,10 @@ GUARD_FINDINGS = (
     ("tie", "audibility tie: `{cid}` {move} is inaudible from the incumbent on every tape; not scored"),
     ("refused", "verdict reversal: `{cid}` {move} refused, not rendered: {why}"),
     ("vetoed", "learned veto: `{cid}` {move} cannot win: {why}"),
+    ("constrained", "guard: `{cid}` {move} cannot win: {why}"),
 )
+# The sides a constraint may read (`runner.aggregates_for_tuning` flattens these two).
+CONSTRAINT_SIDES = ("output", "delta")
 
 
 @dataclass(frozen=True)
@@ -101,12 +123,14 @@ class Guards:
 
     `vetoes` is `{reading: reward.Veto}` (the `vetoes:` section with its floors), `reversals`
     `(reward.Reversal, ...)` (the `reversals:` section), `audibility_offset_db` the masking
-    offset of the audibility tie (the `audibility:` section), None for no tie.
+    offset of the audibility tie (the `audibility:` section), None for no tie, and `constraints`
+    `{reading: reward.Constraint}` (the `constraints:` section).
     """
 
     vetoes: dict = field(default_factory=dict)
     reversals: tuple = ()
     audibility_offset_db: float | None = None
+    constraints: dict = field(default_factory=dict)
 
 
 NO_GUARDS = Guards()
@@ -143,25 +167,43 @@ def _audibility_offset(section):
     return float(offset)
 
 
-def loop_guards(grid, floors=None, knobs=()):
-    """The grid's `vetoes:`, `reversals:` and `audibility:` sections, checked; SystemExit names what is wrong.
+def known_reading(key):
+    """Whether `key` is a flat reading the harness produces: `metric.side.stat`, a registered metric, output or delta."""
+    parts = str(key).rsplit(".", 2)
+    return len(parts) == 3 and parts[0] in scorecard.METRICS and parts[1] in CONSTRAINT_SIDES and parts[2] in runner.FLAT_STATS
 
-    `floors` is `reward.noise_floors(report)`: a veto is measured in its reading's benign floor,
-    so a grid with a veto and no floor above 0 for it stops the loop. `knobs` are the settings the loop
-    tunes; a reversal naming none of them would never fire, so it is refused as a typo.
-    """
+
+def _parsed_guards(grid, floors):
+    """The grid's guard sections parsed; SystemExit names a bad entry."""
     try:
-        guards = Guards(
+        return Guards(
             reward.parse_vetoes(grid.get("vetoes"), floors or {}),
             reward.parse_reversals(grid.get("reversals")),
             _audibility_offset(grid.get("audibility")),
+            reward.parse_constraints(grid.get("constraints")),
         )
     except ValueError as error:
         raise SystemExit(f"grid: {error}") from error
-    unknown = sorted({rule.key for rule in guards.reversals} - set(knobs))
-    if unknown:
-        raise SystemExit(f"grid: reversals name settings no engine tunes: {unknown}")
+
+
+def loop_guards(grid, floors=None, knobs=()):
+    """The grid's `vetoes:`, `reversals:`, `audibility:` and `constraints:` sections, checked; SystemExit names what is wrong.
+
+    `floors` is `reward.noise_floors(report)`: a veto is measured in its reading's benign floor,
+    so a grid with a veto and no floor above 0 for it stops the loop. `knobs` are the settings the loop
+    tunes; a reversal naming none of them would never fire, so it is refused as a typo, and so is a
+    constraint naming a reading the harness does not produce.
+    """
+    guards = _parsed_guards(grid, floors)
+    _refuse("reversals name settings no engine tunes", sorted({rule.key for rule in guards.reversals} - set(knobs)))
+    _refuse("constraints name readings the harness does not produce", sorted(key for key in guards.constraints if not known_reading(key)))
     return guards
+
+
+def _refuse(what, names):
+    """Stops the loop naming `names` when there are any."""
+    if names:
+        raise SystemExit(f"grid: {what}: {names}")
 
 
 def noise_floors(path):
@@ -172,9 +214,10 @@ def noise_floors(path):
 def describe_guards(guards):
     """One line for the console: what the grid adds to the verdict."""
     if guards == NO_GUARDS:
-        return "none (the grid has no vetoes, reversals or audibility section)"
+        return "none (the grid has no vetoes, reversals, constraints or audibility section)"
     tie = "off" if guards.audibility_offset_db is None else f"at a {guards.audibility_offset_db:g} dB masking offset"
-    return f"{len(guards.vetoes)} learned vetoes, {len(guards.reversals)} verdict reversals, audibility tie {tie}"
+    counts = f"{len(guards.vetoes)} learned vetoes, {len(guards.reversals)} verdict reversals, {len(guards.constraints)} constraints"
+    return f"{counts}, audibility tie {tie}"
 
 
 # ----------------------------------------------------------------------------- before rendering: the ledger's boundaries
@@ -281,12 +324,21 @@ def find_ties(live, incumbent_id, tapes, out_dir, offset_db):
     return {cid for cid in live if cid != incumbent_id and inaudible_everywhere(out_dir, incumbent_id, cid, tapes, offset_db)}
 
 
-# ----------------------------------------------------------------------------- judging: the learned median veto
+# ----------------------------------------------------------------------------- judging: the learned veto and the constraints
 
 
 def _move(flat, base, reading):
     value = (flat or {}).get(reading)
     return "unread" if value is None else f"{float(value) - float(base[reading]):+.3g}"
+
+
+def _tripped(tape_scores, incumbent_scores, readings_of):
+    """`["<slug> <reading> <move>", ...]` for every tape and reading `readings_of(flat, incumbent flat)` names."""
+    found = []
+    for slug, flat in tape_scores.items():
+        base = incumbent_scores.get(slug) or {}
+        found += [f"{slug} {reading} {_move(flat, base, reading)}" for reading in readings_of(flat, base)]
+    return found
 
 
 def learned_vetoes(tape_scores, incumbent_scores, vetoes):
@@ -295,11 +347,17 @@ def learned_vetoes(tape_scores, incumbent_scores, vetoes):
     The any-tape rule the loop judged by until 2026-10-11, kept for the offline re-judge
     (`scripts/rejudge_autotune.py`); the loop now vetoes family-wise (`mark_vetoes`).
     """
-    found = []
-    for slug, flat in tape_scores.items():
-        base = incumbent_scores.get(slug) or {}
-        found += [f"{slug} {reading} {_move(flat, base, reading)}" for reading in reward.vetoed_readings(flat, base, vetoes)]
-    return found
+    return _tripped(tape_scores, incumbent_scores, lambda flat, base: reward.vetoed_readings(flat, base, vetoes))
+
+
+def constraint_trips(tape_scores, incumbent_scores, constraints):
+    """`["<slug> <reading> <move>", ...]` for every tape and reading whose grid constraint the candidate trips.
+
+    Any one tape trips it, unlike the family-wise learned veto: a constraint is a hard guard on a dsp reading with an
+    explicit `max_move` and `bound` in the reading's own units (the hiss guards' from the same-percept jitter report),
+    never a floor or a sign test.
+    """
+    return _tripped(tape_scores, incumbent_scores, lambda flat, base: reward.constrained_readings(flat, base, constraints))
 
 
 def mark_vetoes(verdict, tape_scores, incumbent_scores, vetoes, floors=None):
@@ -312,14 +370,22 @@ def mark_vetoes(verdict, tape_scores, incumbent_scores, vetoes, floors=None):
         verdict["vetoed"] = vetoed
 
 
+def mark_constraints(verdict, tape_scores, incumbent_scores, constraints):
+    """Adds `constrained` to a candidate's verdict when it trips a grid constraint on some tape."""
+    constrained = constraint_trips(tape_scores, incumbent_scores, constraints or {})
+    if constrained:
+        verdict["constrained"] = constrained
+
+
 def _gate_counts(verdict):
     return {reward.HARD_KEY: verdict.get("failures", 0.0), reward.FLAG_KEY: verdict.get("flags", 0.0)}
 
 
 def allowed(verdict, base):
-    """reward's constraint status is "ok": no more hard failures or listener flags than the incumbent, and no learned veto."""
-    constraints = reward.gate_constraints(_gate_counts(verdict), _gate_counts(base), learned_veto=bool(verdict.get("vetoed")))
-    return constraints.status() == "ok"
+    """reward's constraint status is "ok": no more hard failures or listener flags than the incumbent, no learned veto and no
+    tripped grid constraint."""
+    flags = {"learned_veto": bool(verdict.get("vetoed")), "dsp_guard": bool(verdict.get("constrained"))}
+    return reward.gate_constraints(_gate_counts(verdict), _gate_counts(base), **flags).status() == "ok"
 
 
 # ----------------------------------------------------------------------------- the log
@@ -331,9 +397,11 @@ def aside_cell(verdict):
 
 
 def qualifies_cell(verdict):
-    """The verdict cell of a scored candidate."""
+    """The verdict cell of a scored candidate: vetoed, guarded (a grid constraint), yes or -."""
     if verdict.get("vetoed"):
         return "vetoed"
+    if verdict.get("constrained"):
+        return "guarded"
     return "yes" if verdict["qualifies"] else "-"
 
 

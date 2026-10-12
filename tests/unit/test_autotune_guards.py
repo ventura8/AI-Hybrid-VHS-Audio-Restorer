@@ -374,3 +374,57 @@ def test_the_command_line_refuses_a_zero_floor_before_it_renders(tmp_path, monke
     assert "--repeats 2 or more" in str(refused.value)
     assert "resample_roundtrip" in str(refused.value)
     rounds.assert_not_called()
+
+
+# ----------------------------------------------------------------------------- ear v4: the constraints guard
+
+V4_FLOORS = {reading: 0.12 for reading in at.tune.load_grid(GRIDS / "tata_v4.yaml")["vetoes"]}
+PUMP = "dsp.hiss_pump_db.output.median"
+EXCESS = "dsp.hiss_prog_excess_db.output.median"
+
+
+@pytest.mark.parametrize(("name", "constraints"), [("tata_v4.yaml", 16), ("music_v4.yaml", 8)])
+def test_a_v4_grid_brings_its_constraints(name, constraints):
+    """The v4 grids parse with their vetoes measured in benign floors, the air reversal, the tie and the constraints."""
+    guards = _guards(name, V4_FLOORS | _v3_floors(name))
+    assert len(guards.constraints) == constraints
+    assert ag.describe_guards(guards).endswith(f"1 verdict reversals, {constraints} constraints, audibility tie at a 24 dB masking offset")
+
+
+def test_a_misspelt_constraint_reading_stops_the_loop():
+    """A constraint naming a reading the harness does not produce would never trip: the loop refuses it as a typo."""
+    for key in ("dsp.hiss_pmup_db.output.median", "dsp.hiss_pump_db.source.median", "dsp.hiss_pump_db.output.p50", "hiss"):
+        with pytest.raises(SystemExit, match="constraints name readings the harness does not produce"):
+            ag.loop_guards({"constraints": {key: {"worse": "up", "max_move": 1.0}}})
+
+
+def test_a_constraint_entry_the_loop_cannot_apply_stops_it():
+    """A constraint without max_move or bound stops the loop, named with the reading."""
+    with pytest.raises(SystemExit, match=f"grid: constraint {PUMP}: name max_move, bound or both"):
+        ag.loop_guards({"constraints": {PUMP: {"worse": "up"}}})
+
+
+def test_a_candidate_that_trips_a_constraint_on_one_tape_is_guarded():
+    """mark_constraints names the tape, the reading and the move; allowed then refuses the candidate."""
+    rules = ag.reward.parse_constraints({PUMP: {"worse": "up", "max_move": 3.0, "bound": 12.0}})
+    verdict, base = {"failures": 0.0, "flags": 0.0}, {"failures": 0.0, "flags": 0.0}
+    ag.mark_constraints(verdict, {"t1": {PUMP: 20.0}, "t2": {PUMP: 5.0}}, {"t1": {PUMP: 4.0}, "t2": {PUMP: 4.0}}, rules)
+    assert verdict["constrained"] == ["t1 dsp.hiss_pump_db.output.median +16"]
+    assert (ag.allowed(verdict, base), ag.qualifies_cell({**verdict, "qualifies": False})) == (False, "guarded")
+
+
+def test_a_candidate_inside_every_constraint_is_left_as_it_was():
+    """No mark, still allowed; a verdict with no constraint section is untouched too."""
+    rules = ag.reward.parse_constraints({EXCESS: {"worse": "up", "max_move": 0.65}})
+    verdict = {"failures": 0.0, "flags": 0.0}
+    ag.mark_constraints(verdict, {"t1": {EXCESS: 8.2}}, {"t1": {EXCESS: 8.0}}, rules)
+    ag.mark_constraints(verdict, {"t1": {EXCESS: 99.0}}, {"t1": {EXCESS: 8.0}}, None)
+    assert ("constrained" not in verdict, ag.allowed(verdict, dict(verdict))) == (True, True)
+
+
+def test_the_log_says_which_constraint_kept_a_candidate_from_winning():
+    """The guard finding names the candidate, its move and the reading it tripped."""
+    ordered = [("abc", {"constrained": ["t1 dsp.hiss_pump_db.output.median +16"]})]
+    assert ag.guard_findings(ordered, lambda cid: "{pause_floor_fill_db: 8}") == [
+        "guard: `abc` {pause_floor_fill_db: 8} cannot win: t1 dsp.hiss_pump_db.output.median +16"
+    ]

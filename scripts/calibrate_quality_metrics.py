@@ -105,9 +105,11 @@ GATES = gates_mod.GATES
 # would then give it no floor at all (every R11 check would clear "three floors" of zero).
 # 6 (2026-10-10): R11 reads its band on a rate-scaled STFT (1.35 Hz bins) and `dsp.attack_db` is paired on the
 # source's onsets: a schema-5 score (the R11 subset runs before either) reads both the old way.
-# 7 (2026-10-12): R12's time-base readings (`file.timebase_*`) are new; a schema-6 score lacks them, so
-# the benign cases would give the new hard gates and the `sync_holds` / `sync_drift` checks no floor.
-SCORE_SCHEMA = 7
+# 7 (2026-10-12): R12's time-base readings (`file.timebase_*`) are new on one branch, ear v4's hiss readings
+# (`dsp.hiss_*`) and `dsp.pause_depth_speech_db` on the other; each branch's schema-7 score lacks the other's.
+# 8 (2026-10-12, their merge): every score carries both, so the new hard gates, the `sync_holds` / `sync_drift`
+# checks and the `*_linear` benign cases' hiss floors all have readings to stand on.
+SCORE_SCHEMA = 8
 SPEECH_FIXTURE = "mid00_speech_m15"
 DONOR_FIXTURE = "mid01_speech_m15"
 MUSIC_FIXTURE = "mid00_musiconly_m15"
@@ -120,6 +122,8 @@ TAPE_LANGUAGE = "ro"
 # fr beside en (2026-10-09): en's readable window holds 10 fricative frames, under the texture's 30; de and es
 # hold none and it two; fr holds 102 and orders the `sibilant_islands` levels (0.14 / 0.36 / 0.75 over 8 seeds).
 DEFAULT_LANGUAGES = ("en", "fr")
+# Ear v4's linear-track capture built from the fixture (`quality_degradations.linear_capture`): the hiss cases' base.
+LINEAR_KEYS = ("prog_linear", "noise_linear", "vhs_linear")
 # The benign floor, for scripts that cite it from here (`reward_noise_floor.py`).
 noise_floor = checks_mod.noise_floor
 ORACLE = "oracle"
@@ -177,7 +181,8 @@ def _materials(fixtures_dir, language):
         "music": music,
         "rate": rate,
     }
-    return {**materials, **_music_capture(fixtures_dir, language)}
+    linear = dict(zip(LINEAR_KEYS, deg.linear_capture(clean, noise, rate)))
+    return {**materials, **_music_capture(fixtures_dir, language), **linear}
 
 
 def _music_capture(fixtures_dir, language):
@@ -219,7 +224,11 @@ def _degradation_cases(materials, language, out_dir, rng, names=None):
 
 
 def _benign_rng(language, name, rng):
-    """A same-percept case's own generator, seeded from (language, name); the older cases keep drawing from `rng`."""
+    """A same-percept case's own generator, seeded from (language, name); the older cases keep drawing from `rng`.
+
+    The `*_linear` cases (ear v4) take `rng` too: only `requantise_linear` draws from it, after every older case, and the
+    others draw from their own seeds (`degradations_hiss`), so neither set moves the other's cases.
+    """
     return deg.benign_rng(language, name) if name in deg.SAME_PERCEPT else rng
 
 

@@ -33,6 +33,9 @@ DEFAULT_PICK_METRICS = (
     "dsp.sib_texture_db",
     "dsp.gap_hf_excess_db",
     "dsp.gap_mod_dist_db",
+    # Ear v4: the hiss heard under the programme and in the pauses (the windows where it is most audible).
+    "dsp.hiss_prog_margin_db",
+    "dsp.hiss_pause_margin_db",
 )
 
 

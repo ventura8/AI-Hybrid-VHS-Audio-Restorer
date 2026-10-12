@@ -91,11 +91,15 @@ def test_the_document_marks_uncalibrated_gates_and_two_sided_targets(scored):
 
 
 def test_the_profile_is_cached_beside_the_source_features(scored):
-    """One JSON per source under `<cache>/profile`, named by the source key and the profile code's hash."""
+    """One profile JSON per source under `<cache>/profile`, named by the source key and the profile code's hash.
+
+    Ear v4's hiss anchor sits beside it, named by the hiss code's hash (`_hiss_` sorts after the hex digits).
+    """
     _result, _card, folder = scored
-    cached = list((folder / "cache" / runner.PROFILE_DIR).glob("*.json"))
-    assert len(cached) == 1
-    assert cached[0].stem.endswith(runner.profile_code_hash())
+    names = sorted(path.stem for path in (folder / "cache" / runner.PROFILE_DIR).glob("*.json"))
+    assert len(names) == 2
+    assert names[0].endswith(runner.profile_code_hash())
+    assert names[1].endswith(f"_hiss_{runner.hiss_code_hash()}")
 
 
 def test_the_tuning_view_flattens_the_new_readings(scored):

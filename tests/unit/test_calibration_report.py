@@ -105,3 +105,15 @@ def test_the_oracle_check_and_a_refusal_render(tmp_path):
 def test_a_report_without_the_oracle_check_renders_as_before(tmp_path):
     """An older report shape (no oracle, no refusal) still renders."""
     assert "## Oracle pairs" not in _rendered(tmp_path)
+
+
+def test_the_ear_v4_span_and_under_centre_checks_render(tmp_path):
+    """`steady` shows its span against the allowance, `below` its edge; both list the level medians."""
+    steady = {**ROW, "expect": "steady", "status": "pass", "span": 0.1, "allowed": 0.5, "medians": [-30.0, -29.9, -29.95]}
+    below = {**ROW, "expect": "below", "status": "fail", "edge": -0.3, "medians": [-30.0, -20.0, -0.2]}
+    report = _report()
+    report["checks"] += [steady, below]
+    report_mod.write_reports(tmp_path, report, {})
+    markdown = (tmp_path / "report.md").read_text("utf-8")
+    assert "| d | m | steady | pass | | | 0.100 / 0.500 | -30.000, -29.900, -29.950 |" in markdown
+    assert "| d | m | below | fail | | | -0.300 | -30.000, -20.000, -0.200 |" in markdown

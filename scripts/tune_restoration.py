@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tune cathar and auto_pure_linear on the user's own tapes, judged by the output-quality harness.
 
-    tune_restoration.py prepare --name tata_v1 --tapes-dir "D:\\Tata\\New folder" --grid scripts/tune_grids/tata_v1.yaml
+    tune_restoration.py prepare --name tata_v1 --tapes-dir "D:\\Tata\\New folder" --grid scripts/tune_grids/tata_v4.yaml
     tune_restoration.py run     --name tata_v1 [--engines cathar apl] [--variants cathar__baseline ...] [--limit N] [--force]
     tune_restoration.py score   --name tata_v1 [--metrics all|dsp,...] [--gates gates.json] [--rescore]
     tune_restoration.py report  --name tata_v1
@@ -24,9 +24,18 @@ from ear v3 on (`tune_grids/tata_v3.yaml`, `music_v3.yaml`), a reading spec
 reads too: such an entry ranks on its two-sided distance `max(0, |x - target| - dead_zone) /
 scale` (lower first, so everything inside the dead zone ties) and weighs its rank by
 `weight` in the mean rank.
+
+Ear v4 (`tune_grids/tata_v4.yaml`, `music_v4.yaml`, the default grid since 2026-10-12): an
+entry may carry `tie` in the reading's units (the p95 of same-percept transforms, from
+`scripts/reward_noise_floor.py --transforms hiss`). Its distances are then ranked in tie
+buckets (`tie_buckets`): a distance within one tie of its bucket's lowest ranks with it, so a
+sub-jitter difference is a tie. The grids' `vetoes:`, `reversals:`, `audibility:` and
+`constraints:` sections are applied only by the self-driving loop
+(`scripts/autotune_restoration.py`); this sweep reads none of them.
 """
 
 import argparse
+import bisect
 import dataclasses
 import hashlib
 import importlib
@@ -82,6 +91,8 @@ RUN_TIMEOUT_PER_EXCERPT_S = 900
 # (the defect hunt of 2026-10-11), so the app is launched on batches that stay under this budget.
 COMMAND_LINE_BUDGET = 24000
 DEFAULT_GATES = Path("experiments/quality_calibration/gates.json")
+# Ear v4 (2026-10-12): critical of hiss under the programme and in the pauses.
+DEFAULT_GRID = Path("scripts/tune_grids/tata_v4.yaml")
 CONFIG_YAML = "config.yaml"
 SOURCE_WAV_SUFFIX = ".src.wav"
 TIMING_JSON = "timing.json"
@@ -634,15 +645,37 @@ def _ranks(values, direction):
     return ranks
 
 
+def _cluster_starts(values, tie):
+    """The lowest value of each tie bucket over sorted `values`: a value more than `tie` past its bucket's start opens one."""
+    starts = []
+    for value in values:
+        if not starts or value - starts[-1] > tie:
+            starts.append(value)
+    return starts
+
+
+def tie_buckets(distances, tie):
+    """Each distance's tie bucket (0 = best), None kept: a distance within `tie` of its bucket's lowest ranks with it.
+
+    Buckets anchored on the values themselves, not a fixed grid: on `round(d / tie)` the pair 8.00 / 8.20 at a tie of
+    0.65 straddled the 8.125 boundary and ranked apart, a sub-jitter difference made decisive.
+    """
+    starts = _cluster_starts(sorted(d for d in distances if d is not None), tie)
+    return [None if d is None else bisect.bisect_right(starts, d) - 1 for d in distances]
+
+
 def ranked_values(key, values, spec):
     """`(values, direction, weight)` one ranking entry ranks on: a direction ("up" | "down") as it stands, weight 1;
-    a v3 reading spec as its two-sided distance, lower first (None ranks last), with its weight. A bad spec raises
-    ValueError naming `key` (`reward.parse_grid`)."""
+    a v3 reading spec as its two-sided distance, lower first (None ranks last), with its weight; with a `tie` (ear v4)
+    the distances' tie buckets (`tie_buckets`). A bad spec raises ValueError naming `key` (`reward.parse_grid`)."""
     if not isinstance(spec, dict):
         return values, spec, 1.0
     reading = REWARD.parse_grid({key: spec})[key]
     unit = dataclasses.replace(reading, weight=1.0)
-    return [unit.distance(value) for value in values], "down", reading.weight
+    distances = [unit.distance(value) for value in values]
+    if reading.tie > 0.0:
+        distances = tie_buckets(distances, reading.tie / reading.scale)
+    return distances, "down", reading.weight
 
 
 def _unread(values):
@@ -1025,7 +1058,7 @@ def _parse_args(argv=None):
     parser.add_argument("command", choices=("prepare", "run", "score", "report", "listen", "all"))
     parser.add_argument("--name", required=True)
     parser.add_argument("--tapes-dir", default=None)
-    parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v1.yaml"))
+    parser.add_argument("--grid", type=Path, default=DEFAULT_GRID)
     parser.add_argument("--engines", nargs="*", default=None)
     parser.add_argument("--variants", nargs="*", default=None)
     parser.add_argument("--limit", type=int, default=0)
