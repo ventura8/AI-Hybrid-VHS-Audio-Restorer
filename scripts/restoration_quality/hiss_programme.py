@@ -44,9 +44,12 @@ one timeline:
    3 kHz to 1.06 x the top readable band, the output in the source's gain; None where the
    output's margin is under -10 dB, where the texture is inaudible).
 
-Validated on `artifacts/realistic-v2` m12 tape-noise fixtures with two spliced 1.2 s gaps (the
-prototype at 75 dB): every perfect output reads -8.79 or less, the oracle ladder is monotone,
-gain +-0.1 dB and a 0.37-sample delay move nothing, a fresh realisation of the noise p95 0.617.
+Checked on `artifacts/realistic-v2` m12 tape-noise fixtures with two spliced 1.2 s gaps at the
+tape's noise relation (`scripts/check_hiss_fixtures.py`, Tele7abc's shape, 23 of 40 validated):
+gain +-0.1 dB moves nothing, a 0.37-sample delay p95 0.011 dB, the oracle ladder is monotone on 22
+of 23, physical removal matches the oracle within 0.03 dB, a fresh realisation p95 1.02. The
+ladder saturates 13-14 dB under the source, where the programme's own leak into the noise-led
+cells sets the reading: a perfect output reads +9..+22, not 0 (docs/ear_v4_hiss.md).
 """
 
 import numpy as np

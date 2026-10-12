@@ -40,7 +40,28 @@ def _match_cells(row):
     return f"| {row['match_share']:.2f} | | " + ", ".join(_number(v, ".0f") for v in row["values"])
 
 
-CELLS = {"up": _moving_cells, "down": _moving_cells, "flat": _flat_cells, "match": _match_cells}
+def _medians(row):
+    return ", ".join(f"{m:+.3f}" for m in row["medians"])
+
+
+def _steady_cells(row):
+    """Ear v4's span check: the span of the level medians against its allowance, then the medians."""
+    return f"| | {row['span']:.3f} / {row['allowed']:.3f} | {_medians(row)}"
+
+
+def _below_cells(row):
+    """Ear v4's under-the-centre check: the edge every level must sit under, then the medians."""
+    return f"| | {row['edge']:+.3f} | {_medians(row)}"
+
+
+CELLS = {
+    "up": _moving_cells,
+    "down": _moving_cells,
+    "flat": _flat_cells,
+    "match": _match_cells,
+    "steady": _steady_cells,
+    "below": _below_cells,
+}
 
 
 def _check_cells(row):

@@ -85,3 +85,15 @@ def test_the_previous_rounds_gates_files_are_read_back(tmp_path):
     (tmp_path / "gates_music.json").write_text(json.dumps({}), "utf-8")
     assert report_mod.previous_gates(tmp_path) == {"gates.json": {"x": {"threshold": 1.0}}, "gates_music.json": {}}
     assert report_mod.gate_files() == ["gates.json", "gates_speech.json", "gates_music.json", "gates_mixed.json"]
+
+
+def test_the_ear_v4_span_and_under_centre_checks_render(tmp_path):
+    """`steady` shows its span against the allowance, `below` its edge; both list the level medians."""
+    steady = {**ROW, "expect": "steady", "status": "pass", "span": 0.1, "allowed": 0.5, "medians": [-30.0, -29.9, -29.95]}
+    below = {**ROW, "expect": "below", "status": "fail", "edge": -0.3, "medians": [-30.0, -20.0, -0.2]}
+    report = _report()
+    report["checks"] += [steady, below]
+    report_mod.write_reports(tmp_path, report, {})
+    markdown = (tmp_path / "report.md").read_text("utf-8")
+    assert "| d | m | steady | pass | | | 0.100 / 0.500 | -30.000, -29.900, -29.950 |" in markdown
+    assert "| d | m | below | fail | | | -0.300 | -30.000, -20.000, -0.200 |" in markdown

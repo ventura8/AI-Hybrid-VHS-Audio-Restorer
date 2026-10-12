@@ -81,8 +81,9 @@ Each scoring is flattened the way a sweep ranks it (`runner.aggregates_for_tunin
 `{metric.side.stat: value}` plus the `gates.*` counts). Per reading, the deviation of every
 scoring after the reference is |x - x_reference|; the reading's `floor` is the
 `--percentile` (default 95) of those deviations over every pair, transform (`benign_pair`
-included) and repeat, beside the `max`, the count `n` and the largest deviation per
-transform (`by_transform`).
+included) and repeat, beside the `max`, the count `n`, the largest deviation per
+transform (`by_transform`) and the same percentile per transform
+(`percentile_by_transform`; ear v4's acceptance reads each transform's p95 on its own).
 
 `--repeats N` scores the whole set N times. The DSP family is deterministic (repeats read
 0); the learned families on the GPU are not, and their jitter is part of the floor. The
@@ -398,21 +399,28 @@ def _merge(into, more):
         into.setdefault(key, []).extend(items)
 
 
+def _by_transform(items):
+    """`{transform: [deviation, ...]}` in first-seen order."""
+    grouped = {}
+    for name, deviation in items:
+        grouped.setdefault(name, []).append(deviation)
+    return grouped
+
+
 def _summary(items, percentile):
     values = np.asarray([deviation for _name, deviation in items], dtype=np.float64)
-    by_transform = {}
-    for name, deviation in items:
-        by_transform[name] = max(by_transform.get(name, 0.0), deviation)
+    grouped = _by_transform(items)
     return {
         "floor": float(np.percentile(values, percentile)),
         "max": float(values.max()),
         "n": int(len(values)),
-        "by_transform": by_transform,
+        "by_transform": {name: float(max(found)) for name, found in grouped.items()},
+        "percentile_by_transform": {name: float(np.percentile(found, percentile)) for name, found in grouped.items()},
     }
 
 
 def summarise(per_reading, percentile=FLOOR_PERCENTILE):
-    """`{reading: {floor, max, n, by_transform}}`, readings sorted by name."""
+    """`{reading: {floor, max, n, by_transform, percentile_by_transform}}`, readings sorted by name."""
     return {key: _summary(items, percentile) for key, items in sorted(per_reading.items())}
 
 

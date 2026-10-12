@@ -150,6 +150,14 @@ def test_the_floor_is_the_largest_retest_deviation_per_transform(tmp_path):
     assert report["transforms"] == ["reference", "shift_1", "requantise_16"]
 
 
+def test_each_transform_carries_its_own_percentile():
+    """Beside the pooled floor, each transform's deviations give their own percentile (ear v4 reads p95 per transform)."""
+    items = [("fresh", 0.1), ("fresh", 0.5), ("gain", 0.0), ("gain", 0.02)]
+    entry = nf.summarise({KEY: items}, percentile=50.0)[KEY]
+    assert entry["percentile_by_transform"] == pytest.approx({"fresh": 0.3, "gain": 0.01})
+    assert entry["by_transform"] == pytest.approx({"fresh": 0.5, "gain": 0.02})
+
+
 def test_an_output_is_perturbed_and_its_source_left_untouched(tmp_path):
     """At the output point every scoring keeps the source; the reference is the output, the near-copies are made of it."""
     calls = []
