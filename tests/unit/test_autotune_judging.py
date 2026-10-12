@@ -180,14 +180,25 @@ def _pack_flats():
     return flats
 
 
-def test_a_candidate_whose_only_move_past_the_band_is_worse_never_wins_a_tape_through_a_pack():
-    """Out-ranking the incumbent through third candidates on a sub-floor gain does not make a real loss a win."""
+def _pack_table():
+    """The tape table of `_pack_flats` under the 0.85 tilt and 1.2 body floors, with no dead zone."""
     floors = judging.Floors({TILT: 0.85, BODY: 1.2}, {})
     spec = {**SPEC, "dead_zone": 0.0}
-    table = judging.tape_table(_pack_flats(), {TILT: spec, BODY: spec}, "inc", floors)
+    return judging.tape_table(_pack_flats(), {TILT: spec, BODY: spec}, "inc", floors)
+
+
+def test_a_candidate_whose_only_move_past_the_band_is_worse_out_ranks_the_incumbent_through_a_pack():
+    """The pack lifts `worse` above the incumbent on exact ranks, on a sub-floor tilt gain and a real body loss."""
+    table = _pack_table()
     assert table.ranks["worse"] < table.ranks["inc"]
     assert table.status["worse"] == {TILT: judging.BANDED, BODY: judging.MOVED}
-    assert not table.level("worse") and not table.better("worse")
+
+
+def test_a_candidate_whose_only_move_past_the_band_is_worse_never_wins_a_tape_through_a_pack():
+    """Out-ranking the incumbent through third candidates on a sub-floor gain does not make a real loss a win."""
+    table = _pack_table()
+    assert not table.level("worse")
+    assert not table.better("worse")
     assert judging.tape_wins({"t1": table}, "worse", "inc") == []
 
 

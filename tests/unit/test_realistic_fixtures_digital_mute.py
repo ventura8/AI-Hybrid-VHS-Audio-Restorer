@@ -71,15 +71,28 @@ def test_exact_zero_gaps_hold_zeros_and_dither_gaps_their_drawn_level():
     assert (max(zeros) < -300.0, max(dithers) < 1.0) == (True, True)
 
 
-def test_the_reference_and_target_are_silent_where_the_upload_is_and_untouched_elsewhere():
-    """Inside a gap the reference and target are silent too; outside, nothing moved."""
+def _muted_signals():
+    """The (reference, target, degraded) take before and after `with_digital_mutes`, and the mask of its gap samples."""
     reference, target, degraded = _signals()
-    (new_reference, new_target, new_degraded), gaps = gen.with_digital_mutes((reference, target, degraded), RATE, np.random.default_rng(3))
+    muted, gaps = gen.with_digital_mutes((reference, target, degraded), RATE, np.random.default_rng(3))
     inside = np.zeros(len(reference), dtype=bool)
     for start, stop in map(_samples, gaps):
         inside[start:stop] = True
-    assert not new_reference[inside].any() and not new_target[inside].any()
-    assert np.array_equal(new_degraded[~inside], degraded[~inside]) and np.array_equal(new_reference[~inside], reference[~inside])
+    return (reference, target, degraded), muted, inside
+
+
+def test_the_reference_and_target_are_silent_where_the_upload_is():
+    """Inside a gap the reference and target are silent too."""
+    _originals, (new_reference, new_target, _new_degraded), inside = _muted_signals()
+    assert not new_reference[inside].any()
+    assert not new_target[inside].any()
+
+
+def test_the_upload_and_reference_are_untouched_outside_the_gaps():
+    """Outside every gap, nothing moved."""
+    (reference, _target, degraded), (new_reference, _new_target, new_degraded), inside = _muted_signals()
+    assert np.array_equal(new_degraded[~inside], degraded[~inside])
+    assert np.array_equal(new_reference[~inside], reference[~inside])
 
 
 def test_gaps_never_overlap_and_half_the_fixtures_open_on_a_blank_lead_in():
@@ -87,7 +100,8 @@ def test_gaps_never_overlap_and_half_the_fixtures_open_on_a_blank_lead_in():
     heads = 0
     for seed in range(60):
         spans = gen.mute_spans(SECONDS * RATE, RATE, np.random.default_rng(seed))
-        assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:])) and spans[-1][1] <= SECONDS * RATE
+        assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:]))
+        assert spans[-1][1] <= SECONDS * RATE
         heads += int(spans[0][0] == 0)
     assert 15 <= heads <= 45
 
@@ -115,17 +129,24 @@ def _recorder(seen, name):
     return record
 
 
-def test_the_class_is_opt_in_and_draws_on_a_stream_of_its_own(tmp_path, monkeypatch):
-    """Off by default; on, its stream is seeded by the voice and shared with none of the other helpers."""
+def _record_builders(monkeypatch):
+    """Replaces the four fixture-class builders with recorders; returns what they fill: builder -> one draw per call."""
     seen = {}
     for name in ("_build_speech_led", "_build_music_led", "_build_defect_classes", "_build_digital_mute"):
         monkeypatch.setattr(gen, name, _recorder(seen, name))
+    return seen
+
+
+def test_the_class_is_opt_in_and_draws_on_a_stream_of_its_own(tmp_path, monkeypatch):
+    """Off by default; on, its stream is seeded by the voice and shared with none of the other helpers."""
+    seen = _record_builders(monkeypatch)
     gen._build([], tmp_path, RATE, 1, [np.zeros(RATE)], [], 4242, 0)
     assert "_build_digital_mute" not in seen
     for voice in (0, 1):
         gen._build([], tmp_path, RATE, 1, [np.zeros(RATE)], [], 4242, voice, True)
     mute = seen["_build_digital_mute"]
-    assert mute[0] != mute[1] and mute[0] not in {draws[1] for name, draws in seen.items() if name != "_build_digital_mute"}
+    assert mute[0] != mute[1]
+    assert mute[0] not in {draws[1] for name, draws in seen.items() if name != "_build_digital_mute"}
 
 
 def test_the_flag_parses_off_by_default():

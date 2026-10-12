@@ -117,7 +117,8 @@ def test_on_the_single_window_log_names_each_rejected_window_and_the_pick(tmp_pa
     with _logs() as messages:
         cathar._find_quiet_window(_write_clip(tmp_path, "dither"), 0.75, mute_guard=True)
     assert len(messages) == 5
-    assert messages[0].startswith(f"{GUARD} rejected the window at 0.00 s (-109.") and messages[0].endswith("dB under the frame p20")
+    assert messages[0].startswith(f"{GUARD} rejected the window at 0.00 s (-109.")
+    assert messages[0].endswith("dB under the frame p20")
     assert messages[-1].startswith(f"{GUARD} learning from the window at 0.95 s (-65.8 dBFS, frame p20 -60.")
 
 
@@ -151,13 +152,25 @@ def test_on_the_stitched_pick_takes_no_pause_inside_a_mute(tmp_path):
     assert not any(begin <= start and start + 0.75 <= end for start in starts for begin, end in TAPE_MUTES_S)
 
 
-def test_on_the_stitched_log_gives_each_mute_one_line_then_the_pauses_level(tmp_path):
-    """Each mute is one logged run with its quietest window and reason, then the pauses' levels and the p20."""
-    messages = _stitched_messages(tmp_path, True)
-    first, second, pauses = messages[0], messages[1], messages[2]
-    assert first.startswith(f"{GUARD} rejected 10 window(s) from 10.00 to 13.00 s") and "dB under the frame p20" in first
-    assert second.startswith(f"{GUARD} rejected 10 window(s) from 25.25 to 28.25 s") and "of its samples hold one value" in second
-    assert pauses.startswith(f"{GUARD} pauses at ") and "frame p20 -40." in pauses
+def test_on_the_stitched_log_gives_the_dither_mute_one_line_first(tmp_path):
+    """The stitched log opens with the -110 dBFS dither mute as one logged run, with its quietest window and reason."""
+    first = _stitched_messages(tmp_path, True)[0]
+    assert first.startswith(f"{GUARD} rejected 10 window(s) from 10.00 to 13.00 s")
+    assert "dB under the frame p20" in first
+
+
+def test_on_the_stitched_log_gives_the_zero_mute_one_line_second(tmp_path):
+    """The exact-zero mute follows as one logged run, rejected because its samples hold one value."""
+    second = _stitched_messages(tmp_path, True)[1]
+    assert second.startswith(f"{GUARD} rejected 10 window(s) from 25.25 to 28.25 s")
+    assert "of its samples hold one value" in second
+
+
+def test_on_the_stitched_log_gives_the_pauses_level_after_the_mutes(tmp_path):
+    """After the two mutes' lines, the log gives the pauses' levels and the frame p20."""
+    pauses = _stitched_messages(tmp_path, True)[2]
+    assert pauses.startswith(f"{GUARD} pauses at ")
+    assert "frame p20 -40." in pauses
 
 
 def test_on_a_stitched_pick_with_nothing_but_mute_drops_the_print(tmp_path):

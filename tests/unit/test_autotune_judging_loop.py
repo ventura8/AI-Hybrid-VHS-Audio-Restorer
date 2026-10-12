@@ -28,13 +28,24 @@ def _scores(tilt_by_cid, gap=1.0):
     return {cid: {slug: _flat(tilt, gap) for slug in TAPES} for cid, tilt in tilt_by_cid.items()}
 
 
-def test_a_sub_floor_move_ties_and_never_qualifies_where_exact_ranks_accepted_it():
-    """Tilt 0.62 -> 0.60 dB/oct, the 0.85 floor: with the floors a tie, level, no win; with exact ranks it won both tapes."""
-    scores = _scores({"inc": 0.62, "small": 0.60})
-    banded = at.judge(scores, "inc", RANKING, floors=FLOORS)
-    assert banded["small"]["level"] and banded["small"]["wins"] == 0 and not banded["small"]["qualifies"]
-    exact = at.judge(scores, "inc", RANKING)
-    assert exact["small"]["wins"] == 2 and exact["small"]["qualifies"]
+def _sub_floor_scores():
+    """Tilt 0.62 -> 0.60 dB/oct on both tapes, a move under the 0.85 floor."""
+    return _scores({"inc": 0.62, "small": 0.60})
+
+
+def test_a_sub_floor_move_ties_and_never_qualifies_with_the_floors():
+    """Tilt 0.62 -> 0.60 dB/oct, the 0.85 floor: with the floors a tie, level, no win."""
+    banded = at.judge(_sub_floor_scores(), "inc", RANKING, floors=FLOORS)
+    assert banded["small"]["level"]
+    assert banded["small"]["wins"] == 0
+    assert not banded["small"]["qualifies"]
+
+
+def test_a_sub_floor_move_won_both_tapes_where_exact_ranks_accepted_it():
+    """The same 0.62 -> 0.60 dB/oct move on exact ranks: it won both tapes and qualified."""
+    exact = at.judge(_sub_floor_scores(), "inc", RANKING)
+    assert exact["small"]["wins"] == 2
+    assert exact["small"]["qualifies"]
 
 
 def test_a_move_past_the_floor_still_wins():
@@ -153,8 +164,9 @@ def test_without_reports_the_loop_warns_and_keeps_exact_ties(tmp_path, monkeypat
 def test_a_benign_pair_report_given_as_the_jitter_floors_stops_the_loop(tmp_path, monkeypatch):
     _loop(monkeypatch, tmp_path)
     benign = _report(tmp_path, "benign.json", ["benign_pair"], {GAP: 1.01})
+    argv = _cli(tmp_path, "--jitter-floors", benign)
     with pytest.raises(SystemExit, match="benign-pair report"):
-        at.main(_cli(tmp_path, "--jitter-floors", benign))
+        at.main(argv)
 
 
 def test_a_hiss_readings_veto_limit_takes_its_jitter_floor(tmp_path, monkeypatch):
