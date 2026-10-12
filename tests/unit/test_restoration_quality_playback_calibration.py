@@ -79,7 +79,8 @@ def test_records_round_trip_as_lf_terminated_json(tmp_path):
     records = [_record("r-1"), _record("r-2", listener="guest")]
     playback_calibration.append_many(records, path)
     raw = path.read_bytes()
-    assert b"\r" not in raw and raw.endswith(b"\n")
+    assert b"\r" not in raw
+    assert raw.endswith(b"\n")
     assert playback_calibration.read(path) == records
     assert playback_calibration.read(tmp_path / "missing.jsonl") == []
 
@@ -88,10 +89,12 @@ def test_an_id_already_in_the_file_and_a_broken_record_are_refused(tmp_path):
     """Nothing is written for a taken id or a record that breaks the schema."""
     path = tmp_path / "cal.jsonl"
     playback_calibration.append_many([_record("r-1")], path)
+    taken = [_record("r-1")]
+    broken = [_set(_record("r-2"), ("listener",), "a b")]
     with pytest.raises(playback_calibration.CalibrationError, match="already in the calibration file"):
-        playback_calibration.append_many([_record("r-1")], path)
+        playback_calibration.append_many(taken, path)
     with pytest.raises(playback_calibration.CalibrationError, match="new record 1"):
-        playback_calibration.append_many([_set(_record("r-2"), ("listener",), "a b")], path)
+        playback_calibration.append_many(broken, path)
     assert len(playback_calibration.read(path)) == 1
 
 
@@ -154,7 +157,8 @@ def test_the_refusal_says_to_unset_the_listener_before_the_threshold_block(tmp_p
     """The threshold block imports auditory itself: the way out a refusal names is to unset the variable, then run it."""
     with pytest.raises(playback_calibration.CalibrationError) as refused:
         playback_calibration.selected({LISTENER_ENV: "guest", PATH_ENV: str(tmp_path / "none.jsonl")})
-    assert f"unset {LISTENER_ENV}" in str(refused.value) and str(refused.value).endswith("--listener guest")
+    assert f"unset {LISTENER_ENV}" in str(refused.value)
+    assert str(refused.value).endswith("--listener guest")
 
 
 def test_auditory_takes_the_listeners_level_at_import(tmp_path, monkeypatch):

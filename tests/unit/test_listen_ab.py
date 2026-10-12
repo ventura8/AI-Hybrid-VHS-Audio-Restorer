@@ -78,7 +78,13 @@ def test_the_state_names_the_three_play_buttons_and_the_choices(tmp_path):
     assert [button["name"] for button in state["buttons"]] == ["A", "B", "X"]
     assert state["choices"] == ["A", "B", ledger.CANT_TELL]
     assert (state["phase"], state["number"], state["of"]) == ("test", 1, 4)
-    assert state["loops"] == {} and state["autoloop"] is None
+
+
+def test_the_state_names_no_loop_without_page_settings(tmp_path):
+    """A session built without the page's loop settings names no loop and no autoloop."""
+    state = _state(_session(tmp_path))
+    assert state["loops"] == {}
+    assert state["autoloop"] is None
 
 
 def test_the_state_names_the_trial(tmp_path):

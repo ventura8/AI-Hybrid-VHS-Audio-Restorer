@@ -141,7 +141,8 @@ def test_trials_carry_their_phase_and_catch_label():
     protocol.take(first, "A")
     catch = protocol.trial()
     assert first["phase"] == SCORED
-    assert catch["phase"] == CATCH and catch["catch"] in catch["stimuli"]
+    assert catch["phase"] == CATCH
+    assert catch["catch"] in catch["stimuli"]
 
 
 # ----------------------------------------------------------------------------- power
@@ -162,14 +163,25 @@ def test_too_few_trials_have_no_power():
     assert listen_protocol.binomial_power_record(2)["at_hit_rate"] == {"0.6": 0.0, "0.75": 0.0, "0.9": 0.0}
 
 
-def test_power_of_follows_the_question():
-    """abx and pair records get the binomial power (pair as a sign test), blend the simulated one."""
+def test_power_of_gives_an_abx_record_the_binomial_power():
+    """An abx record gets the binomial power: 24 trials need 17 right, power 0.7662 at a 75% hit rate."""
     abx = listen_protocol.power_of({"question": {"type": "abx"}, "n_trials": 24})
+    assert abx["critical_correct"] == 17
+    assert abx["at_hit_rate"]["0.75"] == pytest.approx(0.7662, abs=1e-4)
+
+
+def test_power_of_gives_a_pair_record_the_sign_test():
+    """A pair record gets the binomial power as a one-sided sign test; two trials have no critical score."""
     pair = listen_protocol.power_of({"question": {"type": "pair"}, "n_trials": 2})
-    assert abx["critical_correct"] == 17 and abx["at_hit_rate"]["0.75"] == pytest.approx(0.7662, abs=1e-4)
-    assert pair["test"].startswith("one-sided sign test") and pair["critical_correct"] is None
+    assert pair["test"].startswith("one-sided sign test")
+    assert pair["critical_correct"] is None
+
+
+def test_a_blend_record_gets_the_simulated_power():
+    """A blend record gets the simulated QUEST power; with no trials no band ends under the full candidate."""
     blend = listen_protocol.blend_power_record(0)
-    assert blend["band_ends_under_full"] == 0.0 and blend["test"] == "simulated QUEST"
+    assert blend["band_ends_under_full"] == 0.0
+    assert blend["test"] == "simulated QUEST"
 
 
 def test_blend_power_grows_with_the_block():

@@ -42,15 +42,32 @@ def test_the_cap_is_minus_33_dbfs_or_10_db_under_the_speech():
     assert listen_threshold.cap_dbfs(-30.0) == -40.0
 
 
-def test_a_tone_plays_at_its_rms_level_in_the_middle_of_its_second():
-    """A -60 dBFS tone reads -60 dBFS RMS over its flat part, starts and ends silent, on both channels."""
-    clip = listen_threshold.tone_clip(1000.0, -60.0, -33.0)
-    rate = listen_threshold.RATE
-    middle = clip[slice(int(0.45 * rate), int(0.55 * rate)), 0]
-    assert clip.shape == (rate, 2) and clip.dtype == np.float32
-    assert 20.0 * np.log10(np.sqrt(np.mean(middle.astype(np.float64) ** 2))) == pytest.approx(-60.0, abs=0.05)
-    assert not clip[slice(0, int(0.3 * rate))].any() and not clip[slice(int(0.7 * rate), None)].any()
+def _tone_at_minus_60():
+    """A 1 kHz tone asked for at -60 dBFS under a -33 dBFS cap."""
+    return listen_threshold.tone_clip(1000.0, -60.0, -33.0)
+
+
+def test_a_tone_is_one_second_of_float32_on_both_channels():
+    """The tone lasts one second, in float32, and plays the same on both channels."""
+    clip = _tone_at_minus_60()
+    assert clip.shape == (listen_threshold.RATE, 2)
+    assert clip.dtype == np.float32
     assert np.array_equal(clip[:, 0], clip[:, 1])
+
+
+def test_a_tone_plays_at_its_rms_level_in_the_middle_of_its_second():
+    """A -60 dBFS tone reads -60 dBFS RMS over its flat part."""
+    rate = listen_threshold.RATE
+    middle = _tone_at_minus_60()[slice(int(0.45 * rate), int(0.55 * rate)), 0]
+    assert 20.0 * np.log10(np.sqrt(np.mean(middle.astype(np.float64) ** 2))) == pytest.approx(-60.0, abs=0.05)
+
+
+def test_a_tone_starts_and_ends_silent():
+    """The first 0.3 s and the last 0.3 s of the tone's second are silent."""
+    clip = _tone_at_minus_60()
+    rate = listen_threshold.RATE
+    assert not clip[slice(0, int(0.3 * rate))].any()
+    assert not clip[slice(int(0.7 * rate), None)].any()
 
 
 def test_no_tone_passes_the_cap_whatever_is_asked():
@@ -122,7 +139,8 @@ def test_a_trial_plays_the_tone_in_its_key_and_silence_in_the_others():
 def test_the_keys_cover_all_three_intervals():
     """The scored trials put the tone in each of the three intervals; the protocol draws practice and catch keys from them too."""
     mode = listen_threshold.ThresholdMode(30, np.random.default_rng(5), LEVEL)
-    assert set(mode.slots) == set(INTERVALS) and mode.keys == INTERVALS
+    assert set(mode.slots) == set(INTERVALS)
+    assert mode.keys == INTERVALS
     protocol = listen_protocol.Protocol(mode, np.random.default_rng(6), familiar=5)
     keys = {protocol.trial()["key"] for _index in range(30)}
     assert keys == set(INTERVALS)

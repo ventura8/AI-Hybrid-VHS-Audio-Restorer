@@ -189,7 +189,8 @@ def test_forced_choice_trials_offer_cant_tell_and_ask_for_a_guess():
     blend = listen_modes.BlendMode(["a", "b"], 2, np.random.default_rng(13)).trial(0)
     pair = listen_modes.PairMode(["a", "b"], 1, np.random.default_rng(13)).trial(0)
     assert abx["choices"] == blend["choices"] == ["A", "B", listen_modes.CANT_TELL]
-    assert "Guess when unsure" in abx["prompt"] and "Guess when unsure" in blend["prompt"]
+    assert "Guess when unsure" in abx["prompt"]
+    assert "Guess when unsure" in blend["prompt"]
     assert pair["choices"] == ["A", "B", ledger.SAME]
 
 
@@ -211,15 +212,33 @@ def test_catch_trials_take_the_shape_of_each_mode():
         assert catch["stimuli"] == ["a", listen_modes.CATCH_AIR]
 
 
-def test_the_catch_control_sits_where_the_key_says():
-    """ABX: X plays the control when the key is B; blend: the control is the odd one in the key's slot; pair: on the key's side."""
+def _catch_controls():
+    """ABX keyed B, blend keyed A and pair keyed B, each over the raw control, built in turn from one generator."""
     rng = np.random.default_rng(15)
     abx = listen_modes.AbxMode(["a", "b"], 2, rng).catch_trial(listen_modes.CATCH_RAW, "B")
     blend = listen_modes.BlendMode(["a", "b"], 2, rng).catch_trial(listen_modes.CATCH_RAW, "A")
     pair = listen_modes.PairMode(["a", "b"], 1, rng).catch_trial(listen_modes.CATCH_RAW, "B")
+    return abx, blend, pair
+
+
+def test_the_abx_catch_control_plays_as_x_when_the_key_is_b():
+    """ABX: X plays the control when the key is B."""
+    abx, _blend, _pair = _catch_controls()
     assert abx["play"][2] == ("X", {listen_modes.CATCH_RAW: 1.0})
-    assert blend["play"][1] == ("A", {listen_modes.CATCH_RAW: 1.0}) and blend["play"][0] == ("R", {"a": 1.0})
-    assert pair["play"][0] == ("A", {listen_modes.CATCH_RAW: 1.0}) and pair["key"] is None
+
+
+def test_the_blend_catch_control_is_the_odd_one_in_the_keys_slot():
+    """Blend: the control is the odd one in the key's slot, with the first stimulus as R."""
+    _abx, blend, _pair = _catch_controls()
+    assert blend["play"][1] == ("A", {listen_modes.CATCH_RAW: 1.0})
+    assert blend["play"][0] == ("R", {"a": 1.0})
+
+
+def test_the_pair_catch_control_sits_on_the_keys_side():
+    """Pair: the control sits on the key's side, and the trial carries no key."""
+    _abx, _blend, pair = _catch_controls()
+    assert pair["play"][0] == ("A", {listen_modes.CATCH_RAW: 1.0})
+    assert pair["key"] is None
 
 
 def test_practice_trials_play_the_exaggerated_pair():

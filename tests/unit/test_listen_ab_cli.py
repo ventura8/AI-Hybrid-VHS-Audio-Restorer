@@ -166,7 +166,8 @@ def test_build_mode_follows_the_mode_and_keeps_the_question(tmp_path):
     pair = listen_ab.build_mode(_args(tmp_path, "--repeats", "3", mode="pair", count=3), ["a", "b", "c"], rng)
     threshold = listen_ab.build_mode(listen_ab.parse_args(["threshold", *PLAYBACK, "--level-dbfs", "-26"]), [], rng)
     assert (abx.total, abx.text, blend.total, pair.total) == (24, "is X A?", 30, 10)
-    assert isinstance(threshold, ThresholdMode) and (threshold.total, threshold.cap) == (60, -36.0)
+    assert isinstance(threshold, ThresholdMode)
+    assert (threshold.total, threshold.cap) == (60, -36.0)
 
 
 def test_the_pair_replicate_takes_the_anchor(tmp_path):
