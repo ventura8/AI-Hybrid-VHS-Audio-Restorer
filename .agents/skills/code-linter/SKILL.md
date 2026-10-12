@@ -96,7 +96,13 @@ every other one. Exclusions belong in the properties file with a reason.
 - **Radon Grades**: Every single block must be Cyclomatic Complexity Grade A
   (CC $\\le 5$), and every file must be Maintainability Index Grade A (MI $\\ge
   20$). Radon counts every `assert` as a branch, so a test keeps at most four.
-  MI falls with file length: a unit test file past about 450 lines reads
-  under 20 whatever its style, so split it by topic (the 2026-09-21 gate
+  Splitting a composite assertion for SonarCloud's `python:S9073` therefore
+  raises the test's CC: split the test as well (2026-10-12, a pushed S9073
+  fix turned a test grade B). `radon cc -s -n B <files>` exits 0 even when it
+  lists offenders, so a check chained with `&&` passes: test its output is
+  empty (`test -z "$(radon cc -s -n B ...)"`) or run the gate's
+  `radon_cc_gate.py`. MI falls with file length: a unit test file past
+  about 450 lines reads under 20 whatever its style, so split it by topic
+  (the 2026-09-21 gate
   forced `test_cathar_noiseprint.py`, `test_tune_restoration_scoreboard.py`
   and `test_utils_binaries.py` out of files that had grown past that).
