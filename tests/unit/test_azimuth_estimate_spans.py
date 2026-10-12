@@ -235,22 +235,33 @@ def test_dead_or_unrelated_channels_fail_the_gate_with_spans(spans_log, right):
     spans_log.assert_not_called()
 
 
-def _disagreeing_pair():
-    """Seven 1.5 s bursts between hiss, each with the right channel late by a different 4-sample step."""
+def _stitched_pair(lags, seed):
+    """1.5 s bursts between 1.5 s of hiss, each burst's right channel late by its own lag: a print stitched from parts."""
     gap = np.zeros(int(1.5 * RATE))
     left, right = [], []
-    for index in range(7):
-        burst = _programme(1.5, 10 + index)
+    for index, lag in enumerate(lags):
+        burst = _programme(1.5, seed + index)
         left += [burst, gap]
-        right += [_delayed(burst, 4.0 * index), gap]
+        right += [_delayed(burst, lag), gap]
     return _pair(np.concatenate(left), np.concatenate(right))
 
 
 def test_spans_that_disagree_abstain(spans_log):
-    """No lag holds half the counted spans: the reading abstains and the graph delays nothing."""
-    reading = filters._detect_stereo_azimuth_skew(_disagreeing_pair(), RATE)
+    """Seven bursts, each late by a different 4-sample step: no lag holds a majority, so the graph delays nothing."""
+    reading = filters._detect_stereo_azimuth_skew(_stitched_pair([4.0 * index for index in range(7)], 10), RATE)
     assert reading == 0.0
     assert "spans disagree" in _logged(spans_log)
+
+
+@pytest.mark.parametrize(
+    "lags, expected, vote",
+    [([3.0, -3.0, 3.0, -3.0], 0.0, "spans disagree; 2 of 7"), ([3.0, 3.0, -3.0, 3.0], 0.068, "3 of 7 spans agree on +3.00")],
+)
+def test_a_stitched_print_needs_a_majority(spans_log, lags, expected, vote):
+    """Two parts skewed opposite ways tie, 2 spans to 2, and abstain rather than double one part's skew; 3 to 1 carries."""
+    reading = filters._detect_stereo_azimuth_skew(_stitched_pair(lags, 30), RATE)
+    assert reading == pytest.approx(expected, abs=1e-12)
+    assert vote in _logged(spans_log)
 
 
 def test_weak_coherence_abstains():
@@ -327,8 +338,8 @@ def test_the_span_grid_steps_by_half_a_span(count, spans):
     assert energies.size == spans
 
 
-@pytest.mark.parametrize("counted, spans, needed", [(1, 1, 1), (1, 7, 2), (3, 7, 2), (7, 7, 4)])
-def test_the_vote_needs_half_the_counted_spans_and_two(counted, spans, needed):
+@pytest.mark.parametrize("counted, spans, needed", [(1, 1, 1), (1, 7, 2), (2, 7, 2), (3, 7, 2), (4, 7, 3), (5, 7, 3), (6, 7, 4), (7, 7, 4)])
+def test_the_vote_needs_more_than_half_the_counted_spans_and_two(counted, spans, needed):
     assert azimuth_spans.needed_agreement(counted, spans) == needed
 
 

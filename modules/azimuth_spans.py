@@ -1,12 +1,17 @@
 """The pre-conditioning's azimuth skew read on the loudest spans (`azimuth_estimate_method: spans`).
 
-The default reading (`head`, `filters._detect_stereo_azimuth_skew`) cross-correlates the first
-32768 samples (0.74 s at 44.1 kHz) and takes the integer peak. The plain cross-correlation
-follows the bass, the head of a tape is often a lead-in, a jingle or silence, and a peak one
-or two samples off zero is a delay the graph applies. On the IA hunt (`tune_ia_hunt_v3`,
-2026-10-12) it read 1-2 samples on clips whose whole-file lag is 0, and that added skew cost
-the mono sum 1.5-7 dB at 4-8 kHz. cathar's own GCC-PHAT azimuth stage undoes it;
-`auto_pure_linear` has no stage that does.
+The default reading (`head`, `filters._head_azimuth_skew`) cross-correlates the first 32768
+samples (0.74 s at 44.1 kHz) and takes the integer peak, with the sign the graph does not
+correct: a right channel one sample late reads -0.02 ms and the graph delays the right
+channel one more. The head of a tape is often a lead-in, a jingle or silence, and the plain
+cross-correlation follows the bass. On the IA hunt (`tune_ia_hunt_v3`, 2026-10-12, 232
+stereo clips) it delayed a channel on 43, and the mono sum's 4-8 kHz fell on 40 of them
+(median -1.43 dB against the same graph without the delay). The clips the octave
+investigation took for lag-0 sources read lag 0 only over the full band, where a lag-0
+component above the programme band holds most bins; in 150-7000 Hz they carry 0.6-1.3
+samples, which the head doubled. cathar's own GCC-PHAT azimuth stage re-aligns the channels
+after the pre-conditioning; `auto_pure_linear` runs that stage only when the scan reads
+0.05 ms or more, so a one-sample head reading stays in its output.
 
 This reading takes the lag where the programme is, and only when the programme agrees:
 
@@ -20,8 +25,9 @@ This reading takes the lag where the programme is, and only when the programme a
   the phase coherence (1 for a pure delay, near 0 for unrelated channels);
 - a span counts when its coherence reaches `MIN_COHERENCE`;
 - the vote: the lag the most counted spans agree on within `AGREE_SAMPLES`, the median of
-  those; at least two must agree (one when the audio holds room for one span only) and at
-  least half of the counted ones;
+  those; at least two must agree (one when the audio holds room for one span only) and more
+  than half of the counted ones, so a tie, such as a print stitched from two parts skewed
+  opposite ways, abstains rather than doubling one part's skew;
 - otherwise the reading abstains, and the caller applies no delay.
 
 The lag is how far the right channel runs behind the left, in samples (positive: the right
@@ -178,8 +184,8 @@ def agreeing_peaks(peaks):
 
 
 def needed_agreement(counted, spans):
-    """How many counted spans must agree: half of them, and two unless the audio held room for one span only."""
-    return max(MIN_AGREE if spans > 1 else 1, int(np.ceil(counted / 2.0)))
+    """How many counted spans must agree: more than half of them (a tie disagrees), and two unless the audio held one span only."""
+    return max(MIN_AGREE if spans > 1 else 1, counted // 2 + 1)
 
 
 def _why_none_counted(read):

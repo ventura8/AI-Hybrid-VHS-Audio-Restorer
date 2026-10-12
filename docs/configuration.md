@@ -453,10 +453,12 @@ HEAD 57bfdb8's readings, graphs and one whole scan.
   alone, over 150-7000 Hz and in the bins where both channels carry power,
   gives a peak refined to a fraction of a sample. A span counts at phase
   coherence 0.3 or more; the lag is the median of the counted spans that
-  agree within half a sample, and at least two of them and half of those
-  counted must agree. No delay is applied when the spans disagree, cohere
-  weakly, or agree on less than half a sample (the graph delays by whole
-  samples). The result has the sign the graph corrects. The |r| gate and
+  agree within half a sample, and at least two of them and more than half
+  of those counted must agree. No delay is applied when the spans disagree
+  (a tie included: a print stitched from two parts skewed opposite ways
+  would otherwise have one part's skew doubled), cohere weakly, or agree on
+  less than half a sample (the graph delays by whole samples). The result
+  has the sign the graph corrects. The |r| gate and
   `azimuth_reject_inverted_pair` apply as before, read over the whole
   scanned audio rather than its head; with the switch off, an inverted pair
   gives its true skew (the magnitude of the peak) instead of half a period
@@ -491,7 +493,14 @@ graph without the delay.
   loses 1.24-1.78 dB.
 - The Tata tapes read no delay with either method: four have a dead right
   channel (r 0.02, the gate refuses the pair) and the fifth has identical
-  channels (all seven spans agree on 0.00 samples).
+  channels (all seven spans agree on 0.00 samples). Both Gaudeamus
+  captures (`D:\Tata`) also have a dead right channel (r 0.019) and read
+  no delay either way.
+- A review re-run on 2026-10-12 with its own estimators (a
+  coherence-weighted fit of the Welch cross-spectrum's phase, not GCC-PHAT)
+  reproduced these counts and gains to within 0.03 dB. Its residual skew
+  after `spans` is a median 0.26 sample in 300-4000 Hz and 0.15 in
+  4000-8000 Hz (at most 0.82).
 
 `auto_pure_linear` gains most. `cathar` runs its own GCC-PHAT `azimuth`
 stage after `dewind`, and on ten of these clips it left the same residual

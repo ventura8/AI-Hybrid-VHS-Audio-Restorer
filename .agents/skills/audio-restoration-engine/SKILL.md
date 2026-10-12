@@ -90,8 +90,10 @@ audio alignment, or FFmpeg multiplexing.
      `spans` (`_spans_azimuth_skew`, `modules/azimuth_spans.py`) votes
      GCC-PHAT peaks of up to seven loudest 1.5 s spans (150-7000 Hz, phase
      coherence at least 0.3, agreement within half a sample, a parabola for
-     the fraction), abstains on disagreement, weak coherence or under half a
-     sample, keeps the |r| gate and the inverted-pair rule over the whole
+     the fraction), abstains on disagreement (no strict majority of the
+     counted spans: a 2-2 tie from a print stitched from two parts skewed
+     opposite ways would double one part's skew), weak coherence or under
+     half a sample, keeps the |r| gate and the inverted-pair rule over the whole
      scanned audio, and returns the sign the graph corrects. IA hunt, 232
      stereo clips, the app's scan and pre-conditioning step on CPU, against
      the same graph without the delay: `head` delayed 43 and lowered the
@@ -103,10 +105,18 @@ audio alignment, or FFmpeg multiplexing.
      azimuth in the programme band. cathar's own `dewind` plus `azimuth`
      left the same residual from either pre-conditioning on ten clips, so
      `auto_pure_linear` is the engine the key changes. The Tata tapes read
-     no delay either way (four dead right channels, one identical pair).
-     Not judged by ear yet. Scratch evidence:
+     no delay either way (four dead right channels, one identical pair;
+     both Gaudeamus captures are dead on the right too). The residual skew
+     the docs quote was measured with the estimator's own GCC-PHAT; judge a
+     change to the vote with an estimator it does not share. The review
+     re-run did (coherence-weighted Welch phase fit, mono 4-8 kHz by Welch:
+     same counts, gains within 0.03 dB, residual median 0.26 sample in
+     300-4000 Hz). Not judged by ear yet. Scratch evidence:
      `D:\ai_restore_work\scratch_azspan\` (`validate_precond.py`,
-     `validate_none.py`, `val_hunt.json`, `cathar_follow.json`).
+     `validate_none.py`, `val_hunt.json`, `cathar_follow.json`) and
+     `D:\ai_restore_work\scratch_azspan_review\` (`identity.py`: the default
+     scan's readings and every mode's graph equal 57bfdb8's on all 238 hunt
+     clips; `review_val.py`, `rv.json`; `edge_probe.py`).
    - `_detect_crt_flyback_notch`: Band search across 15450-15900 Hz, classified
      by nearest line rate so an off-speed tape is still identified.
    - `_detect_mains_buzz_notch`: Hum vote constrained to the family the detected
