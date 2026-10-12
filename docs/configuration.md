@@ -265,6 +265,9 @@
   material) and `cathar_deesser_threshold` 12 (only the loud 's' is caught).
   `cathar_noiseprint_mute_guard` (false) keeps digital mutes out of the
   print's pick; see "cathar Noise-Print Mute Guard" below.
+  `cathar_noiseprint_min_depth_db` (0, off) and
+  `cathar_noiseprint_shallow_action` (`scale`) scale or drop a print that
+  sits too close to the programme; see "cathar Noise-Print Depth Guard".
   - Music profile: a tape whose
     tonal persistence (the scanner's median share of held spectral peaks over
     15 s windows; music 0.064-0.225, speech over a bed 0.007-0.033, dry
@@ -868,6 +871,89 @@ six pauses was that digital stretch; the key moves the stitched pick on
 those two tapes and on no other. The single-window pick moved on none.
 
 The guard stays off until a blind listening session judges it.
+
+## cathar Noise-Print Depth Guard
+
+`cathar_noiseprint_min_depth_db` (0, off) and
+`cathar_noiseprint_shallow_action` (`scale` or `drop`), added on
+2026-10-12. On a 15 s clip with no pause cathar's quietest 0.75 s is
+programme, and the learned print then strips the background bed. On the
+IA hunt (`tune_ia_hunt_v3`, 235 clips) cathar failed
+`stems.octave_programme` on 64 of the 176 clips that read, and the
+learned-print subtraction took the octave on 56 of them. On the failing
+speech-profile clips the print's window sat a median 8.3 dB under the
+loud frames, against 13.0 dB on the passing ones.
+
+With the key over 0 (`modules/noiseprint_depth.py`), the chain picks the
+print's window or windows again, exactly as the extractor picked them
+(`cathar._probe_windows`), and measures their RMS against the material's
+loud frames: the p90 of the mono mix's 1024-sample frame RMS, streamed.
+A print shallower than the key is programme:
+
+- `scale` multiplies the print's magnitudes by 10^(-(D - depth)/20), so
+  it sits exactly D dB down, and writes `<print>_depth<D>db.np.json`
+  beside it. cathar 0.8.0 writes the print as a JSON list of 1025 mean
+  magnitudes (2048-sample symmetric Hann, hop 512) of the probe's left
+  channel, and it is linear in level: a probe 20 dB quieter learned a
+  print 0.1 times the first, within 6e-8. Scaling the file is learning
+  from a quieter probe.
+- `drop` runs `denoise` without `--noiseprint`, as the music profile does.
+
+A print at least D dB down is handed on untouched, and a depth that
+cannot be measured keeps the learned print with a WARNING. The log names
+the depth, both levels and the action. At 0 nothing is measured and the
+slice, the noiseprint run and every command line are HEAD 57bfdb8's
+(`tests/unit/test_cathar_print_depth_guard.py`). The depth is read on the
+mono mix the pick reads, while cathar learns from the left channel only.
+With the mute guard on as well, its lines are logged twice, once for the
+print and once for the depth.
+
+Measured on CPU on 2026-10-12, with the guard's own code at cathar's
+denoise stage: the investigation's 159 speech-profile hunt clips, each
+base render's denoise input and print copied and run through
+`guard_print` and `_cathar_denoise_step` (cathar 0.8.0). Columns: the
+clips the guard touched, the 62 failing clips still failing, the 56 of
+the denoise class still failing, new failures among the 96 passing
+clips, and the quiet-frame removal (`measure_tradeoff`'s median, failing
+/ passing clips, in dB; the base is 5.49 / 3.23).
+
+| D (dB) | Action | Touched | Failing | Denoise | New | Removal |
+| ---: | :--- | ---: | ---: | ---: | ---: | :--- |
+| 13 | scale | 88 | 38 | 32 | 0 | 3.47 / 2.76 |
+| 13 | drop | 88 | 22 | 16 | 0 | 0.20 / 0.83 |
+| 20 | scale | 109 | 25 | 19 | 0 | 1.70 / 1.66 |
+| 20 | drop | 109 | 17 | 11 | 0 | 0.11 / 0.30 |
+
+The D = 20 rows are the investigation's emulation exactly. The depth
+matched it within 3.6e-5 dB on every clip but two digital-mute windows
+63 and 104 dB down, `drop` wrote the emulation's bytes on all 109, the
+scaled prints sat within 1.5e-7 of its own, and the readings within
+3e-5 dB. The 50 clips whose print is deep enough wrote the shipped stage
+output byte for byte. At 20 the guard cannot reach nine denoise-class
+clips, whose prints sit 21-38 dB down; at 13 it leaves 14.
+
+The four local Tata tapes, whole (CPU, the full app in cathar mode, each
+variant on its own copies), take the stitched print, and its six pauses
+sit only 13.7 to 16.9 dB under the loud frames. So at 20 the guard fires
+on every one of them. The denoise stage's quiet-frame removal falls by
+about half on `scale` and to nothing on `drop`:
+
+| Tape | Depth (dB) | Removal off | 20, scale | 20, drop |
+| :--- | ---: | ---: | ---: | ---: |
+| gaudeamus5 | 14.9 | 12.64 | 6.86 | 0.02 |
+| soti | 16.9 | 17.01 | 13.02 | 0.00 |
+| tele7abc | 13.7 | 13.05 | 6.58 | -0.48 |
+| vaccin | 14.5 | 15.85 | 7.64 | 0.00 |
+
+At 13 the guard keeps all four prints, and the four outputs' decoded audio
+and their denoise stages are byte for byte those with the guard off. The
+depth alone does not separate a dialogue tape's real pauses (13.7-16.9 dB
+on these four) from a dense clip's programme (8.3 dB median on the
+failing clips, 13.0 on the passing ones), so 20 would change the tapes
+the listener round accepted. The candidates for the listening session
+are 13 with `scale` or `drop`, which left these four tapes alone, or 20
+restricted to the single-window path (15 s clips), which this key does not
+offer. Not judged by ear.
 
 ## Event Log
 

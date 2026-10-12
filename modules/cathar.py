@@ -26,7 +26,7 @@ try:
 except ImportError:
     sf = None
 
-from . import noiseprint_guard
+from . import noiseprint_depth, noiseprint_guard
 from .config import (
     CATHAR_ALPHA,
     CATHAR_ALPHA_HIGH,
@@ -82,7 +82,9 @@ from .config import (
     CATHAR_MUSIC_PERSISTENCE_MIN,
     CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
+    CATHAR_NOISEPRINT_MIN_DEPTH_DB,
     CATHAR_NOISEPRINT_MUTE_GUARD,
+    CATHAR_NOISEPRINT_SHALLOW_ACTION,
     CATHAR_REPAIR_STRENGTH,
     CATHAR_SPLIT_BAND_HZ,
     NOTCH_FREQ,
@@ -484,8 +486,8 @@ def _stitch_windows(wav_path, starts, window_frames, crossfade_frames):
     return out
 
 
-def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s, mute_guard=False):
-    """Writes a probe stitched from the quiet pauses of input_wav, about duration_s long in total.
+def _stitched_picks(input_wav, duration_s, mute_guard=False):
+    """`(starts, window, rate)` of the pauses the stitched print takes from input_wav, starts and window in samples.
 
     `mute_guard` leaves digital mutes out of the pick (`noiseprint_guard.pick_guarded_pauses`); off, the pick is
     the one cathar has always made.
@@ -501,6 +503,12 @@ def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s, mute_guard=Fa
         picked = noiseprint_guard.pick_guarded_pauses(input_wav, (levels, starts, hop, window_hops), count, rate, _pick_pause_windows)
     else:
         picked = _pick_pause_windows(levels, starts, window, count)
+    return picked, window, rate
+
+
+def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s, mute_guard=False):
+    """Writes a probe stitched from the quiet pauses of input_wav (`_stitched_picks`), about duration_s long in total."""
+    picked, window, rate = _stitched_picks(input_wav, duration_s, mute_guard)
     if not picked:
         return False
     stitched = _stitch_windows(input_wav, picked, window, int(NOISEPRINT_CROSSFADE_S * rate))
@@ -842,6 +850,32 @@ def _music_settings():
     }
 
 
+def _learned_print(current, work_dir, total_duration):
+    """The print the denoise subtracts: learned from the quietest tape, then held to `cathar_noiseprint_min_depth_db`.
+
+    The depth guard (`modules/noiseprint_depth.py`) runs only with the key over 0; at 0 the
+    learned print goes to the denoise as it always has. Its windows are picked again exactly
+    as the extractor picked them, so with the mute guard on its lines are logged twice.
+    """
+    probe_s = _probe_duration_s(total_duration, current)
+    stitched = probe_s > NOISEPRINT_SHORT_S
+    np_path = _cathar_noiseprint_step(current, work_dir, duration_s=probe_s, stitched=stitched, mute_guard=CATHAR_NOISEPRINT_MUTE_GUARD)
+    if np_path is None or CATHAR_NOISEPRINT_MIN_DEPTH_DB <= 0:
+        return np_path
+    pick = functools.partial(_probe_windows, current, probe_s, stitched, CATHAR_NOISEPRINT_MUTE_GUARD)
+    return noiseprint_depth.guard_print(np_path, current, pick, CATHAR_NOISEPRINT_MIN_DEPTH_DB, CATHAR_NOISEPRINT_SHALLOW_ACTION)
+
+
+def _probe_windows(wav_path, duration_s, stitched, mute_guard):
+    """`(starts, window)` in samples of the windows the print was learned from: the extractor's own pick, made again."""
+    if stitched:
+        picked, window, _rate = _stitched_picks(wav_path, duration_s, mute_guard)
+        return picked, window
+    rate = sf.info(str(wav_path)).samplerate
+    start_s = _find_quiet_window(wav_path, duration_s, mute_guard=mute_guard)
+    return ([] if start_s is None else [int(round(start_s * rate))]), int(duration_s * rate)
+
+
 def _split_band_wanted():
     """Whether the denoise runs once per band: a crossover is set and the method has a factor to split."""
     return CATHAR_SPLIT_BAND_HZ > 0 and CATHAR_DENOISE_METHOD != "wiener"
@@ -890,12 +924,7 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
     current = _cathar_repair_pass(
         current, work_dir, notch_freq=notch_freq, total_duration=total_duration, repair=settings["repair"], declip=_declip_wanted(strategy)
     )
-    np_path = None
-    if settings["noiseprint"]:
-        probe_s = _probe_duration_s(total_duration, current)
-        np_path = _cathar_noiseprint_step(
-            current, work_dir, duration_s=probe_s, stitched=probe_s > NOISEPRINT_SHORT_S, mute_guard=CATHAR_NOISEPRINT_MUTE_GUARD
-        )
+    np_path = _learned_print(current, work_dir, total_duration) if settings["noiseprint"] else None
     if _split_band_wanted():
         current = _cathar_denoise_split(current, work_dir, settings, np_path, total_duration)
     else:

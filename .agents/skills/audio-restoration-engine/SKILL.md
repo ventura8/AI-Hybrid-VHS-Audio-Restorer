@@ -599,6 +599,32 @@ audio alignment, or FFmpeg multiplexing.
   and the single-window pick on none. Numbers and the table:
   `docs/configuration.md`, "cathar Noise-Print Mute Guard". Pending a blind
   listening session.
+- **cathar noise-print depth guard (2026-10-12)**: on a 15 s clip with no
+  pause the quietest 0.75 s is programme, and the learned print strips the
+  bed (56 of cathar's 64 `stems.octave_programme` failures on the IA hunt).
+  `cathar_noiseprint_min_depth_db` (0, off; `modules/noiseprint_depth.py`)
+  re-picks the print's windows with the extractor's own code
+  (`cathar._probe_windows`; the stitched pick is now `_stitched_picks`,
+  shared with the extractor) and measures their RMS against the p90 of the
+  mono mix's 1024-sample frame RMS; a shallower print is scaled to the key
+  (`cathar_noiseprint_shallow_action: scale`, a sibling
+  `<print>_depth<D>db.np.json`) or dropped (`drop`). Verified on cathar
+  0.8.0: the print JSON is a list of 1025 mean |rfft| (symmetric Hann 2048,
+  hop 512) of the probe's left channel, linear in level, so scaling the
+  file equals learning from a quieter probe. Through the module at the
+  denoise stage on the 159 speech-profile hunt clips (CPU): at 20, 25 of
+  62 failing clips still fail on `scale`, 17 on `drop`, none new (the
+  investigation's emulation exactly; deep prints wrote the shipped bytes);
+  at 13, 38 and 22. The fact that decides the default: the four Tata tapes'
+  stitched pauses sit only 13.7-16.9 dB under their loud frames, so 20
+  fires on all four (removal at the denoise stage 12.6-17.0 dB down to
+  6.6-13.0 on `scale`, to 0 on `drop`), while 13 leaves all four byte for
+  byte. Depth alone cannot tell a dialogue tape's pauses from a dense
+  clip's programme (8.3 dB median on failing clips, 13.0 on passing); a
+  single-window-only guard would. Scripts and data:
+  `D:\ai_restore_work\scratch_npdepth` (`validate_guard.py` with
+  `GUARD_D`, `analyze_validate.py`, `run_tata.py`, `tata_compare.py`).
+  Pending a blind listening session.
 - **Listener-round stages (2026-09-23)**: every new behaviour is a
   config-gated stage the tuning loop switches, shipped off until a loop
   accepts it (the pause floor and the sibilant guard are on since

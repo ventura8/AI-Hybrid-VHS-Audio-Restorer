@@ -198,6 +198,17 @@ The engine supports 10 execution modes configured in `config.yaml`:
     dropping the print alone changes nothing. Off keeps HEAD bb5fa2a's
     command lines (`tests/unit/test_cathar_mute_guard.py`); it waits for a
     blind listening session.
+  - Noise-print depth guard (2026-10-12, `cathar_noiseprint_min_depth_db`,
+    0 = off, and `cathar_noiseprint_shallow_action`, `scale` or `drop`):
+    a print whose windows sit less than the key under the loud frames is
+    programme, and is scaled to the key or dropped
+    (`modules/noiseprint_depth.py`). At 20 on the IA hunt's speech clips it
+    leaves 25 (`scale`) or 17 (`drop`) of cathar's 62 failing clips
+    failing, none new, but it also fires on all four Tata tapes, whose
+    stitched pauses sit 13.7-16.9 dB down; 13 leaves them byte for byte.
+    Off keeps HEAD 57bfdb8's command lines
+    (`tests/unit/test_cathar_print_depth_guard.py`); it waits for a blind
+    listening session.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

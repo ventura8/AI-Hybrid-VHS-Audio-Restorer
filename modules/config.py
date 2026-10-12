@@ -236,6 +236,18 @@ _NUMERIC_CONFIG_FIELDS = (
     # unchanged. 4.5 s (six stitched pauses, from 90 s of material) is the listener round's
     # plateau; 6 s was the shipped length.
     ("cathar_noiseprint_duration_s", float, 4.5, 0.0),
+    # cathar's noise-print depth guard (modules/noiseprint_depth.py): a print whose window(s) sit
+    # less than this many dB under the material's loud frames (p90 of 1024-sample frame RMS) is
+    # programme, and cathar_noiseprint_shallow_action scales it to this depth or drops it. On a
+    # 15 s clip with no pause the print is the quietest 0.75 s of programme: on the IA hunt the
+    # failing speech-profile clips' windows sat a median 8.3 dB under the loud frames against
+    # 13.0 on the passing ones, and the subtraction stripped the background bed on 56 of cathar's
+    # 64 stems.octave_programme failures. At 20 (CPU, 159 hunt clips) 25 of the 62 failing clips
+    # still fail on 'scale' and 17 on 'drop', none new; but the four Tata tapes' stitched pauses sit
+    # only 13.7-16.9 dB down, so 20 fires on all four and halves their noise removal ('scale'); at
+    # 13 they keep their bytes. 0 (the default) skips the guard, so every output keeps its bytes
+    # (docs/configuration.md, "cathar Noise-Print Depth Guard").
+    ("cathar_noiseprint_min_depth_db", float, 0.0, 0.0, 60.0),
     ("cathar_dehum_harmonics", int, 8, 1),
     ("cathar_mono_below_hz", int, 100, 0),
     ("cathar_deplosive_strength", int, 4, 0),
@@ -755,6 +767,10 @@ VALID_LOUDNORM_LINEAR_FALLBACKS = {"ffmpeg", "gain_limiter"}
 # (profile.has_clipping_any_channel, so a one-channel tape is not halved by the mono mix), and as on
 # 'always', with a WARNING, when the scan left no verdict (cathar._clipping_verdict).
 VALID_CATHAR_DECLIP_MODES = {"always", "detected"}
+# What the noise-print depth guard does with a print shallower than cathar_noiseprint_min_depth_db:
+# 'scale' scales its magnitudes so it sits exactly that deep, 'drop' denoises without a learned
+# print (as the music profile does). Read only with the guard on (modules/noiseprint_depth.py).
+VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS = {"scale", "drop"}
 # cathar_dehum_freq: 'scanner' gives `dehum --freq` the scanner's mains family (50 or 60) and runs
 # no dehum when the scan found no hum, as every release has; 0 runs `dehum --freq 0` on every tape,
 # so cathar picks the family from the recording itself (cathar 0.8.0's help).
@@ -816,6 +832,10 @@ def _normalize_mux_sample_rate(raw_value):
 
 def _normalize_cathar_declip_mode(raw_value):
     return _normalize_choice(raw_value, VALID_CATHAR_DECLIP_MODES, "cathar_declip_mode", "always")
+
+
+def _normalize_cathar_noiseprint_shallow_action(raw_value):
+    return _normalize_choice(raw_value, VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS, "cathar_noiseprint_shallow_action", "scale")
 
 
 def _normalize_pause_floor_target(raw_value):
@@ -953,6 +973,9 @@ def _apply_user_config(defaults, user_config):
     defaults["loudnorm_linear_fallback"] = _normalize_loudnorm_linear_fallback(defaults.get("loudnorm_linear_fallback"))
     defaults["cathar_declip_mode"] = _normalize_cathar_declip_mode(defaults.get("cathar_declip_mode"))
     defaults["cathar_dehum_freq"] = _normalize_cathar_dehum_freq(defaults.get("cathar_dehum_freq"))
+    defaults["cathar_noiseprint_shallow_action"] = _normalize_cathar_noiseprint_shallow_action(
+        defaults.get("cathar_noiseprint_shallow_action")
+    )
     defaults["pause_floor_target"] = _normalize_pause_floor_target(defaults.get("pause_floor_target"))
     defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
     defaults["linear_air_gate"] = _normalize_linear_air_gate(defaults.get("linear_air_gate"))
@@ -1000,6 +1023,9 @@ def load_config():
         # output keeps its bytes; the C3 listening session judges the other values.
         "cathar_declip_mode": "always",
         "cathar_dehum_freq": CATHAR_DEHUM_FREQ_SCANNER,
+        # The noise-print depth guard's answer to a shallow print (VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS);
+        # read only when cathar_noiseprint_min_depth_db is over 0, so the default changes no output.
+        "cathar_noiseprint_shallow_action": "scale",
         # The pause floor keeper's target and shape (VALID_PAUSE_FLOOR_TARGETS / _SHAPES): the
         # defaults are what every release has run, so every output keeps its bytes. The hiss
         # diagnosis of 2026-10-11 replayed 'frame' with a shaped fill; a GPU render and a
@@ -1140,6 +1166,8 @@ CATHAR_ENHANCE_METHOD = str(CONFIG.get("cathar_enhance_method", "replicate"))
 CATHAR_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_enable_noiseprint", True))
 CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 4.5))
 CATHAR_NOISEPRINT_MUTE_GUARD = bool(CONFIG.get("cathar_noiseprint_mute_guard", False))
+CATHAR_NOISEPRINT_MIN_DEPTH_DB = float(CONFIG.get("cathar_noiseprint_min_depth_db", 0.0))
+CATHAR_NOISEPRINT_SHALLOW_ACTION = str(CONFIG.get("cathar_noiseprint_shallow_action", "scale"))
 CATHAR_ENABLE_MONO_BELOW = bool(CONFIG.get("cathar_enable_mono_below", True))
 CATHAR_MONO_BELOW_HZ = int(CONFIG.get("cathar_mono_below_hz", 100))
 CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))
