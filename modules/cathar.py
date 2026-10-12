@@ -10,6 +10,7 @@ Orchestrates multi-stage deterministic DSP filtering using the Cathar engine:
 - Polish: multiband adaptive sibilance de-esser and SBR harmonic synthesis.
 """
 
+import functools
 import hashlib
 import json
 import shutil
@@ -25,6 +26,7 @@ try:
 except ImportError:
     sf = None
 
+from . import noiseprint_guard
 from .config import (
     CATHAR_ALPHA,
     CATHAR_ALPHA_HIGH,
@@ -80,6 +82,7 @@ from .config import (
     CATHAR_MUSIC_PERSISTENCE_MIN,
     CATHAR_MUSIC_PROFILE,
     CATHAR_NOISEPRINT_DURATION_S,
+    CATHAR_NOISEPRINT_MUTE_GUARD,
     CATHAR_REPAIR_STRENGTH,
     CATHAR_SPLIT_BAND_HZ,
     NOTCH_FREQ,
@@ -343,6 +346,11 @@ def _evaluate_quiet_probes(mono, win):
     return best_pos
 
 
+# A preserved work directory must not hand an unguarded print to a guarded request (the
+# guard can move the window), so a guarded print carries this in its name.
+NOISEPRINT_MUTE_FILE_SUFFIX = "_muteguard"
+
+
 def _mono_window(wav_path, start, frames):
     """Read one bounded float32 window and collapse it to mono."""
     data, sr = sf.read(str(wav_path), dtype="float32", start=start, frames=frames)
@@ -360,23 +368,36 @@ def _read_mono_samples(wav_path):
     return min(windows, key=lambda item: float(np.sqrt(np.mean(item[0] ** 2) + 1e-12)))
 
 
-def _find_quiet_window(wav_path, duration_s=0.75):
-    """Locates timestamp (seconds) of lowest RMS energy window in wav_path."""
+def _find_quiet_window(wav_path, duration_s=0.75, mute_guard=False):
+    """Locates timestamp (seconds) of lowest RMS energy window in wav_path.
+
+    `mute_guard` skips windows that are digital mutes (`noiseprint_guard.guarded_quiet_probe`) and returns
+    None when every window is one; off, the search is the one cathar has always run.
+    """
     if sf is None or np is None:
         return 0.0
     try:
         mono, sr, source_start = _read_mono_samples(wav_path)
-        win = int(duration_s * sr)
-        if len(mono) <= win:
-            return 0.0
-        return (source_start + _evaluate_quiet_probes(mono, win)) / sr
+        return _quiet_start_s(mono, sr, source_start, int(duration_s * sr), mute_guard)
     except Exception as exc:
         log_msg(f"    [Cathar] Quiet-window search failed ({exc}); the noise print is taken from the start.", level="WARNING")
         return 0.0
 
 
-def _extract_noiseprint_slice(input_wav, slice_wav, duration_s):
-    start_s = _find_quiet_window(input_wav, duration_s)
+def _quiet_start_s(mono, rate, source_start, win, mute_guard):
+    """Seconds into the file of the window to learn from; None when the mute guard rejected every window."""
+    if len(mono) <= win:
+        return 0.0
+    if not mute_guard:
+        return (source_start + _evaluate_quiet_probes(mono, win)) / rate
+    pos = noiseprint_guard.guarded_quiet_probe(mono, win, rate, source_start)
+    return None if pos is None else (source_start + pos) / rate
+
+
+def _extract_noiseprint_slice(input_wav, slice_wav, duration_s, mute_guard=False):
+    start_s = _find_quiet_window(input_wav, duration_s, mute_guard=mute_guard)
+    if start_s is None:
+        return False
     cmd_slice = [
         FFMPEG_BIN,
         "-y",
@@ -463,8 +484,12 @@ def _stitch_windows(wav_path, starts, window_frames, crossfade_frames):
     return out
 
 
-def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s):
-    """Writes a probe stitched from the quiet pauses of input_wav, about duration_s long in total."""
+def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s, mute_guard=False):
+    """Writes a probe stitched from the quiet pauses of input_wav, about duration_s long in total.
+
+    `mute_guard` leaves digital mutes out of the pick (`noiseprint_guard.pick_guarded_pauses`); off, the pick is
+    the one cathar has always made.
+    """
     info = sf.info(str(input_wav))
     rate = info.samplerate
     hop = int(NOISEPRINT_HOP_S * rate)
@@ -472,7 +497,10 @@ def _extract_stitched_noiseprint(input_wav, slice_wav, duration_s):
     window = hop * window_hops
     count = max(1, round(duration_s / NOISEPRINT_WINDOW_S))
     levels, starts = _window_levels(input_wav, hop, window_hops)
-    picked = _pick_pause_windows(levels, starts, window, count)
+    if mute_guard:
+        picked = noiseprint_guard.pick_guarded_pauses(input_wav, (levels, starts, hop, window_hops), count, rate, _pick_pause_windows)
+    else:
+        picked = _pick_pause_windows(levels, starts, window, count)
     if not picked:
         return False
     stitched = _stitch_windows(input_wav, picked, window, int(NOISEPRINT_CROSSFADE_S * rate))
@@ -503,20 +531,21 @@ def _validate_existing_noiseprint(output_json):
         return False
 
 
-def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_DURATION_S, stitched=False):
+def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_DURATION_S, stitched=False, mute_guard=False):
     """Learns an empirical noise print JSON from the quietest section of input_wav.
 
     `stitched` learns it from several quiet pauses instead of one window (see
     _extract_stitched_noiseprint); the single-window path is untouched, so every caller
-    that does not ask for it keeps its output.
+    that does not ask for it keeps its output. `mute_guard` (cathar mode's
+    `cathar_noiseprint_mute_guard`) keeps digital mutes out of either pick and returns None,
+    so the denoise runs without a learned print, when nothing else qualifies.
     """
-    output_json = output_dir / _noiseprint_name(input_wav, duration_s, stitched)
+    output_json = output_dir / _noiseprint_name(input_wav, duration_s, stitched, mute_guard)
     if _validate_existing_noiseprint(output_json):
         return output_json
     slice_wav = output_dir / f"silence_probe_{input_wav.stem}.wav"
-    extract = _extract_stitched_noiseprint if stitched else _extract_noiseprint_slice
     try:
-        return _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json)
+        return _learn_noiseprint(_noiseprint_extractor(stitched, mute_guard), input_wav, slice_wav, duration_s, output_json)
     except Exception as exc:
         log_msg(f"    [Cathar] Noiseprint extraction bypassed: {exc}", level="WARNING")
         return None
@@ -525,11 +554,19 @@ def _cathar_noiseprint_step(input_wav, output_dir, duration_s=CATHAR_NOISEPRINT_
             slice_wav.unlink()
 
 
-def _noiseprint_name(input_wav, duration_s, stitched):
+def _noiseprint_extractor(stitched, mute_guard):
+    """The probe extractor, stitched or single-window; the guarded one only when asked, so the unguarded call is unchanged."""
+    extract = _extract_stitched_noiseprint if stitched else _extract_noiseprint_slice
+    return functools.partial(extract, mute_guard=True) if mute_guard else extract
+
+
+def _noiseprint_name(input_wav, duration_s, stitched, mute_guard=False):
     """The print is named by how it was learned: a preserved work directory must not hand a
-    0.75 s single-window print to a later stitched 6 s request, or the reverse."""
+    0.75 s single-window print to a later stitched 6 s request, or the reverse, nor an
+    unguarded print to a guarded request (the guard can move the window)."""
     mode = "stitched" if stitched else "single"
-    return f"noise_{input_wav.stem}_{mode}_{float(duration_s):g}s.np.json"
+    guard = NOISEPRINT_MUTE_FILE_SUFFIX if mute_guard else ""
+    return f"noise_{input_wav.stem}_{mode}_{float(duration_s):g}s{guard}.np.json"
 
 
 def _learn_noiseprint(extract, input_wav, slice_wav, duration_s, output_json):
@@ -856,7 +893,9 @@ def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, stra
     np_path = None
     if settings["noiseprint"]:
         probe_s = _probe_duration_s(total_duration, current)
-        np_path = _cathar_noiseprint_step(current, work_dir, duration_s=probe_s, stitched=probe_s > NOISEPRINT_SHORT_S)
+        np_path = _cathar_noiseprint_step(
+            current, work_dir, duration_s=probe_s, stitched=probe_s > NOISEPRINT_SHORT_S, mute_guard=CATHAR_NOISEPRINT_MUTE_GUARD
+        )
     if _split_band_wanted():
         current = _cathar_denoise_split(current, work_dir, settings, np_path, total_duration)
     else:

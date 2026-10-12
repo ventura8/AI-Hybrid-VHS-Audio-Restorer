@@ -263,6 +263,8 @@
   `cathar_enable_coherent` and `cathar_enable_enhance` off,
   `cathar_noiseprint_duration_s` 4.5 (six stitched pauses, from 90 s of
   material) and `cathar_deesser_threshold` 12 (only the loud 's' is caught).
+  `cathar_noiseprint_mute_guard` (false) keeps digital mutes out of the
+  print's pick; see "cathar Noise-Print Mute Guard" below.
   - Music profile: a tape whose
     tonal persistence (the scanner's median share of held spectral peaks over
     15 s windows; music 0.064-0.225, speech over a bed 0.007-0.033, dry
@@ -707,6 +709,118 @@ exit..." and the drag-and-drop prompt are asked only when stdin is a
 console (on Windows the handle must pass `GetConsoleMode`: a detached
 stdin, the NUL device, reports a tty too); with no paths and no console the
 app asks nothing and exits 2.
+
+## cathar Noise-Print Mute Guard
+
+`cathar_noiseprint_mute_guard` (false), added on 2026-10-12. cathar learns
+its noise print from the quietest 0.75 s of a clip (a grid of 40 windows)
+or, from 90 s of material, from six stitched pauses. The single-window
+pick's only guard was against an all-zero window, and the stitched pick had
+none (it always keeps the quietest window, exact zeros included), so on an
+edited upload the pick can be a digital mute (a fade to black, a blank
+lead-in, a DVD's silence), and a print learned there removes nothing. On
+the 136 IA clips of
+`experiments/auto_engines_v140/ia_features.json` (cathar 0.7.3), 7 picked a
+window under -70 dBFS (-80.0 to -128.4), and there APL removed a median
+9.7 dB more than cathar, against 3.38 dB on the other 114.
+
+With the key on (`modules/noiseprint_guard.py`), a candidate window is left
+out when half or more of its samples repeat the one before (exact zeros, a
+held DC level), or when it sits under -70 dBFS and at least 30 dB under the
+p20 of the material's 23 ms frame levels. Frames under -90 dBFS do not count
+toward that p20, so a mute filling a fifth of a clip cannot become its own
+reference. Both picks keep their grid and their spread, so with nothing
+rejected the pick is the same; with every window rejected the denoise runs
+without `--noiseprint`. The log names every rejected window (one line per
+run of windows on the stitched path), the level of the window learned from
+and the p20, and the guarded print's file name ends in `_muteguard`. Off,
+the picks, the slice and every command line are HEAD bb5fa2a's
+(`tests/unit/test_cathar_mute_guard.py`). The key is read in cathar mode
+only; auto_pure_linear's subtraction stage learns its print unguarded.
+
+Measured on CPU on 2026-10-12 on the 7 clips and the counterexample
+bbc-two-continuity (15 s each, so the single-window path). Each clip ran
+through the scanner, the pre-conditioning, the cathar chain, the polish
+and the pause floor keeper (no mux). The readings use the harness's own
+functions over the whole clip: removal and deviation (`measure_tradeoff`),
+the loud-frame 4-8 kHz and 8-16 kHz ratios as output minus source, and the
+gap air of the output. The window is the one the print is learned from, in
+dBFS; everything else is in dB.
+
+| Clip | Window off | Window on | Removed off | Removed on |
+| :--- | ---: | ---: | ---: | ---: |
+| bbc-two-continuity | -86.1 | -86.1 | 15.64 | 15.64 |
+| duck-tales | -91.3 | -36.4 | 0.70 | 3.30 |
+| fun-and-fancy | -81.9 | -48.0 | -0.28 | 0.14 |
+| superstition | -118.3 | -74.6 | 0.78 | 1.65 |
+| tale-spin | -82.4 | -63.4 | 1.80 | 2.13 |
+| animal-shelf | -119.8 | -78.5 | 1.72 | 4.15 |
+| lion-king-dodge | -119.2 | -51.8 | -0.45 | -0.18 |
+| scooby-doo | -94.9 | -69.2 | -0.85 | -0.84 |
+
+| Clip (off / on) | 4-8 kHz | 8-16 kHz | Gap air |
+| :--- | ---: | ---: | ---: |
+| bbc-two-continuity | -0.42 / -0.42 | -0.56 / -0.56 | -64.2 / -64.2 |
+| duck-tales | -0.43 / -0.58 | -0.60 / -0.69 | -12.7 / -13.8 |
+| fun-and-fancy | -0.44 / -0.44 | 0.33 / 0.36 | -8.2 / -8.4 |
+| superstition | 0.46 / 0.46 | 0.29 / 0.29 | -17.9 / -17.9 |
+| tale-spin | -0.34 / -0.34 | -2.13 / -2.14 | -15.8 / -15.8 |
+| animal-shelf | 0.30 / -0.88 | -0.64 / 0.25 | -1.0 / -1.2 |
+| lion-king-dodge | 0.29 / -0.58 | 0.58 / -2.82 | -11.8 / -14.6 |
+| scooby-doo | -0.72 / -0.70 | -0.47 / -0.45 | -1.2 / -1.2 |
+
+The pick moved on all 7 and bbc-two-continuity came out sample for sample
+the same. Removal rose by a median 0.42 dB (0.01 to 2.60), to a median of
+1.65 dB, still short of the 2.78 dB cathar removes at HEAD on the other 206
+clips the hunt had scored on 2026-10-12 (`tune_ia_hunt_v3`,
+`cathar__baseline`), because on these dense clips the next quietest window
+is rarely a clean pause. Programme deviation moved by
+-0.90 to +0.11 dB. The cost is on lion-king-dodge: its new window straddles
+the mute and the end of the programme before it, so the print carries
+programme, and 8-16 kHz on the loud frames fell 3.4 dB, with 2.8 dB less
+gap air. animal-shelf lost 1.2 dB at 4-8 kHz while its deviation fell
+0.9 dB.
+
+Two alternatives were measured and set aside:
+
+- Dropping `--noiseprint` whenever the quietest window is a mute (not
+  taking a louder one) read within 0.03 dB of off on all 7 clips.
+  cathar's own estimate falls for the mute as well: on a synthetic 10 s
+  file, `denoise --alpha 1.0` without a print removed 0.48 dB of hiss net
+  of its +3.5 dB gain change, and 0.0 dB once the file held a 1 s digital
+  mute, at its start or in the middle; a print learned from 0.75 s of the
+  same hiss removed 9.7 dB. The fallback therefore matters only on material
+  that is mute throughout, and there it removes little.
+- Also rejecting windows a quarter or more of whose frames are digital,
+  so that no window straddles a mute, moved three picks louder (read on
+  the chain's own output, before the polish, against the same stage off).
+  superstition rose to 6.01 dB removed with its highs unchanged. On
+  lion-king-dodge the window was programme (-32.6 dBFS): 6.67 dB removed,
+  but 9.6 dB less gap air and 1.3 dB less at 4-8 kHz. animal-shelf reached
+  4.33 dB removed for 4.4 dB less at 4-8 kHz. This needs the ear before it
+  becomes a rule.
+
+The opt-in digital-mute fixture class (`--digital-mute` on
+`make_realistic_fixtures_v2.py`, `docs/validation.md`) carries the case the
+guard is for. On five of its fixtures, one per voice, the window cathar
+learned from with the key off lay inside a gap, or mostly in one, on three.
+Its spectrum stood 56.0, 63.2 and 14.3 dB (log-spectral distance, 100 Hz to
+16 kHz) from the noise the fixture carries, |STFT(vhs - target)| outside
+the gaps; with the key on, 3.9, 2.3 and 5.1 dB. The other two open on exact
+zeros, which the old all-zero guard already skipped (2.0 and 3.3 dB either
+way).
+
+Key on, the whole local tapes (2026-10-12, CPU, each capture's audio
+decoded to mono, so read before the pre-conditioning): on the seven
+distinct full tapes, 134 to 1692 s long and so on the stitched path, the
+level rule rejected nothing, since no window sat under -69 dBFS. The held
+rule rejected windows on two: a 1 s lead-in of exact zeros, and a 0.75 s
+window at the very end of a file with 75% of its samples held. The
+unguarded stitched pick keeps the quietest window, so on both one of the
+six pauses was that digital stretch; the key moves the stitched pick on
+those two tapes and on no other. The single-window pick moved on none.
+
+The guard stays off until a blind listening session judges it.
 
 ## Event Log
 

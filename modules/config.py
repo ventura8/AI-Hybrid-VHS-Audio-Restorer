@@ -643,6 +643,18 @@ _BOOL_CONFIG_FIELDS = (
     # Off since the listener round: the replicated highs read as hiss in the gaps.
     ("cathar_enable_enhance", False),
     ("cathar_enable_noiseprint", True),
+    # Keeps a digital mute (a window mostly holding one value, or one under -70 dBFS and 30 dB
+    # under the material's 23 ms frame p20) out of cathar's noise-print pick, single-window and
+    # stitched; when nothing else qualifies the denoise runs without a learned print
+    # (modules/noiseprint_guard.py). On the IA corpus 7 of 136 clips picked a window under
+    # -70 dBFS, and there APL removed a median 9.7 dB more than cathar against 3.38 dB elsewhere
+    # (cathar 0.7.3, 2026-09-18). Re-run on CPU on those 7 (2026-10-12): the pick moved on all 7,
+    # removal rose a median 0.42 dB (0.01 to 2.60), bbc-two-continuity's analog floor stayed
+    # sample for sample, and lion-king-dodge lost 3.4 dB at 8-16 kHz (its new window straddles
+    # the mute and programme). Off by default so every output keeps its bytes until a listening
+    # session judges it; cathar mode only (auto_pure_linear's subtraction learns its own print
+    # unguarded).
+    ("cathar_noiseprint_mute_guard", False),
     ("cathar_enable_mono_below", True),
     ("cathar_enable_deplosive", True),
     # The music profile (see cathar_music_alpha): switched as a whole, then its four stage
@@ -1116,6 +1128,7 @@ CATHAR_ENABLE_ENHANCE = bool(CONFIG.get("cathar_enable_enhance", False))
 CATHAR_ENHANCE_METHOD = str(CONFIG.get("cathar_enhance_method", "replicate"))
 CATHAR_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_enable_noiseprint", True))
 CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 4.5))
+CATHAR_NOISEPRINT_MUTE_GUARD = bool(CONFIG.get("cathar_noiseprint_mute_guard", False))
 CATHAR_ENABLE_MONO_BELOW = bool(CONFIG.get("cathar_enable_mono_below", True))
 CATHAR_MONO_BELOW_HZ = int(CONFIG.get("cathar_mono_below_hz", 100))
 CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))

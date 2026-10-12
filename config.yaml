@@ -421,6 +421,21 @@ arnndn_enable_adeclick: true
 #     came back sample for sample), so the change shows on tapes the scanner read
 #     as hum-free. Not judged by ear yet: the C3 listening session decides.
 #
+# cathar_noiseprint_mute_guard (2026-10-12):
+#   - false (Default): the noise print is learned from the quietest window
+#     whatever it holds, as every release has.
+#   - true: a candidate window that is a digital mute is left out of the pick,
+#     single-window and stitched: half or more of its samples repeat the one
+#     before (exact zeros, a held DC level), or it sits under -70 dBFS and 30 dB
+#     under the p20 of the material's 23 ms frames (frames under -90 dBFS left
+#     out of that p20). When every window is a mute the denoise runs without a
+#     learned print. 7 of 136 IA clips picked a window under -70 dBFS; on those 7
+#     (15 s, CPU, 2026-10-12) the pick moved on all 7 and removal rose a median
+#     0.42 dB (0.01 to 2.60), while bbc-two-continuity's -86 dBFS analog floor
+#     stayed sample for sample. lion-king-dodge lost 3.4 dB at 8-16 kHz: its new
+#     window straddles the mute and programme. Not judged by ear yet; see
+#     docs/configuration.md, "cathar Noise-Print Mute Guard". cathar mode only.
+#
 # cathar_enable_repair:
 #   - Specialized non-linear transient spectral spike and dropout repair (default: true)
 #
@@ -487,6 +502,7 @@ cathar_enable_enhance: false
 cathar_enhance_method: "replicate"
 cathar_enable_noiseprint: true
 cathar_noiseprint_duration_s: 4.5
+cathar_noiseprint_mute_guard: false
 cathar_dehum_adaptive: true
 cathar_dehum_harmonics: 8
 cathar_enable_mono_below: true
