@@ -180,7 +180,10 @@ channel carrying audio. The azimuth delay is applied only when the two channels
 actually correlate, because a lag measured against a silent channel is noise.
 `azimuth_estimate_method` chooses where the lag is read: the first 0.74 s
 (`head`, the default) or a GCC-PHAT vote of the loudest spans (`spans`); see
-"Pre-Conditioning Azimuth Estimate" in `docs/configuration.md`.
+"Pre-Conditioning Azimuth Estimate" in `docs/configuration.md`. In the same
+way `crt_detect_mode` chooses where the CRT line is looked for, and so which
+mains family the hum notch may take: the first 0.74 s (`head`, the default)
+or the whole file's averaged spectrum (`welch`); see "CRT Line Search".
 
 ## Shared Stage: Mastering and Mux
 

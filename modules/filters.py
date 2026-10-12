@@ -10,7 +10,8 @@ and robust process execution for VHS native DSP restoration and pre-conditioning
 - Stage 4: Analog Preamp De-Clipping (peak clipping threshold reconstruction via adeclip).
 - Stage 5: Impulsive Pop/Click Suppression (adeclick) and Motor Rumble Highpass (45-75 Hz).
 - Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters).
-- Stage 7: CRT Horizontal Flyback Line Whine Notch (15.625 kHz PAL / 15.734 kHz NTSC).
+- Stage 7: CRT Horizontal Flyback Line Whine Notch (15.625 kHz PAL / 15.734 kHz NTSC; crt_detect_mode
+  finds the line in the first 0.74 s or in the whole file's averaged spectrum).
 - Stage 8: Camcorder Plastic Enclosure Acoustic Resonance Notching (1.5 kHz - 3.5 kHz).
 - Stage 9: Fast Fourier Spectral Denoising (afftdn) or Neural RNNoise (arnndn).
 """
@@ -41,6 +42,7 @@ from .config import (
     ARNNDN_MODEL,
     AZIMUTH_ESTIMATE_METHOD,
     AZIMUTH_REJECT_INVERTED_PAIR,
+    CRT_DETECT_MODE,
     CRT_NOTCH_Q,
     ENABLE_ADECLICK,
     ENABLE_DYNAMIC_EXPANDER,
@@ -1055,7 +1057,12 @@ def _is_short_for_crt(signal_data, sr):
 # nearest. Probing each nominal bin exactly fails whenever the tape runs slightly
 # off speed: the strongest whine in a real 21-tape library sat at 15633 Hz and was
 # being reported as NTSC. Prominence separation is wide - tapes carrying the whine
-# measure 1.9-85.7x the band median, tapes without it 1.0-1.5x.
+# measure 1.9-85.7x the band median, tapes without it 1.0-1.5x. Measured since
+# (2026-10-12): hiss in the band reads 2.9x on its own (the maximum of 335 Rayleigh
+# bins over their median; white noise clears 1.7x 200 times in 200), so the head
+# search notches, and picks a mains family for, any hissy tape; the "without" tapes
+# held nothing in the band. crt_detect_mode 'welch' (modules/crt_line.py) reads the
+# whole file's averaged spectrum instead.
 CRT_SEARCH_LOW_HZ = 15450.0
 CRT_SEARCH_HIGH_HZ = 15900.0
 CRT_MIN_PROMINENCE = 1.7
@@ -1064,6 +1071,9 @@ CRT_LINE_RATES_HZ = (15625.0, 15734.0)
 
 def _detect_crt_flyback_notch(signal_data, sr):
     """Detects the 15625 Hz (PAL) or 15734 Hz (NTSC) CRT line whistle.
+
+    `crt_detect_mode` picks the search: 'head' (`_head_crt_line`, every release's) or
+    'welch' (`_welch_crt_line`, the whole file's averaged spectrum).
 
     Args:
         signal_data (numpy.ndarray): Mono audio waveform samples.
@@ -1074,7 +1084,22 @@ def _detect_crt_flyback_notch(signal_data, sr):
     """
     if _is_short_for_crt(signal_data, sr):
         return 0.0
+    search = _welch_crt_line if CRT_DETECT_MODE == "welch" else _head_crt_line
+    return search(signal_data, sr)
 
+
+def _welch_crt_line(signal_data, sr):
+    """The 'welch' search (`modules/crt_line.py`), logged with the peak it rests on."""
+    from . import crt_line
+
+    found = crt_line.search(signal_data, sr)
+    verdict = crt_line.verdict(found, CRT_LINE_RATES_HZ)
+    log_msg(f"    [Auto-Scan] CRT line (whole file): {crt_line.describe(found, verdict)}")
+    return verdict
+
+
+def _head_crt_line(signal_data, sr):
+    """The 'head' search: the strongest bin of one FFT of the first 32768 samples at 1.7x the band's median magnitude."""
     chunk = signal_data[:32768]
     fft_mag = np.abs(np.fft.rfft(chunk))
     freqs = np.fft.rfftfreq(len(chunk), 1.0 / sr)

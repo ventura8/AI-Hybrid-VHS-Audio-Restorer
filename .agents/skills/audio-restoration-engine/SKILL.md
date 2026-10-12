@@ -119,6 +119,35 @@ audio alignment, or FFmpeg multiplexing.
      clips; `review_val.py`, `rv.json`; `edge_probe.py`).
    - `_detect_crt_flyback_notch`: Band search across 15450-15900 Hz, classified
      by nearest line rate so an off-speed tape is still identified.
+     `crt_detect_mode` (2026-10-12) picks the search. `head`, the default
+     (`_head_crt_line`), is one FFT of the first 32768 samples at 1.7x the
+     band's median magnitude: hiss alone reads 2.9x (white noise fires it 200
+     times in 200), so it notches, and picks a mains family for, any hissy
+     tape (a 50 Hz tape read as NTSC keeps its hum), and it misses or misnames
+     a line that starts late or wanders (IA hunt: 2 of R0's 71 lines missed, 2
+     the wrong standard, 59 sources without a line notched; realistic-v2: it
+     fires on 284 of 440 captures without a planted line). `welch`
+     (`modules/crt_line.py`) averages up to 256 segments over the whole file
+     and calls a line at 10 dB over the band and 6 dB over the bins 108-215 Hz
+     either side, each at least 21 dB over the root of the segments, and no
+     tooth of a comb (fewer than five other local peaks 27 Hz or more away
+     within 3 dB): 68 of the 71 named right, none wrong, 15 narrow tones
+     notched, five combs refused (the BBC iPlayer 15703 Hz comb, a 43 Hz
+     render comb), realistic-v2 19 of 20 planted lines and 51 of 440 without
+     one. The hum notch moved on 14 hunt sources, toward R0's mains on 8. On
+     cathar CPU renders of 91 hunt clips it takes out et-el-extraterrestre's
+     and 2003-commercial-for-toshiba's lines and terrytoons' 50 Hz hum; where
+     the head had notched hiss by chance the band stays, and
+     9-october-2008-comedy-channel-promo-break-8's 4.1 dB PAL line comes out
+     of the denoise 4.6 dB over the source (a line that stands out only after
+     the denoise wants a search after it). A rate-side threshold for weak
+     lines (3.4 dB on 15 s) was tried and dropped: it read 50 Hz buzz
+     harmonics near 15734 Hz as NTSC and took tempo-pre-schools' 55.7 dB hum
+     notch away. Default bytes: `tests/unit/test_crt_detect_mode.py` pins
+     e429683's verdicts and scan graphs; 91 cathar renders decoded
+     identical. Not judged by ear yet. Scratch:
+     `D:\ai_restore_work\scratch_whistle\` (`final_eval.py`,
+     `render_set.py`, `validate_renders2.py`, `validate_welch3.json`).
    - `_detect_mains_buzz_notch`: Hum vote constrained to the family the detected
      line rate allows; `_append_mains_notches` always covers the fundamental.
    - `_detect_enclosure_resonance_notch`: Requires a high-contrast bump of

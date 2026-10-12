@@ -33,8 +33,10 @@ alignment:
   `adeclick`, `highpass`, `bandreject`).
 - **Surgical Tone Notching**: mains hum constrained to the family the detected
   video line rate allows and always notched at its fundamental, 15.625k/15.734k
-  CRT flyback whistle located by band search, and enclosure acoustic resonance
-  gated so speech formants are never notched.
+  CRT flyback whistle located by band search (`crt_detect_mode`: the first
+  0.74 s, `head`, the default, whose threshold hiss alone clears, or the whole
+  file's averaged spectrum, `welch`), and enclosure acoustic resonance gated so
+  speech formants are never notched.
 - **Cathar DSP Engine**: Pure-Rust multi-stage restoration (dewind, azimuth,
   declick, decrackle, AR inpaint, deplosive, declip, adaptive dehum, dewow,
   noiseprint learning, phase-coherent denoise, de-esser, and SBR enhancement).

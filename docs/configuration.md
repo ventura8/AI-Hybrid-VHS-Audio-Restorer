@@ -529,6 +529,82 @@ one-sample head reading (0.02 ms) stays in its output. Not judged by ear
 yet: a listening session and the `artifacts/realistic-v2` and IA
 confirmation come before any default changes.
 
+## CRT Line Search
+
+`crt_detect_mode` (`head`) was added on 2026-10-12, from backlog gap 5 (a CRT
+whistle the denoise seemed to expose). It picks where the scan looks for the
+CRT line whistle. The pre-conditioning of every mode notches the line it finds
+(`crt_notch_q`), and its standard holds the mains search to 50/100 or
+60/120 Hz (`filters.MAINS_CANDIDATES_BY_LINE_RATE`). The default keeps every
+output's bytes: `tests/unit/test_crt_detect_mode.py` pins HEAD e429683's
+verdicts and whole-scan graphs on five fixtures, and 91 `cathar` renders of
+IA hunt clips on CPU decode to the same PCM as the unchanged worktree.
+
+- `head` (default): one FFT of the first 32768 samples (0.74 s at 44.1 kHz),
+  a line called when the band's strongest bin (15450-15900 Hz) stands 1.7x
+  over its median magnitude, as every release has. Hiss in the band reads
+  2.9x on its own, the maximum of 335 Rayleigh bins over their median: white
+  noise clears the threshold 200 times in 200. So a hissy tape gets a notch
+  and a mains family by chance (on a fixture with 50 Hz hum under hiss it
+  reads NTSC and the hum is not notched), and a line that starts late or
+  wanders is missed or named the wrong standard.
+- `welch`: up to 256 segments of 32768 samples spread over the whole file,
+  their Hann-windowed power averaged (`modules/crt_line.py`). A line is
+  called when the band's strongest bin stands 10 dB over the band's median
+  and 6 dB over the median of the bins 80-160 away on each side (108-215 Hz),
+  each at least 21 dB over the square root of the segments averaged (1.5
+  times the noise's 99.9th percentile: 12.5 dB on one segment, 2.7 on 39),
+  and the band holds fewer than five other local peaks 27 Hz or more away,
+  within 3 dB of it and over that floor. A codec cut inside the band leaves
+  one side as loud as the peak; a line wandering 30 Hz, or a whine spread
+  55 Hz by flutter, keeps both sides clear; a comb is no line. The verdict is
+  the nearer line rate, as `head` returns.
+
+Measured on the IA hunt's 235 sources, against R0's line track
+(`source_profile.line_profile`):
+
+- `head` named R0's standard on 67 of R0's 71 lines. It missed
+  et-el-extraterrestre (a 23 dB PAL line) and smokymountainsundayvhs (21 dB
+  NTSC), named thevistagroup's NTSC line PAL and 2003-commercial-for-toshiba's
+  PAL line NTSC, and fired on 59 sources with no line. The IA corpus clip
+  vid-20220730-091707, whose PAL line wanders down from about 15700 Hz, reads
+  NTSC: it is the clip whose whistle gate refused all six
+  `cathar_music_alpha` 0.25 candidates.
+- `welch` named it on 68, none wrong, and missed three weak lines (7.0-9.9 dB
+  on the averaged spectrum). It fired on 15 sources R0 does not track, narrow
+  tones such as a 15656 Hz line on five UK tapes, and rejected five combs: the
+  BBC iPlayer captures' 15703 Hz tone among four others, and two renders' 43 Hz
+  comb (44100 / 1024), each of which `head` or the band test alone reads as a
+  line. White and pink noise of 0.8-60 s never make it fire.
+- realistic-v2: `head` fires on 284 of the 440 captures without a planted line
+  and on all 20 with one; `welch` on 51 and 19. 34 of those 51 carry a line R0
+  tracks from their noise bed, 50-170 Hz off the rates
+  `realistic_defects._without_tones` cuts.
+- The hum notch moves on 14 sources: toward R0's mains on 8 (terrytoons' 50 Hz
+  hum, 23 dB of evidence, read as NTSC by `head`, is notched again;
+  teddy-bear's 60 Hz notch on a 50 Hz tape becomes 50 Hz) and elsewhere on 6,
+  where the mains detector's own guess (R0 evidence 3.2 dB or less on four of
+  them) is no longer held to the family the noise verdict picked.
+- A lower threshold for a weak line at a rate (3.4 dB on 15 s) caught the
+  hunt's weak PAL lines and also 50 Hz buzz harmonics near 15734 Hz on PAL
+  tapes, which took the 50 Hz notch from tempo-pre-schools (55.7 dB of R0
+  evidence); it is not part of the search.
+
+The `cathar` renders on CPU (91 hunt clips; `welch` against the default,
+whistle and hum read with the harness's floored readings over the runner's
+windows): 64 differ. The two lines `head` got wrong are taken out
+(et-el-extraterrestre's whistle reading goes from +1.06 to -23.62 dB against
+the source, 2003-commercial-for-toshiba's from -0.90 to -12.14), terrytoons'
+hum falls from -0.01 to -1.41 dB and thevistagroup's from +0.38 to -0.57.
+Where `head` had notched hiss by chance the band is left as it was: on 22
+clips the whistle reading rises by more than 1 dB, mostly from a carved hole
+(-4 to -12 dB) to about 0. One of them passes the 3 dB gate:
+9-october-2008-comedy-channel-promo-break-8 carries a 4.1 dB PAL line that
+`welch` does not call and the denoise exposes (+4.63 dB); it stands out of the
+hiss only after the denoise, so a search after the denoise is the place to
+catch it. Not judged by ear yet: a listening session and the
+`artifacts/realistic-v2` and IA confirmation come before any default changes.
+
 ## DTW Sync on Length-Preserving Chains
 
 `sync_dtw_enable` (true) was added on 2026-10-12 (backlog B1). The scanner

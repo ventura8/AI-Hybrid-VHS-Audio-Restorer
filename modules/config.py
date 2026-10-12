@@ -828,6 +828,17 @@ VALID_MUX_SAMPLE_RATES = {"pipeline", "source"}
 # (modules/azimuth_spans.py), and returns the sign the graph corrects: it delayed 28, the mono
 # 4-8 kHz rose on 27 (median +0.45 dB) and fell 0.36 dB on one.
 VALID_AZIMUTH_ESTIMATE_METHODS = {"head", "spans"}
+# Where the scan looks for the CRT line whistle whose notch the pre-conditioning of every mode
+# applies, and whose standard holds the mains search to 50/100 or 60/120 Hz (modules/filters.py).
+# 'head' takes one FFT of the first 32768 samples at a 1.7x magnitude threshold, as every
+# release has: noise alone clears it (white noise 200 times in 200), so a hissy tape gets a
+# notch and a mains family by chance, and a line that starts late or wanders is missed or
+# named the wrong standard (IA hunt, 235 sources: 2 of R0's 71 lines missed, 2 the wrong
+# standard, 59 sources with no line notched). 'welch' averages up to 256 segments over the
+# whole file and asks for 10 dB over the band and 6 dB over both sides and no comb
+# (modules/crt_line.py): 68 of the 71 named right, none wrong, 3 weak ones missed, 15 narrow
+# tones R0 does not track notched, noise never.
+VALID_CRT_DETECT_MODES = {"head", "welch"}
 
 
 def _reject_config_value(param_name, raw_value, default):
@@ -865,6 +876,10 @@ def _normalize_mux_sample_rate(raw_value):
 
 def _normalize_azimuth_estimate_method(raw_value):
     return _normalize_choice(raw_value, VALID_AZIMUTH_ESTIMATE_METHODS, "azimuth_estimate_method", "head")
+
+
+def _normalize_crt_detect_mode(raw_value):
+    return _normalize_choice(raw_value, VALID_CRT_DETECT_MODES, "crt_detect_mode", "head")
 
 
 def _normalize_cathar_declip_mode(raw_value):
@@ -1028,6 +1043,7 @@ def _apply_user_config(defaults, user_config):
     defaults["apl_burst_ceiling"] = _normalize_apl_burst_ceiling(defaults.get("apl_burst_ceiling"))
     defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
     defaults["azimuth_estimate_method"] = _normalize_azimuth_estimate_method(defaults.get("azimuth_estimate_method"))
+    defaults["crt_detect_mode"] = _normalize_crt_detect_mode(defaults.get("crt_detect_mode"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -1096,6 +1112,10 @@ def load_config():
         # ('head', every release's, so every output keeps its bytes) or the loudest spans'
         # GCC-PHAT vote ('spans', VALID_AZIMUTH_ESTIMATE_METHODS); not yet judged by ear.
         "azimuth_estimate_method": "head",
+        # The scan's CRT line search: the first 32768 samples ('head', every release's, so every
+        # output keeps its bytes) or the whole file's averaged spectrum ('welch',
+        # VALID_CRT_DETECT_MODES); not yet judged by ear.
+        "crt_detect_mode": "head",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1282,6 +1302,7 @@ MUX_LIMITER_LATENCY_COMPENSATION = bool(CONFIG.get("mux_limiter_latency_compensa
 MUX_SAMPLE_RATE = str(CONFIG.get("mux_sample_rate", "pipeline"))
 AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
 AZIMUTH_ESTIMATE_METHOD = str(CONFIG.get("azimuth_estimate_method", "head"))
+CRT_DETECT_MODE = str(CONFIG.get("crt_detect_mode", "head"))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
 EXPANDER_ATTACK_S = float(CONFIG.get("expander_attack_s", 0.04))

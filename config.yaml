@@ -281,6 +281,29 @@ batch_jobs: 8
 #     delay with either method. auto_pure_linear gains most: cathar's own azimuth
 #     stage re-aligns the channels whatever the pre-conditioning did. Not judged by
 #     ear yet.
+#
+# crt_detect_mode (where the scan looks for the CRT line whistle; 2026-10-12): the
+# pre-conditioning of every mode notches the line it finds, and its standard holds
+# the mains search to 50/100 or 60/120 Hz.
+#   - 'head' (Default): one FFT of the first 32768 samples (0.74 s), a line called at
+#     1.7x the band's median magnitude, as every release has, so every output keeps
+#     its bytes. Hiss in the band reads 2.9x on its own, so a hissy tape gets a notch
+#     and a mains family by chance (a 50 Hz tape read as NTSC keeps its hum), and a
+#     line that starts late or wanders is missed or named the wrong standard. IA hunt,
+#     235 sources: of R0's 71 lines 2 missed (et-el-extraterrestre, a 23 dB line the
+#     cathar render keeps) and 2 the wrong standard; 59 sources R0 finds no line on
+#     notched.
+#   - 'welch': up to 256 segments spread over the whole file, averaged, a line called
+#     at 10 dB over the band's median and 6 dB over the bins 108-215 Hz either side,
+#     both at least 21 dB over the root of the segments, and no tooth of a comb
+#     (modules/crt_line.py; noise of 0.8-60 s never fires it). 68 of R0's 71 lines
+#     named right, none wrong, 3 weak ones (7-10 dB) missed, 15 narrow tones R0 does
+#     not track notched, 5 combs refused; realistic-v2: 19 of 20 planted lines, 51 of
+#     440 captures without one (head 284). The hum notch moves on 14 sources, toward
+#     R0's mains on 8. cathar on CPU, 91 hunt clips: et-el's and toshiba's lines and
+#     terrytoons' 50 Hz hum come out; 9-october-2008-comedy-channel-promo-break-8's
+#     4.1 dB line, notched by head by chance, is exposed 4.6 dB by the denoise.
+#     Not judged by ear yet.
 # ------------------------------------------------------------------------------
 afftdn_nr: 10.0
 afftdn_nf: -55.0
@@ -290,6 +313,7 @@ enable_adeclick: true
 notch_freq: 50.0
 azimuth_reject_inverted_pair: false
 azimuth_estimate_method: "head"
+crt_detect_mode: "head"
 
 # ------------------------------------------------------------------------------
 # ARNNDN Speech Settings (for 'arnndn_speech' mode)
