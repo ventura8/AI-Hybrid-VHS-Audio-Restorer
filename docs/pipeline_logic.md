@@ -110,7 +110,8 @@ and the runner logs which stages applied and which skipped.
      - downward dynamic expander below -45 dB.
 1. **Pass 4 (Smart Sync & Mix)**: Sub-sample DTW/shift alignment, 32-bit float
    `amix`, then two-pass EBU R128 loudness normalization followed by a resample
-   back to 44.1 kHz and a sample-peak limiter (`alimiter` at -1 dBFS).
+   to the mux's rate (44.1 kHz, or an MPEG-PS source's own) and a sample-peak
+   limiter (`alimiter` at -1 dBFS).
 1. **Final Remux**: Stream-copied container remux into `*_Pure_Cleaned.<ext>`.
 
 ## `denoise_only` flow
@@ -171,8 +172,16 @@ lifts the pause floors. The run log names the mode and why
 logs once called "linear", 37% broke the true-peak half and ran dynamic.
 
 Some FFmpeg builds change the sample rate while processing `loudnorm`, so the
-chain explicitly resamples to 44.1 kHz and ends with a sample-peak limiter,
-`alimiter` at 0.891 (-1 dBFS on the samples). It is not a true-peak limiter
+chain explicitly resamples to the rate the mux keeps (44.1 kHz; an MPEG-PS
+output keeps its source's rate, and `mux_sample_rate: source` keeps it in
+every container) and ends with a sample-peak limiter, `alimiter` at 0.891
+(-1 dBFS on the samples). Its lookahead delays the output 219 samples
+(4.97 ms at 44.1 kHz) unless `mux_limiter_latency_compensation` is on. The
+restored track is placed where the source's audio started against the video
+(`-copyts` and `-itsoffset`, `modules/mux_format.py`; in MPEG-PS and MPEG-TS
+`-itsoffset` alone, so their timestamp jumps are still corrected).
+
+The limiter is not a true-peak limiter
 and guarantees no dBTP ceiling. On the default path loudnorm holds the true
 peak itself: linear mode runs only when the gain leaves it at or under
 -1 dBTP, and the dynamic mode held -1.8 to -1.9 dBTP on synthetic programmes

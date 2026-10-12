@@ -36,9 +36,11 @@ from . import denoise_chunking as _denoise_chunking
 from . import denoise_model as _denoise_model
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import mux_format as _mux_format
 from . import neural_level as _neural_level
 from . import post_neural_suppress as _post_neural_suppress
 from . import resemble_denoise as _resemble
+from . import source_checks as _source_checks
 from . import spectral_denoise as _spectral_denoise
 from . import stage_cache as _stage_cache
 from . import stage_cache_key as _stage_cache_key
@@ -145,7 +147,7 @@ def get_video_duration_sec(video_path):  # pragma: no cover
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
-        val = subprocess.check_output(cmd).decode().strip()
+        val = subprocess.check_output(cmd).decode("utf-8", "replace").strip()
         return float(val)
     except Exception:  # pragma: no cover
         return None
@@ -160,6 +162,9 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
     if original_wav.exists():
         original_wav.unlink()
 
+    # A source without an audio stream is a skip, decided before ffmpeg runs: the extraction
+    # used to fail on it and retry on fewer threads six times (modules/source_checks.py).
+    _source_checks.require_audio_stream(video_path)
     log_msg("  [System] Extracting Audio Stream...")
 
     # Extract to .tmp first to maintain atomic guarantees
@@ -183,13 +188,21 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
         ]
 
     attempt_cpu_run_with_retry(build_extract_cmd, CPU_THREADS, description="Extracting Audio", total_duration=total_duration)
+    _publish_extraction(tmp_wav, original_wav)
 
+
+def _publish_extraction(tmp_wav, original_wav):
+    """Moves a valid extraction into place; a decode with no samples is a skip, anything else invalid a failure.
+
+    ffmpeg exits 0 on a stream whose packets an edit list hides (hunt v3: Pooh, Powerpuff,
+    Rocky), leaving a 92-byte WAV header with no samples; that is the source, not the run.
+    """
     if is_valid_audio(tmp_wav):
         tmp_wav.rename(original_wav)
-    else:
-        if tmp_wav.exists():
-            tmp_wav.unlink()
-        raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")  # pragma: no cover
+        return
+    _source_checks.reject_empty_decode(tmp_wav)
+    tmp_wav.unlink(missing_ok=True)
+    raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")
 
 
 # audio-separator labels stems per model, not to one convention: BS-Roformer emits
@@ -693,7 +706,9 @@ def _denoise_full_audio_step(original_wav, denoised_audio_dir, denoise_model=Non
     )
 
 
-def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None):
+def _final_mix_output_command(
+    video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None, plan=None
+):
     """Generates FFmpeg arguments for final 2-stem mix.
 
     Args:
@@ -704,23 +719,25 @@ def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tm
         audio_args (list): Audio encoding parameters.
         threads (int): CPU worker threads count.
         filter_expr (str, optional): Prebuilt amix expression; built from config when omitted.
+        plan (mux_format.MuxPlan, optional): Where the stems start and the rate they are encoded
+            at (the source's audio start and the container's rate); today's command when omitted.
 
     Returns:
         list: FFmpeg CLI arguments.
     """
     filter_expr = _resolve_override(filter_expr, _build_mix_filter_expression())
+    plan = _resolve_override(plan, _mux_format.MuxPlan())
     cmd = [
         FFMPEG_BIN,
         "-stats",
         "-hide_banner",
         "-threads",
         str(threads),
+        *plan.global_args(),
         "-i",
         str(video_path),
-        "-i",
-        str(aligned_vocals),
-        "-i",
-        str(aligned_background),
+        *plan.restored_input(aligned_vocals, PRESERVE_ORIGINAL_AUDIO_TRACK),
+        *plan.restored_input(aligned_background, PRESERVE_ORIGINAL_AUDIO_TRACK),
         "-filter_complex",
         filter_expr,
         "-map",
@@ -729,6 +746,7 @@ def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tm
         "[mixed]",
         "-c:v",
         "copy",
+        *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
         cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
@@ -819,13 +837,16 @@ def _final_mix_step(
 
     tmp_output = _staged_output_path(final_output_video, aligned_vocals.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
+    # Both stems start where the source's audio started and are encoded at the rate the
+    # container keeps (modules/mux_format.py); an unreadable source gives today's command.
+    plan = _mux_format.plan_for(video_path, final_output_video.suffix)
     loudnorm_args = _resolve_loudnorm_args(
-        video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration
+        video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration, sample_rate=plan.sample_rate
     )
-    filter_expr = _build_mix_filter_expression(vocal_mix_vol, bg_mix_vol, loudnorm_args)
+    filter_expr = _build_mix_filter_expression(vocal_mix_vol, bg_mix_vol, loudnorm_args, sample_rate=plan.sample_rate)
 
     def build_mix_cmd(threads):
-        return _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output, audio_args, threads, filter_expr)
+        return _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output, audio_args, threads, filter_expr, plan)
 
     attempt_cpu_run_with_retry(build_mix_cmd, CPU_THREADS, description="Final Mixing", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Mix Failed: Output video invalid/empty.")
@@ -843,7 +864,7 @@ def _single_audio_stream_args(filter_expr):
     return ["-filter_complex", filter_expr, "-map", "[mastered]"]
 
 
-def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_video, audio_args, threads, filter_expr=None):
+def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_video, audio_args, threads, filter_expr=None, plan=None):
     """Generates FFmpeg arguments for remuxing a single audio track.
 
     Args:
@@ -854,25 +875,29 @@ def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_
         threads (int): CPU worker threads count.
         filter_expr (str, optional): Mastering graph; the track is mapped directly
             when omitted.
+        plan (mux_format.MuxPlan, optional): Where the track starts and the rate it is
+            encoded at; today's command when omitted.
 
     Returns:
         list: FFmpeg CLI arguments.
     """
+    plan = _resolve_override(plan, _mux_format.MuxPlan())
     cmd = [
         FFMPEG_BIN,
         "-stats",
         "-hide_banner",
         "-threads",
         str(threads),
+        *plan.global_args(),
         "-i",
         str(video_path),
-        "-i",
-        str(processed_audio_wav),
+        *plan.restored_input(processed_audio_wav, PRESERVE_ORIGINAL_AUDIO_TRACK),
         "-map",
         "0:v:0",
         *_single_audio_stream_args(filter_expr),
         "-c:v",
         "copy",
+        *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
         cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
@@ -902,11 +927,16 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
 
     tmp_output = _staged_output_path(final_output_video, processed_audio_wav.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
-    loudnorm_args = _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=duration)
-    filter_expr = _build_single_audio_filter_expression(loudnorm_args)
+    # The track starts where the source's audio started, at the rate the container keeps
+    # (modules/mux_format.py); an unreadable source gives today's command.
+    plan = _mux_format.plan_for(video_path, final_output_video.suffix)
+    loudnorm_args = _resolve_single_track_loudnorm_args(
+        video_path, processed_audio_wav, total_duration=duration, sample_rate=plan.sample_rate
+    )
+    filter_expr = _build_single_audio_filter_expression(loudnorm_args, sample_rate=plan.sample_rate)
 
     def build_mux_cmd(threads):
-        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_args, threads, filter_expr)
+        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_args, threads, filter_expr, plan)
 
     attempt_cpu_run_with_retry(build_mux_cmd, CPU_THREADS, description="Final Remux", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Remux Failed: Output video invalid/empty.")
@@ -1597,6 +1627,10 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
 
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True
+
+    except _source_checks.SourceSkipped as skip:
+        log_msg(f"  [Skip] {video_path.name}: {skip}", is_error=True)
+        return False
 
     except Exception as e:
         log_msg(f"  [Error] Processing failed: {e}", is_error=True)

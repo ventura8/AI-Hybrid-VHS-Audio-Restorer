@@ -8,7 +8,7 @@ from pathlib import Path
 
 from modules.config import BATCH_JOBS, PROCESS_MODE
 from modules.processing import process_hybrid_audio
-from modules.ui import _get_input_files, _show_banner, run_init_sequence
+from modules.ui import _get_input_files, _show_banner, run_init_sequence, stdin_is_console
 from modules.utils import check_dependencies
 
 # Ensure local modules can be imported
@@ -31,8 +31,17 @@ Options:
   -h, --help   Show this help message and exit.
 
 With no arguments the app starts in interactive mode: drag & drop a file, or
-press Enter to scan the 'input/' folder. The restoration engine is chosen by
-'process_mode' in config.yaml (current: {mode})."""
+press Enter to scan the 'input/' folder. Without a terminal on stdin it asks
+nothing: pass the paths as arguments. The restoration engine is chosen by
+'process_mode' in config.yaml (current: {mode}).
+
+Exit status: 0 when every file was restored (or already was), 1 when any file
+failed or was skipped, 2 when nothing ran (dependencies missing, no files)."""
+
+# The process exit status a batch reports (scripts launching the app read it).
+EXIT_OK = 0
+EXIT_TASKS_FAILED = 1
+EXIT_NOTHING_RAN = 2
 
 
 def _wants_help(argv):
@@ -54,10 +63,21 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
 
 
 def main():
+    """Runs the app; returns the process exit status (EXIT_OK, EXIT_TASKS_FAILED, EXIT_NOTHING_RAN)."""
     if _wants_help(sys.argv[1:]):
         _print_help()
+        return EXIT_OK
+    return _run_restoration()
+
+
+def _wait_for_console_user():
+    """Keeps a console window open until Enter; a batch without a terminal on stdin never waits."""
+    if not stdin_is_console():
         return
-    _run_restoration()
+    try:
+        input("Press Enter to exit...")
+    except (EOFError, KeyboardInterrupt):
+        print(">> Exiting gracefully.")
 
 
 def _run_restoration():
@@ -66,7 +86,7 @@ def _run_restoration():
 
     if not check_dependencies():
         print("\n[Init] Critical Error: Dependencies Missing.")
-        return
+        return EXIT_NOTHING_RAN
 
     # 2. Show Banner
     # We retrieve names again or pass them. _show_banner gets them internally
@@ -85,32 +105,42 @@ def _run_restoration():
 
     if not files:
         print(">> No valid video files found.")
-        return
+        return EXIT_NOTHING_RAN
 
     print(f"\n[System] Found {len(files)} files in queue.")
     print("[System] Starting Batch Processing...")
 
     # 4. Processing Loop
-    _process_files(files, gpu_name)
+    failed = _process_files(files, gpu_name)
 
     print("\n" + "=" * 60)
     print("   BATCH PROCESSING COMPLETE")
     print("=" * 60)
-    try:
-        input("Press Enter to exit...")
-    except (EOFError, KeyboardInterrupt):
-        print(">> Exiting gracefully.")
+    _wait_for_console_user()
+    return EXIT_TASKS_FAILED if failed else EXIT_OK
+
+
+def _report_failures(failed, total):
+    """Names the files that failed or were skipped; returns them."""
+    if failed:
+        print(f"[System] {len(failed)} of {total} files failed: {', '.join(failed)}")
+    return failed
 
 
 def _process_files(files, gpu_name, jobs=None):
-    """The batch: `batch_jobs` files at a time in child interpreters, or one after another in this one."""
+    """The batch: `batch_jobs` files at a time in child interpreters, or one after another in this one.
+
+    Returns the names of the files that failed or were skipped.
+    """
     jobs = BATCH_JOBS if jobs is None else jobs
     if jobs > 1 and len(files) > 1:
-        _run_parallel_batch(files, jobs)
-        return
-    for video_path in files:
-        # User requested output to ALWAYS be in the input folder (from original logic)
-        process_hybrid_audio(video_path, gpu_name, target_output_dir=video_path.parent)
+        return _run_parallel_batch(files, jobs)
+    return _report_failures(_restore_in_this_process(files, gpu_name), len(files))
+
+
+def _restore_in_this_process(files, gpu_name):
+    """One file after another in this interpreter, each output beside its source; returns the names that failed."""
+    return [path.name for path in files if not process_hybrid_audio(path, gpu_name, target_output_dir=path.parent)]
 
 
 def _run_parallel_batch(files, jobs):
@@ -125,8 +155,7 @@ def _run_parallel_batch(files, jobs):
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         results = list(pool.map(lambda path: _restore_in_child(path, log_dir), files))
     failed = [path.name for path, code in zip(files, results) if code != 0]
-    if failed:
-        print(f"[System] {len(failed)} of {len(files)} files failed: {', '.join(failed)}")
+    return _report_failures(failed, len(files))
 
 
 def _restore_in_child(video_path, log_dir):
@@ -149,4 +178,4 @@ def _restore_in_child(video_path, log_dir):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

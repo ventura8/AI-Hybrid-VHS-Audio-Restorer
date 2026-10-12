@@ -44,6 +44,16 @@ is logged as a warning. The record is written as
 folder, which outlives the run, and under the same name beside the track the mux masters
 (the work directory is removed after a successful run unless `AI_RESTORE_TEST_MODE=1`
 keeps it). Unset, no extra pass runs and nothing is written.
+
+The limiter delays what it passes by its lookahead: on a synthetic impulse at sample 10000
+(44.1 kHz) alimiter at these settings put the peak at 10219, 219 samples or 4.97 ms late,
+with or without loudnorm's dynamic mode before it (which adds none); with `latency=1` the
+peak stayed at 10000 and the length at 44100 samples (ffmpeg 9.0.1). Every output of every
+mode is therefore 4.97 ms late against its video and against the preserved original track.
+`mux_limiter_latency_compensation: true` sets `latency=1`; the default, false, keeps every
+output's bytes (cathar's identity check compares them), so the shift waits for the user's
+sign-off on re-basing that check. The resample before the limiter goes to the rate the mux
+keeps (`modules/mux_format.py`: 44.1 kHz, or the source's in MPEG-PS).
 """
 
 import json
@@ -73,6 +83,8 @@ LOUDNORM_TARGET_LRA = config.LOUDNORM_TARGET_LRA
 LOUDNORM_ANALYSIS_TIMEOUT = 900
 
 LOUDNORM_TRUE_PEAK_LIMITER = "alimiter=limit=0.891:level=disabled"
+# alimiter's lookahead compensation: the 219-sample (4.97 ms) delay above, removed.
+LIMITER_LATENCY_COMPENSATION = ":latency=1"
 LOUDNORM_MEASURE_KEYS = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
 # loudnorm's own "not measured" values: an applied pass given any of them never runs linear.
 LOUDNORM_UNSET_VALUES = (("input_i", 0.0), ("input_tp", 99.0), ("input_lra", 0.0), ("input_thresh", -70.0))
@@ -112,6 +124,16 @@ class LinearGain:
     def filter(self):
         """The stage as an FFmpeg filter."""
         return f"volume={self.gain_db:.2f}dB"
+
+
+@dataclass(frozen=True)
+class Programme:
+    """What the loudness passes read: the mux's inputs, the graph up to the loudness stage, its duration, the mux's rate."""
+
+    input_paths: tuple
+    graph_prefix: str
+    total_duration: float | None = None
+    sample_rate: int = PIPELINE_SAMPLE_RATE
 
 
 def _resolve_override(override, fallback):
@@ -236,23 +258,29 @@ def _loudness_stage(applied):
     return f"loudnorm={applied}"
 
 
-def _mastering_filters(applied):
-    """The applied loudness chain without its output label: the loudness stage, the resample, the limiter."""
-    return f"{_loudness_stage(applied)},aresample={PIPELINE_SAMPLE_RATE},{LOUDNORM_TRUE_PEAK_LIMITER}"
+def _limiter_filter():
+    """The sample-peak limiter, compensating its own lookahead delay when `mux_limiter_latency_compensation` is on."""
+    compensation = LIMITER_LATENCY_COMPENSATION if _get_config_val("MUX_LIMITER_LATENCY_COMPENSATION") else ""
+    return f"{LOUDNORM_TRUE_PEAK_LIMITER}{compensation}"
 
 
-def _mastering_chain(loudnorm_args, label):
+def _mastering_filters(applied, sample_rate=PIPELINE_SAMPLE_RATE):
+    """The applied loudness chain without its output label: the loudness stage, the resample to the mux's rate, the limiter."""
+    return f"{_loudness_stage(applied)},aresample={sample_rate},{_limiter_filter()}"
+
+
+def _mastering_chain(loudnorm_args, label, sample_rate=PIPELINE_SAMPLE_RATE):
     """Applied loudness chain shared by the mix and single-track paths."""
     applied = _resolve_override(loudnorm_args, _loudnorm_target_args())
-    return f"{_mastering_filters(applied)}[{label}]"
+    return f"{_mastering_filters(applied, sample_rate)}[{label}]"
 
 
-def _build_mix_filter_expression(vocal_mix_vol=None, bg_mix_vol=None, loudnorm_args=None):
+def _build_mix_filter_expression(vocal_mix_vol=None, bg_mix_vol=None, loudnorm_args=None, sample_rate=PIPELINE_SAMPLE_RATE):
     """Builds amix expression optionally with EBU R128 loudness normalization."""
     base_filter = _build_mix_base_expression(vocal_mix_vol, bg_mix_vol)
     if not _get_config_val("ENABLE_LOUDNORM"):
         return f"{base_filter}[mixed]"
-    return f"{base_filter},{_mastering_chain(loudnorm_args, 'mixed')}"
+    return f"{base_filter},{_mastering_chain(loudnorm_args, 'mixed', sample_rate)}"
 
 
 def _run_loudness_analysis(input_paths, expression, total_duration=None):
@@ -262,7 +290,15 @@ def _run_loudness_analysis(input_paths, expression, total_duration=None):
         cmd.extend(["-i", str(path)])
     cmd.extend(["-filter_complex", expression, "-map", "[mastered]", "-f", "null", "-"])
     try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=_loudnorm_analysis_timeout(total_duration))
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=_loudnorm_analysis_timeout(total_duration),
+        )
     except Exception:
         return None
     return _parse_loudnorm_json(completed.stderr or "")
@@ -273,12 +309,13 @@ def _loudnorm_graph(graph_prefix, loudnorm_args):
     return f"{graph_prefix}loudnorm={loudnorm_args}:print_format=json[mastered]"
 
 
-def _resolve_measured_loudnorm(input_paths, graph_prefix, total_duration=None):
+def _resolve_measured_loudnorm(input_paths, graph_prefix, total_duration=None, sample_rate=PIPELINE_SAMPLE_RATE):
     """Measures programme loudness so normalisation can be applied accurately.
 
     `graph_prefix` is the graph up to the loudness stage (the mix, or the single track's
     label). Returns the applied pass's loudness stage: loudnorm's measured arguments, or the
     gain_limiter fallback's LinearGain; None when loudness is off or cannot be measured.
+    `sample_rate` is the rate the render resamples to, which the event-log record renders at.
     """
     if not _get_config_val("ENABLE_LOUDNORM"):
         return None
@@ -289,7 +326,7 @@ def _resolve_measured_loudnorm(input_paths, graph_prefix, total_duration=None):
         log_msg("    [Warning] Loudness measurement unavailable; using single-pass normalisation.", is_error=True)
         return None
     applied = _applied_loudness(measurements, _log_loudness_range(measurements, total_duration))
-    _record_loudnorm(input_paths, graph_prefix, measurements, applied, total_duration)
+    _record_loudnorm(Programme(tuple(input_paths), graph_prefix, total_duration, sample_rate), measurements, applied)
     return applied
 
 
@@ -370,28 +407,30 @@ def _check_true_peak(output_tp):
     )
 
 
-def _fallback_readings(input_paths, graph_prefix, applied, total_duration=None):
+def _fallback_readings(programme, applied):
     """What the gain_limiter fallback renders: its whole chain read by loudnorm's analysis pass, true peak included.
 
     A render that cannot be read records its gain and no readings.
     """
-    rendered = _loudnorm_graph(f"{graph_prefix}{_mastering_filters(applied)},", _loudnorm_target_args())
-    report = _run_loudness_analysis(input_paths, rendered, total_duration=total_duration) or {}
+    chain = _mastering_filters(applied, programme.sample_rate)
+    rendered = _loudnorm_graph(f"{programme.graph_prefix}{chain},", _loudnorm_target_args())
+    report = _run_loudness_analysis(programme.input_paths, rendered, total_duration=programme.total_duration) or {}
     readings = {"normalization_type": GAIN_LIMITER, "gain_db": applied.gain_db}
     readings.update({output: report.get(measured) for output, measured in FALLBACK_READINGS})
     _check_true_peak(readings["output_tp"])
     return readings
 
 
-def _applied_readings(input_paths, graph_prefix, applied, total_duration=None):
+def _applied_readings(programme, applied):
     """What the applied loudness stage does: ffmpeg's own report from a null-sink run of the applied loudnorm.
 
     The gain_limiter fallback runs no loudnorm; its record is its render's measured output.
     A run that cannot be read records no type.
     """
     if isinstance(applied, LinearGain):
-        return _fallback_readings(input_paths, graph_prefix, applied, total_duration)
-    report = _run_loudness_analysis(input_paths, _loudnorm_graph(graph_prefix, applied), total_duration=total_duration)
+        return _fallback_readings(programme, applied)
+    graph = _loudnorm_graph(programme.graph_prefix, applied)
+    report = _run_loudness_analysis(programme.input_paths, graph, total_duration=programme.total_duration)
     if report is None:
         return {"normalization_type": None}
     return {key: report.get(key) for key in APPLIED_READINGS}
@@ -404,7 +443,7 @@ def _check_rule(predicted, actual):
     log_msg(f"    [Warning] loudnorm ran {actual} where its rule predicts {predicted}; the rule needs re-deriving.", is_error=True)
 
 
-def _record_loudnorm(input_paths, graph_prefix, measurements, applied, total_duration=None):
+def _record_loudnorm(programme, measurements, applied):
     """With the event log on, records what the applied loudness stage does, beside the track it masters and in the log.
 
     Returns the record, or None when the event log is off (then no extra pass runs).
@@ -412,7 +451,7 @@ def _record_loudnorm(input_paths, graph_prefix, measurements, applied, total_dur
     if not event_log.enabled():
         return None
     target_lra = float(_get_config_val("LOUDNORM_TARGET_LRA"))
-    blockers = linear_mode_blockers(measurements, target_lra, total_duration)
+    blockers = linear_mode_blockers(measurements, target_lra, programme.total_duration)
     predicted = "dynamic" if blockers else "linear"
     record = {
         "measured": {key: measurements.get(key) for key in LOUDNORM_MEASURE_KEYS},
@@ -420,10 +459,10 @@ def _record_loudnorm(input_paths, graph_prefix, measurements, applied, total_dur
         "blockers": list(blockers),
         "predicted": predicted,
         "fallback": _get_config_val("LOUDNORM_LINEAR_FALLBACK"),
-        **_applied_readings(input_paths, graph_prefix, applied, total_duration),
+        **_applied_readings(programme, applied),
     }
     _check_rule(predicted, record["normalization_type"])
-    track = Path(input_paths[1])
+    track = Path(programme.input_paths[1])
     event_log.write_json(_sidecar_path(track), event_log.document(LOUDNORM_STAGE, track, record))
     event_log.write(LOUDNORM_STAGE, track, record)
     return record
@@ -434,19 +473,22 @@ def _sidecar_path(track):
     return Path(track).parent / event_log.record_name(LOUDNORM_STAGE, track)
 
 
-def _build_single_audio_filter_expression(loudnorm_args=None):
+def _build_single_audio_filter_expression(loudnorm_args=None, sample_rate=PIPELINE_SAMPLE_RATE):
     """Mastering graph for single-track modes, matching the two-stem mix path."""
     if not _get_config_val("ENABLE_LOUDNORM"):
         return None
-    return f"[1:a]{_mastering_chain(loudnorm_args, 'mastered')}"
+    return f"[1:a]{_mastering_chain(loudnorm_args, 'mastered', sample_rate)}"
 
 
-def _resolve_loudnorm_args(video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=None):
+def _resolve_loudnorm_args(
+    video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=None, sample_rate=PIPELINE_SAMPLE_RATE
+):
     """Measures the finished two-stem mix before normalisation is applied."""
     base_filter = _build_mix_base_expression(vocal_mix_vol, bg_mix_vol)
-    return _resolve_measured_loudnorm((video_path, aligned_vocals, aligned_background), f"{base_filter},", total_duration=total_duration)
+    inputs = (video_path, aligned_vocals, aligned_background)
+    return _resolve_measured_loudnorm(inputs, f"{base_filter},", total_duration=total_duration, sample_rate=sample_rate)
 
 
-def _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=None):
+def _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=None, sample_rate=PIPELINE_SAMPLE_RATE):
     """Measures a single processed track before normalisation is applied."""
-    return _resolve_measured_loudnorm((video_path, processed_audio_wav), "[1:a]", total_duration=total_duration)
+    return _resolve_measured_loudnorm((video_path, processed_audio_wav), "[1:a]", total_duration=total_duration, sample_rate=sample_rate)

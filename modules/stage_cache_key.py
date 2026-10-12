@@ -102,10 +102,13 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "apl_post_neural_suppress_min_residual_db",
         "linear_air_gate",
         "apl_neural_level_restore",
-        # The mux (modules/mastering.py, processing's mux commands) and the sync (modules/sync.py).
+        # The mux (modules/mastering.py, modules/mux_format.py, processing's mux commands) and the
+        # sync (modules/sync.py).
         "enable_loudnorm",
         "loudnorm_target_lra",
         "loudnorm_linear_fallback",
+        "mux_limiter_latency_compensation",
+        "mux_sample_rate",
         "preserve_original_audio_track",
         "dtw_resolution",
         # The stem path's background pass, which never enters the cached stages.
@@ -494,7 +497,9 @@ def gpu_driver():
         return None
     command = [executable, "--query-gpu=driver_version", "--format=csv,noheader"]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=VERSION_TIMEOUT_S, check=False)
+        result = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=VERSION_TIMEOUT_S, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout.strip() or None

@@ -636,6 +636,12 @@ _BOOL_CONFIG_FIELDS = (
     # modules/filters.py). The scan always logs such a pair; on, it reads no skew from it.
     # Off by default so every output stays the same bytes.
     ("azimuth_reject_inverted_pair", False),
+    # The mux's limiter (alimiter, -1 dBFS) delays the audio by its lookahead: an impulse at
+    # sample 10000 came out at 10219 (219 samples, 4.97 ms at 44.1 kHz), so every output of
+    # every mode sits 4.97 ms late against its video. On, `latency=1` removes the delay (the
+    # impulse stayed at 10000, ffmpeg 9.0.1); off by default, since the shift changes every
+    # output's bytes and cathar's identity check compares them (modules/mastering.py).
+    ("mux_limiter_latency_compensation", False),
     ("apl_music_stem_path", False),
     ("apl_enable_sibilant_guard", True),
     # The hiss the RoFormer passes (diagnosis of 2026-10-11, modules/post_neural_suppress.py): the
@@ -715,6 +721,12 @@ VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass"}
 # +1 dB shelf lifted that residual 0.3-0.9 dB under the programme (modules/post_neural_suppress.py).
 VALID_LINEAR_AIR_GATES = {"none", "hiss_dominated"}
 
+# The rate the mux encodes the restored track at (modules/mux_format.py). 'pipeline' keeps
+# 44.1 kHz, as every release has, except in MPEG-PS (.mpg/.mpeg), which keeps the source's rate
+# (DVD-Video allows MP2 only at 48 kHz); 'source' keeps the source's rate in every container
+# whose codec takes it, which changes the bytes of every 48 kHz source.
+VALID_MUX_SAMPLE_RATES = {"pipeline", "source"}
+
 
 def _reject_config_value(param_name, raw_value, default):
     """Logs a normalisation warning and returns the field's default."""
@@ -743,6 +755,10 @@ def _normalize_cathar_enhance_method(raw_value):
 
 def _normalize_loudnorm_linear_fallback(raw_value):
     return _normalize_choice(raw_value, VALID_LOUDNORM_LINEAR_FALLBACKS, "loudnorm_linear_fallback", "ffmpeg")
+
+
+def _normalize_mux_sample_rate(raw_value):
+    return _normalize_choice(raw_value, VALID_MUX_SAMPLE_RATES, "mux_sample_rate", "pipeline")
 
 
 def _normalize_cathar_declip_mode(raw_value):
@@ -887,6 +903,7 @@ def _apply_user_config(defaults, user_config):
     defaults["pause_floor_target"] = _normalize_pause_floor_target(defaults.get("pause_floor_target"))
     defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
     defaults["linear_air_gate"] = _normalize_linear_air_gate(defaults.get("linear_air_gate"))
+    defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -939,6 +956,9 @@ def load_config():
         # auto_pure_linear's air shelf on every tape ('none', as every release has run) or skipped
         # where the post-neural hiss gate opens ('hiss_dominated'); not yet judged by ear.
         "linear_air_gate": "none",
+        # The mux's rate: 44.1 kHz in every container but MPEG-PS, which keeps the source's
+        # ('pipeline', today's bytes everywhere else); 'source' keeps it in every container.
+        "mux_sample_rate": "pipeline",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1093,6 +1113,8 @@ ENABLE_DYNAMIC_EXPANDER = bool(CONFIG.get("enable_dynamic_expander", True))
 ENABLE_LINEAR_AIR = bool(CONFIG.get("enable_linear_air", True))
 LOUDNORM_TARGET_LRA = float(CONFIG.get("loudnorm_target_lra", 20.0))
 LOUDNORM_LINEAR_FALLBACK = str(CONFIG.get("loudnorm_linear_fallback", "ffmpeg"))
+MUX_LIMITER_LATENCY_COMPENSATION = bool(CONFIG.get("mux_limiter_latency_compensation", False))
+MUX_SAMPLE_RATE = str(CONFIG.get("mux_sample_rate", "pipeline"))
 AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))

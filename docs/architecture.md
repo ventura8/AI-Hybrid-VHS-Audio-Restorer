@@ -221,6 +221,14 @@ measurement pass, resample, and limiter are the same code. The mastered stream i
 routed through a `filter_complex` label rather than `-af`, because the optional
 archival track is a second audio output that must not be normalized.
 
+Both mux commands take a plan from `modules/mux_format.py`, built from one
+ffprobe of the source: `-copyts` and `-itsoffset` place each restored input
+where the source's audio started against the video, and the resample goes to
+the rate the container keeps (44.1 kHz; MPEG-PS its source's). MPEG-PS and
+MPEG-TS take `-itsoffset` alone, against the earliest stream the command
+maps, so their demuxer still corrects timestamp jumps. An unreadable probe
+gives the command every earlier release ran.
+
 ## Mode: `auto_pure`
 
 Pure speech and ambient restoration with no generative vocoder synthesis. The

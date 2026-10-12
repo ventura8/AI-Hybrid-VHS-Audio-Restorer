@@ -115,6 +115,30 @@ audio alignment, or FFmpeg multiplexing.
      tail of `modules/mastering.py`.
    - `_final_mux_single_audio_step`: Direct stream video copy with
      container-dependent audio mux.
+   - Both mux steps take a `mux_format.MuxPlan` (one ffprobe of the source):
+     `-copyts` and `-itsoffset <source audio start>` on each restored input,
+     so the track starts where the source's audio did (on bb5fa2a it started
+     with the video: a click landed up to 295 ms early on a source whose
+     audio began 300 ms late), and the rate the container keeps (MPEG-PS its
+     source's, 48 kHz for a rate MP2 cannot take; `mux_sample_rate: source`
+     for every container). Without a readable probe the command is today's.
+     Never `-copyts` on MPEG-PS or MPEG-TS: their demuxer corrects a
+     timestamp jump only without it (two halves joined byte-wise: the
+     second half's clicks moved -254/-620 ms in MPEG-PS, +84/+83 ms in
+     MPEG-TS). There ffmpeg starts the input at the earliest stream the
+     command maps (the video, plus the first audio stream when the
+     archival track is kept), and `-itsoffset` is taken against that.
+   - `_extract_audio_step`: a source ffprobe reads without an audio stream,
+     and an extraction with a header and no samples (an edit list hiding
+     every packet: hunt v3's Pooh, Powerpuff, Rocky), raise
+     `source_checks.SourceSkipped`; `process_hybrid_audio` logs `[Skip]`
+     and returns False. `utils.attempt_cpu_run_with_retry` raises at once on
+     a failure `ffmpeg_failures.is_deterministic_failure` reads from the
+     output's tail (it used to run Everest's extraction six times). Never
+     key it on the bare "Invalid data found when processing input": ffmpeg
+     9.0.1 prints it for every broken MP2 frame of a damaged capture on a
+     run that exits 0; an unreadable input is its "Error opening input"
+     line, and a memory message always keeps the retry.
 1. **`modules/denoise_model.py`** and **`modules/denoise_chunking.py`**:
    - `clean_stem`: the one rule for the denoised file, whole or chunked:
      `(No Noise)` (the VR models), then `(<training.target_instrument>)` from
@@ -137,9 +161,18 @@ audio alignment, or FFmpeg multiplexing.
    - `_resolve_loudnorm_args` / `_resolve_single_track_loudnorm_args`:
      two-pass loudnorm to -16 LUFS, -1 dBTP and `loudnorm_target_lra`,
      falling back to single-pass if measurement fails. The tail after the
-     loudness stage is a resample and `LOUDNORM_TRUE_PEAK_LIMITER`, which
-     despite its name is `alimiter` at 0.891 (-1 dBFS) on the samples at
-     44.1 kHz, a sample-peak limiter.
+     loudness stage is a resample to the mux's rate and
+     `LOUDNORM_TRUE_PEAK_LIMITER`, which despite its name is `alimiter` at
+     0.891 (-1 dBFS) on the samples, a sample-peak limiter. Its lookahead
+     delays the audio 219 samples at 44.1 kHz (4.97 ms; an impulse at
+     10000 came out at 10219, loudnorm's dynamic mode adds none), so every
+     output sits that late against its video;
+     `mux_limiter_latency_compensation: true` adds `latency=1` (impulse kept
+     at 10000). Off by default: the cathar identity check compares bytes.
+   - The analysis pass decodes ffmpeg's stderr as UTF-8 with replacement: a
+     Cyrillic title (IA 1994-6-ntsc20241207, byte 0x8f) used to raise a
+     cp1252 UnicodeDecodeError in the reader thread and drop the render to
+     single-pass loudnorm.
    - `linear_mode_blockers`: ffmpeg's rule for loudnorm's linear mode,
      `TP + (I_target - I) <= TP_target`, `LRA <= target`, and a set
      measurement (I and LRA not 0, TP not 99, threshold not -70), with one
