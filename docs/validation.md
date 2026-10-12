@@ -492,7 +492,10 @@ gates:
   say whether music and ambience survived. SI-SDR is shown, never ranked: a
   filter's phase shift turns it negative while the ear hears nothing. Read only
   where the source's stem carries a background (above -45 dBFS and within
-  20 dB of the mix); an interview without music skips it.
+  20 dB of the mix); an interview without music skips it. The gate and the
+  music grid read the worst octave on the programme the background leads
+  (`stems.octave_programme_db`, see "Gates that refused the denoising
+  itself"); the raw octave (`stems.octave_ratio_db`) is displayed only.
 - `speech` (16 kHz): Whisper large-v3-turbo transcribes source and output
   with the language forced (`--language ro`) and the character error rate
   between the two reads words changed, with the confidence delta beside it;
@@ -1112,6 +1115,72 @@ The calibration writes its gate files under `--out`; the tuning drivers
 still default `--gates` to the v2 `experiments/quality_calibration/gates.json`,
 so an ear v3 round names the v3 file:
 `--gates experiments\quality_calibration_v3\gates.json`.
+
+### Gates that refused the denoising itself
+
+Several hard gates failed most shipped outputs whatever the settings,
+because they read the removal of hiss as damage (E1, 2026-10-12). Judge
+only; no restoration default moved.
+
+- The stems' worst octave. On tape the non-vocal stem carries the hiss, so
+  an octave the background never filled read as stripped once the hiss was
+  gone, and the least-squares match of the two stems, a waveform measure,
+  scaled a restoration that moves phase (cathar) down as a whole. The gate
+  `stems.octave_programme` now reads `stems.octave_programme_db`
+  (`scripts/restoration_quality/stem_octave.py`): the two mixes compared on
+  the cells where the source's level-true stem stands 18 dB over its noise
+  and holds the mix within 1 dB, per octave, levelled by the mix's own
+  median octave. The output is never separated for it. On CPU from cached
+  stems: the 24 v2 music finals the user accepted read -2.42..0.00 dB on
+  the 22 that read (the raw octave failed 13 of 21, APL
+  x_vid-20230606-121054 at -38.8); `background_stripped` reads -5.9 /
+  -11.1 / -14.9 dB at -6 / -12 / -24 (raw -0.9 / -2.6 / -14.3); a planted
+  one-octave mute of a hiss-bearing realistic-v2 bed fails every window
+  where that octave reads, and the oracle fails none. Blind spot: a bed
+  that never falls to a floor inside the window reads None (a sustained
+  chord, stripped or not; the realistic-v2 beds' 250-500 Hz octave reads on
+  17 of 100 windows). The real-separator checks run on the GPU.
+- `speech.cer_median` and `mos.audiobox_pc` are soft until a verdict sets
+  them; the grids' learned vetoes on both stay.
+- `Gate.calibrated` is False for every hand-set threshold (lkr's 1.747, a
+  v2 known-good bound, is the exception), and a gates-file `floor` entry
+  resting on no verdict is never calibrated and never tightens the code's
+  threshold: the v3 and v3b files' lkr 0.3 had failed the shipped Tata
+  outputs on 3 of 4 tapes (APL) and 4 of 4 (cathar).
+- The hole gate reads `file.dropouts`, the count over the whole aligned
+  pair; the window tail of `dsp.dropouts` went blind on long files, and the
+  name is retired so the v2 file's 57.3 (a count 1d644fb replaced) cannot
+  land on it. Its bound, 4 holes, is the smallest whole count the oracle
+  pairs admit: every benign case reads 0, and of the 920 realistic-v2
+  oracle pairs 13.8 % read more than 1 hole and 4.8 % more than 4. Most of
+  those holes are the count misreading hum and low-margin noise removal
+  (the m09 hum fixtures against their clean programme: 10 of 10, up to 14).
+- `calibrate_quality_metrics.py` writes no gates file without
+  `--known-ordering` (the floor rule alone hands the guesses on), and it
+  scores every realistic-v2 capture against its `_target` and `_clean`
+  programme (`--oracle-max N` spreads N per language): a hard gate failing
+  more than 5 % of those pairs refuses the denoising itself, and the run
+  writes no gates file and exits 1.
+
+The oracle check's dsp family on CPU, all five languages (920 pairs), under
+today's gates: `dsp.whistle` fails 288 (31 %), `dsp.hf_8k16k` 102 (11 %),
+`dsp.clicks` 45 at the code's 0.5 (1 at the v2 file's 0.79), `file.dropouts`
+44, `dsp.hum` 18, `dsp.hf_4k8k` 8, `file.lra` 1. The whistle reading (the
+peak within 30 Hz of the line over its 500 Hz neighbourhood's median) reads
+3-5 dB on the clean references, a maximum of near-empty bins, where the
+hissy source read 1-3, and +33 dB where a band-limited capture held nothing
+at the line; the air gate reads the hiss leaving the loud frames' 8-16 kHz
+as air lost. Until those two readings are made oracle-proof, a calibration
+run with the check writes no gates file.
+
+The hunt's stored scores (235 IA clips per engine, shipped defaults)
+re-gated without re-scoring, with the v2 gates file: clips failing any hard
+gate fall from 216 to 112 (cathar) and from 205 to 161 (APL). The raw
+octave (157 and 126 clips), CER (127, 94) and Audiobox PC (75, 13) no
+longer count; `file.dropouts` adds 11 and 10. With the programme octave
+read on CPU from the cached stems it fails 66 of 178 cathar clips and 18 of
+178 APL clips, so 146 and 169 clips fail some gate. Under the v3b file the
+old rules failed lkr on 103 and 35 clips; the new ones on 3 and 4.
 
 ### Fine-tuning on real tapes
 
