@@ -67,7 +67,8 @@ one timeline:
    the audible share read None while the guards and the removal still read.
 8. Guards, paired as (0, value): `hiss_pump_db` (the hiss kept under the programme against the
    pauses' own removal, median over bands of 1 kHz and up: positive = gated out of the pauses
-   and left under speech), `hiss_prog_kept_hf_db` (per band of 3 kHz and up, the median
+   and left under speech; the pauses' removal per band is the ratio of the two sides' medians
+   over the pause frames, `paused_ratio`), `hiss_prog_kept_hf_db` (per band of 3 kHz and up, the median
    output over source on active cells standing 18 dB over the floor, both held at the 16-bit
    dither, averaged over the bands holding 20 such cells: dulling inside the bands the margin
    rewards, a cut of a few bands as visible as a low pass) and `hiss_island_kurt` (R4's frame
@@ -474,16 +475,32 @@ def band_summary(values, centres, lo_hz):
     return float(np.median(values[sel])) if sel.any() else None
 
 
-def pump_db(powers, pause, ratio_w, layout, rate):
-    """The hiss kept under the programme over the pauses' own output/source ratio, median over bands of 1 kHz and up.
+def paused_ratio(powers, pause, layout):
+    """Per band, the output's median band power over the pause frames over the source's.
 
-    None with under 0.5 s of true pause. Positive: the hiss rides on the programme while the pauses are emptied.
+    NaN where the source's median sits under the 16-bit dither plus 10 dB: a pause the source holds as digital silence
+    (a muted Hi-Fi break) carries no hiss to gate. The medians, not the means: a gate's few frames that straddle its
+    edges carried the mean, so gating Tele7abc's true pauses 20, 30, 40 or 50 dB read pump +8.2 / +11.2 / +11.5 / +11.5,
+    under the 12 dB bound at every depth; the medians read +11.9 / +21.9 / +31.9 / +41.9 (adversarial review of ear v4).
+    The output is not held at the dither: Tele7abc's pause hiss stands only 28-31 dB over the 16-bit dither per band,
+    and its round-one dead APL pauses sit 3-17 dB under it, so a dither floor read them at pump +5.9 instead of +19.4.
     """
-    src_power, out_power = powers
+    src = np.median(layout.band_power(powers[0][pause]), axis=0)
+    out = np.median(layout.band_power(powers[1][pause]), axis=0)
+    read = src >= hiss_floor.dither_limit() * layout.nbins
+    return np.where(read, (out + EPS) / np.maximum(src, EPS), np.nan)
+
+
+def pump_db(powers, pause, ratio_w, layout, rate):
+    """The hiss kept under the programme over the pauses' own output/source ratio (`paused_ratio`), median over bands of
+    1 kHz and up.
+
+    None with under 0.5 s of true pause or no band the source's pauses hold over the dither. Positive: the hiss rides on
+    the programme while the pauses are emptied.
+    """
     if pause.sum() < MIN_PAUSE_S * rate / hiss_floor.HOP:
         return None
-    paused = (layout.band_power(out_power[pause]).mean(axis=0) + EPS) / (layout.band_power(src_power[pause]).mean(axis=0) + EPS)
-    return band_summary(10.0 * np.log10(ratio_w / paused), layout.centres, SUMMARY_LO_HZ)
+    return band_summary(10.0 * np.log10(ratio_w / paused_ratio(powers, pause, layout)), layout.centres, SUMMARY_LO_HZ)
 
 
 def programme_cells(src_power, floor, layout, active):

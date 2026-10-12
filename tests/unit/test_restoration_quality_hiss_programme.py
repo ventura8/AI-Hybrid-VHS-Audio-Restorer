@@ -1,6 +1,7 @@
 """Ear v4, reading 1: the hiss left under the programme, its window guard, its validation and its guards (at 75 dB SPL)."""
 
 import dataclasses
+import types
 from functools import lru_cache
 
 import numpy as np
@@ -116,6 +117,47 @@ def test_hiss_gated_under_the_programme_is_caught_by_the_pump_not_the_margin():
     readings = read(gated)
     assert out_of(readings) <= out_of(read(source)) + 0.5
     assert out_of(readings, "hiss_pump_db") >= 15.0
+
+
+def _pause_gate(source):
+    """Per sample, the source's true-pause runs (R4's VAD runs, 20 ms frames) of the window: where a pause gate acts."""
+    frame = int(pause_metrics.FRAME_S * RATE)
+    _mask, runs = pause_metrics.true_pause_mask(source[WINDOW], RATE)
+    gate = np.zeros(len(source), dtype=bool)
+    gate[: len(runs) * frame] = np.repeat(runs, frame)
+    return gate
+
+
+def test_a_pause_gate_reads_its_depth_on_the_pump():
+    """The source with its true pauses gated 10 / 20 dB (an expander: hiss kept under speech, the pauses emptied) reads
+    the pump about the gate's depth; the mean over the pause frames read Tele7abc's 20-50 dB gates at +8.2..+11.5."""
+    source = capture()[2]
+    gate = _pause_gate(source)
+    pumps = [out_of(read(source * np.where(gate, 10.0 ** (-depth / 20.0), 1.0)), "hiss_pump_db") for depth in (10.0, 20.0)]
+    assert pumps == pytest.approx([10.0, 20.0], abs=0.5)
+
+
+def test_pauses_the_source_holds_as_digital_silence_carry_no_pump():
+    """A source whose pauses are digital silence (a muted Hi-Fi break) has no hiss there to gate: the pump reads None,
+    whatever the output puts in them."""
+    _programme, noise, source = capture()
+    gate = _pause_gate(source)
+    muted = np.where(gate, 0.0, source)
+    assert out_of(read(muted, source=muted), "hiss_pump_db") is None
+    assert out_of(read(muted + noise * gate * 0.25, source=muted), "hiss_pump_db") is None
+
+
+def test_the_paused_ratio_takes_medians_and_skips_a_silent_source_band():
+    """Per band: output median over source median, a straddling frame left out; an output emptied to digital silence reads
+    far under the dither, not at it; a source band under the dither plus 10 dB reads NaN."""
+    dither = hiss_floor.dither_floor_per_bin()
+    src = np.array([[1e-6, 1e-6, dither], [1e-6, 1e-6, dither], [5.0, 1e-6, dither]])
+    out = np.array([[1e-7, 0.0, dither], [1e-7, 0.0, dither], [9.0, 0.0, dither]])
+    bands = types.SimpleNamespace(nbins=np.ones(3), band_power=lambda power: power)
+    ratio = hiss_programme.paused_ratio((src, out), np.ones(3, dtype=bool), bands)
+    assert ratio[0] == pytest.approx(0.1)
+    assert ratio[1] < 1e-12 < dither / 1e-6
+    assert np.isnan(ratio[2])
 
 
 def test_islands_trip_the_musical_noise_guard():
@@ -300,7 +342,7 @@ def test_the_window_keeps_whole_frames_and_leaves_its_edges_out():
 
 def test_a_fraction_of_a_sample_moves_nothing():
     """The output 0.37 samples late and a sample shorter reads every margin within 0.02 dB of the output as it was."""
-    programme, noise, source = capture()
+    programme, noise, _source = capture()
     output = programme + noise * 0.25
     late = same_percept.fractional_delay(output, 0.37)[:-1]
     names = ("hiss_prog_margin_db", "hiss_prog_margin_all_db")
