@@ -461,6 +461,16 @@ engine sent to shift carries one.
   offline on the same pre-sync audio, reads 71 (the hunt's GPU renders of
   those clips read 72).
 
+Rendered on the GPU from the merged branch (2026-10-12, 26 of the hunt's 30
+DTW clips, both engines, today's route against `false`, scored on the dsp
+family): `auto_pure_linear` went from 42 holds on 14 clips (47 rate jumps,
+30 plateaus) to none, cathar from 154 holds on 20 clips (65 jumps, 58
+plateaus) to none, and R12's two gates from 14 and 20 failures to 0. The
+sync held: the drift reading's median and worst case went 0.09 / 0.26 to
+0.06 / 0.17 ms (`auto_pure_linear`) and 0.18 / 7.09 to 0.10 / 1.10 ms
+(cathar), the offset stayed at the limiter's 5 ms, and 4 clips per variant
+abstained alike (`D:i_restore_work\dtw_check`, local).
+
 Not yet heard by a listener: the default changes only after a blind block.
 The key is read in `modules/sync.py` only, after the stage cache's point,
 so it is one of the keys the cache leaves out of its key (below).
