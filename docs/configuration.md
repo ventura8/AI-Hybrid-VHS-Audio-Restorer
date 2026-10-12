@@ -469,7 +469,7 @@ plateaus) to none, and R12's two gates from 14 and 20 failures to 0. The
 sync held: the drift reading's median and worst case went 0.09 / 0.26 to
 0.06 / 0.17 ms (`auto_pure_linear`) and 0.18 / 7.09 to 0.10 / 1.10 ms
 (cathar), the offset stayed at the limiter's 5 ms, and 4 clips per variant
-abstained alike (`D:i_restore_work\dtw_check`, local).
+abstained alike (`D:/ai_restore_work/dtw_check`, local).
 
 Not yet heard by a listener: the default changes only after a blind block.
 The key is read in `modules/sync.py` only, after the stage cache's point,
