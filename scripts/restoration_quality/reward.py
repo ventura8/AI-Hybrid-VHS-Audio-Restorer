@@ -89,8 +89,10 @@ Ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss) adds two piec
   hiss readings rank one-sided (excess = max(0, margin), target 0, dead zone 0), so the most
   a tie forgives is the tie itself, never a benign-pair floor: Session 0's pairs differed
   grossly (residual noise 16.4 dB, noise removed 19.9 dB). `tie_floors` is how GRPO and the
-  preference head take their tie bands: it refuses a benign-pair report for a grid with a
-  hiss family (`HISS_FAMILIES`). The learned vetoes keep `noise_floors`.
+  preference head take their tie bands: it reads each reading's `tie_floor`, the widest
+  same-percept transform's p95 (`tie_band_floors`; a pooled floor dilutes the fresh draws with
+  the transforms that move a hiss reading by about 0), and refuses a benign-pair report for a
+  grid with a hiss family (`HISS_FAMILIES`). The learned vetoes keep `noise_floors`.
 - `constraints:` (`parse_constraints`, `Constraint`, `constrained_readings`): a grid's hard
   guards, applied by the self-driving loop alone (`autotune_guards.mark_constraints`). A
   candidate trips one when its reading, on some tape, is worse than the incumbent's by more
@@ -285,14 +287,28 @@ def tolerance(flat, grid, floors=None):
     return {reading: spec.noise(flat.get(reading), band) for reading, (spec, band) in bands.items() if band > 0.0}
 
 
+def _tie_entry(entry):
+    """A report entry's tie floor: its `tie_floor` (the widest transform's percentile), else its pooled `floor`."""
+    return entry.get("tie_floor", entry.get("floor"))
+
+
+def tie_band_floors(report):
+    """`{reading: tie floor}` from a `scripts/reward_noise_floor.py` report (`_tie_entry`).
+
+    A tie band must cover every same-percept transform: the pooled floor dilutes the fresh draws with the transforms that
+    move a hiss reading by about 0 (validation round 2 of ear v4: pooled pause-tail floor 0.17, fresh draws 0.50-0.80).
+    """
+    return {reading: float(_tie_entry(entry)) for reading, entry in report.get("readings", {}).items() if _finite(_tie_entry(entry))}
+
+
 def tie_floors(report, grid):
-    """`noise_floors(report)` for the tie bands of GRPO and the preference head; vetoes keep `noise_floors`.
+    """`tie_band_floors(report)` for the tie bands of GRPO and the preference head; vetoes keep `noise_floors`.
 
     A benign-pair report for a grid with a reading in a hiss family (`HISS_FAMILIES`) raises ValueError naming the reading:
     the hiss readings take their tie bands from same-percept transforms. The Session 0 report predates the hiss readings
     and holds no floor for them, so it is refused on the grid alone, not on the floors it holds.
     """
-    floors = noise_floors(report)
+    floors = tie_band_floors(report)
     hiss = [reading for reading, spec in parse_grid(grid).items() if spec.family in HISS_FAMILIES]
     if hiss and BENIGN_PAIR_POINT in report.get("operating_points", []):
         raise ValueError(f"tie band {hiss[0]}: {HISS_BENIGN_FLOOR}")

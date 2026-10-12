@@ -74,16 +74,20 @@ images at -50..-60 dB land in the noise cells of a deep residual), `requantise_1
 `fresh_floor_a` / `_b` / `_c` (fresh realisations of the output's stationary floor, seeds
 SEED + 1..3). The hiss readings take their tie bands from this output-point report, never from
 `--benign-pair`: Session 0's pairs differed grossly, and `reward.tie_floors` refuses a
-benign-pair report for a grid with a hiss family. Each grid `tie` is the report's floor for
-that flat key rounded up to 0.05; the DSP family's repeat jitter must read exactly 0.
+benign-pair report for a grid with a hiss family. Each grid `tie` is the report's `tie_floor`
+for that flat key rounded up to 0.05; the DSP family's repeat jitter must read exactly 0.
 
 Each scoring is flattened the way a sweep ranks it (`runner.aggregates_for_tuning`,
 `{metric.side.stat: value}` plus the `gates.*` counts). Per reading, the deviation of every
 scoring after the reference is |x - x_reference|; the reading's `floor` is the
 `--percentile` (default 95) of those deviations over every pair, transform (`benign_pair`
 included) and repeat, beside the `max`, the count `n`, the largest deviation per
-transform (`by_transform`) and the same percentile per transform
-(`percentile_by_transform`; ear v4's acceptance reads each transform's p95 on its own).
+transform (`by_transform`), the same percentile per transform (`percentile_by_transform`)
+and the widest of those (`tie_floor`). A tie band must cover every same-percept transform,
+so the hiss ties take `tie_floor`, not the pooled `floor`: five of the eight hiss transforms
+(gain, delay, soxr) move the hiss readings by about 0, and pooling them diluted the fresh
+draws' scatter (validation round 2: pooled pause-tail floor 0.17 against a fresh-draw p95 of
+0.50-0.80, so H1 refused a same-percept redraw).
 
 `--repeats N` scores the whole set N times. The DSP family is deterministic (repeats read
 0); the learned families on the GPU are not, and their jitter is part of the floor. The
@@ -410,17 +414,19 @@ def _by_transform(items):
 def _summary(items, percentile):
     values = np.asarray([deviation for _name, deviation in items], dtype=np.float64)
     grouped = _by_transform(items)
+    per_transform = {name: float(np.percentile(found, percentile)) for name, found in grouped.items()}
     return {
         "floor": float(np.percentile(values, percentile)),
         "max": float(values.max()),
         "n": int(len(values)),
         "by_transform": {name: float(max(found)) for name, found in grouped.items()},
-        "percentile_by_transform": {name: float(np.percentile(found, percentile)) for name, found in grouped.items()},
+        "percentile_by_transform": per_transform,
+        "tie_floor": max(per_transform.values()),
     }
 
 
 def summarise(per_reading, percentile=FLOOR_PERCENTILE):
-    """`{reading: {floor, max, n, by_transform, percentile_by_transform}}`, readings sorted by name."""
+    """`{reading: {floor, max, n, by_transform, percentile_by_transform, tie_floor}}`, readings sorted by name."""
     return {key: _summary(items, percentile) for key, items in sorted(per_reading.items())}
 
 

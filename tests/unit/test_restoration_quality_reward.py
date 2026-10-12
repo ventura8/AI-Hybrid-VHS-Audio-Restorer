@@ -298,3 +298,10 @@ def test_tie_floors_take_an_output_point_report_for_a_hiss_grid():
     """The same-percept report (the output point) gives the hiss readings their floors."""
     report = {"operating_points": ["output"], "readings": {HISS: {"floor": 0.6}}}
     assert rw.tie_floors(report, {HISS: {"target": 0.0, "family": "hiss_programme"}}) == {HISS: 0.6}
+
+
+def test_tie_floors_take_the_widest_transform_over_the_pooled_floor():
+    """A report's `tie_floor` (the widest transform's p95) is the tie band; `noise_floors` keeps the pooled floor for vetoes."""
+    report = {"operating_points": ["output"], "readings": {HISS: {"floor": 0.17, "tie_floor": 0.6}, AIR: {"floor": None}}}
+    assert rw.tie_floors(report, {HISS: {"target": 0.0, "family": "hiss_pause"}}) == {HISS: 0.6}
+    assert rw.noise_floors(report) == {HISS: 0.17}

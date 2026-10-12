@@ -158,6 +158,14 @@ def test_each_transform_carries_its_own_percentile():
     assert entry["by_transform"] == pytest.approx({"fresh": 0.5, "gain": 0.02})
 
 
+def test_the_tie_floor_is_the_widest_transform_and_never_diluted_by_the_still_ones():
+    """Pooling still transforms with one scattered one reads a narrow floor; the tie floor keeps the scattered one's p95."""
+    still = [(name, 0.0) for name in ("gain", "delay", "soxr") * 4]
+    entry = nf.summarise({KEY: still + [("fresh", 0.4), ("fresh", 0.5), ("fresh", 0.6), ("fresh", 0.7)]})[KEY]
+    assert entry["tie_floor"] == pytest.approx(entry["percentile_by_transform"]["fresh"])
+    assert entry["floor"] < entry["tie_floor"]
+
+
 def test_an_output_is_perturbed_and_its_source_left_untouched(tmp_path):
     """At the output point every scoring keeps the source; the reference is the output, the near-copies are made of it."""
     calls = []
