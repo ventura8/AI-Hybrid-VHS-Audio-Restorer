@@ -178,6 +178,9 @@ A channel gap wider than 25 dB means a dead channel rather than a level
 mismatch, so the live side is mirrored to both rather than attenuating the only
 channel carrying audio. The azimuth delay is applied only when the two channels
 actually correlate, because a lag measured against a silent channel is noise.
+`azimuth_estimate_method` chooses where the lag is read: the first 0.74 s
+(`head`, the default) or a GCC-PHAT vote of the loudest spans (`spans`); see
+"Pre-Conditioning Azimuth Estimate" in `docs/configuration.md`.
 
 ## Shared Stage: Mastering and Mux
 

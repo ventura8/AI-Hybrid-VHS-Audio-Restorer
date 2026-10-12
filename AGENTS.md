@@ -25,7 +25,10 @@ alignment:
   the louder side and mirrors the live channel when the other one is dead,
   correlation-gated sub-ms azimuth delay (`adelay`; a polarity-inverted pair,
   r at or under -0.3, is logged, and `azimuth_reject_inverted_pair` reads no
-  skew from it), and peak de-clipping (`adeclip`).
+  skew from it; `azimuth_estimate_method` reads the skew from the first
+  0.74 s, `head`, the default, whose sign doubles a real skew, or from the
+  loudest spans' GCC-PHAT vote, `spans`, the one `auto_pure_linear` gains
+  from), and peak de-clipping (`adeclip`).
 - **Native VHS DSP Filtering**: Multi-threaded FFmpeg filter graphs (`afftdn`,
   `adeclick`, `highpass`, `bandreject`).
 - **Surgical Tone Notching**: mains hum constrained to the family the detected

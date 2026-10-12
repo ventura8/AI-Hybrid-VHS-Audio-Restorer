@@ -83,6 +83,30 @@ audio alignment, or FFmpeg multiplexing.
      logged as inverted; `azimuth_reject_inverted_pair` (default false, so
      every output keeps its bytes) reads no skew from it. A NaN correlation
      passes the gate as before and is not flagged.
+   - `azimuth_estimate_method` (2026-10-12): `head`, the default, reads the
+     first 32768 samples' integer cross-correlation peak with the sign the
+     graph does not correct (`_head_azimuth_skew`: a right channel 5
+     samples late reads -0.11 ms and ffmpeg's `adelay=0|5S` makes it 10).
+     `spans` (`_spans_azimuth_skew`, `modules/azimuth_spans.py`) votes
+     GCC-PHAT peaks of up to seven loudest 1.5 s spans (150-7000 Hz, phase
+     coherence at least 0.3, agreement within half a sample, a parabola for
+     the fraction), abstains on disagreement, weak coherence or under half a
+     sample, keeps the |r| gate and the inverted-pair rule over the whole
+     scanned audio, and returns the sign the graph corrects. IA hunt, 232
+     stereo clips, the app's scan and pre-conditioning step on CPU, against
+     the same graph without the delay: `head` delayed 43 and lowered the
+     mono 4-8 kHz on 40 (median -1.43 dB, skew +1.00 sample); `spans`
+     delayed 28 and raised it on 27 (median +0.45 dB), lowering it 0.36 dB
+     on capture-a-3102. A full-band whole-file GCC-PHAT reads lag 0 on the
+     clips the octave investigation blamed on this stage because a lag-0
+     component above the programme band holds most of its bins; read
+     azimuth in the programme band. cathar's own `dewind` plus `azimuth`
+     left the same residual from either pre-conditioning on ten clips, so
+     `auto_pure_linear` is the engine the key changes. The Tata tapes read
+     no delay either way (four dead right channels, one identical pair).
+     Not judged by ear yet. Scratch evidence:
+     `D:\ai_restore_work\scratch_azspan\` (`validate_precond.py`,
+     `validate_none.py`, `val_hunt.json`, `cathar_follow.json`).
    - `_detect_crt_flyback_notch`: Band search across 15450-15900 Hz, classified
      by nearest line rate so an off-speed tape is still identified.
    - `_detect_mains_buzz_notch`: Hum vote constrained to the family the detected
