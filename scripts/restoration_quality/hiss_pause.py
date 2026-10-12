@@ -192,8 +192,10 @@ def anchor_band_power(anchor, centres, counts, frame):
     frequency onto the band centres, rescaled to `frame`-point bins (a bin's power scales as 1 / its length) and summed
     over each band's `counts` bins, the scaling `band_frame_power` gives a band.
     """
-    level = None if anchor is None or anchor.level is None else np.asarray(anchor.level, dtype=np.float64)
-    read = np.zeros(0, dtype=bool) if level is None else np.isfinite(level) & (level > 0.0)
+    if anchor is None or anchor.level is None:
+        return None
+    level = np.asarray(anchor.level, dtype=np.float64)
+    read = np.isfinite(level) & (level > 0.0)
     if read.sum() < 2:
         return None
     per_bin = 10.0 ** np.interp(np.log(centres), np.log(np.asarray(anchor.centres)[read]), np.log10(level[read]))
