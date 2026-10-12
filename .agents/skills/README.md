@@ -47,7 +47,14 @@ the Antigravity agent system.
     tie, "audible" proves nothing);
   - `scripts/listen_ab.py` (`python -m scripts.listen_ab`): ABX, pairwise
     and blend listening on a localhost-only page, answers written to the
-    verdict ledger `assets/quality_calibration/verdicts.jsonl`;
+    verdict ledger `assets/quality_calibration/verdicts.jsonl`; `--device`
+    and `--volume` are required, every cut plays at one speech level, the
+    page switches at the same playhead, practice and catch trials come from
+    `restoration_quality/listen_protocol.py`; `threshold` mode
+    (`restoration_quality/listen_threshold.py`) measures a listener's tone
+    thresholds under a hard cap into
+    `assets/quality_calibration/playback_calibration.jsonl`, which
+    `auditory.PLAYBACK_SPL_LOUD_FRAMES` reads with `AI_RESTORE_LISTENER`;
   - `scripts/reward_noise_floor.py` (`python -m scripts.reward_noise_floor`):
     the test-retest noise floor of every reading, which the group reward
     (`restoration_quality/reward.py`) uses as its tie band and the loop as

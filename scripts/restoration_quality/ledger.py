@@ -16,20 +16,28 @@ one source. A record:
   (`auditory.pcm_sha256`) in `context.cut_sha256`;
 - `question`: `{type, stimuli, blind, text}`, where `type` is
   - `abx`: two stimuli, `n_trials` / `n_correct`, answer `{heard, p_value}` with the one-sided
-    binomial p (17/24 right is p 0.032, power 0.77 at a true 75% hit rate);
+    binomial p (17/24 right is p 0.032, power 0.77 at a true 75% hit rate). `listen_ab.py`
+    adds `trials: [[key, choice], ...]` in the order heard and, since 2026-10-12, the optional
+    `cant_tell` count: answers of "can't tell" (`CANT_TELL` in `trials`) are kept apart, so
+    `n_trials` counts only the A/B answers and may be 0 when every answer was "can't tell";
   - `pair`: two stimuli, answer `{counts: {<a>: n, <b>: n, "same": n}}`, "same" when the
     listener could not choose (`listen_ab.py` adds `trials: [[A, B, chosen, replicate], ...]`
     in the order heard, `replicate` true on the block's one consistency repeat);
   - `blend`: incumbent and candidate on a blend continuum x in [0, 1], answer
-    `{threshold_x, band, responses: [[x, right], ...]}` (x heard 75% of the time);
+    `{threshold_x, band, responses: [[x, right], ...]}` (x heard 75% of the time) and the
+    optional `cant_tell: [x, ...]`, the levels answered "can't tell", outside the responses;
   - `flag`: answer `{flagged: {flag: [labels]}, clean: {flag: [labels]}}`; `clean["*"]` lists
     outputs accepted with no complaint at all;
   - `preference`: answer `{order: [[best, ...], [next, ...], ...]}`; labels sharing a tier carry
     no claim between them (tied, or not compared);
 - `n_trials` / `n_correct` (null for by-ear verdicts), `confidence` (0-1, or null when not
-  measured), `playback` `{device, volume}`, `context` (the listener's words; `heard`: a list of
-  other variants in the session that drew no verdict; `verdict_group`: a name shared by the
-  records that restate one verdict across tapes, so a fit counts it once).
+  measured), `playback` `{device, volume}` plus any other playback state as text or null
+  (`listen_ab.py` since 2026-10-12: `connection`, `eq`, `anc`, `surround`), `context` (the
+  listener's words; `heard`: a list of other variants in the session that drew no verdict;
+  `verdict_group`: a name shared by the records that restate one verdict across tapes, so a
+  fit counts it once; `block_flags`: what the block can show, `BLOCK_FLAGS`, never a flag on
+  an output: "no signal" when every decided scored answer was one button, "disengaged" when
+  the listener missed a positive-control catch trial in a block that was not one button).
 
 A stimulus label means one file per tape across the whole ledger: `read` and `append` refuse a
 record whose stimulus label already names another file on the same tape (other digests when
@@ -85,6 +93,8 @@ FIELDS = (
 )
 ANY_FLAG = "*"
 SAME = "same"
+CANT_TELL = "cant_tell"
+BLOCK_FLAGS = ("no signal", "disengaged")
 FLAG_PREFIX = "listener."
 NAME_RE = re.compile(r"^[A-Za-z0-9_.+-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -164,6 +174,14 @@ def append_many(records, path=LEDGER_PATH):
     _refuse_taken_ids(records, existing, path)
     _require_unique(records, "new records")
     _require_consistent(existing + records, path)
+    return append_lines(records, path)
+
+
+def append_lines(records, path):
+    """Appends `records` to the JSON-lines file at `path`, one LF-terminated line each, in one write; returns them.
+
+    No validation here: the caller has checked the records (the ledger, the playback calibration file).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     lead = _line_end_owed(path)
     with path.open("a", encoding="utf-8", newline="\n") as handle:
@@ -408,12 +426,20 @@ def _field_problems(record):
             (lambda: _is_optional_count(record["n_trials"]), "n_trials must be a count or null"),
             (lambda: _is_optional_count(record["n_correct"]), "n_correct must be a count or null"),
             (lambda: _is_optional_unit(record["confidence"]), "confidence must lie in [0, 1] or be null"),
-            (lambda: _playback_ok(record["playback"]), "playback must be {device, volume} as texts or nulls"),
+            (lambda: _playback_ok(record["playback"]), "playback must be {device, volume, ...} as texts or nulls"),
             (lambda: isinstance(context, dict), "context must be an object"),
             (lambda: _optional_key_ok(context, "heard", _name_list), "context.heard must be a list of distinct labels"),
             (lambda: _optional_key_ok(context, "verdict_group", _is_name), "context.verdict_group must be a name"),
+            (
+                lambda: _optional_key_ok(context, "block_flags", _block_flags_ok),
+                f"context.block_flags must list {' or '.join(BLOCK_FLAGS)}",
+            ),
         ]
     )
+
+
+def _block_flags_ok(flags):
+    return isinstance(flags, list) and all(isinstance(flag, str) and flag in BLOCK_FLAGS for flag in flags)
 
 
 def _file_labels(record):
@@ -446,13 +472,31 @@ def _no_trials(record):
     return record["n_trials"] is None and record["n_correct"] is None
 
 
+def _cant_tell_count(answer):
+    """How many answers were "can't tell": the abx count or the length of the blend list (0 when the record has none)."""
+    value = answer.get(CANT_TELL, 0)
+    return len(value) if isinstance(value, list) else value
+
+
+def _decided_ok(record):
+    """`_trials_ok`, or no decided trial at all (0 of 0) when every answer was "can't tell"."""
+    if record["n_trials"] == 0 and record["n_correct"] == 0:
+        return _is_count(_cant_tell_count(record["answer"])) and _cant_tell_count(record["answer"]) > 0
+    return _trials_ok(record)
+
+
+def _unit_list(values):
+    return isinstance(values, list) and all(map(_is_unit, values))
+
+
 def _abx_problems(record):
     answer = record["answer"]
     return _failed(
         [
             (lambda: _two_stimuli(record), "an abx record compares exactly two stimuli"),
-            (lambda: _trials_ok(record), "an abx record needs n_trials >= 1 and 0 <= n_correct <= n_trials"),
+            (lambda: _decided_ok(record), "an abx record needs n_trials >= 1 and 0 <= n_correct <= n_trials (0 of 0 only with cant_tell)"),
             (lambda: isinstance(answer["heard"], bool), "abx answer.heard must be true or false"),
+            (lambda: _optional_key_ok(answer, CANT_TELL, _is_count), "abx answer.cant_tell must be a count"),
             (lambda: _p_matches(answer["p_value"], record), "abx answer.p_value must be the one-sided binomial p of n_correct of n_trials"),
         ]
     )
@@ -499,7 +543,8 @@ def _blend_problems(record):
     return _failed(
         [
             (lambda: _two_stimuli(record), "a blend record has exactly two stimuli: the incumbent and the candidate"),
-            (lambda: _trials_ok(record), "a blend record needs n_trials >= 1 and 0 <= n_correct <= n_trials"),
+            (lambda: _decided_ok(record), "a blend record needs n_trials >= 1 and 0 <= n_correct <= n_trials (0 of 0 only with cant_tell)"),
+            (lambda: _optional_key_ok(answer, CANT_TELL, _unit_list), "blend answer.cant_tell must be a list of x in [0, 1]"),
             (lambda: _is_number(answer["threshold_x"]) and answer["threshold_x"] >= 0.0, "blend answer.threshold_x must be >= 0"),
             (lambda: _band_ok(answer["band"]), "blend answer.band must be [low, high] with 0 <= low <= high"),
             (

@@ -97,12 +97,16 @@ BROKEN = [
     ("abx", ("answer", "p_value"), 0.5, "binomial"),
     ("abx", ("n_correct",), 25, "n_trials >= 1"),
     ("abx", ("answer", "heard"), "yes", "answer.heard"),
+    ("abx", ("answer", "cant_tell"), -1, "answer.cant_tell"),
+    ("abx", ("context",), {"block_flags": ["bored"]}, "context.block_flags"),
+    ("abx", ("context",), {"block_flags": "no signal"}, "context.block_flags"),
     ("pair", ("answer", "counts", "a"), 5, "add up"),
     ("pair", ("answer", "counts"), {"a": 1, "b": 3}, "count both"),
     ("pair", ("n_correct",), 2, "no right answer"),
     ("blend", ("answer", "band"), [0.5, 0.2], "band must"),
     ("blend", ("answer", "threshold_x"), -1.0, "threshold_x"),
     ("blend", ("answer", "responses"), [[1.0, True]], "responses must"),
+    ("blend", ("answer", "cant_tell"), [1.5], "answer.cant_tell"),
     ("preference", ("answer", "order"), [["a", "b"]], "two or more"),
     ("preference", ("answer", "order"), [["a"], ["a"]], "two or more"),
     ("preference", ("n_correct",), 1, "holds no trials"),
@@ -327,3 +331,33 @@ def test_shipped_ledger_hashes_every_file_but_the_full_tape_captures():
     entries = [entry for record in ledger.read() for entry in record["files"]]
     assert all(entry["sha256"] for entry in entries if not entry["path"].endswith(".mov"))
     assert not [entry for entry in entries if entry["path"].endswith(".mov") and entry["sha256"]]
+
+
+# ----------------------------------------------------------------------------- 2026-10-12: "can't tell", block flags, playback state
+
+
+def test_the_new_answer_and_context_fields_are_optional_and_validated():
+    """A can't-tell count, block flags and the playback chain as text pass; records without them still pass."""
+    record = _abx()
+    record["answer"].update(cant_tell=2, trials=[["A", "A"], ["B", ledger.CANT_TELL]])
+    record["context"]["block_flags"] = ["no signal"]
+    record["playback"].update(connection="USB", eq="off", anc=None, surround="off")
+    assert not ledger.validate_record(record)
+    assert not ledger.validate_record(_abx())
+    assert ledger.BLOCK_FLAGS == ("no signal", "disengaged")
+
+
+def test_an_abx_or_blend_record_of_only_cant_tell_answers_is_valid():
+    """0 of 0 decided trials pass when the answer counts the "can't tell" answers that explain them, and only then."""
+    abx = _abx()
+    abx.update(n_trials=0, n_correct=0)
+    abx["answer"].update(p_value=1.0, heard=False)
+    assert any("n_trials >= 1" in problem for problem in ledger.validate_record(abx))
+    abx["answer"]["cant_tell"] = 3
+    assert not ledger.validate_record(abx)
+    blend = _blend()
+    blend.update(n_trials=0, n_correct=0)
+    blend["answer"].update(responses=[], cant_tell=[0.4, 0.2])
+    assert not ledger.validate_record(blend)
+    blend["answer"]["cant_tell"] = []
+    assert any("n_trials >= 1" in problem for problem in ledger.validate_record(blend))

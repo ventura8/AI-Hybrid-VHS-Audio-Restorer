@@ -1,4 +1,4 @@
-"""The three listening questions (ABX, pair with "same" and one replicate, blend threshold) and the records they write."""
+"""The three listening questions (ABX, pair with "same" and one replicate, blend threshold), "can't tell", catch and practice trials."""
 
 import itertools
 
@@ -138,3 +138,106 @@ def test_the_simulated_listeners_blend_record_is_valid():
 def test_x_at_target_inverts_the_psychometric_function():
     """The reported x is the one heard 75% of the time."""
     assert listen_modes.p_correct(listen_modes.x_at_target(0.4), 0.4) == pytest.approx(listen_modes.TARGET_P)
+
+
+# ----------------------------------------------------------------------------- "can't tell", kept apart from the score
+
+
+def _unsure_where(pattern):
+    """A listener who answers "can't tell" where `pattern` says so and right everywhere else."""
+    unsure = iter(pattern)
+    return lambda trial: listen_modes.CANT_TELL if next(unsure) else trial["key"]
+
+
+def test_abx_cant_tell_is_kept_but_not_scored():
+    """Two "can't tell" answers of six: the score counts the four decided ones, the record keeps all six in order."""
+    mode = listen_modes.AbxMode(["a", "b"], 6, np.random.default_rng(10))
+    _answer_all(mode, _unsure_where([True, False, False, True, False, False]))
+    result = mode.results()[0]
+    assert (result["n_trials"], result["n_correct"], result["answer"]["cant_tell"]) == (4, 4, 2)
+    choices = [choice for _key, choice in result["answer"]["trials"]]
+    assert (choices.count(listen_modes.CANT_TELL), result["answer"]["p_value"]) == (2, ledger.binomial_p(4, 4))
+    assert (ledger.validate_record(_record(mode, "abx-ct")), "2 can't tell (not scored)" in mode.summary()) == ([], True)
+
+
+def test_an_abx_block_of_only_cant_tell_is_still_a_valid_record():
+    """Every answer "can't tell": 0 of 0 decided, p 1, not heard, and the ledger takes it because the count says why."""
+    mode = listen_modes.AbxMode(["a", "b"], 3, np.random.default_rng(11))
+    _answer_all(mode, lambda _trial: listen_modes.CANT_TELL)
+    result = mode.results()[0]
+    assert (result["n_trials"], result["n_correct"], result["answer"]["heard"]) == (0, 0, False)
+    assert not ledger.validate_record(_record(mode, "abx-none"))
+
+
+def test_blend_cant_tell_leaves_the_posterior_and_is_recorded_apart():
+    """A "can't tell" moves nothing: the next trial sits where it would have, and the record lists its level apart."""
+    mode = listen_modes.BlendMode(["inc", "cand"], 3, np.random.default_rng(12))
+    first = mode.trial(0)
+    mode.record(first, first["key"])
+    before = mode.log_posterior.copy()
+    second = mode.trial(1)
+    mode.record(second, listen_modes.CANT_TELL)
+    assert (bool(np.array_equal(mode.log_posterior, before)), mode.trial(2)["x"]) == (True, second["x"])
+    result = mode.results()[0]
+    assert (result["answer"]["cant_tell"], result["n_trials"], result["n_correct"]) == ([second["x"]], 1, 1)
+    assert "1 can't tell" in mode.summary()
+
+
+def test_forced_choice_trials_offer_cant_tell_and_ask_for_a_guess():
+    """ABX and blend offer A, B and "can't tell" and ask for a guess; pair keeps its "same"."""
+    abx = listen_modes.AbxMode(["a", "b"], 2, np.random.default_rng(13)).trial(0)
+    blend = listen_modes.BlendMode(["a", "b"], 2, np.random.default_rng(13)).trial(0)
+    pair = listen_modes.PairMode(["a", "b"], 1, np.random.default_rng(13)).trial(0)
+    assert abx["choices"] == blend["choices"] == ["A", "B", listen_modes.CANT_TELL]
+    assert "Guess when unsure" in abx["prompt"] and "Guess when unsure" in blend["prompt"]
+    assert pair["choices"] == ["A", "B", ledger.SAME]
+
+
+# ----------------------------------------------------------------------------- catch and practice trials look like scored ones
+
+
+def test_catch_trials_take_the_shape_of_each_mode():
+    """A catch trial has the scored trial's buttons, prompt and choices, over the first stimulus and the control."""
+    rng = np.random.default_rng(14)
+    modes = [
+        listen_modes.AbxMode(["a", "b"], 2, rng),
+        listen_modes.BlendMode(["a", "b"], 2, rng),
+        listen_modes.PairMode(["a", "b"], 1, rng),
+    ]
+    for mode in modes:
+        scored, catch = mode.trial(0), mode.catch_trial(listen_modes.CATCH_AIR, "A")
+        assert [name for name, _weights in catch["play"]] == [name for name, _weights in scored["play"]]
+        assert (catch["prompt"], catch["choices"]) == (scored["prompt"], scored["choices"])
+        assert catch["stimuli"] == ["a", listen_modes.CATCH_AIR]
+
+
+def test_the_catch_control_sits_where_the_key_says():
+    """ABX: X plays the control when the key is B; blend: the control is the odd one in the key's slot; pair: on the key's side."""
+    rng = np.random.default_rng(15)
+    abx = listen_modes.AbxMode(["a", "b"], 2, rng).catch_trial(listen_modes.CATCH_RAW, "B")
+    blend = listen_modes.BlendMode(["a", "b"], 2, rng).catch_trial(listen_modes.CATCH_RAW, "A")
+    pair = listen_modes.PairMode(["a", "b"], 1, rng).catch_trial(listen_modes.CATCH_RAW, "B")
+    assert abx["play"][2] == ("X", {listen_modes.CATCH_RAW: 1.0})
+    assert blend["play"][1] == ("A", {listen_modes.CATCH_RAW: 1.0}) and blend["play"][0] == ("R", {"a": 1.0})
+    assert pair["play"][0] == ("A", {listen_modes.CATCH_RAW: 1.0}) and pair["key"] is None
+
+
+def test_practice_trials_play_the_exaggerated_pair():
+    """ABX practice plays the familiarisation pair as A and B; blend practice plays it as R and the odd one."""
+    rng = np.random.default_rng(16)
+    abx = listen_modes.AbxMode(["a", "b"], 2, rng).familiar_trial(0, "A")
+    blend = listen_modes.BlendMode(["a", "b"], 2, rng).familiar_trial(0, "B")
+    assert abx["play"][:2] == [("A", {listen_modes.FAMILIAR_A: 1.0}), ("B", {listen_modes.FAMILIAR_B: 1.0})]
+    assert blend["play"] == [
+        ("R", {listen_modes.FAMILIAR_A: 1.0}),
+        ("A", {listen_modes.FAMILIAR_A: 1.0}),
+        ("B", {listen_modes.FAMILIAR_B: 1.0}),
+    ]
+
+
+def test_scored_choices_include_cant_tell():
+    """The buttons a block was answered with, "can't tell" among them: what tells a one-button block."""
+    mode = listen_modes.AbxMode(["a", "b"], 2, np.random.default_rng(17))
+    picks = iter(["A", listen_modes.CANT_TELL])
+    _answer_all(mode, lambda _trial: next(picks))
+    assert mode.scored_choices() == ["A", listen_modes.CANT_TELL]
