@@ -257,6 +257,7 @@ def known_config_fields():
     fields["pause_floor_shape"] = (set(config_mod.VALID_PAUSE_FLOOR_SHAPES), None, None)
     fields["linear_air_gate"] = (set(config_mod.VALID_LINEAR_AIR_GATES), None, None)
     fields["mux_sample_rate"] = (set(config_mod.VALID_MUX_SAMPLE_RATES), None, None)
+    fields["azimuth_estimate_method"] = (set(config_mod.VALID_AZIMUTH_ESTIMATE_METHODS), None, None)
     fields["apl_neural_model"] = (str, None, None)
     return fields
 

@@ -438,6 +438,82 @@ session decides otherwise:
   pre-conditioning would apply as a delay. A pair at r -0.3 or below is
   always logged as inverted; with the key on, no skew is read from it.
 
+## Pre-Conditioning Azimuth Estimate
+
+`azimuth_estimate_method` (`head`) was added on 2026-10-12. It picks where
+the scan reads the stereo azimuth skew that the pre-conditioning of every
+mode, `cathar` included, applies as an `adelay` on one channel. The default
+keeps every output's bytes: `tests/unit/test_azimuth_estimate_spans.py` pins
+HEAD 57bfdb8's readings, graphs and one whole scan.
+
+- `head` (default): the first 32768 samples (0.74 s at 44.1 kHz)
+  cross-correlated and the integer peak taken, as every release has. Its
+  sign is the one the graph does not correct: a right channel one sample
+  late reads -0.02 ms, and the graph delays the right channel by one more
+  (ffmpeg, a 5-sample skew became 10).
+- `spans`: GCC-PHAT on up to seven of the loudest 1.5 s spans, voting
+  (`modules/azimuth_spans.py`). On each span the cross-spectrum's phase
+  alone, over 150-7000 Hz and in the bins where both channels carry power,
+  gives a peak refined to a fraction of a sample. A span counts at phase
+  coherence 0.3 or more; the lag is the median of the counted spans that
+  agree within half a sample, and at least two of them and more than half
+  of those counted must agree. No delay is applied when the spans disagree
+  (a tie included: a print stitched from two parts skewed opposite ways
+  would otherwise have one part's skew doubled), cohere weakly, or agree on
+  less than half a sample (the graph delays by whole samples). The result
+  has the sign the graph corrects. The |r| gate and
+  `azimuth_reject_inverted_pair` apply as before, read over the whole
+  scanned audio rather than its head; with the switch off, an inverted pair
+  gives its true skew (the magnitude of the peak) instead of half a period
+  of its strongest partial.
+
+Measured on the IA hunt on 2026-10-12: 232 stereo clips through the app's
+own scan and pre-conditioning step on CPU, each method against the same
+graph without the delay.
+
+- `head` delayed a channel on 43 clips. The mono sum's 4-8 kHz fell on 40
+  of them (median -1.43 dB, worst -3.14), and the programme's skew grew by
+  a median 1.00 sample (never under 0.47). Of the three it raised, one is a
+  polarity-inverted pair whose 23-sample delay decorrelates two cancelling
+  channels (+17.7 dB; `spans` reads its true lag, 0); the others carry a
+  3-4 sample skew.
+- `spans` delayed a channel on 28 clips. The mono 4-8 kHz rose on 27
+  (median +0.45 dB, up to +8.2 on a 4-sample skew) and fell on one
+  (capture-a-3102, -0.36 dB: its spans agree on 0.56 samples, the whole
+  clip reads 0.31). The residual skew is a median 0.15 sample, at most
+  0.69. On the 17 clips where `head` delays and `spans` does not, the head
+  delay cost a median 0.82 dB.
+- The failing cathar clips where the head reads one sample and a
+  full-band whole-file GCC-PHAT reads lag 0 (joan-armatrading,
+  great-outdoors, entertainment-daily, 9-october, abc-primetime,
+  channel-4-1999-70, jefferson) are not lag-0 sources. Above the programme
+  band (from 8-16 kHz up) their channels share a lag-0 component that holds
+  most of a full-band reading's bins (coherence up to 0.99 on the four
+  checked), while in 150-7000 Hz they carry a real skew of 0.6-0.9 samples
+  (jefferson 1.3). The head read it to the nearest sample and the graph
+  doubled it. `spans` corrects it to a residual of 0.13-0.37 samples: the
+  mono 4-8 kHz gains 0.16-0.45 dB against no delay, where the head delay
+  loses 1.24-1.78 dB.
+- The Tata tapes read no delay with either method: four have a dead right
+  channel (r 0.02, the gate refuses the pair) and the fifth has identical
+  channels (all seven spans agree on 0.00 samples). Both Gaudeamus
+  captures (`D:\Tata`) also have a dead right channel (r 0.019) and read
+  no delay either way.
+- A review re-run on 2026-10-12 with its own estimators (a
+  coherence-weighted fit of the Welch cross-spectrum's phase, not GCC-PHAT)
+  reproduced these counts and gains to within 0.03 dB. Its residual skew
+  after `spans` is a median 0.26 sample in 300-4000 Hz and 0.15 in
+  4000-8000 Hz (at most 0.82).
+
+`auto_pure_linear` gains most. `cathar` runs its own GCC-PHAT `azimuth`
+stage after `dewind`, and on ten of these clips it left the same residual
+skew (within 0.07 sample) and mono 4-8 kHz (within 0.02 dB) from either
+pre-conditioning. `auto_pure_linear` runs that stage only inside its
+physical repair, and only when the scan reads 0.05 ms or more, so a
+one-sample head reading (0.02 ms) stays in its output. Not judged by ear
+yet: a listening session and the `artifacts/realistic-v2` and IA
+confirmation come before any default changes.
+
 ## DTW Sync on Length-Preserving Chains
 
 `sync_dtw_enable` (true) was added on 2026-10-12 (backlog B1). The scanner

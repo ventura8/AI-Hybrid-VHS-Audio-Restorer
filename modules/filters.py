@@ -5,7 +5,8 @@ and robust process execution for VHS native DSP restoration and pre-conditioning
 - Stage 1: Hardware DC Offset Bias Removal (2 Hz sub-audible highpass filter).
 - Stage 2: Stereo Channel Balance Auto-Leveling (Left/Right channel RMS balancing).
 - Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay;
-  a polarity-inverted pair is logged, and read as no skew behind azimuth_reject_inverted_pair).
+  a polarity-inverted pair is logged, and read as no skew behind azimuth_reject_inverted_pair;
+  azimuth_estimate_method reads it from the head or from the loudest spans' GCC-PHAT vote).
 - Stage 4: Analog Preamp De-Clipping (peak clipping threshold reconstruction via adeclip).
 - Stage 5: Impulsive Pop/Click Suppression (adeclick) and Motor Rumble Highpass (45-75 Hz).
 - Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters).
@@ -38,6 +39,7 @@ from .config import (
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
+    AZIMUTH_ESTIMATE_METHOD,
     AZIMUTH_REJECT_INVERTED_PAIR,
     CRT_NOTCH_Q,
     ENABLE_ADECLICK,
@@ -772,6 +774,9 @@ def _azimuth_pair_usable(left, right):
 def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
     """Detects sub-millisecond inter-channel time delay (azimuth phase skew).
 
+    `azimuth_estimate_method` picks the reading: 'head' (`_head_azimuth_skew`, every
+    release's) or 'spans' (`_spans_azimuth_skew`).
+
     Args:
         stereo_audio (numpy.ndarray): Stereo 2-channel audio array.
         sr (int): Sampling rate in Hz.
@@ -782,6 +787,17 @@ def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
     """
     if not _is_valid_stereo(stereo_audio) or np is None:
         return 0.0
+    reader = _spans_azimuth_skew if AZIMUTH_ESTIMATE_METHOD == "spans" else _head_azimuth_skew
+    return reader(stereo_audio, sr, max_lag_samples)
+
+
+def _head_azimuth_skew(stereo_audio, sr, max_lag_samples):
+    """The 'head' reading: the integer peak of the first 32768 samples' cross-correlation, in ms.
+
+    Its sign is the one the pre-conditioning graph does not correct: a right channel 5 samples
+    late reads -0.11 ms, and the graph delays the right channel by 5 more (ffmpeg, 2026-10-12:
+    the lag went from 5 to 10 samples). It stays as it is so every output keeps its bytes.
+    """
     left = stereo_audio[:32768, 0]
     right = stereo_audio[:32768, 1]
     if not _azimuth_pair_usable(left, right):
@@ -792,6 +808,24 @@ def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
     if not (0 < abs(lag) <= max_lag_samples):
         return 0.0
     return round(float(lag) / float(sr) * 1000.0, 2)
+
+
+def _spans_azimuth_skew(stereo_audio, sr, max_lag_samples):
+    """The 'spans' reading (`modules/azimuth_spans.py`): the delay that puts the right channel back on the left, in ms.
+
+    The correlation gate and the inverted-pair rule read the whole scanned audio, as the
+    vote does. Positive delays the left channel (the right one runs late), negative the right.
+    """
+    from . import azimuth_spans
+
+    left = stereo_audio[:, 0]
+    right = stereo_audio[:, 1]
+    if not _azimuth_pair_usable(left, right):
+        return 0.0
+    reading = azimuth_spans.read_skew(left, right, sr, max_lag_samples)
+    delay_ms = azimuth_spans.delay_ms(reading.lag, sr, max_lag_samples)
+    log_msg(f"    [Auto-Scan] Azimuth (spans): {azimuth_spans.describe(reading, delay_ms)}.")
+    return delay_ms
 
 
 def _analysis_block_offsets(total_frames, block_frames):

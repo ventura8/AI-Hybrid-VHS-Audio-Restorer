@@ -796,6 +796,16 @@ VALID_LINEAR_AIR_GATES = {"none", "hiss_dominated"}
 # whose codec takes it, which changes the bytes of every 48 kHz source.
 VALID_MUX_SAMPLE_RATES = {"pipeline", "source"}
 
+# How the scan reads the stereo azimuth skew the pre-conditioning delays a channel by
+# (modules/filters.py, every mode). 'head' cross-correlates the first 32768 samples and takes
+# the integer peak, as every release has, with the sign the graph does not correct: on the IA
+# hunt (2026-10-12, 232 stereo clips, CPU) it delayed a channel on 43 and the mono sum's
+# 4-8 kHz fell on 40 (median -1.43 dB against no delay). 'spans' votes GCC-PHAT peaks on the
+# loudest spans, a fraction of a sample included, abstains when they disagree or cohere weakly
+# (modules/azimuth_spans.py), and returns the sign the graph corrects: it delayed 28, the mono
+# 4-8 kHz rose on 27 (median +0.45 dB) and fell 0.36 dB on one.
+VALID_AZIMUTH_ESTIMATE_METHODS = {"head", "spans"}
+
 
 def _reject_config_value(param_name, raw_value, default):
     """Logs a normalisation warning and returns the field's default."""
@@ -828,6 +838,10 @@ def _normalize_loudnorm_linear_fallback(raw_value):
 
 def _normalize_mux_sample_rate(raw_value):
     return _normalize_choice(raw_value, VALID_MUX_SAMPLE_RATES, "mux_sample_rate", "pipeline")
+
+
+def _normalize_azimuth_estimate_method(raw_value):
+    return _normalize_choice(raw_value, VALID_AZIMUTH_ESTIMATE_METHODS, "azimuth_estimate_method", "head")
 
 
 def _normalize_cathar_declip_mode(raw_value):
@@ -980,6 +994,7 @@ def _apply_user_config(defaults, user_config):
     defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
     defaults["linear_air_gate"] = _normalize_linear_air_gate(defaults.get("linear_air_gate"))
     defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
+    defaults["azimuth_estimate_method"] = _normalize_azimuth_estimate_method(defaults.get("azimuth_estimate_method"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -1038,6 +1053,10 @@ def load_config():
         # The mux's rate: 44.1 kHz in every container but MPEG-PS, which keeps the source's
         # ('pipeline', today's bytes everywhere else); 'source' keeps it in every container.
         "mux_sample_rate": "pipeline",
+        # The pre-conditioning's azimuth reading: the first 32768 samples' cross-correlation
+        # ('head', every release's, so every output keeps its bytes) or the loudest spans'
+        # GCC-PHAT vote ('spans', VALID_AZIMUTH_ESTIMATE_METHODS); not yet judged by ear.
+        "azimuth_estimate_method": "head",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1199,6 +1218,7 @@ LOUDNORM_LINEAR_FALLBACK = str(CONFIG.get("loudnorm_linear_fallback", "ffmpeg"))
 MUX_LIMITER_LATENCY_COMPENSATION = bool(CONFIG.get("mux_limiter_latency_compensation", False))
 MUX_SAMPLE_RATE = str(CONFIG.get("mux_sample_rate", "pipeline"))
 AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
+AZIMUTH_ESTIMATE_METHOD = str(CONFIG.get("azimuth_estimate_method", "head"))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
 EXPANDER_ATTACK_S = float(CONFIG.get("expander_attack_s", 0.04))

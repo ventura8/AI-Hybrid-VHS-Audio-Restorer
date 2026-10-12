@@ -262,6 +262,25 @@ batch_jobs: 8
 #     always logs such a pair.
 #   - false (Default): the skew is read as before, so every output keeps its bytes.
 #   - true: no azimuth skew is read from an inverted pair.
+#
+# azimuth_estimate_method (where the scan reads that azimuth skew; 2026-10-12):
+#   - 'head' (Default): the first 32768 samples (0.74 s) cross-correlated, the integer
+#     peak taken, as every release has, so every output keeps its bytes. Its sign is
+#     the one the graph does not correct: a right channel 1 sample late reads -0.02 ms
+#     and the graph delays the right channel 1 more. On the IA hunt (232 stereo clips,
+#     the app's scan and pre-conditioning step on CPU) it delayed a channel on 43, and
+#     against the same graph without the delay the mono sum's 4-8 kHz fell on 40
+#     (median -1.43 dB, worst -3.14) while the programme's skew grew by a median 1.00
+#     sample.
+#   - 'spans': GCC-PHAT on up to seven of the loudest 1.5 s spans, 150-7000 Hz, voting
+#     to a fraction of a sample (modules/azimuth_spans.py); no delay when the spans
+#     disagree, cohere weakly or agree on under half a sample; the |r| gate and
+#     azimuth_reject_inverted_pair apply as before. It delayed a channel on 28: the
+#     mono 4-8 kHz rose on 27 (median +0.45 dB, up to +8.2) and fell on one (-0.36 dB,
+#     capture-a-3102), the residual skew a median 0.15 sample. The Tata tapes read no
+#     delay with either method. auto_pure_linear gains most: cathar's own azimuth
+#     stage re-aligns the channels whatever the pre-conditioning did. Not judged by
+#     ear yet.
 # ------------------------------------------------------------------------------
 afftdn_nr: 10.0
 afftdn_nf: -55.0
@@ -270,6 +289,7 @@ highpass_freq: 80
 enable_adeclick: true
 notch_freq: 50.0
 azimuth_reject_inverted_pair: false
+azimuth_estimate_method: "head"
 
 # ------------------------------------------------------------------------------
 # ARNNDN Speech Settings (for 'arnndn_speech' mode)
