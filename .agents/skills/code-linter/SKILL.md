@@ -91,6 +91,11 @@ every other one. Exclusions belong in the properties file with a reason.
 - **Line Length**: Python code max line length is 140.
 - **Zero Suppressions**: No inline ignores or bypass pragmas allowed anywhere in
   the repository (product code, tooling, or tests).
+- **Windows-only modules**: a static `import msvcrt` (or `winreg`) passes the
+  Windows gate but fails the Linux CI's `pylint --errors-only` with E0401,
+  even inside a function only win32 reaches (2026-10-12, `modules/ui.py`).
+  Import it by name there, `importlib.import_module("msvcrt")`; a test can
+  still put a stand-in in `sys.modules`.
 - **Tests Are Not Exempt**: Tests must pass the exact same linters (`black`,
   `isort`, `ruff`, `flake8`, `pylint`, `radon`) as production modules.
 - **Radon Grades**: Every single block must be Cyclomatic Complexity Grade A

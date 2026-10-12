@@ -1,3 +1,4 @@
+import importlib
 import os
 import platform
 import sys
@@ -225,10 +226,14 @@ def _get_interactive_files():
 
 
 def _windows_console(fd):
-    """True when the Windows handle behind `fd` is a console: GetConsoleMode succeeds on nothing else."""
-    import ctypes
-    import msvcrt
+    """True when the Windows handle behind `fd` is a console: GetConsoleMode succeeds on nothing else.
 
+    `msvcrt` exists on Windows only, so it is imported by name here: a static import fails the
+    Linux CI's pylint (E0401) though this function only runs on win32.
+    """
+    import ctypes
+
+    msvcrt = importlib.import_module("msvcrt")
     mode = ctypes.c_uint32()
     return bool(ctypes.windll.kernel32.GetConsoleMode(msvcrt.get_osfhandle(fd), ctypes.byref(mode)))
 
