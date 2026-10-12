@@ -4,9 +4,36 @@ A gate names a metric, which statistic to read (`median` or `tail` of the output
 or `delta.median` / `delta.tail` of output minus source), a comparison, and a
 threshold. Thresholds are numbers, or `"floor-0.05"` for the per-tape speaker
 floor. `scripts/calibrate_quality_metrics.py` writes a `gates.json` that
-overrides these values without touching code. A gate whose threshold is a starting guess
-no verdict has tested yet is `calibrated=False`; an entry a calibration file sets (it
-carries the `source` the threshold came from) is calibrated.
+overrides these values without touching code.
+
+Calibrated or not (2026-10-12): a threshold in this file is a hand-set guess unless its
+entry says otherwise, so `Gate.calibrated` defaults to False; `dsp.lkr` is the one entry
+whose value a calibration derived (the v2 file's known-good bound, on a reading unchanged
+since). A gates-file entry that names its `source` is calibrated, except a `floor` entry
+resting on no verdict (`n_verdicts` 0 or absent): that is the hand-set value of the day,
+or three benign floors when wider, and it never reports as calibrated. Such an entry also
+never tightens the threshold in code: a calibration takes the looser of the two, so when
+a hand-set value is loosened afterwards (lkr 0.3 -> 1.747) the stale entry would keep the
+old guess; the merge keeps the looser one, which is what re-deriving would give. The v3
+and v3b files (round "manifest", an empty known ordering) hold lkr 0.3 and dropouts 1.0 as
+such entries; re-gated under them, the shipped Tata outputs failed lkr on 3 of 4 tapes
+(APL) and 4 of 4 (cathar).
+
+Retired names (`RETIRED`): a gates file that still sets one is read without it, so a
+threshold set on a reading that has since changed cannot land on its successor.
+`dsp.dropouts` read the window tail of the hole count, blind when the holes fall in at
+most 2 of 40 windows (`runner.dropout_entry`), and the v2 file's 57.3 belongs to the
+count 1d644fb replaced: `file.dropouts` reads the count over the whole aligned pair.
+`stems.octave` read the raw worst octave of the non-vocal stem, which reads hiss removal
+as a stripped background (the accepted APL final of x_vid-20230606-121054 at -38.8 dB):
+`stems.octave_programme` reads `stem_metrics.octave_programme_db`, and the raw octave is
+displayed only.
+
+Soft until calibrated (2026-10-12): `speech.cer_median` and `mos.audiobox_pc` read the
+denoising itself on hissy tape (the hunt's shipped cathar: CER over 0.05 on 23 of its
+first 46 clips, Audiobox PC under -0.5 on 21; within a clip Audiobox PC tracks the
+residual noise at Spearman 0.71-0.92), so they are shown, not counted, until a verdict
+sets them; the grids' learned vetoes on both stay.
 
 Ear v3 (2026-10-09):
 
@@ -51,6 +78,14 @@ FLAG = "flag"
 # The two aggregate statistics a gate reads: the window median and the bad-end tail.
 MEDIAN = "delta.median"
 TAIL = "delta.tail"
+# A calibration entry's `source` when its threshold rests on no verdict (`calibration_gates.FLOOR`).
+FLOOR_SOURCE = "floor"
+# `file.dropouts`, the holes over the whole aligned pair (2026-10-12), derived on the 2026-10-09 count: every benign
+# case reads 0, and over the 920 realistic-v2 oracle pairs (each `_vhs` capture against its `_target` and `_clean`)
+# 13.8 % read more than 1 hole, 6.1 % more than 3 and 4.8 % more than 4, so 4 is the smallest whole count the oracle
+# check admits. Most of those holes are the count misreading noise and hum removal (m09 hum fixtures against their
+# clean programme: 10 of 10 read holes, up to 14); the dropouts degradation's mild level (3 holes) passes it.
+DROPOUT_BOUND = 4.0
 
 
 @dataclass(frozen=True)
@@ -63,7 +98,7 @@ class Gate:
     threshold: object
     note: str = ""
     severity: str = "hard"
-    calibrated: bool = True
+    calibrated: bool = False
 
 
 # The keys a gates file entry may set; anything else (its `source`, `n_verdicts`, ...) is provenance.
@@ -78,7 +113,7 @@ GATES = {
         "ASR consistency with the source, worst decile of windows (Whisper is unstable on hissy tape)",
         SOFT,
     ),
-    "speech.cer_median": Gate("speech.cer", "median", "<=", 0.05, "ASR consistency with the source, typical window"),
+    "speech.cer_median": Gate("speech.cer", "median", "<=", 0.05, "ASR consistency with the source, typical window", SOFT),
     "speech.speaker": Gate(
         "speech.speaker_cos", "tail", ">=", "floor-0.05", "timbre: cosine to the source under the tape's own intra-speaker floor"
     ),
@@ -86,20 +121,23 @@ GATES = {
     "mos.sigmos_col": Gate("mos.sigmos_col", MEDIAN, ">=", -0.3, "coloration: muffled / metallic timbre"),
     "mos.sigmos_disc": Gate("mos.sigmos_disc", TAIL, ">=", -0.3, "discontinuity: chopping, musical noise"),
     "mos.sigmos_noise": Gate("mos.sigmos_noise", MEDIAN, ">=", 0.0, "the output must not read noisier than the source"),
-    "stems.octave": Gate("stems.octave_ratio_db", "tail", ">=", -3.0, "background stripped: non-vocal stem down in some octave"),
+    "stems.octave_programme": Gate(
+        "stems.octave_programme_db", "tail", ">=", -3.0, "background stripped: the programme the background leads lost an octave"
+    ),
     "dsp.hf_4k8k": Gate("dsp.hf_4k8k", MEDIAN, ">=", -8.0, "presence band lost: muffled speech"),
     "dsp.pause_pumping": Gate("dsp.pause_pumping_db", MEDIAN, "<=", 12.0, "pause floor switches on and off between words", "soft"),
     "dsp.hf_8k16k": Gate("dsp.hf_8k16k", MEDIAN, ">=", -12.0, "air band lost: sibilance eaten"),
-    "dsp.lkr": Gate("dsp.lkr", MEDIAN, "<=", 0.3, "musical noise"),
+    # The v2 calibration's known-good bound; lkr is read the same way since, and 0.3 vetoed accepted outputs.
+    "dsp.lkr": Gate("dsp.lkr", MEDIAN, "<=", 1.747, "musical noise", HARD, True),
     "dsp.hum": Gate("dsp.hum_excess_db", MEDIAN, "<=", 3.0, "hum must not appear"),
     "dsp.clicks": Gate("dsp.clicks_per_s", TAIL, "<=", 0.5, "clicks must not appear"),
-    "dsp.dropouts": Gate("dsp.dropouts", TAIL, "<=", 1.0, "no new holes in the programme"),
+    "file.dropouts": Gate("file.dropouts", MEDIAN, "<=", DROPOUT_BOUND, "no new holes in the programme, counted over the whole pair"),
     "dsp.whistle": Gate("dsp.whistle_db", MEDIAN, "<=", 3.0, "line whistle must not appear"),
     "file.lra": Gate("file.lra", MEDIAN, ">=", -3.0, "dynamics squashed"),
     "file.lufs": Gate("file.lufs", MEDIAN, "abs<=", 1.5, "level moved", SOFT),
     "speech.utmos": Gate("speech.utmos", MEDIAN, ">=", -0.3, "naturalness", SOFT),
     "mos.audiobox_pq": Gate("mos.audiobox_pq", MEDIAN, ">=", -0.3, "production quality", SOFT),
-    "mos.audiobox_pc": Gate("mos.audiobox_pc", MEDIAN, ">=", -0.5, "scene simplified: background stripped"),
+    "mos.audiobox_pc": Gate("mos.audiobox_pc", MEDIAN, ">=", -0.5, "scene simplified: background stripped", SOFT),
     "mos.dnsmos_gap": Gate("mos.dnsmos_gap", MEDIAN, ">=", -0.7, "SIG under BAK: the speech paid for the quiet", SOFT),
     "speech.hallucinated": Gate("speech.hallucinated", "tail", "<=", 0.0, "Whisper invents text where the output is silent", SOFT),
     "dsp.output_silent": Gate("dsp.output_silent", "tail", "<=", 0.0, "a window with programme fell silent"),
@@ -126,15 +164,25 @@ GATES = {
 DISPLAY_ONLY = frozenset({"listener.hiss"})
 
 
+# Gate names a gates file may still carry from before their reading changed, and what replaced each.
+RETIRED = {
+    "dsp.dropouts": "file.dropouts",
+    "stems.octave": "stems.octave_programme",
+}
+
+
 def load_gates(path, base=GATES):
     """`base` with the entries of a JSON file merged over it: `{name: {metric, stat, op, threshold, note?, severity?}}`.
 
-    A `DISPLAY_ONLY` gate the base defines keeps the base's severity whatever the file says.
+    A `DISPLAY_ONLY` gate the base defines keeps the base's severity whatever the file says;
+    a `RETIRED` name the base does not define is left out.
     """
     with open(path, "r", encoding="utf-8") as handle:
         raw = json.load(handle)
     merged = dict(base)
     for name, fields in raw.items():
+        if name in RETIRED and name not in base:
+            continue
         merged[name] = _merged_gate(base.get(name), _file_fields(name, fields, base))
     return merged
 
@@ -148,11 +196,53 @@ def _file_fields(name, fields, base):
 
 
 def _merged_gate(gate, fields):
-    """`gate` (or a new one) with a calibration entry's known fields over it; an entry naming its `source` is calibrated."""
-    known = {key: value for key, value in fields.items() if key in GATE_FIELDS}
-    if "source" in fields:
-        known.setdefault("calibrated", True)
+    """`gate` (or a new one) with a calibration entry's known fields over it.
+
+    An entry naming its `source` is calibrated unless it rests on no verdict (`rests_on_no_verdict`);
+    such an entry keeps the looser of its threshold and the base gate's (`floor_threshold`).
+    """
+    known = _floored(gate, _provenance(_gate_fields(fields), fields), fields)
     return Gate(**{**asdict(gate), **known}) if gate else Gate(**known)
+
+
+def _gate_fields(fields):
+    """The entry's keys a `Gate` carries; the rest (`source`, `n_verdicts`, ...) is provenance."""
+    return {key: value for key, value in fields.items() if key in GATE_FIELDS}
+
+
+def _floored(gate, known, fields):
+    """`known` with a floor entry's threshold no tighter than the base gate's (`floor_threshold`)."""
+    if gate is None or "threshold" not in known or not rests_on_no_verdict(fields):
+        return known
+    return {**known, "threshold": floor_threshold(known["threshold"], gate.threshold, known.get("op", gate.op))}
+
+
+def _provenance(known, fields):
+    """`known` with `calibrated` set from the entry's provenance: an entry naming its `source` is calibrated unless it is a floor."""
+    if "source" in fields:
+        known["calibrated"] = bool(known.get("calibrated", True)) and not rests_on_no_verdict(fields)
+    return known
+
+
+def rests_on_no_verdict(fields):
+    """Whether a gates-file entry is a `floor` threshold no verdict tested (`n_verdicts` 0 or absent)."""
+    return fields.get("source") == FLOOR_SOURCE and not int(fields.get("n_verdicts") or 0)
+
+
+def floor_threshold(entry, base, op):
+    """The looser of a floor entry's threshold and the base's: a threshold no verdict tested never tightens a hand-set one."""
+    if not (_numeric(entry) and _numeric(base)):
+        return entry
+    if op == "<=":
+        return max(float(entry), float(base))
+    if op == ">=":
+        return min(float(entry), float(base))
+    return max(abs(float(entry)), abs(float(base)))
+
+
+def _numeric(value):
+    """A plain number (a bool is not a threshold)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _read(aggregate, gate):
