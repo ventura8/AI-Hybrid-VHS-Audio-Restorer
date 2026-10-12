@@ -1114,6 +1114,14 @@ prototype's estimator, rebuilt after validation round 1):
    lag (waveform correlation 0.31-0.34, envelope 0.96-1.00), and the
    least-squares gain match shrank them 8.2-8.3 dB (Gaudeamus1) and
    14.6-14.9 dB (Gaudeamus5) in every window, which R1's gain undoes.
+1. Frames: the STFT frames wholly inside the window (`whole_frames`: the
+   centred first and last are half padding, read the masker 3 dB low and sat
+   among the quietest frames that set the shape and the P10 floor), and the
+   two frames at either end are neither active nor pause (`edge_frames`: the
+   tests two frames away read past the window). Validation round 2 found a
+   0.37-sample delay moving T's margin tail 0.13 dB and one sample at the end
+   of a Gaudeamus5 window moving it 2.4 dB through those frames; now every
+   window moves at most 0.01 dB.
 1. True pauses: DSP-VAD non-speech runs of 200 ms or more within 6 dB of
    the floor; the rest is active. Floor under the programme: `block_floor`,
    held no higher than the anchor, whose unread (NaN) bands take the anchor
@@ -1182,9 +1190,22 @@ block estimator, q 0.5, raw shape, no trim, Terhardt):
    ratio max(1 - 1/(9k), 0.05)^3, k = max(kept bins / 1.5, 0.5) x 10. The
    median stays: the mean (tried in round 1's fixes) let the soft programme
    a clean output reveals in the source's quiet frames read up to +43 dB.
+   Only the source's silent blocks count, band by band on both sides
+   (`silent_rows`): a block whose source band of 1 kHz and up stands 6 dB or
+   more over the anchor (`anchor_band_power`: the anchor's per-bin level
+   interpolated over log f, rescaled to 20 ms bins, summed over the band)
+   holds programme there; a window whose every such band held programme
+   reads None. On a choir tape R4's quiet frames are soft singing:
+   Gaudeamus5's pause blocks stood +4.1 dB (median) over its anchor at 2-8
+   kHz and +5.6..+8.7 in the windows every render kept unchanged, against
+   +0.7..+1.2 on the speech tapes (90th percentile +2.3..+7.1); the singing
+   had pinned its pause tail at 39.53 for every keeper fill.
 1. rel_b = floor_b in dB re the side's own whole-file loud frames; for the
-   margin each band takes the power mean of itself and its two neighbours
-   (realisation scatter sd 0.25 -> 0.13-0.18 dB on the fixtures).
+   margin each band takes the power mean of itself and two neighbours either
+   side (three bands took the realisation scatter from sd 0.25 to 0.13-0.18
+   dB on the fixtures; five with the silent blocks took the fixtures' fresh
+   p95 of the pause margin from 0.51-0.54 to 0.18-0.21 dB, the tapes' from
+   0.80 to 0.49 on the tail and 0.99 to 0.23 on the median).
    w(f) = 1 / (1 + exp(-log2(f / 2500) / 0.25)): 0.05 at 1.5 kHz, 0.22 at
    2 kHz, 0.5 at 2.5 kHz, 0.94 at 4 kHz.
 1. `margin` = max over bands of 1 kHz and up of L_crit + rel_b + 10 log10 w
@@ -1254,13 +1275,17 @@ the v3 grids stay for reproducibility.
   (it carries singing) and the programme excess at 1.5, the same pause
   entries, eight relative constraints (accepted music finals sit outside
   music_v3's uncalibrated R1 dead zones).
-- `tie` is the jitter report's floor for that flat key, rounded up to 0.05:
-  programme excess median 0.073, all-band 0.247, pause excess tail 0.174,
-  median 0.327 (`experiments/reward/noise_floor_hiss.json`, validation round 1
-  of 2026-10-12: eight pairs, two repeats, DSP repeat jitter exactly 0, the
-  fixed `fresh_floor`). H1's `max_move` equals the tie; H2's bound is its
-  delta key's own floor (programme 0.130 -> 0.15, pause tail 0.181 -> 0.20,
-  music all-band 0.244 -> 0.25).
+- `tie` is the jitter report's `tie_floor` for that flat key (the widest
+  same-percept transform's p95), rounded up to 0.05: programme excess median
+  0.294 -> 0.30, all-band 0.239 -> 0.25, pause excess tail 0.494 -> 0.50,
+  median 0.232 -> 0.25 (`experiments/reward/noise_floor_hiss.json`,
+  validation round 2 of 2026-10-12: eight pairs, two repeats, DSP repeat
+  jitter exactly 0). H1's `max_move` equals the tie; H2's bound is its delta
+  key's own tie floor (programme 0.327 -> 0.35, pause tail 0.341 -> 0.35,
+  music all-band 0.506 -> 0.55). Round 1 took the pooled p95 over all eight
+  transforms, which the five that barely move a hiss reading diluted (pause
+  tail 0.20 against fresh draws of 0.50-0.80, so H1 refused a same-percept
+  redraw); `reward.tie_floors` reads `tie_floor` (`tie_band_floors`).
 - `constraints:` (`reward.Constraint`, `autotune_guards.mark_constraints` in
   both judging passes): a candidate whose reading, on some tape, is worse than
   the incumbent's by more than `max_move` (default 0) and lies beyond `bound`
@@ -1310,15 +1335,17 @@ python -m scripts.reward_noise_floor "<v4_air>\<tape>__source.wav=<v4_air>\<tape
   --transforms hiss --repeats 2 --families dsp --max-seconds 125 --out experiments/reward/noise_floor_hiss.json
 ```
 
-The report pools every transform into one p95 floor; `by_transform` keeps
-each one's largest deviation and `percentile_by_transform` its own p95.
-On the round-1 report (2026-10-12): gain and soxr 0.000 on every margin
-and excess key; delay at most 0.036 and requantisation at most 0.038 on the
-ranked keys; the fresh realisations set every floor (programme excess
-median 0.073, all-band 0.247, pause tail 0.174, pause median 0.327). The
-fresh draws alone move the pause median up to 0.99 and the tail up to 0.80,
-both on Gaudeamus5's cathar final (music pauses); the speech pairs at most
-0.36 / 0.24. The first build's report read the pause median at 1.78 (the
+The report pools every transform into one p95 `floor` (the vetoes' kind);
+`by_transform` keeps each one's largest deviation, `percentile_by_transform`
+its own p95 and `tie_floor` the widest of those, which the hiss ties take.
+On the round-2 report (2026-10-12): gain and soxr at most 0.0001 on every
+margin and excess key, delay at most 0.011, requantisation at most 0.059;
+the fresh realisations set every tie (programme excess median 0.17 / 0.29 /
+0.18 for draws a / b / c, all-band 0.15 / 0.19 / 0.24, pause tail 0.49 /
+0.24 / 0.28, pause median 0.12 / 0.20 / 0.23). Round 1's report read the
+fresh draws moving the pause median up to 0.99 and the tail up to 0.80 on
+Gaudeamus5's cathar final (singing read as pause hiss, partly redrawn as
+noise). The first build's report read the pause median at 1.78 (the
 fresh floor redrawing Gaudeamus5's held notes), its `fresh_floor` lost 0.32
 dB of a white noise (pause ties 0.35 / 0.45 before the fix), and
 requantisation moved `hiss_prog_kept_hf_db` on Vaccin by 2.9 dB; the
@@ -1359,30 +1386,32 @@ acceptance rows. A shape derived from a family tape stays under the
 gitignored `artifacts/`.
 
 The acceptance record, every row with its measured value, is
-`docs/ear_v4_hiss.md`. Validation round 1 (2026-10-12) failed the first
+`docs/ear_v4_hiss.md`. Validation rounds 1 and 2 (2026-10-12) failed the
 build and fixed the implementation, not the bars; the record lists each
-defect, its cause and its fix. What still does not pass: the fresh draws'
-p95 on the pause keys (median 0.99 against 0.35 and tail 0.80 against 0.55,
-both from Gaudeamus5's cathar final, whose pauses hold quiet music the
-transform partly redraws; the speech pairs at most 0.36 / 0.24) and the
-fixtures' pause fresh p95 (0.51-0.54); two perfect fixture outputs over 0
-(one music fixture whose programme ends at 2.2 kHz, +0.38 / +4.5; 41 of 43
-pass); one `lp4k_all` fixture (-0.35, its programme ends at 3.6 kHz); the
-corpus shape's validation share (12 of 40); single4s on T (+0.43 over
-stitched, not +2); T's fill 8 pauses 0.44 dB over the raw tape (0.24 past
-the tie); the IA pause removal (5 cathar and 14 APL clips under -0.55).
-Five rows contradict the evidence and are reported, not gamed: the air
-shelf is no programme-only change (it lifts the residual hiss 0.3-1.3 dB, so
-the all-band and kept-HF spreads move); "cathar alpha 2 has hiss" was not
-blind and the user's blind ABX could not tell 0.7.3 from 0.7.5 (8 of 16;
-pauses 13 of 14 "same"), so the programme flag stays off (the pause flag
-fires); "hiss on every v2 plateau" is the harness's own note, the listener
-marked both v2 finals clean (10 of 12 flagged); less removal on S adds 0.53
-dB of audible pause hiss, over the 0.20 tie (H1 trips, as on T's alpha 2 on
-0.7.3, 0.32); single4s is dull on T only by the user's flags (the guard
-trips on T and V, not S). Everything else passes: identity, Session 0,
-raw-hissier (but T fill 8), the dead-air, cheat, fill and underwater
-exclusions, both Gaudeamus clips read, every calibration check, the cost.
+defect, its cause and its fix. After round 2 every same-percept row passes
+(delay 0.004, the fresh draws within every bar), and so do the raw-hissier
+row (T's fill 8 now 0.26 under the raw tape), less removal (S's alpha 2.0
++0.33 inside the 0.50 tie), the pause flag on round one's labels (both
+0.7.3 renders over 0, every cleared one under), the dead-air, cheat, fill
+and underwater exclusions, music coverage, every calibration check and the
+cost. What does not pass: two perfect fixture outputs over 0 (music hidden
+under the hiss up to 5 kHz, +0.004 / +4.40; 41 of 43 pass). Rows that
+contradict the evidence, reported and not gamed: the air shelf is no
+programme-only change (A over C lifts the residual hiss +0.8..+2.0 dB at
+8-16 kHz and the programme cells +0.4..+2.0 dB above 6 kHz); both readings
+play each side at its own loud frames, so the "two SPL conventions" check
+measures a property of the render (an output scaled +6 / -10 dB moves no
+margin); the corpus noise is not stationary (block levels 6-15 dB p10-p90),
+and forcing its anchors to validate read perfect outputs up to +22.7 dB;
+"cathar alpha 2 has hiss" and "light hiss (single4s)" were not blind (the
+user's blind ABX could not tell 0.7.3 from 0.7.5, 8 of 16; pauses 13 of 14
+"same") and sit under the masked threshold at 75 dB after 27 dB of removal,
+while the pause flag fires; "hiss on every v2 plateau" is the harness's own
+note (the listener marked both v2 finals clean); the IA renders under -0.55
+hold physically hissier pauses (APL's floor at 2 kHz and up +0.56..+1.91
+dB over the source's, cathar's programme 3.6-5.2 dB lower against its
+floor); single4s is dull on T only by the user's flags; a 4 kHz low-pass of
+a programme ending at 3.6 kHz dulls nothing.
 
 Pitfalls:
 
@@ -1409,10 +1438,23 @@ Pitfalls:
   the old near-copies (round 1's first re-run did, and read the old floors
   to the third decimal).
 - The pause median's realisation scatter is the estimator's own on short
-  pauses: 0.5-1.5 s of pauses per window, a 3-band power mean, the median
-  over 200 ms blocks, then the median over windows (fresh draws move it up
-  to 0.36 on T's B). The mean
-  would halve it but let a perfect output's pauses read up to +43.
+  pauses: 0.5-1.5 s of pauses per window, the median over 200 ms blocks,
+  then the median over windows. Three bands let the max pick upward draws
+  (fresh draws moved T's B 0.28-0.36 dB, all downward); five bands and the
+  silent blocks bring the tapes' fresh p95 to 0.23 (median) and 0.49
+  (tail). The mean would halve it but let a perfect output's pauses read up
+  to +43.
+- Half-padded STFT frames: `stft_power` centres its frames, so the first and
+  last frames of a window hold half padding. A reading per window must drop
+  them and keep the frames whose two-away tests read past the window out of
+  its statistics, or a one-sample change of the alignment (a 0.37-sample
+  delay of the output) moves a band across a readability threshold.
+- A tie band pooled over transforms that barely move a reading is diluted:
+  take each transform's p95 and the widest (`tie_floor`).
+- R4's true-pause mask holds whatever is quiet inside the VAD's non-speech
+  runs: soft singing on a choir tape. A pause reading must read the hiss
+  where the source is silent apart from it (blocks within 6 dB of the
+  anchor), or every render ties at the source's singing.
 - The window guard is part of the programme reading: misaligned windows
   read +19..+28 on SOTI and Vaccin renders without it. It is the 300-4000
   Hz envelope correlation (at least 0.5), not the waveform's (Gaudeamus'
@@ -1439,7 +1481,10 @@ Pitfalls:
   the pre-conditioned source at `pause_floor_fill_db` 12, so pause hiss is
   pinned at the tape's level and the pause family plateaus until the engine
   changes (fill 18 is allowed, keeper off excluded by G2; fill 8 lands T's
-  pause tail 0.44 dB over the raw tape).
+  pause tail 0.26 dB under the raw tape, 0.44 over before the silent
+  blocks). On 14 APL IA clips the keeper refills pauses over the source's
+  own floor (+0.56..+1.91 dB at 2 kHz and up), so their pauses read
+  hissier than the raw tape's.
 - Tele7abc `apl__baseline`: its programme reads 7.1 dB over the cathar
   baseline's (-2.57 against -9.64, both under the threshold) and its pauses
   are dead (depth 37.2, pump +18.9); the constraints exclude it before the
@@ -1447,12 +1492,18 @@ Pitfalls:
 - The prototype's `shaped_noise` lacked the FRAME / 2 scaling: its hiss sat
   30.1 dB under the spectrum it was shaped from, so its fixture check
   (perfect output -8.79, fresh p95 0.617) never met the saturation above.
-- The corpus noise of the fixtures is rumble-heavy: its anchor validates on
-  12 of 40 (T's shape 23, the hiss shape 20), and its fresh p95 reads 0.60
-  on the programme against 0.24-0.34 on the other two shapes.
-- Music: Gaudeamus1 reads 4 of its 8 windows (the rest hold under two
-  readable bands of 1 kHz and up), Gaudeamus5 all 38; the other 11 music
-  clips abstain (anchor unvalidated, or a programme band under 1 kHz).
+- The corpus noise of the fixtures is rumble-heavy and not stationary: its
+  200 ms block levels span 6-15 dB p10-p90 at 1-8 kHz, every floor estimate
+  reads it under its mean (the window floor up to 13 dB, the pause anchor
+  5-22 dB), its anchor validates on 12 of 40 (23 on T's shape, 20 on the
+  hiss shape) and its fresh p95 reads 0.67 on the programme against
+  0.24-0.31.
+  Validating more of it (a median anchor, a slope-following cap, all-frames
+  anchors) read perfect outputs up to +22.7 dB: abstaining is right there.
+- Music: Gaudeamus1 reads 5 of its 8 windows (the rest hold under two
+  readable bands of 1 kHz and up), Gaudeamus5 all 38, and one window of
+  `x_vid-20230624-142023`; the other 10 music clips abstain (anchor
+  unvalidated, or a programme band under 1 kHz).
 
 ### Not built yet
 

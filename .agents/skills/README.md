@@ -61,7 +61,8 @@ the Antigravity agent system.
     same-percept transforms (`scripts/same_percept.py`: +-0.1 dB, a
     0.37-sample delay, a soxr round trip, 16-bit requantisation, fresh
     realisations of the floor), the tie bands of the hiss readings
-    (`experiments/reward/noise_floor_hiss.json`), never a benign pair;
+    (`experiments/reward/noise_floor_hiss.json`; each tie the reading's
+    `tie_floor`, the widest transform's p95), never a benign pair;
   - `scripts/check_hiss_fixtures.py` (`python -m scripts.check_hiss_fixtures`):
     ear v4's acceptance probe on the realistic-v2 fixtures, gapped linear
     programmes with corpus, tape-hiss, flat or tape-shaped noise

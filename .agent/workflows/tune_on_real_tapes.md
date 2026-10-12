@@ -110,8 +110,9 @@ skill holds the readings, their status and the measured facts behind them.
    (`python -m scripts.reward_noise_floor SOURCE=OUTPUT ...` with
    `--transforms hiss`, `--repeats 2`, `--families dsp`, `--max-seconds 125`
    and `--out experiments/reward/noise_floor_hiss.json`) and check each grid
-   `tie` against it (the report's floor for that flat key, rounded up to
-   0.05). The v4 grids'
+   `tie` against it (the report's `tie_floor` for that flat key, the widest
+   transform's p95, rounded up to 0.05; the pooled `floor` dilutes the fresh
+   draws). The v4 grids'
    `constraints:` exclude a candidate that adds audible hiss over the incumbent
    or the raw tape, empties the pauses or the room band, gates the hiss out of
    the pauses only, dulls the programme or adds musical noise; `log.md` marks it

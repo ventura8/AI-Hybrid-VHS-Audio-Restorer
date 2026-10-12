@@ -314,8 +314,13 @@ user set, with their reasons:
   - the learned vetoes, where DNSMOS BAK and SIGMOS NOISE only veto.
 - Hiss readings take their tie bands from same-percept transforms: a fresh
   realisation of the same noise, a 0.37-sample delay, +-0.1 dB, a soxr round
-  trip and 16-bit requantisation. They never take them from Session 0's
-  benign-pair floors (`reward.tie_floors` refuses those). The two hiss
+  trip and 16-bit requantisation. Each tie is the widest transform's p95
+  (the noise-floor report's `tie_floor`): pooling the transforms that barely
+  move a hiss reading diluted the fresh draws' scatter, and H1 then refused
+  a same-percept redraw (validation round 2). They never take them from
+  Session 0's benign-pair floors (`reward.tie_floors` refuses those). The
+  pauses are read where the source is silent apart from its hiss: R4's
+  quiet frames on a choir tape are soft singing. The two hiss
   flags' thresholds are the user's rule, which no calibration and no gates
   file moves (`gates.USER_RULE_FIXED`). Only a blind session at a recorded
   device and volume moves the 75 dB SPL level.

@@ -932,15 +932,21 @@ places at one declared critical playback level, each file's loud frames at
   clean output reveals, is told from hiss by a spectral cap: a band's
   residual stands at most 6 dB over what the other bands show at the same
   instant (validation round 1: the first build read a perfect fixture output
-  +9..+22 dB, the fixed one at or under 0 on 41 of 43 linear fixtures).
+  +9..+22 dB, the fixed one at or under 0 on 41 of 43 linear fixtures). It
+  reads the STFT frames wholly inside each window only (validation round 2:
+  the half-padded edge frames moved a window 2.4 dB under a 0.37-sample
+  shift of the output).
 - `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
-  floor over Terhardt's threshold in quiet. Room tone under about 2 kHz
-  barely counts; dead air is a guard of its own.
+  floor over Terhardt's threshold in quiet, read where the source's pause
+  is silent apart from its hiss (a 200 ms block standing 6 dB over the
+  anchor holds programme: soft singing on a choir tape). Room tone under
+  about 2 kHz barely counts; dead air is a guard of its own.
 - Both are dB over audibility. Their excess, max(0, margin), is ranked
   one-sided with target 0 by `scripts/tune_grids/tata_v4.yaml` and
   `music_v4.yaml`, the loop's and the sweep's default, with tie bands from
   same-percept transforms (`scripts/reward_noise_floor.py` with
-  `--transforms hiss`), never from Session 0's benign pairs. The fresh
+  `--transforms hiss`; each tie the widest transform's p95, the report's
+  `tie_floor`), never from Session 0's benign pairs. The fresh
   realisation (`same_percept.fresh_floor`) keeps the floor's power within
   0.04 dB and redraws it (correlation 0.07 with the old draw); the first
   build's lost 0.32 dB of a white noise and correlated 0.26 with its draw,
