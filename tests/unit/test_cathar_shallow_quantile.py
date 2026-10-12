@@ -37,12 +37,20 @@ SHALLOW = {"noiseprint_min_depth_db": 20.0, "noiseprint_shallow_action": QUANTIL
 # The guard's reading of the dense clip's window (the depth guard's tests, same seeded signal).
 CLIP_READING = "the print's 1 window(s) sit 4.8 dB under the loud frames (-28.7 / -23.9 dBFS)"
 FALLBACK_LINE = f"{GUARD} no quantile print could be learned from the material; falling back to 'scale'"
+# The dense clip's print scaled to 20 dB, as 'scale' writes it.
+SCALED_CLIP = "noise_dense_clip_single_0.75s_depth20db.np.json"
+SCALED_LINE = f"{GUARD} {CLIP_READING}: the print is programme; scaled by -15.2 dB into {SCALED_CLIP}"
 RATE = 8000
 FRAME = npd.LOUD_FRAME
 
 
 def _quantile_name(signal):
     return f"noise_{signal}_quantile_k32_q0.05.np.json"
+
+
+def _subtracting(print_name):
+    """The denoise line that subtracts the work directory's `print_name`."""
+    return DENOISE + ["--noiseprint", f"{WORK}/{print_name}"]
 
 
 def _logged(tmp_path, signal, **keys):
@@ -82,7 +90,7 @@ def test_a_deep_print_keeps_heads_commands_on_quantile(tmp_path, signal):
 def test_a_shallow_print_is_replaced_by_the_quantile_print(tmp_path, signal):
     """Programme in the print: the denoise subtracts the quantile print; the window pick still learns (and the guard measures)."""
     calls, _guard, _quantile = _logged(tmp_path, signal, **SHALLOW)
-    assert _denoise(calls) == DENOISE + ["--noiseprint", f"{WORK}/{_quantile_name(signal)}"]
+    assert _denoise(calls) == _subtracting(_quantile_name(signal))
     assert _without_denoise(calls) == _without_denoise(HEAD[signal])
 
 
@@ -98,7 +106,7 @@ def test_the_replacement_is_the_quantile_modules_print_of_the_stage_input(tmp_pa
 
 def test_the_replacement_writes_no_scaled_print(tmp_path):
     _logged(tmp_path, DENSE_CLIP, **SHALLOW)
-    assert not (tmp_path / "work" / "noise_dense_clip_single_0.75s_depth20db.np.json").exists()
+    assert not (tmp_path / "work" / SCALED_CLIP).exists()
 
 
 def test_the_replacement_is_logged_with_the_reading(tmp_path):
@@ -121,7 +129,7 @@ def test_material_without_a_quantile_print_falls_back_to_scale(tmp_path, signal,
     """Too few live windows for the quantile print: the denoise subtracts the print scaled to 20 dB, as on 'scale'."""
     with patch.object(nq, "MIN_WINDOWS", 10**9):
         calls, _guard, _quantile = _logged(tmp_path, signal, **SHALLOW)
-    assert _denoise(calls) == DENOISE + ["--noiseprint", f"{WORK}/noise_{signal}_{mode}_depth20db.np.json"]
+    assert _denoise(calls) == _subtracting(f"noise_{signal}_{mode}_depth20db.np.json")
     assert not (tmp_path / "work" / _quantile_name(signal)).exists()
 
 
@@ -129,10 +137,7 @@ def test_the_fallback_is_logged_as_a_warning_then_scaled(tmp_path):
     """The guard's WARNING names the fallback, then the scale is logged as 'scale' logs it."""
     with patch.object(nq, "MIN_WINDOWS", 10**9):
         _calls, guard, _quantile = _logged(tmp_path, DENSE_CLIP, **SHALLOW)
-    assert _guard_lines(guard) == [
-        FALLBACK_LINE,
-        f"{GUARD} {CLIP_READING}: the print is programme; scaled by -15.2 dB into noise_dense_clip_single_0.75s_depth20db.np.json",
-    ]
+    assert _guard_lines(guard) == [FALLBACK_LINE, SCALED_LINE]
     assert next(call for call in guard.call_args_list if call.args[0] == FALLBACK_LINE).kwargs == WARNING
 
 
@@ -143,12 +148,30 @@ def test_the_quantile_modules_warning_says_the_guard_scales(tmp_path):
     assert quantile.call_args.kwargs == WARNING
 
 
+def _failed_method(tmp_path):
+    """'quantile' both as the method, whose print fails, and as the guard's action: (the commands, the log, the quantile mock)."""
+    guard_log = MagicMock()
+    with patch.object(nq, QUANTILE_PRINT, return_value=None) as quantile:
+        calls = _run(tmp_path, DENSE_CLIP, logs=guard_log, noiseprint_method=QUANTILE, **SHALLOW)
+    return calls, guard_log, quantile
+
+
 def test_a_failed_quantile_method_is_not_learned_again_by_the_guard(tmp_path):
     """'quantile' as the method failed, so the window pick learns: the guard then scales, without a second quantile read."""
-    with patch.object(nq, QUANTILE_PRINT, return_value=None) as quantile:
-        calls = _run(tmp_path, DENSE_CLIP, noiseprint_method=QUANTILE, **SHALLOW)
-    assert _denoise(calls) == DENOISE + ["--noiseprint", f"{WORK}/noise_dense_clip_single_0.75s_depth20db.np.json"]
+    calls, _guard, quantile = _failed_method(tmp_path)
+    assert _denoise(calls) == _subtracting(SCALED_CLIP)
     quantile.assert_called_once()
+
+
+def test_a_failed_quantile_method_logs_the_guards_fallback(tmp_path):
+    """The guard says why 'quantile' scales here, then logs the scale as 'scale' logs it."""
+    _calls, guard, _quantile = _failed_method(tmp_path)
+    assert _guard_lines(guard) == [f"{GUARD} {npd.METHOD_FAILED}", SCALED_LINE]
+
+
+def test_a_failed_quantile_methods_fallback_is_a_warning(tmp_path):
+    _calls, guard, _quantile = _failed_method(tmp_path)
+    assert next(call for call in guard.call_args_list if npd.METHOD_FAILED in call.args[0]).kwargs == WARNING
 
 
 @pytest.mark.parametrize(
@@ -156,7 +179,15 @@ def test_a_failed_quantile_method_is_not_learned_again_by_the_guard(tmp_path):
     [("window", QUANTILE, QUANTILE), ("window", "scale", "scale"), ("window", "drop", "drop"), (QUANTILE, QUANTILE, "scale")],
 )
 def test_the_guards_action(method, action, expected):
-    assert npd.shallow_action(action, method) == expected
+    with patch.object(npd, LOG):
+        assert npd.shallow_action(action, method) == expected
+
+
+@pytest.mark.parametrize(("method", "action"), [("window", QUANTILE), ("window", "scale"), (QUANTILE, "scale"), (QUANTILE, "drop")])
+def test_only_quantile_under_a_failed_quantile_method_is_logged(method, action):
+    with patch.object(npd, LOG) as log:
+        npd.shallow_action(action, method)
+    log.assert_not_called()
 
 
 def test_the_split_band_passes_get_the_quantile_print(tmp_path):

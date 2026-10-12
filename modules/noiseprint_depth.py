@@ -23,7 +23,8 @@ the print is programme, and `cathar_noiseprint_shallow_action` decides what the 
 - 'quantile': the whole-file quantile print (`modules/noiseprint_quantile.py`) in its place,
   written beside the learned print as `noise_<stage>_quantile_k32_q0.05.np.json`, the same file
   `cathar_noiseprint_method: quantile` writes; material it cannot be learned from (fewer than
-  its 20 live windows, or a file it cannot read or write) is scaled as on 'scale', with a WARNING.
+  its 20 live windows, or a file it cannot read or write) is scaled as on 'scale', with a WARNING,
+  and so, without a second read, is material the method's quantile print already failed on.
 
 Run through this module at the denoise stage (2026-10-12, the cathar 0.8.0 CLI on CPU on each
 clip's own stage input, the 159 speech-profile hunt clips): at D = 20, 'scale' leaves 25 of the
@@ -57,11 +58,14 @@ LOUD_FRAME = 1024
 LOUD_PERCENTILE = 90.0
 # Frames per streamed read (`cathar._window_levels` reads 240 hops at a time).
 BLOCK_FRAMES = 240
-SHALLOW_ACTIONS = ("scale", "drop", "quantile")
+QUANTILE = "quantile"
+SHALLOW_ACTIONS = ("scale", "drop", QUANTILE)
 PRINT_SUFFIX = ".np.json"
 LOG_PREFIX = "    [Cathar] Noise-print depth guard:"
 # What the quantile module logs it falls back to when the guard asked it for a replacement.
 QUANTILE_FALLBACK = "the depth guard scales the learned print instead"
+# What the guard logs when 'quantile' turns into 'scale' because the method's quantile print already failed.
+METHOD_FAILED = "cathar_noiseprint_method: quantile learned no print from the material; a shallow print falls back to 'scale'"
 
 
 def db(rms):
@@ -138,9 +142,13 @@ def shallow_action(action, method):
     """The guard's action: 'quantile' scales when `cathar_noiseprint_method` 'quantile' already tried that print and failed.
 
     cathar learns a window print under the method 'quantile' only when the quantile print could
-    not be learned, so the guard does not read the whole material again to fail the same way.
+    not be learned, so the guard does not read the whole material again to fail the same way;
+    that fallback is logged (a WARNING) here, once, before the guard measures the print.
     """
-    return "scale" if action == "quantile" and method == "quantile" else action
+    if action != QUANTILE or method != QUANTILE:
+        return action
+    log_msg(f"{LOG_PREFIX} {METHOD_FAILED}", level="WARNING")
+    return "scale"
 
 
 def guard_print(np_path, wav_path, pick, min_depth_db, action):
@@ -165,7 +173,7 @@ def guard_print(np_path, wav_path, pick, min_depth_db, action):
         log_msg(f"{LOG_PREFIX} {reading}, under {min_depth_db:g} dB: the print is programme; denoising without a learned print")
         return None
     gain_db, out_path = depth - min_depth_db, scaled_print_path(np_path, min_depth_db)
-    if action == "quantile":
+    if action == QUANTILE:
         return _replaced(np_path, wav_path, gain_db, out_path, reading)
     return _scaled(np_path, gain_db, out_path, reading)
 

@@ -1151,7 +1151,8 @@ A print shallower than the key is programme:
   from (fewer than 20 live windows, or a read or write error) is scaled as
   on `scale`, after a WARNING; with `cathar_noiseprint_method: quantile`,
   whose print already failed on that material, the guard scales without
-  learning it again (`noiseprint_depth.shallow_action`).
+  learning it again, after a WARNING of its own
+  (`noiseprint_depth.shallow_action`).
 
 A print at least D dB down is handed on untouched, and a depth that
 cannot be measured keeps the learned print with a WARNING: no window to
@@ -1208,9 +1209,10 @@ depth alone does not separate a dialogue tape's real pauses (13.7-16.9 dB
 on these four) from a dense clip's programme (8.3 dB median on the
 failing clips, 13.0 on the passing ones), so 20 would change the tapes
 the listener round accepted. The candidates for the listening session
-are 13 with `scale` or `drop`, which left these four tapes alone, or 20
+were 13 with `scale` or `drop`, which left these four tapes alone, or 20
 restricted to the single-window path (15 s clips), which this key does not
-offer. Not judged by ear.
+offer; `quantile` at 13 has since replaced them ("The three actions on one
+reading" below). Not judged by ear.
 
 ### The three actions on one reading
 
