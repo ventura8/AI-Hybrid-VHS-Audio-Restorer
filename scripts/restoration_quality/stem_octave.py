@@ -11,8 +11,9 @@ background, two ways:
    -3 dB gate on the raw octave.
 2. Phase. `stem_metrics._stems` matches the output stem to the source stem by least squares,
    a waveform measure: a restoration that keeps the magnitudes and moves the phase (cathar's
-   STFT stages and its dewind) is scaled down as a whole. On the hunt's shipped cathar outputs
-   the scale was -10.8 to -18.2 dB below the magnitude match, and every octave read 3-9 dB down.
+   STFT stages and its dewind) is scaled down as a whole. On five sampled shipped-cathar hunt
+   clips the scale sat 1.3 to 7.9 dB under the mixes' magnitude match, and every octave read
+   2-10 dB down.
 
 The reading, per window, on three STFTs of one grid (2048 / 512 Hann, the stem's rate): the
 source stem `S`, the source mix `M` and the output mix `O`, on the source's timeline:
@@ -56,8 +57,8 @@ Measured on CPU (2026-10-12) from cached BS-RoFormer stems, no separator run:
   fires at every level, the raw octave at the last only.
 - realistic-v2 musiconly beds with their recorded noise, the bed as its own stem (50
   fixtures, 100 windows): the oracle (noise 20 dB down) fails 0 of 94 read windows (1 of 80
-  under a voice). A planted mute of 250-500, 500-1000 or 1000-2000 Hz fails every window where
-  that octave reads (17 of 17, 36 of 36, 65 of 69; under a voice 12 of 12, 32 of 32, 46 of 46),
+  under a voice). A planted mute of 250-500, 500-1000 or 1000-2000 Hz fails nearly every window
+  where that octave reads (17 of 17, 36 of 36, 65 of 69; under a voice 12 of 12, 32 of 32, 46 of 46),
   but the octave reads on only 17, 36 and 69 of the 100 windows (the blind spot below). The bed
   stripped 6 dB under a voice fails 75 of 80.
 - The hunt's shipped outputs (235 IA clips per engine): cathar fails 66 of the 178 clips that

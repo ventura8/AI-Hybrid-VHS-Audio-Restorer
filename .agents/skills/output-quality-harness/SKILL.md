@@ -1065,7 +1065,8 @@ scores read in place).
   `music_v3`'s background entry). The raw worst octave of the separated
   stem read hiss removal as stripping (the instrumental stem carries the
   hiss), and `_stems`' least-squares stem match, a waveform measure, scaled
-  cathar's phase-moving output down 10.8-18.2 dB below the magnitude match.
+  cathar's phase-moving output 1.3-7.9 dB under the mixes' magnitude match
+  (five sampled hunt clips).
   The new reading compares the two MIXES on the cells where the source's
   stem stands guard (a)'s 18 dB over its noise and holds the mix within
   1 dB, per octave (median of the cell ratios, an octave needing 200 cells,
@@ -1089,7 +1090,7 @@ scores read in place).
 - **Its blind spot.** Guard (a)'s floor is each bin's p10 in the window, so
   a bed that never falls to a floor in 15 s is unread: a sustained chord
   reads None stripped or not; on the realistic-v2 musiconly beds a planted
-  one-octave mute fails every window where the octave reads (17 of 17,
+  one-octave mute fails nearly every window where the octave reads (17 of 17,
   36 of 36, 65 of 69 for 250-500 / 500-1000 / 1000-2000 Hz) but the octave
   reads on only 17, 36 and 69 of 100 windows. Lower margins did not help:
   at 10 dB the oracle fired on 5 of 48 windows, at 6 dB fewer octaves read.

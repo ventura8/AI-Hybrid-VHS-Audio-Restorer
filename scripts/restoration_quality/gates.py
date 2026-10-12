@@ -30,9 +30,9 @@ as a stripped background (the accepted APL final of x_vid-20230606-121054 at -38
 displayed only.
 
 Soft until calibrated (2026-10-12): `speech.cer_median` and `mos.audiobox_pc` read the
-denoising itself on hissy tape (the hunt's shipped cathar: CER over 0.05 on 23 of its
-first 46 clips, Audiobox PC under -0.5 on 21; within a clip Audiobox PC tracks the
-residual noise at Spearman 0.71-0.92), so they are shown, not counted, until a verdict
+denoising itself on hissy tape (the hunt's shipped cathar: CER over 0.05 on 127 of its 235
+clips, Audiobox PC under -0.5 on 75; within a clip Audiobox PC tracks the residual noise
+at Spearman 0.71-0.92, tune_ia_v1), so they are shown, not counted, until a verdict
 sets them; the grids' learned vetoes on both stay.
 
 Ear v3 (2026-10-09):
