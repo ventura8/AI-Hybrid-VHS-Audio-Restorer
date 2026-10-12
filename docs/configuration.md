@@ -529,6 +529,80 @@ one-sample head reading (0.02 ms) stays in its output. Not judged by ear
 yet: a listening session and the `artifacts/realistic-v2` and IA
 confirmation come before any default changes.
 
+## Pre-Conditioning Mains Vote
+
+`scanner_mains_vote` (`head`) was added on 2026-10-12 (backlog B2). It
+picks which mains notch the scan leaves. That notch sets the Q 15
+bandrejects at the fundamental and its second harmonic in every mode's
+pre-conditioning, `cathar`'s dehum family (under `cathar_dehum_freq`
+`scanner`), and `auto_pure_linear`'s third-to-fifth harmonic and
+post-denoise notches. The default keeps every output's bytes:
+`tests/unit/test_scanner_mains_vote.py` pins HEAD e429683's votes, and the
+five `cathar_ab_head.json` clips render 5/5 identical.
+
+- `head` (default): the first 32768 samples (0.74 s at 44.1 kHz), each
+  candidate's bin against the bins two either side, as every release has.
+- `confirmed` (`modules/mains_vote.py`): the head's notch, kept only where
+  the whole analysed signal's eight harmonics of its family stand 6 dB or
+  more over their own neighbourhood (`spectral_denoise.harmonic_excess_db`,
+  the reading `detect_mains_hz` votes on; 100 Hz reads as 50 and 120 as
+  60). It never adds a notch, and a dropped one is logged with the excess
+  it read. The two families share 300 and 600 Hz, so a wrong-family notch
+  over strong hum can still be confirmed.
+
+Measured on 2026-10-12 with `cathar` 0.8.0 on CPU (scratch evidence:
+`D:/ai_restore_work/scratch_hum`, local). Clips without hum are the IA hunt
+clips R0 reads under 6 dB of mains excess and the realistic-v2 fixtures
+labelled `tape_noise` alone (speech and the three chord classes); the hum
+tapes are the 75 distinct tapes of the hunt and `catalog_hum48` that R0
+reads at 6 dB or more, and the hum fixtures realistic-v2's 100 speech and
+music fixtures with 50 Hz hum.
+
+| Reading | `head` | `confirmed` |
+| --- | --- | --- |
+| hunt clips without hum, notched | 123 / 203 | 1 / 203 |
+| hum tapes, right / wrong family | 35 / 3 | 35 / 2 |
+| fixtures without hum, notched | 29 / 200 | 12 / 200 |
+| hum fixtures, right / wrong / none | 71 / 5 / 24 | 66 / 0 / 34 |
+
+- What the pair costs a programme with no hum: on the 200 hum-free
+  targets the two notches alone move LSD 40-400 Hz by a median 1.73 dB at
+  50 Hz and 1.58 dB at 60 Hz, and R11 by -0.22 and -0.36 dB (down to -2.2
+  on speech). `auto_pure_linear`'s five notches move them 2.88 / 2.84 dB
+  and -0.69 / -0.50 dB.
+- In `cathar`, on the 122 hunt clips the confirmation clears, R11 sits
+  nearer 0 on 99 of 121 (median -1.39 to -1.05 dB) and the output's hum excess
+  rises a median 0.03 dB (at most 1.38 dB over the source, inside the
+  harness's 3 dB `dsp.hum` gate). On the 17 realistic-v2 false fires it
+  clears, LSD 40-400 Hz falls a median 0.23 dB against the target, on 14
+  of 17, and R11 nears 0 on 14. The real key renders those fixtures, and the
+  ones it keeps, bit for bit as the measured variant (105 of 105).
+- The 35 right-family notches on hum tapes read 6.07 dB of excess at the
+  least (hey-abbott), so the gate's margin there is thin. The one hum-tape
+  change drops the wrong-family 50 Hz notch of the-lion-king (R0: 60 Hz,
+  6.2 dB, no frame evidence).
+- On the realistic-v2 hum fixtures it drops 10 of 76 notches, 5 of the
+  right family. The fixtures cannot price a lost catch: dropping any notch
+  there reads nearer the target (LSD 40-400 Hz on 51 of the 71
+  right-family ones; with the notch and dehum the harmonic bins sit a
+  median 11 dB under the target, without them 4 dB).
+- A whole-signal vote that also adds notches (the same reading over 50 and
+  60 Hz at 6 dB, as `detect_mains_hz` decides) was measured and not built.
+  The chord beds read as hum: the musicled and musiconly targets, which
+  carry none, read a median 13.4 and 15.2 dB of excess, so it notched 112
+  of the 200 hum-free fixtures (all 100 beds), and where it changed the
+  vote R11 came nearer 0 on only 33 of 109. hum_cancel's quiet-frame
+  reading fired on 99 of them, since the beds never pause. R0's
+  frame-median evidence (`source_profile`) separates the fixtures (hum p10
+  53.7 against hum-free p90 34.4) and is the candidate if a vote that adds
+  notches is ever wanted.
+
+`auto_pure_linear` was not rendered (it needs the GPU). There a dropped
+notch also leaves the canceller without the scan's report, so a series
+with nothing at the fundamental is refused (`hum_cancel`'s
+`fundamental_upstream`). Not judged by ear yet: the effect is small and
+probably inaudible, and a listening session decides.
+
 ## DTW Sync on Length-Preserving Chains
 
 `sync_dtw_enable` (true) was added on 2026-10-12 (backlog B1). The scanner
@@ -618,7 +692,23 @@ listening session decides otherwise:
   hum-free file came back sample for sample. The change therefore shows on
   tapes the scanner read as hum-free. `auto_pure_linear`'s own dehum
   (`apl_enable_dehum`, off) keeps the frequency it reads from the recording
-  and never reads this key.
+  and never reads this key. Measured on 2026-10-12 with cathar 0.8.0 on CPU
+  (backlog B2; `D:/ai_restore_work/scratch_hum`, local) on 82 clips (the 48
+  of `catalog_hum48`, the 29 hum clips of the IA hunt not in it and the
+  five identity clips), read with `measure_hum.py`'s `--mains auto` rule
+  and R11: `0` rendered 73 byte for byte as `scanner`, the identity clips
+  5/5 at both values. Of the 38 hum clips (source excess 6 dB or more) the
+  scanner read as hum-free, 31 came out unchanged. Three readable tapes
+  (wives-and-daughters, vid-20230624-142023, channel-4-continuity) lost
+  2.88, 4.06 and 6.09 dB more excess and 2.8-6.7 dB more of their lines,
+  at 0.05-0.66 dB more low-band deviation and R11 0.1-2.6 dB lower; three
+  moved within 0.12 dB and one unreadable tape 3.06 dB. Of the 39 the
+  scanner notched, 37 came out unchanged and two did worse
+  (diamonds-are-forever 0.61 dB less removed and 1.44 dB less line drop,
+  hey-abbott 0.17 dB). The medians over the scanner-zero hum tapes moved
+  +0.05 dB (6-12 dB of source excess) and +0.40 dB (12 dB and over): not
+  the consistent gain of 1.5 dB or more a flip needs, so `scanner` stays
+  and the three tapes go to the listening session.
 
 Four pause floor keys added on 2026-10-12, for both engines
 (`modules/pause_floor.py`, after the polish expander in `auto_pure_linear`

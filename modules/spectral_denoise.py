@@ -125,7 +125,7 @@ def frame_powers(mono_signal, sample_rate):
     return freqs, power, power.sum(axis=0)
 
 
-def _harmonic_excess_db(mono_signal, sample_rate, mains_hz):
+def harmonic_excess_db(mono_signal, sample_rate, mains_hz):
     """How far the mains harmonics stand above their own spectral neighbourhood, in dB.
 
     Summed as energy across harmonics and expressed as a ratio, so it reads the same on a
@@ -165,7 +165,7 @@ def detect_mains_hz(wav_path):
         return None
     best_hz, best_excess = 0.0, 0.0
     for candidate in MAINS_CANDIDATES_HZ:
-        excess = _harmonic_excess_db(mono_signal, sample_rate, candidate)
+        excess = harmonic_excess_db(mono_signal, sample_rate, candidate)
         if excess > best_excess:
             best_hz, best_excess = candidate, excess
     return best_hz if best_excess >= APL_HUM_MIN_EXCESS_DB else 0.0

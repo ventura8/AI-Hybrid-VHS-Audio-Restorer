@@ -32,7 +32,9 @@ alignment:
 - **Native VHS DSP Filtering**: Multi-threaded FFmpeg filter graphs (`afftdn`,
   `adeclick`, `highpass`, `bandreject`).
 - **Surgical Tone Notching**: mains hum constrained to the family the detected
-  video line rate allows and always notched at its fundamental, 15.625k/15.734k
+  video line rate allows and always notched at its fundamental (the scan's
+  0.74 s vote fires on noise; `scanner_mains_vote: confirmed` keeps a notch
+  only where the whole scanned signal carries the hum, off), 15.625k/15.734k
   CRT flyback whistle located by band search, and enclosure acoustic resonance
   gated so speech formants are never notched.
 - **Cathar DSP Engine**: Pure-Rust multi-stage restoration (dewind, azimuth,
@@ -204,7 +206,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     lines (`tests/unit/test_cathar_round_c4.py`); the other values go to the
     C3 listening session. Round C4 on the speech tapes (2026-10-11): plateau
     at the defaults; `detected` rendered the same audio as `always`, and
-    `dehum --freq 0` won no tape.
+    `dehum --freq 0` won no tape. On the IA hum clips (2026-10-12, backlog
+    B2) `0` rendered 73 of 82 clips byte for byte, gained 2.9-6.1 dB on three
+    tapes at a low-band cost and lost on two: no consistent gain.
   - Noise-print mute guard (2026-10-12, `cathar_noiseprint_mute_guard`,
     off): keeps digital mutes out of the print's pick
     (`modules/noiseprint_guard.py`). On the 7 IA clips that picked one it

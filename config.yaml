@@ -281,6 +281,31 @@ batch_jobs: 8
 #     delay with either method. auto_pure_linear gains most: cathar's own azimuth
 #     stage re-aligns the channels whatever the pre-conditioning did. Not judged by
 #     ear yet.
+#
+# scanner_mains_vote (which mains notch the scan leaves; backlog B2, 2026-10-12):
+#   - The notch sets every mode's pre-conditioning pair (Q 15 at the fundamental and
+#     its second harmonic), cathar's dehum family (cathar_dehum_freq 'scanner') and
+#     auto_pure_linear's third-to-fifth harmonic and post-denoise notches.
+#   - 'head' (Default): the first 32768 samples (0.74 s), each candidate's bin against
+#     the bins two either side, as every release has, so every output keeps its bytes.
+#     It notched 123 of the 203 IA hunt clips R0 reads as hum-free and 29 of the 200
+#     hum-free realistic-v2 speech and chord fixtures. On a hum-free target the pair
+#     alone moves LSD 40-400 Hz by a median 1.6-1.7 dB and R11 by -0.2 to -0.4 dB
+#     (auto_pure_linear's five notches 2.8 dB and -0.5 to -0.7 dB).
+#   - 'confirmed': the head's notch kept only where the whole analysed signal's eight
+#     harmonics of its family stand 6 dB over their neighbourhood
+#     (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on); it
+#     never adds one. cathar 0.8.0 on CPU: it cleared 122 of the 123 hunt false fires
+#     (R11 nearer 0 on 99 of 121, a median 0.12 dB; the output's hum excess rose a
+#     median 0.03 dB, at most 1.38 dB over the source), kept all 35 right-family
+#     notches on the 75 hum tapes of the hunt and catalog_hum48 (the least read
+#     6.07 dB) and dropped one wrong-family notch. On realistic-v2 it cleared 17 of
+#     the 29 false fires (LSD 40-400 Hz nearer the target on 14, a median 0.23 dB)
+#     and 10 of the 76 notches on hum fixtures, 5 of the right family, which those
+#     fixtures cannot price (dropping any notch reads nearer their targets). A vote
+#     that also adds notches was measured and not built: the chord beds read as hum
+#     (13.4-15.2 dB of excess on targets without any), so it notched 112 of the 200.
+#     auto_pure_linear was not rendered (GPU). Not judged by ear yet.
 # ------------------------------------------------------------------------------
 afftdn_nr: 10.0
 afftdn_nf: -55.0
@@ -290,6 +315,7 @@ enable_adeclick: true
 notch_freq: 50.0
 azimuth_reject_inverted_pair: false
 azimuth_estimate_method: "head"
+scanner_mains_vote: "head"
 
 # ------------------------------------------------------------------------------
 # ARNNDN Speech Settings (for 'arnndn_speech' mode)
@@ -460,6 +486,15 @@ arnndn_enable_adeclick: true
 #     --freq 0, 50 and 60 gave identical output on 50 Hz hum, and a hum-free file
 #     came back sample for sample), so the change shows on tapes the scanner read
 #     as hum-free. Not judged by ear yet: the C3 listening session decides.
+#   - Measured 2026-10-12 (cathar 0.8.0, CPU; catalog_hum48, the IA hunt's other 29
+#     hum clips and the 5 identity clips): 0 rendered 73 of 82 byte for byte as
+#     'scanner', the identity clips 5/5 at both values. Of the 38 hum clips the scan
+#     read as hum-free, 31 came out unchanged; 3 readable tapes lost 2.9-6.1 dB more
+#     excess (lines 2.8-6.7 dB) at 0.05-0.66 dB more low-band deviation and R11
+#     0.1-2.6 dB lower, 3 moved within 0.12 dB, one unreadable 3.1 dB. 2 of the 39
+#     notched hum clips did worse (diamonds-are-forever -0.61 dB, lines -1.44). Over
+#     the scanner-zero hum tapes the median moved +0.05 dB (6-12 dB of source excess)
+#     and +0.40 dB (12 and over): no consistent gain, so 'scanner' stays.
 #
 # cathar_noiseprint_mute_guard (2026-10-12):
 #   - false (Default): the noise print is learned from the quietest window

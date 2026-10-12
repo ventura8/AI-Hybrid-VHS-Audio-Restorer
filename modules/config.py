@@ -829,6 +829,16 @@ VALID_MUX_SAMPLE_RATES = {"pipeline", "source"}
 # 4-8 kHz rose on 27 (median +0.45 dB) and fell 0.36 dB on one.
 VALID_AZIMUTH_ESTIMATE_METHODS = {"head", "spans"}
 
+# The scan's mains vote (modules/filters.py, every mode's scan; it sets the pre-conditioning's Q 15 notches at the
+# fundamental and its second harmonic, cathar's dehum family and auto_pure_linear's mains notches). 'head' reads the
+# first 32768 samples, one bin per candidate against the bins two either side, as every release has: on the IA hunt
+# (2026-10-12, cathar 0.8.0 on CPU) it notched 123 of the 203 clips R0 reads as hum-free, and cathar without those
+# notches moved R11 nearer 0 on 100 of 122. 'confirmed' keeps the head's notch only where the whole analysed
+# signal's eight mains harmonics stand 6 dB (mains_vote.MIN_EXCESS_DB) over their neighbourhood at its family
+# (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on): it drops 122 of those 123 and keeps
+# every right-family notch on the hum tapes. Not judged by ear yet.
+VALID_SCANNER_MAINS_VOTES = {"head", "confirmed"}
+
 
 def _reject_config_value(param_name, raw_value, default):
     """Logs a normalisation warning and returns the field's default."""
@@ -865,6 +875,10 @@ def _normalize_mux_sample_rate(raw_value):
 
 def _normalize_azimuth_estimate_method(raw_value):
     return _normalize_choice(raw_value, VALID_AZIMUTH_ESTIMATE_METHODS, "azimuth_estimate_method", "head")
+
+
+def _normalize_scanner_mains_vote(raw_value):
+    return _normalize_choice(raw_value, VALID_SCANNER_MAINS_VOTES, "scanner_mains_vote", "head")
 
 
 def _normalize_cathar_declip_mode(raw_value):
@@ -1028,6 +1042,7 @@ def _apply_user_config(defaults, user_config):
     defaults["apl_burst_ceiling"] = _normalize_apl_burst_ceiling(defaults.get("apl_burst_ceiling"))
     defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
     defaults["azimuth_estimate_method"] = _normalize_azimuth_estimate_method(defaults.get("azimuth_estimate_method"))
+    defaults["scanner_mains_vote"] = _normalize_scanner_mains_vote(defaults.get("scanner_mains_vote"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -1096,6 +1111,10 @@ def load_config():
         # ('head', every release's, so every output keeps its bytes) or the loudest spans'
         # GCC-PHAT vote ('spans', VALID_AZIMUTH_ESTIMATE_METHODS); not yet judged by ear.
         "azimuth_estimate_method": "head",
+        # The scan's mains vote: the first 32768 samples' single-bin vote ('head', every release's, so every
+        # output keeps its bytes) or that vote confirmed by the whole analysed signal's harmonic excess
+        # ('confirmed', VALID_SCANNER_MAINS_VOTES); not yet judged by ear.
+        "scanner_mains_vote": "head",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1282,6 +1301,7 @@ MUX_LIMITER_LATENCY_COMPENSATION = bool(CONFIG.get("mux_limiter_latency_compensa
 MUX_SAMPLE_RATE = str(CONFIG.get("mux_sample_rate", "pipeline"))
 AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
 AZIMUTH_ESTIMATE_METHOD = str(CONFIG.get("azimuth_estimate_method", "head"))
+SCANNER_MAINS_VOTE = str(CONFIG.get("scanner_mains_vote", "head"))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
 EXPANDER_ATTACK_S = float(CONFIG.get("expander_attack_s", 0.04))
