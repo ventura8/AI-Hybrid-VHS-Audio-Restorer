@@ -287,6 +287,38 @@ user set, with their reasons:
   per-tape settings policy, later, and only if it beats the single best
   preset; an anchored fine-tune for the Mel-RoFormer denoiser; a
   Bradley-Terry preference head as the judge. No generative engines.
+- Be very critical of VHS hiss in two places: under speech or singing, and
+  in silence and pauses (the user, 2026-10-11, in capitals). The user heard
+  hiss on every Tata tape for weeks while the harness never moved. Its one
+  ranked pause-level entry tied 3 dB of cleaning with 30 dB, the hiss flag
+  was display-only, and nothing measured hiss under the programme. Ear v4
+  (`scripts/tune_grids/tata_v4.yaml`, `music_v4.yaml`, the loop's and the
+  sweep's default) ranks the audibility of the residual hiss one-sided, with
+  inaudible as the target and a heavy weight. `dsp.hiss_prog_excess_db`
+  reads the hiss left under the programme over its masked threshold.
+  `dsp.hiss_pause_excess_db` reads the hiss-weighted pause floor over the
+  threshold in quiet. Both are read at a declared critical playback level:
+  each file's loud frames at 75 dB SPL. The flags `listener.hiss_programme`
+  and `listener.hiss_pause` fire at 0 dB.
+- "No hiss" never means dead air or a damaged programme. The user rejected
+  silent pauses (round one) and an underwater 's'. A quiet floor below about
+  1-2 kHz (room tone) may stay. Hard guards (`constraints:` in the v4 grids)
+  keep a loop from winning by deleting programme:
+  - no new audible hiss over the incumbent or the raw tape;
+  - pause depth on speech windows at most 35 dB, and the room band never
+    emptied;
+  - no hiss gated out of the pauses but kept under speech
+    (`dsp.hiss_pump_db`);
+  - no musical noise;
+  - no dulling (`dsp.hiss_prog_kept_hf_db`, R1, R2);
+  - the learned vetoes, where DNSMOS BAK and SIGMOS NOISE only veto.
+- Hiss readings take their tie bands from same-percept transforms: a fresh
+  realisation of the same noise, a 0.37-sample delay, +-0.1 dB, a soxr round
+  trip and 16-bit requantisation. They never take them from Session 0's
+  benign-pair floors (`reward.tie_floors` refuses those). The two hiss
+  flags' thresholds are the user's rule, which no calibration and no gates
+  file moves (`gates.USER_RULE_FIXED`). Only a blind session at a recorded
+  device and volume moves the 75 dB SPL level.
 
 ______________________________________________________________________
 
@@ -400,8 +432,10 @@ The repository defines the following modular skills in `.agents/skills/`.
   plateau; ear v3's readings, the audibility check
   (`scripts/audibility_check.py`), the verdict ledger and the listening tool
   (`scripts/listen_ab.py`), the reward pieces
-  (`scripts/reward_noise_floor.py`), and the variation pre-check that gates
-  the settings policy (`scripts/variation_precheck.py`).
+  (`scripts/reward_noise_floor.py`), the variation pre-check that gates
+  the settings policy (`scripts/variation_precheck.py`), and the critical
+  hiss readings of ear v4 (`dsp.hiss_*`, the v4 grids and their
+  constraints, `scripts/check_hiss_fixtures.py`).
 - [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
   SonarQube Cloud on this repository: the CI scan, reading and fixing its
   findings without suppressions, project settings on sonarcloud.io, and the

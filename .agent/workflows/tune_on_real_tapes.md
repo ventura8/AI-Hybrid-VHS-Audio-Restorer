@@ -103,6 +103,22 @@ skill holds the readings, their status and the measured facts behind them.
    and one whose learned median moved past its veto (`vetoes:`) cannot win.
    `log.md` names each with its reason; a refusal or a tie on every candidate is
    a plateau, not a fault.
+1. Ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss under
+   the programme and in the pauses) is the loop's and the sweep's default:
+   `--grid scripts/tune_grids/tata_v4.yaml` (speech) or `music_v4.yaml`.
+   Before a v4 round, write the hiss jitter report on the shipped outputs
+   (`python -m scripts.reward_noise_floor SOURCE=OUTPUT ...` with
+   `--transforms hiss`, `--repeats 2`, `--families dsp`, `--max-seconds 125`
+   and `--out experiments/reward/noise_floor_hiss.json`) and check each grid
+   `tie` against it (the report's floor for that flat key, rounded up to
+   0.05). The v4 grids'
+   `constraints:` exclude a candidate that adds audible hiss over the incumbent
+   or the raw tape, empties the pauses or the room band, gates the hiss out of
+   the pauses only, dulls the programme or adds musical noise; `log.md` marks it
+   `guarded` with the tape, the reading and its move. The pause family plateaus
+   until the engine's pause floor stops refilling the pauses with tape hiss
+   (`modules/pause_floor.py`, see the output-quality-harness skill, "Critical of
+   hiss").
 1. Do not ask the user to listen while a round can still improve.
 
 ## Step 3: Confirm and hand over
@@ -121,11 +137,14 @@ skill holds the readings, their status and the measured facts behind them.
 
    ```text
    python -m scripts.listen_ab abx --tape SLUG --stim A=PATH --stim B=PATH
+       --device DEVICE --volume VOLUME
    ```
 
    The cuts go where the noise-to-mask ratio says the two differ most, and
-   the answers land in the ledger. Send the scoreboard and name the windows
-   the harness found.
+   the answers land in the ledger. Record the playback device and volume in
+   every block: ear v4's hiss readings assume each file's loud frames at
+   75 dB SPL, and only a blind session at a recorded level can move that.
+   Send the scoreboard and name the windows the harness found.
 
 1. Feed the accepted settings back: `config.yaml` and `modules/config.py`
    with the measured-effect comment, `docs/configuration.md`, and re-base the
