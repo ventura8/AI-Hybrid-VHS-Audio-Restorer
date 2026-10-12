@@ -57,6 +57,9 @@ READ_SITES = {
     "apl_post_neural_suppress_min_residual_db": ("APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB", {"post_neural_suppress.py:*"}),
     "linear_air_gate": ("LINEAR_AIR_GATE", {"post_neural_suppress.py:*"}),
     "apl_neural_level_restore": ("APL_NEURAL_LEVEL_RESTORE", {"neural_level.py:*"}),
+    # The burst ceiling after the polish.
+    "apl_burst_ceiling": ("APL_BURST_CEILING", {"burst_ceiling.py:*"}),
+    "apl_burst_ceiling_depth_db": ("APL_BURST_CEILING_DEPTH_DB", {"burst_ceiling.py:*"}),
     # processing's <module> reads are the re-exports at the end of the file.
     "enable_loudnorm": ("ENABLE_LOUDNORM", {"mastering.py:*", "processing.py:<module>"}),
     "loudnorm_target_lra": ("LOUDNORM_TARGET_LRA", {"mastering.py:*", "processing.py:<module>"}),
@@ -77,7 +80,14 @@ READ_SITES = {
 # hiss-floor reading, itself a post-cache module. processing imports those two at start-up and
 # calls them after the cached point; each returns at once unless its caller opted in. mux_format.py
 # takes the codec table and the pipeline rate from mastering; it runs only in the mux.
-POST_CACHE_IMPORTERS = {"processing.py", "modes/cathar.py", "post_neural_suppress.py", "neural_level.py", "mux_format.py"}
+POST_CACHE_IMPORTERS = {
+    "processing.py",
+    "modes/cathar.py",
+    "post_neural_suppress.py",
+    "neural_level.py",
+    "mux_format.py",
+    "burst_ceiling.py",
+}
 
 
 def _module_files():

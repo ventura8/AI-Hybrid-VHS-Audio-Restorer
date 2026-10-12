@@ -48,7 +48,7 @@ def test_the_denoise_step_threads_the_switches_through(tmp_path):
     ):
         out = processing._denoise_and_polish_full_audio_step(tmp_path / "o.wav", tmp_path, sibilant_guard=True, pause_floor=True)
     assert out == tmp_path / "done.wav"
-    switches = dict.fromkeys(("apply_air", "post_neural_suppress", "neural_level_restore", "air_gate"), False)
+    switches = dict.fromkeys(("apply_air", "post_neural_suppress", "neural_level_restore", "air_gate", "burst_ceiling"), False)
     assert post.call_args.args[-2] == {"sibilant_guard": True, "pause_floor": True, **switches}
     assert post.call_args.args[-1] is None
 
@@ -127,7 +127,25 @@ def _mode_kwargs(mode, tmp_path):
 
 
 def test_only_auto_pure_linear_opts_in_to_the_hiss_stages(tmp_path):
-    hiss = {"post_neural_suppress", "neural_level_restore", "air_gate"}
+    hiss = {"post_neural_suppress", "neural_level_restore", "air_gate", "burst_ceiling"}
     apl = _mode_kwargs(AutoPureLinearMode, tmp_path)
     assert {name: apl[name] for name in hiss} == dict.fromkeys(hiss, True)
     assert not hiss & set(_mode_kwargs(DenoiseOnlyMode, tmp_path))
+
+
+def test_the_burst_ceiling_sits_between_the_polish_and_the_pause_floor(tmp_path):
+    stages = {"pause_floor": True, "burst_ceiling": True}
+    with patch("modules.burst_ceiling.apply_when_needed", side_effect=lambda _src, wav, *_a, **_k: Path(str(wav) + ".capped")) as ceiling:
+        result, _polish, _guard, floor = _run(stages, tmp_path)
+    assert result.name == "cleaned.wav.polished.capped.floored"
+    assert ceiling.call_args.args == (tmp_path / "orig.wav", tmp_path / "cleaned.wav.polished", tmp_path, stages)
+    assert floor.call_args.args[1] == tmp_path / "cleaned.wav.polished.capped"
+
+
+def test_the_burst_ceiling_not_opted_in_is_never_called(tmp_path):
+    with (
+        patch("modules.burst_ceiling.APL_BURST_CEILING", "edges"),
+        patch("modules.burst_ceiling.apply_when_needed", side_effect=AssertionError("called")),
+    ):
+        result, _polish, _guard, _floor = _run({"pause_floor": True}, tmp_path)
+    assert result.name == "cleaned.wav.polished.floored"

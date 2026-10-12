@@ -122,7 +122,15 @@ The engine supports 10 execution modes configured in `config.yaml`:
     Tata or music clip (`docs/configuration.md`). The suppressor is never
     switched on with today's pause floor, which refills what it lowers
     with source hiss (pauses up 29-81 dB on 7 of 27 gated clips); it is
-    judged with the per-frame pause fill.
+    judged with the per-frame pause fill. `apl_burst_ceiling` (`none`;
+    `gaps` or `edges`, `modules/burst_ceiling.py`, after the polish) holds
+    the hiss the RoFormer leaves next to speech to
+    `apl_burst_ceiling_depth_db` (30) under the source's band floor in the
+    cells where the source holds only hiss, and keeps the programme where it
+    carries some: on replay with the shelved fill `edges` took the word-edge
+    hiss from -20.5 to -27.7 dB (Tele7abc) and -24.6 to -29.1 (SOTI), guards
+    unchanged. Most of the pause "bursts" are programme (a word's tail),
+    which it keeps (`docs/configuration.md`).
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing

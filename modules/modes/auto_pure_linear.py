@@ -66,6 +66,8 @@ class AutoPureLinearMode(BaseRestorationMode):
                 post_neural_suppress=True,
                 neural_level_restore=True,
                 air_gate=True,
+                # The burst ceiling after the polish reads apl_burst_ceiling ('none' by default).
+                burst_ceiling=True,
             )
 
         from .. import apl_stems

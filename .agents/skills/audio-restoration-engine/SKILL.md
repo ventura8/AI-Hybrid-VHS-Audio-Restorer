@@ -294,7 +294,7 @@ audio alignment, or FFmpeg multiplexing.
      (`stage_cache_key.prime`, with the cache on), when the process loads
      its code; `stage_cache_key.drift` refuses a store when a module source
      was written after the process started or the sources or packages no
-     longer hash as then. The seven post-cache modules' import-time code
+     longer hash as then. The eight post-cache modules' import-time code
      (`import_time_code`) is in the key, since processing imports `sync`,
      `mastering`, `post_neural_suppress` and `neural_level` at start-up;
      only their function bodies are left out.
@@ -602,6 +602,42 @@ audio alignment, or FFmpeg multiplexing.
   8.9 dB on tape: test its effect on real stage WAVs, not on fixtures. The
   air gate reads nothing when `enable_linear_air` is off or
   `linear_air_gain_db` is 0: there is no shelf to skip.
+- **APL burst ceiling (2026-10-12)**: `apl_burst_ceiling` (`none`, `gaps`,
+  `edges`) and `apl_burst_ceiling_depth_db` (30), `modules/burst_ceiling.py`
+  between the polish and the pause floor (`docs/configuration.md`,
+  "auto_pure_linear Burst Ceiling"). The diagnosis's "bursts" (2-11 % of the
+  true-pause frames carrying 80 % of their 3-16 kHz energy) are mostly
+  programme: read per 20 ms ERB cell against the source's own band floor,
+  Tele7abc's four burst frames are a word's tail (source 10-13 dB over its
+  floor at 3.2-3.6 kHz, kept within 1 dB) and abc-primetime's is the file's
+  first frame; only 2 % (Tele7abc) and 14 % (SOTI) of the pauses' output
+  energy sits in cells where the source holds hiss alone. So the true
+  pauses' energy mean is the wrong target; read the hiss-only cells. The
+  residual hiss sits beside the programme: the tail's 4.5-7 kHz bands, the
+  short gaps, the word edges (-21 / -25 dB) and under the programme (-16 /
+  -18 dB, with 3.2-4 kHz only 14-20 dB under the source on Tele7abc). Design
+  facts the replay fixed: (1) the ceiling is a level, not a gain: a cell
+  keeps `min(R, C)`, C = depth under the source's p10 floor (+-1 s) for hiss
+  alone, the source's closed envelope + 3 dB for programme, blended in power
+  by a programme share (three-band average from 6 dB over the floor, a cell
+  alone from 10 dB, each ramping over 3 dB). A 4-10 dB SNR knee multiplying
+  the cut ate tails (-7.7 dB on barry); reading programme from 4 dB let
+  enough hiss cells through to leave the test's synthetic bursts 17.5 dB
+  down, not 31; blending in dB cut 10-15 dB tails 16-24 dB. (2) Read on
+  overlapping STFT frames summed into 23 ms blocks: `hiss_floor.frame_pair`'s
+  non-overlapping 20 ms Hann frames under-read a burst between two frames.
+  (3) A hiss cell takes the deepest cut of its block and its neighbours (the
+  hold), else a burst's onset block keeps it. (4) Bands act only where the
+  gaps' restored floor sits the depth under the source's (identity clips
+  untouched); a 15 s clip of dense speech has 0.2-0.6 s of gap, so the
+  minimum is 0.2 s. (5) Test fixtures must measure inside 3-16 kHz: a white
+  burst's energy over 16 kHz or under 3 kHz (a filter skirt) caps the
+  apparent cut at 5-14 dB. Scratch tools: `D:\ai_restore_work\scratch_bursts`
+  (`tools/diag_bursts.py`, `cells.py`, `replay.py`, `evaluate.py`,
+  `sigloss.py`). Scope "all" lowered the floor under the programme further
+  but moved the 's' body (+0.8 dB) and the loud 8-16 kHz (-0.3 dB): not
+  offered. Open: a GPU render, `scripts/audibility_check.py`, a blind A/B of
+  `edges` + the shelved fill against the fill alone.
 - **cathar noise-print mute guard (2026-10-12)**: the print's pick took the
   quietest window whatever it held (the single-window pick's only guard,
   `1e-6 < rms` with `rms = sqrt(ms + 1e-12)`, rejects an all-zero window

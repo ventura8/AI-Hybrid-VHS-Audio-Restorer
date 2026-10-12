@@ -746,6 +746,27 @@ cathar_dereverb_strength: 2.0
 #     those tapes the shelf lifted the residual 0.35 dB under the programme (replay
 #     median) and 0.67 dB in the loud frames' 8-16 kHz.
 #
+# apl_burst_ceiling / apl_burst_ceiling_depth_db (auto_pure_linear only):
+#   - The hiss the Mel-RoFormer leaves next to speech, held down after the
+#     polish and before the pause floor (modules/burst_ceiling.py). In the
+#     source's non-speech blocks ('gaps') or in those and the speech blocks
+#     within 150 ms of a gap ('edges'), each restored cell (one ERB band of
+#     3-16 kHz over 23 ms) keeps at most apl_burst_ceiling_depth_db (30) under
+#     the source's band floor where the source holds only hiss, and all of the
+#     source's programme where it carries some; a band acts only where the
+#     neural stage emptied the gaps that deep. A cell under its ceiling and
+#     every sample no capped frame reaches keep their bytes.
+#   - 'none' (Default): nothing is read; every output keeps its bytes.
+#   - CPU replay on the hiss diagnosis's stage WAVs (2026-10-12), then the
+#     'frame' + 'shelf' pause floor: 'edges' took the hiss at the word edges
+#     from -20.5 to -27.7 dB (Tele7abc) and -24.6 to -29.1 dB (SOTI), the
+#     short gaps' energy from -16.5 to -25.2 and -22.5 to -28.5 dB, the floor
+#     under the programme 1.6-2.1 dB lower; gap air -12.9 / -22.3 dB (flag
+#     -25), loud-frame highs, sibilance and lkr unchanged (+0.01). It skips
+#     the seven of 13 clips the RoFormer passed whole or that hold no gap.
+#     The pauses' energy mean barely moves: what carries it is programme the
+#     ceiling keeps (a word's tail on Tele7abc). Not rendered or heard yet.
+#
 # mux_limiter_latency_compensation:
 #   - The mux's limiter (alimiter at -1 dBFS) delays the audio by its lookahead: a
 #     synthetic impulse at sample 10000 came out at 10219, 219 samples or 4.97 ms at
@@ -804,6 +825,8 @@ apl_post_neural_suppress: false
 apl_post_neural_suppress_floor_gap_db: 3.0
 apl_post_neural_suppress_min_residual_db: 6.0
 apl_neural_level_restore: false
+apl_burst_ceiling: "none"
+apl_burst_ceiling_depth_db: 30.0
 preserve_original_audio_track: false
 
 # ------------------------------------------------------------------------------

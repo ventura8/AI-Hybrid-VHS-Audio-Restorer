@@ -1250,10 +1250,27 @@ def _neural_stage(apl_chain, model_to_use, surgical_wav, strategy=None):
 
 
 POST_NEURAL_STAGES = frozenset(
-    {"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db", "post_neural_suppress", "neural_level_restore", "air_gate"}
+    {
+        "apply_air",
+        "sibilant_guard",
+        "pause_floor",
+        "expander_depth_db",
+        "post_neural_suppress",
+        "neural_level_restore",
+        "air_gate",
+        "burst_ceiling",
+    }
 )
 # The post-neural stage switches, each False unless the caller names it.
-POST_NEURAL_SWITCHES = ("sibilant_guard", "pause_floor", "apply_air", "post_neural_suppress", "neural_level_restore", "air_gate")
+POST_NEURAL_SWITCHES = (
+    "sibilant_guard",
+    "pause_floor",
+    "apply_air",
+    "post_neural_suppress",
+    "neural_level_restore",
+    "air_gate",
+    "burst_ceiling",
+)
 # The stage switches the cached point reads, in the order the step takes them.
 NEURAL_FLAGS = ("spectral_denoise", "physical_repair", "deepfilternet", "hum_cancel", "plosive_tamer", "tone_cancel", "resemble_denoise")
 
@@ -1325,10 +1342,11 @@ def _denoise_and_polish_full_audio_step(
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish.
 
     `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard`,
-    `pause_floor`, `post_neural_suppress`, `neural_level_restore` and `air_gate`, all False
-    unless named (each stage then reads its own key), and `expander_depth_db`, the polish
-    expander's depth for this caller (auto_pure_linear passes its own; None keeps the shared
-    `expander_depth_db`). Any other name is a TypeError like a misspelt keyword would be.
+    `pause_floor`, `post_neural_suppress`, `neural_level_restore`, `air_gate` and
+    `burst_ceiling`, all False unless named (each stage then reads its own key), and
+    `expander_depth_db`, the polish expander's depth for this caller (auto_pure_linear
+    passes its own; None keeps the shared `expander_depth_db`). Any other name is a
+    TypeError like a misspelt keyword would be.
     """
     unknown = set(stages) - POST_NEURAL_STAGES
     if unknown:
@@ -1356,9 +1374,10 @@ def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, tota
 
     The guard runs before the polish so the expander sees the restored fricatives; the
     post-neural suppressor and the air gate after the guard, so the suppressor cleans what
-    the polish will see; the pause floor after the polish so the expander cannot take the
-    fill back out. The pause floor's and the hiss gate's reference is the pre-conditioned
-    audio the chain started from.
+    the polish will see; the burst ceiling after the polish, on the levels the listener gets;
+    the pause floor after both so the expander cannot take the fill back out and the fill
+    reads the deficit the ceiling left. The pause floor's, the hiss gate's and the ceiling's
+    reference is the pre-conditioned audio the chain started from.
     """
     if stages.get("sibilant_guard"):
         from . import sibilant_guard as _sibilant_guard
@@ -1374,6 +1393,10 @@ def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, tota
         apply_air=apply_air,
         depth_db=depth_db,
     )
+    if stages.get("burst_ceiling"):
+        from . import burst_ceiling as _burst_ceiling
+
+        polished = _burst_ceiling.apply_when_needed(original_wav, polished, audio_dir, stages)
     if stages.get("pause_floor"):
         from . import pause_floor as _pause_floor
 

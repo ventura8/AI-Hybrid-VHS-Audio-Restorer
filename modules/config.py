@@ -431,6 +431,12 @@ _NUMERIC_CONFIG_FIELDS = (
     # removes -4.4/-7.7 dB against cathar's -8.0/-9.2. Not yet judged by ear.
     ("apl_post_neural_suppress_floor_gap_db", float, 3.0, 0.0),
     ("apl_post_neural_suppress_min_residual_db", float, 6.0, 0.0),
+    # The burst ceiling (apl_burst_ceiling, modules/burst_ceiling.py): in its scope, a restored
+    # cell (20 ms, one ERB band of 3-16 kHz) where the source holds only its hiss keeps at most
+    # this many dB under the source's band floor, the shelved pause fill's own level (12 + 18 dB).
+    # A band acts only where the neural stage left its gaps at least this deep. Read only with
+    # the ceiling on; not yet judged by ear.
+    ("apl_burst_ceiling_depth_db", float, 30.0, 0.0, 120.0),
     # Plosive control: how far the low band must rise over its own running level, in dB,
     # to be read as a plosive burst. 0 switches detection off, like `apl_depop_threshold`.
     # Set by the measurement in `apl_enable_plosive_tamer`.
@@ -790,6 +796,12 @@ VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass"}
 # +1 dB shelf lifted that residual 0.3-0.9 dB under the programme (modules/post_neural_suppress.py).
 VALID_LINEAR_AIR_GATES = {"none", "hiss_dominated"}
 
+# apl_burst_ceiling: 'none' leaves auto_pure_linear's polished audio as every release has;
+# 'gaps' holds the restored cells of the source's non-speech frames to the source's programme
+# over its hiss, or apl_burst_ceiling_depth_db under its floor where it holds only hiss
+# (modules/burst_ceiling.py); 'edges' also the speech frames within 150 ms of a gap.
+VALID_APL_BURST_CEILINGS = {"none", "gaps", "edges"}
+
 # The rate the mux encodes the restored track at (modules/mux_format.py). 'pipeline' keeps
 # 44.1 kHz, as every release has, except in MPEG-PS (.mpg/.mpeg), which keeps the source's rate
 # (DVD-Video allows MP2 only at 48 kHz); 'source' keeps the source's rate in every container
@@ -862,6 +874,10 @@ def _normalize_pause_floor_shape(raw_value):
 
 def _normalize_linear_air_gate(raw_value):
     return _normalize_choice(raw_value, VALID_LINEAR_AIR_GATES, "linear_air_gate", "none")
+
+
+def _normalize_apl_burst_ceiling(raw_value):
+    return _normalize_choice(raw_value, VALID_APL_BURST_CEILINGS, "apl_burst_ceiling", "none")
 
 
 def _is_zero(raw_value):
@@ -993,6 +1009,7 @@ def _apply_user_config(defaults, user_config):
     defaults["pause_floor_target"] = _normalize_pause_floor_target(defaults.get("pause_floor_target"))
     defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
     defaults["linear_air_gate"] = _normalize_linear_air_gate(defaults.get("linear_air_gate"))
+    defaults["apl_burst_ceiling"] = _normalize_apl_burst_ceiling(defaults.get("apl_burst_ceiling"))
     defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
     defaults["azimuth_estimate_method"] = _normalize_azimuth_estimate_method(defaults.get("azimuth_estimate_method"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
@@ -1050,6 +1067,9 @@ def load_config():
         # auto_pure_linear's air shelf on every tape ('none', as every release has run) or skipped
         # where the post-neural hiss gate opens ('hiss_dominated'); not yet judged by ear.
         "linear_air_gate": "none",
+        # auto_pure_linear's burst ceiling after the polish (VALID_APL_BURST_CEILINGS): 'none', so
+        # every output keeps its bytes; 'gaps' / 'edges' for a GPU render and a listening session.
+        "apl_burst_ceiling": "none",
         # The mux's rate: 44.1 kHz in every container but MPEG-PS, which keeps the source's
         # ('pipeline', today's bytes everywhere else); 'source' keeps it in every container.
         "mux_sample_rate": "pipeline",
@@ -1299,4 +1319,15 @@ APL_POST_NEURAL_SUPPRESS = bool(CONFIG.get("apl_post_neural_suppress", False))
 APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB = float(CONFIG.get("apl_post_neural_suppress_floor_gap_db", 3.0))
 APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB = float(CONFIG.get("apl_post_neural_suppress_min_residual_db", 6.0))
 APL_NEURAL_LEVEL_RESTORE = bool(CONFIG.get("apl_neural_level_restore", False))
+# The burst ceiling (2026-10-12; VALID_APL_BURST_CEILINGS, modules/burst_ceiling.py). CPU replay on
+# the hiss diagnosis's stage WAVs (13 clips, after the polish, then the 'frame' + 'shelf' pause
+# floor): 'edges' took the hiss in the source's hiss-only cells at the word edges from -20.5 to
+# -27.7 dB on Tele7abc and -24.6 to -29.1 on SOTI, the short gaps' energy -16.5 to -25.2 and -22.5
+# to -28.5, with gap air at -12.9 / -22.3 dB (the dead-air flag is -25) and lkr, sibilance and the
+# loud frames' 4-8 / 8-16 kHz unchanged; the seven clips the RoFormer passed whole or that hold no
+# gap kept every sample. The true pauses' energy mean barely moves: what carries it is programme (a
+# word's tail on Tele7abc, the file's first frame on abc-primetime), which the ceiling keeps.
+# Not rendered on the GPU or judged by ear.
+APL_BURST_CEILING = str(CONFIG.get("apl_burst_ceiling", "none"))
+APL_BURST_CEILING_DEPTH_DB = float(CONFIG.get("apl_burst_ceiling_depth_db", 30.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

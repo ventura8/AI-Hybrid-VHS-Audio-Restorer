@@ -102,6 +102,9 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "apl_post_neural_suppress_min_residual_db",
         "linear_air_gate",
         "apl_neural_level_restore",
+        # The burst ceiling after the polish (modules/burst_ceiling.py).
+        "apl_burst_ceiling",
+        "apl_burst_ceiling_depth_db",
         # The mux (modules/mastering.py, modules/mux_format.py, processing's mux commands) and the
         # sync (modules/sync.py).
         "enable_loudnorm",
@@ -132,6 +135,7 @@ POST_CACHE_MODULES = frozenset(
         "modules/hiss_floor.py",
         "modules/post_neural_suppress.py",
         "modules/neural_level.py",
+        "modules/burst_ceiling.py",
     }
 )
 

@@ -24,8 +24,8 @@ APL_OPT_INS = {"post_neural_suppress": True, "neural_level_restore": True, "air_
 NEW_FOLDERS = {"post_neural_suppress", "neural_level"}
 
 
-@pytest.fixture(name="bench")
-def bench_fixture(tmp_path, monkeypatch):
+def make_bench(tmp_path, monkeypatch):
+    """The bench: counting stand-ins for the chain and the model, ffmpeg's polish as a gain, the fixture on disk."""
     fakes = Fakes()
     monkeypatch.setattr(utils, "LOG_FILE", tmp_path / "session_log.txt")
     monkeypatch.setattr(processing._apl_chain, "stage_plan", fakes.stage_plan)
@@ -40,6 +40,11 @@ def bench_fixture(tmp_path, monkeypatch):
     source = tmp_path / "source.wav"
     sf.write(str(source), _programme(), RATE, subtype="FLOAT")
     return fakes, source, tmp_path
+
+
+@pytest.fixture(name="bench")
+def bench_fixture(tmp_path, monkeypatch):
+    return make_bench(tmp_path, monkeypatch)
 
 
 def _render(bench, **opt_ins):
