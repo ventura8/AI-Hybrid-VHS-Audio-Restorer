@@ -307,8 +307,10 @@ azimuth_estimate_method: "head"
 #                         (Recommended for tapes with NF > -40 dB and high hiss content)
 #
 # Custom Models:
-#   You can also specify custom model filenames placed inside 'models/arnndn/' or 'models/'.
-#   The value must be a bare '.rnnn' filename: a path separator, '..', a leading
+#   You can also specify custom model filenames placed inside the application's own
+#   'models/arnndn/' or 'models/' folder (a 'models/' folder in the directory you
+#   launch from is not searched, and a model file that links outside its folder is
+#   skipped). The value must be a bare '.rnnn' filename: a path separator, '..', a leading
 #   dot, a drive prefix, a non-'.rnnn' suffix, or a filtergraph metacharacter
 #   (' " ; , [ ]) is rejected and falls back to cb.rnnn. The name is passed to an
 #   FFmpeg filter, so this blocks a planted config.yaml from injecting filters.

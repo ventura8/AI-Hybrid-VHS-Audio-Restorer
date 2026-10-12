@@ -333,13 +333,25 @@ def _validate_arnndn_file_integrity(model_path, model_name):
         return False
 
 
+def _store_model_file(directory, model_name):
+    """The resolved model file inside directory, or None when absent or when its real path leaves it.
+
+    A file that is a link to somewhere outside the store folder is skipped, so a link placed
+    in the store can never hand FFmpeg a file outside it.
+    """
+    model_file = directory / model_name
+    if not model_file.is_file():
+        return None
+    resolved = model_file.resolve()
+    return resolved if resolved.parent == directory.resolve() else None
+
+
 def _search_model_in_dirs(model_name, search_dirs):
-    """Searches candidate folders for an RNNoise model file and verifies its integrity."""
+    """Searches the store folders for an RNNoise model file confined to them and verifies its integrity."""
     for directory in search_dirs:
-        model_file = directory / model_name
-        if model_file.is_file():
-            if _validate_arnndn_file_integrity(model_file, model_name):
-                return model_file.resolve()
+        model_file = _store_model_file(directory, model_name)
+        if model_file is not None and _validate_arnndn_file_integrity(model_file, model_name):
+            return model_file
     return None
 
 
@@ -415,24 +427,27 @@ def _try_auto_download_arnndn(model_name):
     return None
 
 
+def _arnndn_store_dirs():
+    """The RNNoise store folders: the package-anchored model store, never the working directory."""
+    return [MODELS_DIR / "arnndn", MODELS_DIR]
+
+
 def _resolve_arnndn_model_path(model_name=ARNNDN_MODEL):
     """Resolves an RNNoise model inside the model store, auto-downloading known names.
 
     Only the bare filename is honoured, so a planted config.yaml cannot name a path
     outside the store (a CWD-relative or absolute `arnndn_model`): the name is joined onto
-    the store search folders and never opened as given. modules.config also reduces
-    `arnndn_model` to a bare `.rnnn` filename before it reaches here.
+    the package-anchored store folders and never opened as given. A `models/` folder in the
+    working directory is not searched (a folder of tapes would otherwise supply its own
+    store), and a store file whose real path leaves its folder is skipped. Returns None
+    when the store has no such model. modules.config also reduces `arnndn_model` to a bare
+    `.rnnn` filename before it reaches here.
     """
     safe_name = Path(str(model_name)).name
-    search_dirs = [Path("models") / "arnndn", Path("models"), MODELS_DIR / "arnndn", MODELS_DIR]
-    found = _search_model_in_dirs(safe_name, search_dirs)
+    found = _search_model_in_dirs(safe_name, _arnndn_store_dirs())
     if found is not None:
         return found
-
-    downloaded = _try_auto_download_arnndn(safe_name)
-    if downloaded is not None:
-        return downloaded
-    return (MODELS_DIR / "arnndn" / safe_name).resolve()
+    return _try_auto_download_arnndn(safe_name)
 
 
 # Characters that cannot be represented inside a single-quoted FFmpeg filter option. A
@@ -544,7 +559,7 @@ def _filter_arnndn_step(original_wav, filtered_audio_dir, total_duration=None, m
     if not ffmpeg_has_filter("arnndn"):
         raise RuntimeError("The available FFmpeg executable does not support the 'arnndn' filter.")
     model_path = _resolve_arnndn_model_path(selected_model)
-    if not model_path.is_file():
+    if model_path is None:
         raise FileNotFoundError(f"ARNNDN model file not found: {selected_model}. Place it in models/arnndn/ or models/.")
 
     filter_str = _build_arnndn_filter_string(str(model_path))

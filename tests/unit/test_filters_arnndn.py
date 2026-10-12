@@ -20,34 +20,63 @@ def _ffmpeg_arnndn_ready():
         return False
 
 
-def test_resolve_arnndn_model_path_searches_store(tmp_path, monkeypatch):
-    """A bare model filename is found inside the model store search folders."""
+@pytest.fixture
+def store_dir(tmp_path, monkeypatch):
+    """The arnndn folder of a package model store under tmp_path; the working directory is tmp_path."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(modules.filters, "MODELS_DIR", tmp_path / "pkg_models")
-    model_dir = tmp_path / "models" / "arnndn"
-    model_dir.mkdir(parents=True)
-    searched_model = model_dir / "custom.rnnn"
+    pkg_store = tmp_path / "pkg_store"
+    rnnn_dir = pkg_store / "arnndn"
+    rnnn_dir.mkdir(parents=True)
+    monkeypatch.setattr(modules.filters, "MODELS_DIR", pkg_store)
+    return rnnn_dir
+
+
+def test_resolve_arnndn_model_path_searches_store(store_dir):
+    """A bare model filename is found inside the package model store."""
+    searched_model = store_dir / "custom.rnnn"
     searched_model.write_bytes(b"model")
     assert modules.filters._resolve_arnndn_model_path("custom.rnnn") == searched_model.resolve()
 
 
-def test_resolve_arnndn_model_path_confines_absolute_to_store(tmp_path, monkeypatch):
+def test_resolve_arnndn_model_path_ignores_working_directory_store(store_dir, tmp_path):
+    """A models/ folder in the working directory (a folder of tapes) is never searched."""
+    planted = tmp_path / "models" / store_dir.name / "planted.rnnn"
+    planted.parent.mkdir(parents=True)
+    planted.write_bytes(b"model")
+    assert modules.filters._resolve_arnndn_model_path("planted.rnnn") is None
+
+
+def test_resolve_arnndn_model_path_confines_absolute_to_store(store_dir, tmp_path):
     """An absolute model path is reduced to its basename under the store, never opened as given."""
-    monkeypatch.chdir(tmp_path)
-    store = tmp_path / "pkg_models"
-    monkeypatch.setattr(modules.filters, "MODELS_DIR", store)
     outside = tmp_path / "outside" / "evil.rnnn"
     outside.parent.mkdir(parents=True)
     outside.write_bytes(b"model")
-    assert modules.filters._resolve_arnndn_model_path(str(outside)) == (store / "arnndn" / "evil.rnnn").resolve()
+    assert modules.filters._resolve_arnndn_model_path(str(outside)) is None
 
 
-def test_resolve_arnndn_model_path_confines_traversal_to_store(tmp_path, monkeypatch):
+def test_resolve_arnndn_model_path_confines_traversal_to_store(store_dir):
     """A parent-traversal model name cannot escape the model store."""
-    monkeypatch.chdir(tmp_path)
-    store = tmp_path / "pkg_models"
-    monkeypatch.setattr(modules.filters, "MODELS_DIR", store)
-    assert modules.filters._resolve_arnndn_model_path("../../secret.rnnn") == (store / "arnndn" / "secret.rnnn").resolve()
+    assert modules.filters._resolve_arnndn_model_path("../../secret.rnnn") is None
+
+
+def test_store_model_file_refuses_a_path_leaving_its_folder(store_dir):
+    """A file whose real path is not directly inside the store folder is skipped."""
+    nested = store_dir / "sub" / "x.rnnn"
+    nested.parent.mkdir()
+    nested.write_bytes(b"model")
+    assert modules.filters._store_model_file(store_dir, "sub/x.rnnn") is None
+
+
+def test_resolve_arnndn_model_path_skips_link_out_of_store(store_dir, tmp_path):
+    """A link inside the store that points at an outside file is never returned."""
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"not a model")
+    link = store_dir / "linked.rnnn"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("this user cannot create symlinks")
+    assert modules.filters._resolve_arnndn_model_path("linked.rnnn") is None
 
 
 def test_fetch_remote_model_bytes_success(monkeypatch):
@@ -186,13 +215,9 @@ def test_resolve_arnndn_model_path_triggers_download(tmp_path, monkeypatch):
         mock_dl.assert_called_once_with("bd.rnnn", target_path)
 
 
-def test_resolve_arnndn_model_path_unknown_falls_back_to_store(tmp_path, monkeypatch):
-    """An unknown model absent from the store falls back to a (non-existent) store path."""
-    monkeypatch.chdir(tmp_path)
-    store = tmp_path / "pkg_models"
-    monkeypatch.setattr(modules.filters, "MODELS_DIR", store)
-    resolved = modules.filters._resolve_arnndn_model_path("unknown.rnnn")
-    assert resolved == (store / "arnndn" / "unknown.rnnn").resolve()
+def test_resolve_arnndn_model_path_unknown_is_none(store_dir):
+    """An unknown model absent from the store resolves to None, so the caller fails closed."""
+    assert modules.filters._resolve_arnndn_model_path("unknown.rnnn") is None
 
 
 @pytest.mark.parametrize("payload", ["m'.rnnn", "a;b.rnnn", "a[b].rnnn", "a,b.rnnn", 'a"b.rnnn'])
