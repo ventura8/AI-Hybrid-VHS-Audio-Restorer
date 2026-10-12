@@ -17,12 +17,21 @@ and is the same for every candidate:
    max(1 - 1 / (9k), 0.05)^3. The median, not the mean, so a word tail or a breath in one
    block does not lift the floor, nor soft programme the source's hiss hid in its quiet frames
    and a clean output reveals (with the mean a perfect output's pauses read up to +43 dB on the
-   fixtures); 200 ms is the ear's integration time for a noise.
+   fixtures); 200 ms is the ear's integration time for a noise. Only the source's silent blocks
+   count, band by band, on both sides: a block whose source band of 1 kHz and up stands 6 dB
+   or more over the source's stationary hiss (the anchor, `anchor_band_power`) holds programme
+   there, not hiss. On a choir tape R4's quiet frames are soft singing: Gaudeamus5's source
+   pause blocks stood +4.1 dB (median) over its anchor at 2-8 kHz and +5.6..+8.7 in the windows
+   every render kept unchanged, against +0.7..+1.2 on the speech tapes (their 90th percentile
+   +2.3..+7.1), and the singing pinned the pause tail at 39.53 for every keeper fill. A window
+   whose every such band held programme reads None.
 4. Each side's floor relative to its own whole aligned file's loud frames (the listener sets
    the volume once), at `hiss_floor.L_CRIT_DB`: rel_b = 10 log10 floor_b - loud; for the
-   margin each band takes the power mean of itself and its two neighbours (tape hiss is
-   smooth across bands, and the max over single bands picked their upward draws: the
-   smoothing halved the realisation scatter, sd 0.25 -> 0.13-0.18 dB on the fixtures).
+   margin each band takes the power mean of itself and its two neighbours either side (tape
+   hiss is smooth across bands, and the max over single bands picked their upward draws: three
+   bands halved the realisation scatter, sd 0.25 -> 0.13-0.18 dB on the fixtures; five, with
+   the silent blocks, took the fresh-realisation p95 of the fixtures' pause margin from
+   0.51-0.54 to 0.18-0.21 dB).
 5. The hiss weight w(f) = 1 / (1 + exp(-log2(f / 2500) / 0.25)): 0.05 at 1.5 kHz, 0.22 at
    2 kHz, 0.5 at 2.5 kHz, 0.94 at 4 kHz. Tape hiss is the broadband, HF-heavy stationary
    floor; room tone sits mostly under 2-3 kHz and the user allows it (they rejected dead
@@ -52,7 +61,8 @@ import scipy.ndimage
 from scripts.restoration_quality import auditory, hiss_floor, pause_metrics
 
 FRAME_S = pause_metrics.FRAME_S
-SMOOTH_BANDS = 3
+SMOOTH_BANDS = 5
+PROGRAMME_DB = 6.0
 BLOCK_FRAMES = 10
 MIN_BLOCK_FRAMES = 5
 TQ_MARGIN_DB = 3.0
@@ -146,12 +156,50 @@ def run_blocks(run):
     return [run[first:][:BLOCK_FRAMES] for first in range(0, len(run), BLOCK_FRAMES)]
 
 
-def stationary_floor(frames_power, kept, spans):
-    """Per band, the median over 200 ms blocks (over frames when no block fits), bias-corrected to the mean (module docstring)."""
+def block_rows(frames_power, spans):
+    """`(rows, frames per row)`: the 200 ms block means of the runs, or the frames themselves when no block fits."""
     blocks = block_means(frames_power, spans)
-    degrees = np.maximum(kept / CORRELATED_BINS, MIN_SHAPE) * (1.0 if blocks is None else BLOCK_FRAMES)
-    values = frames_power if blocks is None else blocks
-    return hiss_floor.column_stat(values, np.median) / wilson_hilferty_median_ratio(degrees)
+    return (frames_power, 1.0) if blocks is None else (blocks, float(BLOCK_FRAMES))
+
+
+def masked_median(values, keep):
+    """Per column, the median of the finite values `keep` selects; NaN for a column with none."""
+    return hiss_floor.column_stat(np.where(keep, values, np.nan), np.median)
+
+
+def stationary_floor(rows, kept, per_row, silent=None):
+    """Per band, the median over the silent rows (`block_rows`), bias-corrected to the mean (module docstring)."""
+    degrees = np.maximum(kept / CORRELATED_BINS, MIN_SHAPE) * per_row
+    keep = np.ones(rows.shape, dtype=bool) if silent is None else silent
+    return masked_median(rows, keep) / wilson_hilferty_median_ratio(degrees)
+
+
+def anchor_band_power(anchor, centres, counts, frame):
+    """The anchor's stationary hiss as band power on these bands, or None without an anchor read in two bands or more.
+
+    The anchor's per-bin level (`hiss_floor.stft_power`'s 2048-point bins) is interpolated in log level over log
+    frequency onto the band centres, rescaled to `frame`-point bins (a bin's power scales as 1 / its length) and summed
+    over each band's `counts` bins, the scaling `band_frame_power` gives a band.
+    """
+    level = None if anchor is None or anchor.level is None else np.asarray(anchor.level, dtype=np.float64)
+    read = np.zeros(0, dtype=bool) if level is None else np.isfinite(level) & (level > 0.0)
+    if read.sum() < 2:
+        return None
+    per_bin = 10.0 ** np.interp(np.log(centres), np.log(np.asarray(anchor.centres)[read]), np.log10(level[read]))
+    return per_bin * (hiss_floor.FRAME / frame) * counts
+
+
+def silent_rows(src_rows, expected, centres):
+    """Per row and band: True unless the source's band of 1 kHz and up stands 6 dB or more over the anchor's hiss there.
+
+    Every row is silent without an anchor. A row's NaN band (no kept bin) stays silent; the median skips it anyway.
+    """
+    silent = np.ones(src_rows.shape, dtype=bool)
+    if expected is None:
+        return silent
+    judged = centres >= HISS_FROM_HZ
+    silent[:, judged] = ~(src_rows[:, judged] >= expected[judged] * 10.0 ** (PROGRAMME_DB / 10.0))
+    return silent
 
 
 def kept_bins(src_power, out_power, frame):
@@ -169,19 +217,41 @@ def masked_frames(pair, rate, mask):
     return freqs, src_power[: len(mask)][mask], out_power[: len(mask)][mask]
 
 
-def pause_bands(pair, rate, mask, top_hz):
-    """`(edges, centres, source floor, output floor)` per band in the true pauses, tones out."""
+def pause_bands(pair, rate, mask, anchor=None, top_hz=None):
+    """`(edges, centres, source floor, output floor)` per band in the true pauses, tones out, over the source's silent blocks.
+
+    A band whose every block holds programme on the source (`silent_rows`) is NaN on both sides.
+    """
     freqs, src_power, out_power = masked_frames(pair, rate, mask)
     edges, index, centres = band_table(freqs, rate, top_hz)
-    keep = kept_bins(src_power, out_power, max(1, int(FRAME_S * rate)))
-    src_floor, out_floor = (side_floor(power, (keep, index, len(centres)), masked_spans(mask)) for power in (src_power, out_power))
-    return edges, centres, src_floor, out_floor
+    frame = max(1, int(FRAME_S * rate))
+    rows = band_rows((src_power, out_power), (kept_bins(src_power, out_power, frame), index, len(centres)), masked_spans(mask))
+    silent = silent_rows(rows[0], anchor_band_power(anchor, centres, band_counts(index, len(centres)), frame), centres)
+    return edges, centres, stationary_floor(rows[0], rows[2], rows[3], silent), stationary_floor(rows[1], rows[2], rows[3], silent)
 
 
-def side_floor(power, bands, spans):
-    """One side's stationary floor per band; `bands` is `(kept bins, bin -> band, band count)`."""
+def band_counts(index, nb):
+    """The bins of each of `nb` bands."""
+    return np.array([np.sum(index == band) for band in range(nb)], dtype=np.float64)
+
+
+def band_rows(powers, bands, spans):
+    """`(source rows, output rows, kept bins per band, frames per row)` of the two sides (`side_rows`)."""
+    src_rows, kept, per_row = side_rows(powers[0], bands, spans)
+    return src_rows, side_rows(powers[1], bands, spans)[0], kept, per_row
+
+
+def side_rows(power, bands, spans):
+    """`(rows, kept bins per band, frames per row)` of one side; `bands` is `(kept bins, bin -> band, band count)`."""
     frames, kept = band_frame_power(power, *bands)
-    return stationary_floor(frames, kept, spans)
+    rows, per_row = block_rows(frames, spans)
+    return rows, kept, per_row
+
+
+def hiss_read(bands):
+    """Whether the source's pause floor holds a band of 1 kHz and up: not every such band's blocks held programme."""
+    _edges, centres, src_floor, _out_floor = bands
+    return bool(np.any((centres >= HISS_FROM_HZ) & np.isfinite(src_floor)))
 
 
 def relative_levels(floor, loud_db):
@@ -192,7 +262,7 @@ def relative_levels(floor, loud_db):
 
 
 def smoothed(rel):
-    """`rel` (dB per band) as the power mean of each band and its two neighbours; NaN bands neither give nor take."""
+    """`rel` (dB per band) as the power mean of each band and its two neighbours either side; NaN bands neither give nor take."""
     held = np.isfinite(rel)
     power = np.where(held, 10.0 ** (np.where(held, rel, 0.0) / 10.0), 0.0)
     total = scipy.ndimage.uniform_filter1d(power, SMOOTH_BANDS, mode="nearest")
@@ -268,13 +338,24 @@ def paired(bands, context, pause_s):
 
 
 def pause_readings(src, out, rate, context):
-    """`{name: (source, output)}` for `PAUSE_NAMES` on one aligned window; every name None with under 25 true-pause frames."""
+    """`{name: (source, output)}` for `PAUSE_NAMES` on one aligned window; every name None with under 25 true-pause frames.
+
+    A window whose source pauses held programme in every band of 1 kHz and up (`hiss_read`) reads None too.
+    """
+    prepared = window_pair(src, out, rate)
+    mask = None if prepared is None else pause_metrics.true_pause_mask(prepared[0][0], rate)[0]
+    if mask is None or mask.sum() < pause_metrics.MIN_PAUSE_FRAMES:
+        return hiss_floor.none_pairs(PAUSE_NAMES)
+    bands = pause_bands(prepared[0], rate, mask, context.anchor, context.top_hz)
+    if not hiss_read(bands):
+        return hiss_floor.none_pairs(PAUSE_NAMES)
+    return paired(bands, context, float(mask.sum() * prepared[1] / rate))
+
+
+def window_pair(src, out, rate):
+    """`(pair, frame)`: both sides cut to whole 20 ms frames, or None with under 25 frames or a non-finite sample."""
     frame = max(1, int(FRAME_S * rate))
     count = min(len(src), len(out)) // frame
     pair = (np.asarray(src[: count * frame], dtype=np.float64), np.asarray(out[: count * frame], dtype=np.float64))
-    if count < pause_metrics.MIN_PAUSE_FRAMES or not (np.isfinite(pair[0]).all() and np.isfinite(pair[1]).all()):
-        return hiss_floor.none_pairs(PAUSE_NAMES)
-    mask, _runs = pause_metrics.true_pause_mask(pair[0], rate)
-    if mask.sum() < pause_metrics.MIN_PAUSE_FRAMES:
-        return hiss_floor.none_pairs(PAUSE_NAMES)
-    return paired(pause_bands(pair, rate, mask, context.top_hz), context, float(mask.sum() * frame / rate))
+    usable = count >= pause_metrics.MIN_PAUSE_FRAMES and bool(np.isfinite(pair[0]).all()) and bool(np.isfinite(pair[1]).all())
+    return (pair, frame) if usable else None
