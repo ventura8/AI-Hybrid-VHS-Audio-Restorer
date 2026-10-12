@@ -148,7 +148,7 @@ enhance_tau: 0.3
 #     mode take shift sync instead, whatever the scanner or sync_method says. Their
 #     chains keep the source's length and time base, so a warp can only add error:
 #     the DTW path plays whole 40 ms frames at 0x or 2x. On the IA hunt's stored
-#     outputs (2026-10-12) 24 of 30 cathar and 16 of 30 auto_pure_linear outputs
+#     outputs (2026-10-12) 24 of 30 cathar and 15 of 30 auto_pure_linear outputs
 #     sent to DTW carry frozen holds, none of the 205 per engine sent to shift.
 #     The stem modes (hybrid, multipass_auto, auto_pure) keep DTW. Not yet heard
 #     by a listener, so the default keeps every output's bytes.

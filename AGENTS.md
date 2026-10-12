@@ -40,7 +40,7 @@ alignment:
 - **Sub-Sample Audio Synchronization**: Cross-correlation lag estimation and
   Dynamic Time Warping (DTW) with GPU PyTorch and CPU fallback. DTW plays
   whole 40 ms frames at 0x or 2x: the ear's time-base reading (R12) found
-  frozen holds on 24 of 30 cathar and 16 of 30 APL hunt outputs sent to
+  frozen holds on 24 of 30 cathar and 15 of 30 APL hunt outputs sent to
   DTW, none on 205 per engine sent to shift; `sync_dtw_enable: false` sends
   the length-preserving chains to shift (default true until a blind block),
   and the CPU DTW path falls back to shift today (`docs/configuration.md`).

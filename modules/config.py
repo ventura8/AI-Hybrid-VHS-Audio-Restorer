@@ -621,7 +621,7 @@ _BOOL_CONFIG_FIELDS = (
     # auto_pure_linear (its stem path too), cathar and every single-track mode keep the length and
     # the time base of the source they sync against, so a warp can only add error: the DTW path's
     # whole 40 ms frames play at 0x or 2x. On the IA hunt's stored outputs (2026-10-12, the ear's
-    # time-base reading) 24 of the 30 cathar and 16 of the 30 auto_pure_linear outputs sent to DTW
+    # time-base reading) 24 of the 30 cathar and 15 of the 30 auto_pure_linear outputs sent to DTW
     # carry frozen holds (177 and 49 in all), none of the 205 per engine sent to shift. False sends
     # those chains to shift sync whatever the scanner or `sync_method` says; the stem modes (hybrid,
     # multipass, auto_pure) keep DTW. True keeps every output's bytes until a listening session

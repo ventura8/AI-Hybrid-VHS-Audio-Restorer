@@ -251,7 +251,7 @@ audio alignment, or FFmpeg multiplexing.
      and keeps its length (`auto_pure_linear`, cathar, the single-track modes)
      shares the source's time base: a warp can only add error. Measured
      2026-10-12 with the harness's time-base reading (R12) on the IA hunt:
-     24 of 30 cathar and 16 of 30 APL outputs sent to DTW carry frozen holds
+     24 of 30 cathar and 15 of 30 APL outputs sent to DTW carry frozen holds
      (177 and 49 in all), none of 205 per engine sent to shift. On five of
      those clips rendered with cathar on the CPU, the DTW warp replayed on the
      kept pre-sync WAV (`AI_RESTORE_TEST_MODE=1`) reads 71 holds (the hunt's

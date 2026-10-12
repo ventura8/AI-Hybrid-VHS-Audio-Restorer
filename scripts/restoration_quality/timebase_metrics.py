@@ -51,13 +51,14 @@ Measured (2026-10-12; the hunt's stored outputs, `experiments/tune_ia_hunt_v3`, 
 `auto_pure_linear` baselines, the 30 clips the scanner sent to DTW and all 205 it sent to
 shift; read through the harness's own loader and alignment):
 
-- DTW: cathar 177 holds on 24 clips (median 7 a clip where any), 64 plateaus on 17, 82 rate
+- DTW: cathar 177 holds on 24 clips (median 6 a clip where any), 64 plateaus on 17, 82 rate
   jumps on 16; `auto_pure_linear` 49 holds on 15, 35 plateaus on 13, 54 jumps on 12; the gates
   fail 24 and 16 of the 30. Four clips per engine track no frame (two BBC iPlayer captures,
   `bbcnewsatten07062019172904`, `ein-halleluja-fur-spirito-sant`), cathar's tracked share has
   a median of 0.35 against APL's 0.81 (cathar's dewind and subtraction decorrelate the
-  waveform). The holds stand 42.5 dB (median; p10 25.7) of raw level over their high-passed
-  level, 94 % of them 20 dB or more: frozen samples, not mutes.
+  waveform). The 226 holds this module counts stand 43.6 dB (median; p10 30.8) of raw level
+  over their high-passed level, 98 % of them 20 dB or more: frozen samples, not mutes (the
+  holds of the raw-over-high-passed rule the frozen test replaced: 42.5 dB, p10 25.7, 94 %).
 - shift, 205 per engine: no hold, plateau or rate jump; the speed reading's p95 is 0.007 %
   (cathar) and 0.0009 % (APL) in the median.
 - the 32 accepted v2 finals (`D:/Tata/New folder/variants/v2`): nothing, but one hold on the APL

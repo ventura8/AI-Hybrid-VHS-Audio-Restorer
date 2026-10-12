@@ -797,8 +797,9 @@ adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
   gates fail 24 and 16), the 205 shift clips per engine read nothing; of
   the 32 accepted v2 finals only the APL final of the one music clip that
   took DTW reads a hold. The calibration's `sync_holds` case (1 / 3 / 6 DTW
-  glitches) reads holds 1 / 3 / 6 on the en and fr targets, `sync_drift`
-  reads its speed error and no event, every benign case nothing. The app
+  glitches) reads holds 1 / 3 / 6 on the en and fr targets and on the three
+  tape cuts, `sync_drift` reads its speed error and no event (the tape cuts'
+  stored v3b cases too), every benign case nothing. The app
   key `sync_dtw_enable` (`docs/configuration.md`) sends the length-preserving
   chains to shift sync; on five of the hunt's DTW clips rendered with cathar
   on the CPU the shift output reads 0 holds where the DTW warp replayed on

@@ -409,7 +409,7 @@ warp can only add error. The DTW path interpolates linearly between whole
 a frame at 0x (the output holds one sample's value) or at 2x. The ear's
 time-base reading (R12, `docs/validation.md`) counts it on the IA hunt's
 stored outputs: of the 30 clips sent to DTW, 24 cathar outputs carry 177
-frozen holds and 16 `auto_pure_linear` outputs 49; none of the 205 per
+frozen holds and 15 `auto_pure_linear` outputs 49; none of the 205 per
 engine sent to shift carries one.
 
 - `true` keeps the scanner's choice, as every release has, so every output

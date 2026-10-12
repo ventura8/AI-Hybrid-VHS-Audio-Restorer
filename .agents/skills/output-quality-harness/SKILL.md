@@ -464,7 +464,10 @@ their module docstrings hold the full measurements.
   test replaced a raw-over-high-passed rule that read 14 holds on four APL
   shift clips (digital silence holding the loader's DC residue, LF left
   where the highs were cut). The calibration's `sync_holds` case (1 / 3 / 6
-  glitches) reads holds 1 / 3 / 6 on en and fr; `SCORE_SCHEMA` 7.
+  glitches) reads holds 1 / 3 / 6 on en and fr and on the three tape cuts
+  (Vaccin, SOTI, Tele7abc); `sync_drift` on the stored v3b tape-cut cases
+  reads its speed error and no event, though the drift outruns the track's
+  +-100 ms search (tracked share 0.10-0.26 at 0.2 %); `SCORE_SCHEMA` 7.
 - Read a signed correlation on the raw pair at the lag, never on the
   gain-matched pair: `score_reference._match_gain`'s least-squares scale came
   out negative on the 0.1 % slow en fixture (-0.016) and on the hunt's APL

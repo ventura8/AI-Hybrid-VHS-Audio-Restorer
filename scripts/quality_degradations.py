@@ -844,7 +844,10 @@ V3_DEGRADATIONS = {
     # ms of drift) R7 read the drift as a ride (calibration v3) until it read along the sync's lag track
     # (`file_metrics.lag_track`): 0.032 LU at most against the 0.1 allowed. R12 reads the speed error
     # 0.056 / 0.108 / 0.217 % (fr 0.058 / 0.116 / 0.239: the p95 of the local speed sits a little over
-    # the drift) and no hold, plateau or rate jump (2026-10-12).
+    # the drift) and no hold, plateau or rate jump (2026-10-12). On the stored v3b cases of the tape
+    # cuts (Vaccin and SOTI 60-360 s, Tele7abc whole) it reads 0.054-0.056 / 0.105-0.114 / 0.210-0.234 %
+    # and no event, although the drift outruns the track's +-100 ms search and its tracked share falls
+    # to 0.10-0.26 at 0.2 %.
     "sync_drift": Degradation(
         "speech",
         (0.05, 0.1, 0.2),
@@ -866,7 +869,9 @@ V3_DEGRADATIONS = {
     # sync reads drift 0.14-0.54 ms (fr 2.37 at six), far under its 40 ms gate, which is why R12
     # exists; `file.dropouts` reads 1 / 1 / 1 (fr 0 / 1 / 2): a frozen hold keeps its level, so the
     # hole count misses most of them. The speed reading jumps between 0 and 4 % as a 300 ms plateau
-    # does or does not fill half a 0.5 s block, so it is not asserted.
+    # does or does not fill half a 0.5 s block, so it is not asserted. Built on the tape cuts' base
+    # (Vaccin, SOTI, Tele7abc) it reads holds 1 / 3 / 6 on each, plateaus 1 / 3 / 6 (Tele7abc 5 at
+    # six) and rate jumps 2 / 4-6 / 9-11; their benign cases read nothing.
     "sync_holds": Degradation(
         "speech",
         (1, 3, 6),
