@@ -7,11 +7,11 @@
   stems family separates every output with BS-RoFormer and was the dearest part of a speech
   round while `tata_v3` reads none of it: about 74 of the 113 minutes SOTI's scorer took in the
   APL v6 round (2026-10-10, 29 outputs). A named list is scored as given, in the two stages.
-- Two stages (plan 1.5, `autotune_restoration.score_and_judge`): the families the ranking and
-  the gates read (`split_families`) on every candidate; the rest, the learned vetoes' families,
-  only on the incumbent and the candidates that qualified without the vetoes, in
-  `<slug>.learned.score.json` beside the first pass's `<slug>.score.json`. A veto can only take a
-  qualification away, so the verdicts equal a single pass over every family. A candidate whose
+- Two stages (plan 1.5, `autotune_restoration.score_and_judge`): the families the ranking, the
+  gates and the grid's constraints read (`split_families`) on every candidate; the rest, the
+  learned vetoes' families, only on the incumbent and the candidates that qualified without the
+  vetoes, in `<slug>.learned.score.json` beside the first pass's `<slug>.score.json`. A veto can
+  only take a qualification away, so the verdicts equal a single pass over every family. A candidate whose
   first-pass flat already holds a family (scored before the stages existed) is not scored again.
 - The scorers: one `scripts/validate_restoration.py` process per tape for every candidate of a
   batch, at most `parallel` at once (about 4 GB of RAM each), their reports flattened into each
@@ -183,10 +183,13 @@ def gate_names(gates):
     return tuple(json.loads(existing_path(gates, "--gates").read_text(encoding="utf-8")))
 
 
-def split_families(families, ranking, gate_names=()):
-    """`(ranked, rest)` of the requested families: the ones the ranking and the gates read, scored on every candidate,
-    and the others (the learned vetoes'), scored only on the incumbent and the candidates that beat it."""
-    needed = set(grid_families({"ranking": ranking}, gate_names))
+def split_families(families, ranking, gate_names=(), constraints=()):
+    """`(ranked, rest)` of the requested families: the ones the ranking, the gates and the grid's constraints read, scored
+    on every candidate, and the others (the learned vetoes'), scored only on the incumbent and the candidates that beat it.
+
+    A constraint is checked on every candidate in both judgements, so its family is a first-stage one: scored in the second
+    stage only, a candidate that did not qualify would read as having lost the reading and be marked guarded."""
+    needed = set(grid_families({"ranking": ranking, "constraints": dict.fromkeys(constraints)}, gate_names))
     return tuple(name for name in families if name in needed), tuple(name for name in families if name not in needed)
 
 

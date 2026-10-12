@@ -473,6 +473,30 @@ of 40 on the corpus shape.
   `derive_gates` with `clean["*"]` lists both as skipped. **Pass** (unit
   tests).
 
+## Tape Rows on the Merged Aligner
+
+The tape rows above were read with the head-search aligner (`xcorr_head`).
+The merge with `feature/v1.4.0` (2026-10-12) made GCC-PHAT the default
+(`scripts/pair_alignment.py`), and the hiss readings read its pair. The
+merge's adversarial review re-scored the 29 pinned outputs of
+`tests/unit/test_tune_restoration_v4.py` with the merged dsp family (CPU):
+
+- With `AI_RESTORE_ALIGN_METHOD=xcorr_head` the merged build reproduces the
+  pinned hiss readings exactly (six outputs checked).
+- On GCC-PHAT the APL, fill, v4_air, cheat and gate outputs read the same
+  lag and identical readings. The cathar outputs move with their lag
+  (Tele7abc 255 to 213-214 samples, SOTI 198, Vaccin 215): the hiss
+  readings by 0.29 dB at most (the pump; pause tail excess +0.11,
+  programme margin 0.04), the timbre and sibilance readings more (the
+  de-esser bug's tilt +2.5 dB/oct, `sib_abs_level_db` -0.49).
+- Every acceptance outcome the tests pin holds on the new readings (31 of
+  31): the two 0.7.3 renders still raise the pause flag (tails +1.45 and
+  +1.09), the cleared renders and the baseline stay unflagged, and no
+  constraint outcome changes. SOTI's alpha 2.0 pause tail excess reads
+  0.346 against the baseline's 0: still a tie, 0.004 inside 0.35.
+- The pinned table keeps the head-search readings, the validated record;
+  the tests check the constraints' and the flags' logic on them.
+
 ## Music Coverage per Clip
 
 The programme reading reads Gaudeamus1 on 5 of its 8 windows per render and

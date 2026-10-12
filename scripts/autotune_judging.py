@@ -63,7 +63,9 @@ hiss excess is one-sided, target 0, dead zone 0, so any audible hiss is charged 
 tie forgives is the tie itself; a dead zone raised to the jitter floor beside a band of the tie
 would forgive the jitter twice. The grids' H1 constraints take the same tie as `max_move`, so a
 hiss move inside the tie is a tie in the ranking and passes H1, and one past it the worse way is
-behind in the ranking and excluded by H1: the two layers agree.
+behind in the ranking and excluded by H1: the two layers agree. A jitter floor wider than the tie
+(none is measured yet) widens the band alone: H1 stays at the tie, so the guard is then the
+stricter layer, never the looser one.
 
 Family-wise vetoes (E3 b). In `autotune_v6_music` a learned veto fired on any one clip-reading
 at 1x a p95 floor, about 48 tests per candidate (12 clips x 4 readings): in the cathar music

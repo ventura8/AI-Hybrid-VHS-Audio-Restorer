@@ -417,29 +417,28 @@ user set, with their reasons:
   worse than its incumbent and more than `max_move` past the bound is
   excluded, or a loop could creep `max_move` further every accepted round
   (the adversarial review of ear v4, 2026-10-12).
-- A reading of hiss or residual noise never takes a tie band, a dead-zone
-  floor or a veto limit from the Session 0 benign pairs: those pairs
-  differed grossly (residual noise 16.4 dB, pause depth 5.8 dB) and would
-  blind the ear to hiss. In the loop (`scripts/autotune_judging.py`) every
-  such reading (each `dsp.hiss_*`, the hiss flags, residual noise, the gap
-  and pause readings, DNSMOS BAK, SIGMOS NOISE) takes its floors from
-  scorer repeat jitter and same-percept near-copies (`--jitter-floors`).
-  A v4 hiss entry's band is its grid `tie`: the widest same-percept
-  transform's p95 (a fresh realisation of the same noise, a 0.37-sample
-  delay, +-0.1 dB, a soxr round trip, 16-bit requantisation; the
-  noise-floor report's `tie_floor`). Pooling the transforms that barely
-  move a hiss reading diluted the fresh draws' scatter, and H1 then refused
-  a same-percept redraw (validation round 2). The tie forgives once: the
-  entry keeps its dead zone of 0, and its H1 guard takes the same tie as
-  `max_move`, so a move inside it ties and passes and one past it the worse
-  way loses and is excluded. GRPO and the preference head take ties through
-  `reward.tie_floors`, which refuses a benign-pair report. The transforms
-  live in `scripts/same_percept.py`, which names the subset each consumer
-  reads. The pauses are read where the source is silent apart from its
-  hiss (blocks within 3 dB of its stationary hiss): R4's quiet frames on a
-  choir tape are soft singing, and a render that took the singing out would
-  otherwise win the pause family. The two hiss flags' thresholds are the
-  user's rule, which no calibration and no gates file moves
+- A reading of hiss or residual noise never takes a tie band, a dead-zone floor
+  or a veto limit from the Session 0 benign pairs: those pairs differed grossly
+  (residual noise 16.4 dB, pause depth 5.8 dB) and would blind the ear to hiss.
+  In the loop (`scripts/autotune_judging.py`) every such reading (each
+  `dsp.hiss_*`, the hiss flags, residual noise, the gap and pause readings,
+  DNSMOS BAK, SIGMOS NOISE) takes its floors from scorer repeat jitter and
+  same-percept near-copies (`--jitter-floors`). A v4 hiss entry's band is its
+  grid `tie` (or its jitter floor where that is wider): the widest same-percept
+  transform's p95 (a fresh realisation of the same noise, a 0.37-sample delay,
+  +-0.1 dB, a soxr round trip, 16-bit requantisation; the noise-floor report's
+  `tie_floor`). Pooling the transforms that barely move a hiss reading diluted
+  the fresh draws' scatter, and H1 then refused a same-percept redraw
+  (validation round 2). The tie forgives once: the entry keeps its dead zone of
+  0, and its H1 guard takes the same tie as `max_move`, so a move inside it ties
+  and passes and one past it the worse way loses and is excluded. GRPO and the
+  preference head take ties through `reward.tie_floors`, which refuses a
+  benign-pair report. The transforms live in `scripts/same_percept.py`, which
+  names the subset each consumer reads. The pauses are read where the source is
+  silent apart from its hiss (blocks within 3 dB of its stationary hiss): R4's
+  quiet frames on a choir tape are soft singing, and a render that took the
+  singing out would otherwise win the pause family. The two hiss flags'
+  thresholds are the user's rule, which no calibration and no gates file moves
   (`gates.USER_RULE_FIXED`). Only a blind session at a recorded device and
   volume moves the 75 dB SPL level.
 

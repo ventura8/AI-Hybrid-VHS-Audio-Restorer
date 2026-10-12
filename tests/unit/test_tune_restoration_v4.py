@@ -71,13 +71,17 @@ DEAD_APL = (
     "apl__roformer_no_expander_no_a",
 )
 BOTH_FLAGS = {"listener.hiss_programme", PAUSE_HISS}
-# SOTI's alpha 2.0 raises the pause tail excess 0.33 dB over the baseline's 0, within the pause tie (0.35).
+# SOTI's alpha 2.0 raises the pause tail excess 0.33 dB over the baseline's 0, within the pause tie (0.35); 0.346 on the
+# GCC-PHAT aligner (docs/ear_v4_hiss.md, "Tape Rows on the Merged Aligner").
 LESS_REMOVAL_SOTI = set()
 # The stored sets' readings (validation round 2 of 2026-10-12, docs/ear_v4_hiss.md): validate_restoration --metrics dsp at
 # windows 15 s, hop 7.5 s; per output, the aggregate a grid reads for each name in READINGS ("-" unread). The hiss
 # readings are the adversarial review's build (the same windows through the runner's hiss path: the pause reading's 3 dB
 # silent test and weight, the pump's medians; the programme readings read exactly as round 2's), the others the
-# validation run's.
+# validation run's. All of them were read with the head-search aligner (xcorr_head), which the merged build reproduces
+# exactly under AI_RESTORE_ALIGN_METHOD=xcorr_head. On the GCC-PHAT aligner (the default since the merge with
+# feature/v1.4.0) the APL, fill, v4_air, cheat and gate rows read identically, the cathar rows move with their lag (hiss
+# readings 0.29 dB at most), and every outcome these tests pin still holds (docs/ear_v4_hiss.md).
 # The family tapes stay on the machine; these are numbers only.
 PINNED_TABLE = """
 r1_tele7abc/cathar__baseline

@@ -48,8 +48,9 @@ grid has none of them (`NO_GUARDS`) and its rounds are judged as before:
   (default: none) cannot win, nor can one worse than the incumbent's and more than `max_move`
   past the bound (`reward.Constraint`: the limit does not follow the incumbent round by round),
   nor one that lost a reading the incumbent has
-  (`mark_constraints`, `reward.gate_constraints(dsp_guard=...)`). The readings are stage-1 dsp
-  readings, so every candidate is checked in both judgements. A key that does not split as
+  (`mark_constraints`, `reward.gate_constraints(dsp_guard=...)`). Their families are scored in
+  the first stage (`autotune_scoring.split_families`), so every candidate is checked in both
+  judgements. A key that does not split as
   `metric.side.stat`, with a registered metric, side output or delta and a stat the runner
   flattens, stops the loop as a typo. The v4 grids use them to keep "no hiss" from being won
   by deleting programme: no new audible hiss over the incumbent or the raw tape, no dead air,

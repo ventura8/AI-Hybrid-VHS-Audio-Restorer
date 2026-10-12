@@ -31,6 +31,13 @@ def test_the_ranked_families_are_the_ones_the_ranking_and_the_gates_read():
     assert scoring.split_families(("dsp", "speech", "mos"), RANKING, ["speech.cer"]) == (("dsp", "speech"), ("mos",))
 
 
+def test_a_constraints_family_is_scored_in_the_first_stage():
+    """A grid constraint is checked on every candidate in both judgements, so its family cannot wait for the contenders:
+    scored in the second stage only, a candidate that never qualified would read as having lost it, and be guarded."""
+    constraints = {"mos.sigmos_noise.delta.median": reward.Constraint("down", 0.1)}
+    assert scoring.split_families(("dsp", "speech", "mos"), RANKING, (), constraints) == (("dsp", "mos"), ("speech",))
+
+
 def _scorer(first=None, second=None):
     """A score_round stand-in recording each call's candidates, families and stage."""
     first, second = first or FIRST, second or SECOND
@@ -56,6 +63,16 @@ def test_the_learned_families_run_only_on_the_incumbent_and_the_contenders(monke
     score, calls = _scorer()
     _judge(monkeypatch, score)
     assert calls == [(sorted(FIRST), ("dsp",), ""), (["good", "inc", "vetoed"], ("speech",), scoring.LEARNED_STAGE)]
+
+
+def test_score_and_judge_scores_a_constrained_family_on_every_candidate(monkeypatch):
+    """A constraint on a speech reading pulls speech into the first stage: nothing is left for a second one."""
+    score, calls = _scorer()
+    monkeypatch.setattr(at, "score_round", score)
+    args = SimpleNamespace(families=("dsp", "speech"), gates=None, language="ro", parallel=1)
+    guards = ag.Guards(constraints={CER: reward.Constraint("up", 0.5)})
+    at.score_and_judge(args, {cid: {} for cid in FIRST}, ({"t1": "t1.mov"}, Path(".")), RANKING, "inc", guards)
+    assert calls == [(sorted(FIRST), ("dsp", "speech"), "")]
 
 
 def test_the_two_stages_give_the_single_pass_verdict(monkeypatch):

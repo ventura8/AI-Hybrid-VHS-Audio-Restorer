@@ -1733,50 +1733,6 @@ most max(tolerance, 3 floors)) and `below` (every median at or under the
 centre minus that). `underwater` reads kept HF down and `musical_noise`
 island kurtosis up, both blind.
 
-### One loop judging: ear v4 merged with the judging resolution (2026-10-12)
-
-`wip/ear-hiss` (ear v4) and the judging resolution of `feature/v1.4.0`
-(`scripts/autotune_judging.py`) each added a tie mechanism to the loop; the
-merge keeps one ranking path, and `autotune_judging`'s docstring says which
-layer owns what:
-
-- **Ranking** (`autotune_judging`): each reading's band is
-  `Floors.band(key, tie)`, the larger of its floor and its grid `tie`. A
-  hiss or residual-noise reading's floor is its jitter floor
-  (`--jitter-floors`) and never a benign pair's; every other reading's is
-  the larger of the two. An entry with a grid `tie` (the v4 hiss excesses)
-  keeps the dead zone its grid sets (0): a dead zone raised to the jitter
-  floor beside a band of the tie would forgive the jitter twice. The tie
-  bands its reading with or without a floors file. Before the merge the
-  hiss branch's loop ranked through `tune_restoration.rank_variants`'s tie
-  buckets, which the loop no longer calls; the sweep keeps them.
-- **Constraints** (`autotune_guards.mark_constraints`, any one tape, explicit
-  limits, no floor) are applied in both judging passes and in the offline
-  re-judge (`rejudge_autotune.judge_with`, under every rule). H1's
-  `max_move` is the same tie its ranking entry carries, so the two layers
-  agree: inside the tie a tie and allowed, past it the worse way behind and
-  excluded. A candidate a constraint excludes counts as held back in the
-  round's label (`plateau_label`), never "below the floor".
-- **Vetoes** stay family-wise (`familywise_vetoes`); v4's DNSMOS BAK and
-  SIGMOS NOISE vetoes are hiss readings, so their limits are their jitter
-  floors (`veto_floors`).
-- **The round's table** shows each reading's band and its source: the grid
-  tie, the jitter floor, the benign pair or none.
-- **The hiss exemption** (`HISS_PREFIXES`) covers every `dsp.hiss_*`
-  reading, the hiss flags (`listener.hiss*`), the residual-noise, gap and
-  pause readings (`dsp.pause_depth_speech_db` among them), DNSMOS BAK and
-  SIGMOS NOISE.
-- **Calibration**: two floors, the sensitivity checks' over every benign
-  case (the speech-target `SAME_PERCEPT` set included) and the gates'
-  without that set; the `dsp.hiss_*` readings read only the `*_linear`
-  cases in both (`calibration_checks.in_scope`). `SCORE_SCHEMA` 8: a
-  schema-7 score from either branch lacks the other's readings (R12's or
-  the hiss readings).
-- **The runner** reads the hiss readings on the pair `audio_io.aligned_pair`
-  returns (the GCC-PHAT aligner's lag and polarity, the least-squares
-  gain), never the level-matched copy the output's routes are read on; the
-  trade keeps both the rate-mismatch skip and the aligner's options.
-
 The fixture probe:
 
 ```text
@@ -1923,6 +1879,63 @@ Pitfalls:
   readable bands of 1 kHz and up), Gaudeamus5 all 38, and one window of
   `x_vid-20230624-142023`; the other 10 music clips abstain (anchor
   unvalidated, or a programme band under 1 kHz).
+
+### One loop judging: ear v4 merged with the judging resolution (2026-10-12)
+
+`wip/ear-hiss` (ear v4) and the judging resolution of `feature/v1.4.0`
+(`scripts/autotune_judging.py`) each added a tie mechanism to the loop; the
+merge keeps one ranking path, and `autotune_judging`'s docstring says which
+layer owns what:
+
+- **Ranking** (`autotune_judging`): each reading's band is
+  `Floors.band(key, tie)`, the larger of its floor and its grid `tie`. A
+  hiss or residual-noise reading's floor is its jitter floor
+  (`--jitter-floors`) and never a benign pair's; every other reading's is
+  the larger of the two. An entry with a grid `tie` (the v4 hiss excesses)
+  keeps the dead zone its grid sets (0): a dead zone raised to the jitter
+  floor beside a band of the tie would forgive the jitter twice. The tie
+  bands its reading with or without a floors file. Before the merge the
+  hiss branch's loop ranked through `tune_restoration.rank_variants`'s tie
+  buckets, which the loop no longer calls; the sweep keeps them.
+- **Constraints** (`autotune_guards.mark_constraints`, any one tape, explicit
+  limits, no floor) are applied in both judging passes and in the offline
+  re-judge (`rejudge_autotune.judge_with`, under every rule). Their families
+  are first-stage families (`autotune_scoring.split_families`): a
+  constraint read only in the learned stage would mark every candidate that
+  never qualified as having lost the reading (the adversarial review of the
+  merge; the v4 constraints are all dsp, so no round changes). H1's
+  `max_move` is the same tie its ranking entry carries, so the two layers
+  agree: inside the tie a tie and allowed, past it the worse way behind and
+  excluded. A jitter floor wider than the tie (none is measured yet) would
+  widen the band alone, leaving H1 the stricter layer. A candidate a
+  constraint excludes counts as held back in the round's label
+  (`plateau_label`), never "below the floor".
+- **Vetoes** stay family-wise (`familywise_vetoes`); v4's DNSMOS BAK and
+  SIGMOS NOISE vetoes are hiss readings, so their limits are their jitter
+  floors (`veto_floors`).
+- **The round's table** shows each reading's band and its source: the grid
+  tie, the jitter floor, the benign pair or none.
+- **The hiss exemption** (`HISS_PREFIXES`) covers every `dsp.hiss_*`
+  reading, the hiss flags (`listener.hiss*`), the residual-noise, gap and
+  pause readings (`dsp.pause_depth_speech_db` among them), DNSMOS BAK and
+  SIGMOS NOISE.
+- **Calibration**: two floors, the sensitivity checks' over every benign
+  case (the speech-target `SAME_PERCEPT` set included) and the gates'
+  without that set; the `dsp.hiss_*` readings read only the `*_linear`
+  cases in both (`calibration_checks.in_scope`). `SCORE_SCHEMA` 8: a
+  schema-7 score from either branch lacks the other's readings (R12's or
+  the hiss readings).
+- **The runner** reads the hiss readings on the pair `audio_io.aligned_pair`
+  returns (the GCC-PHAT aligner's lag and polarity, the least-squares
+  gain), never the level-matched copy the output's routes are read on; the
+  trade keeps both the rate-mismatch skip and the aligner's options. The
+  merge's review re-scored the 29 pinned outputs of
+  `test_tune_restoration_v4.py` on the merged build: `xcorr_head`
+  reproduces the pins exactly; on GCC-PHAT the APL, fill, v4_air and gate
+  outputs read identically, the cathar outputs move with their lag (hiss
+  readings 0.29 dB at most), and every pinned outcome holds, SOTI's alpha
+  2.0 pause tail 0.004 inside its tie (`docs/ear_v4_hiss.md`, "Tape Rows on
+  the Merged Aligner"). The pins keep the head-search readings.
 
 ### Not built yet
 
@@ -2253,12 +2266,13 @@ as before:
   that lost a reading the incumbent has, is marked `constrained` (cell
   `guarded`, a `guard:` line in `log.md`) and cannot win
   (`reward.Constraints.dsp_guard` excludes). `judge` marks them on every
-  candidate in both judgements of the two-stage scoring: they are stage-1
-  readings. A key that does not split as `metric.side.stat` (a registered
-  metric, side output or delta, a stat `runner.FLAT_STATS` holds) stops the
-  loop. `describe_guards` counts them: tata_v4 reads "8 learned vetoes, 1
-  verdict reversals, 16 constraints, audibility tie at a 24 dB masking
-  offset" with the benign-pair floors.
+  candidate in both judgements of the two-stage scoring: their families are
+  scored in the first stage (`autotune_scoring.split_families`). A key that
+  does not split as `metric.side.stat` (a registered metric, side output or
+  delta, a stat `runner.FLAT_STATS` holds) stops the loop.
+  `describe_guards` counts them: tata_v4 reads "8 learned vetoes, 1 verdict
+  reversals, 16 constraints, audibility tie at a 24 dB masking offset" with
+  the benign-pair floors.
 
 Before a v3 round, write the floor report on the shipped APL and cathar
 outputs of the tuning tapes, with every family the grid's vetoes name

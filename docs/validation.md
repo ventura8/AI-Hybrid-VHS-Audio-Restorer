@@ -1621,13 +1621,13 @@ grids have none of them, so their rounds are judged as before, and
   Past the bound the limit does not follow the incumbent: a candidate worse
   than its incumbent and more than `max_move` past the bound cannot win
   either, or a loop could creep `max_move` further every accepted round.
-  They are stage-1 readings, so every candidate is checked in both
-  judgements; `log.md` marks it `guarded` with the tape, the reading and its
-  move. A key that is not `metric.side.stat` with a registered metric stops
-  the loop as a typo. The v4 grids use them for no new audible hiss over
-  the incumbent or the raw tape, no dead air on speech windows, no room
-  band emptied, no hiss gated out of the pauses but kept under speech, no
-  dulling and no musical noise.
+  Their families are scored in the first stage, so every candidate is
+  checked in both judgements; `log.md` marks it `guarded` with the tape,
+  the reading and its move. A key that is not `metric.side.stat` with a
+  registered metric stops the loop as a typo. The v4 grids use them for no
+  new audible hiss over the incumbent or the raw tape, no dead air on
+  speech windows, no room band emptied, no hiss gated out of the pauses but
+  kept under speech, no dulling and no musical noise.
 
 Before a v3 round, write that report on the shipped APL and cathar outputs
 of the tuning tapes, with every family the vetoes name (`tata_v3`: speech

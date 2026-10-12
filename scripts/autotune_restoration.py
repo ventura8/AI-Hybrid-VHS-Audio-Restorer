@@ -36,7 +36,7 @@ user's rule, be very critical of VHS hiss under the programme and in the pauses)
 `constraints:`, the grid's hard guards (`autotune_guards.mark_constraints`): a candidate whose
 reading, on some tape, is worse than the incumbent's by more than `max_move` and beyond `bound`,
 or worse and more than `max_move` past `bound` (the limit does not follow the incumbent round by
-round), cannot win. They are stage-1 dsp readings, so `judge` marks them on every candidate in both
+round), cannot win. They are stage-1 readings, so `judge` marks them on every candidate in both
 passes; they keep "no hiss" from being won by deleting programme or emptying the pauses. Its hiss
 entries carry a grid `tie` (the same-percept jitter report's p95), which is their tie band with or
 without `--jitter-floors` and which their H1 constraints take as `max_move`; they keep the dead
@@ -960,10 +960,11 @@ def score_and_judge(args, scorable, where, ranking, incumbent_id, guards):
     without the learned vetoes, then the other families on the incumbent and the candidates that qualified so far,
     and the final judgement with the vetoes on those contenders. A veto can only take a qualification away, so
     the verdicts are the ones a single pass over every family gives. `guards` (`autotune_guards.Guards`) brings the
-    vetoes and the grid's constraints; the constraints read stage-1 dsp readings, so both judgements apply them."""
+    vetoes and the grid's constraints; the constraints' families are scored in the first stage
+    (`autotune_scoring.split_families`), so both judgements apply them to every candidate."""
     tapes, out_dir = where
     args.floors = getattr(args, "floors", None)
-    ranked, rest = scoring.split_families(args.families, ranking, scoring.gate_names(args.gates))
+    ranked, rest = scoring.split_families(args.families, ranking, scoring.gate_names(args.gates), guards.constraints)
     options = (args.gates, args.language, args.parallel)
     scores = score_round(scorable, tapes, out_dir, ranked, *options)
     first = judge(scores, incumbent_id, ranking, floors=args.floors, constraints=guards.constraints)
