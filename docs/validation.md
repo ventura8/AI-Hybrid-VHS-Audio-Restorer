@@ -938,9 +938,13 @@ places at one declared critical playback level, each file's loud frames at
   shift of the output).
 - `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
   floor over Terhardt's threshold in quiet, read where the source's pause
-  is silent apart from its hiss (a 200 ms block standing 6 dB over the
-  anchor holds programme: soft singing on a choir tape). Room tone under
-  about 2 kHz barely counts; dead air is a guard of its own.
+  is silent apart from its hiss (a 200 ms block standing 3 dB over the
+  anchor holds programme: soft singing on a choir tape stood about 4 dB
+  over it). The hiss weight is half at 3.15 kHz and applied before the
+  band smoothing, so room tone mostly under 2-3 kHz, which the user
+  allows, does not read as hiss (a pink room floor low-passed at 2 kHz,
+  as loud as the tape's own floor at 100-1000 Hz, reads none); dead air is
+  a guard of its own.
 - Both are dB over audibility. Their excess, max(0, margin), is ranked
   one-sided with target 0 by `scripts/tune_grids/tata_v4.yaml` and
   `music_v4.yaml`, the loop's and the sweep's default, with tie bands from
@@ -1339,6 +1343,9 @@ grids have none of them, so their rounds are judged as before, and
   candidate whose reading, on some tape, is worse than the incumbent's by
   more than `max_move` (default 0) and lies beyond `bound` (default: none)
   cannot win, and neither can one that lost a reading the incumbent has.
+  Past the bound the limit does not follow the incumbent: a candidate worse
+  than its incumbent and more than `max_move` past the bound cannot win
+  either, or a loop could creep `max_move` further every accepted round.
   They are stage-1 readings, so every candidate is checked in both
   judgements; `log.md` marks it `guarded` with the tape, the reading and its
   move. A key that is not `metric.side.stat` with a registered metric stops

@@ -6,7 +6,10 @@ singing and in silence and pauses (the user's rule of 2026-10-11). The
 first acceptance run failed; validation round 1 (the same day) traced each
 failure to a defect in the readings or in the transforms that set their tie
 bands and fixed the implementation; validation round 2 failed that build
-on 20 of 33 rows, and the fixes below answer it. The bars were not moved:
+on 20 of 33 rows, and the fixes below answer it; validation round 3 and
+the adversarial review that followed it (first section) found the guards
+could still be won by emptying the pauses and the pause reading charged
+room tone and soft singing, and fixed both. The bars were not moved:
 where a row's own check contradicts the user's verdicts or the signal, the
 row is listed as not passed, with the evidence, under "Rows Whose Check
 Contradicts the Evidence". Nothing here shipped a default: the blind block
@@ -15,6 +18,105 @@ recorded) and the realistic-v2 plus IA confirmation come first. T, S, V and
 G are Tele7abc, SOTI, Vaccin and Gaudeamus5. The readings and the grids are
 described in the output-quality-harness skill, "Critical of hiss (ear v4,
 2026-10-12)".
+
+## Adversarial Review: Defects and Fixes
+
+Validation round 3 (on 6fd0295) and the adversarial review that followed
+it found four holes a loop could use, each against the user's rule that no
+hiss never means dead air and that room tone mostly under about 2-3 kHz
+may stay. Each defect, its cause and the fix with the measurement after it
+(the review's own runs through the runner's pair, anchor and windows; the
+other rows below were re-measured where these changes move them):
+
+- **Gating the pauses won the pause family and passed every guard.** B
+  with the source's true pauses attenuated 20 or 30 dB passed all 16
+  tata_v4 constraints against the shipped APL and won `hiss_pause` (pause
+  tail +11.0 / +2.8 against +30.7). The pump read +8.2 / +11.2, and +11.5
+  at 40 and 50 dB, under its 12 dB bound at every depth: its pause ratio
+  was a ratio of means over the pause frames, and the few STFT frames that
+  straddle a gate's edges carry the ungated audio and set the mean. The
+  pause ratio is now each band's median band power over the pause frames,
+  output over source (`hiss_programme.paused_ratio`); a band whose source
+  pauses sit under the 16-bit dither plus 10 dB is left out, so a muted
+  Hi-Fi break reads no pump at all. The output is not held at the dither:
+  T's pause hiss stands only 28-31 dB over it per band and its dead APL
+  pauses 3-17 dB under it, and a dither floor read them at +5.9 instead of
+  +19.4. T's gates of 10 / 20 / 30 / 40 / 50 dB now read +2.1 / +11.8 /
+  +21.8 / +31.8 / +41.8, S's 10 / 20 / 30 dB +1.8 / +11.6 / +21.6 and G's
+  -4.6 / +5.0 / +15.0; V's programme windows hold no 0.5 s of pause, so its
+  pump reads None and the other tapes carry the guard. The bound stays
+  12.0 on new evidence: midway between the round-one renders the user did
+  not call dead (at most +6.49: T's beta 0.005; the cleared cathar075 alpha
+  2 +2.93 and alpha 2 +4.88; known cathar075 +6.29) and the dead APL
+  (+18.09..+19.40; roformer +95), 12.29, rounded down. A 30 dB gate now
+  trips the pump and nothing else on T; a 20 dB gate keeps audible hiss in
+  the pauses (T pause tail +10.1) and passes, left to the listening
+  session. The synthetic gated cheat reads +103.9 (11.5 before), the
+  calibration's `dead_pauses` +10.0 / +25.0 / +40.0 at 30 / 45 / 60 dB.
+- **A bounded guard could be crept past.** A constraint tripped only when
+  a candidate was worse than its incumbent by more than `max_move` and past
+  the bound, and the incumbent moves every accepted round: the pump could
+  go 11 -> 14 -> 17 against its bound, dulling and islands (no bound) could
+  grow by `max_move` every round. `reward.Constraint` now also excludes a
+  candidate worse than its incumbent and more than `max_move` past the
+  bound, whatever the incumbent read; the dulling guard takes a bound of
+  -6.0 (every judged file the user did not call dull reads -5.60 or more,
+  and with `max_move` the floor holds at -7.0, over T single4s' -7.04,
+  "underwater again") and the programme islands 2.0 (the largest judged
+  reading 1.87 plus one 0.1 unit, rounded up), in tata_v4 and music_v4.
+- **Room tone read as pause hiss.** The hiss weight was 0.5 at 2.5 kHz, a
+  quarter octave per e-fold, applied after the five-band smoothing, which
+  carried a room floor under 2 kHz into the 2.4-2.7 kHz bands at their full
+  weight: a hiss-free pink room floor low-passed at 2 kHz, at the source's
+  own 100-1000 Hz pause level, read +9.7 dB median on the ten speech
+  fixtures and was flagged on 9 (on 6 at 6 dB down). The weight is now
+  half at 3.15 kHz, 0.15 octave per e-fold, applied before the smoothing,
+  and the margin starts at 2 kHz (`hiss_pause.weighted`): that floor reads
+  -4.2 (none flagged), -10.2 at 6 dB down; low-passed at 2.5 kHz and 12 dB
+  down -6.1 (none). A floor reaching past 3 kHz is still counted (low-passed
+  at 3 kHz, at the source's level +12.6, 9 of 10). Tape hiss set the margin
+  at 3.5-3.9 kHz on every fixture: the source reads 0.5 dB lower (39.98
+  against 40.46) and the -40 dB oracle -0.00 (+0.48 before). On the tapes
+  the speech pause readings fall 0.7-2.7 dB and keep their order (v2 finals
+  T 29.86 / 27.32, S 23.35 / 20.22, V 22.06 / 20.63, APL / cathar).
+- **Soft singing still set the pause floor.** A 200 ms block counted as
+  silent unless its band stood 6 dB over the anchor; Gaudeamus5's soft
+  singing stands about 4 dB over it, so most singing blocks passed: the APL
+  keeper ladder read 37.53 / 34.10 / 32.62 / 32.62 (fill 8 / 12 / 18 /
+  keeper off) and a render that took the soft singing out would have won
+  the family on G. The test is now 3 dB (Tele7abc's pause blocks stand
+  +0.2..+1.2 dB over its anchor per window, SOTI -1.0..+2.0, Vaccin
+  -1.2..+2.9): the ladder reads 34.66 / 31.21 / 25.09 / 20.50 (cathar
+  34.00 / 31.01 / 26.18 / 24.40). G's windows of soft singing that every
+  render keeps still read the same for every fill, but no longer set the
+  tail. The corpus fixture whose perfect output read +24.25 in its pauses
+  (es mid00, soft speech in R4's mask) reads +15.31: that noise is not
+  stationary (below).
+
+Re-measured with the fixed build:
+
+- **The jitter report** (the eight pairs, two repeats, DSP repeat jitter
+  exactly 0): gain 0; delay p95 at most 0.005; soxr 0.0001; requantisation
+  0.059 (all-band margin tail). Fresh draws a / b / c: programme excess
+  median 0.17 / 0.29 / 0.18 and all-band 0.15 / 0.19 / 0.24 (as round 2),
+  pause excess tail 0.21 / 0.32 / 0.18, median 0.20 / 0.33 / 0.13. The
+  pause ties become 0.319 -> **0.35** (tail, was 0.50) and 0.331 -> **0.35**
+  (median, was 0.25), H1's pause `max_move` 0.35; the programme ties (0.30,
+  0.25) and H2 (0.35 / 0.35; music 0.55) stay.
+- **Fixtures**: fresh pause margin p95 0.166 (T's shape), 0.125 (hiss),
+  0.722 (corpus), against 0.212 / 0.177 / 0.762; every perfect output of
+  T's and the hiss shape reads its pauses at or under 0; `gated_m0` pump
+  +30.2 on all 43; the programme rows read as round 2.
+- **Calibration** (en, fr, dsp): 133 of 196 checks pass, every status as
+  in round 3, every hiss check passes; the benign floors of the pause
+  margin 0.077 (0.080) and the pump 0.077 (0.106), the non-hiss floors
+  unchanged.
+- **Tapes**: the rows below carry the fixed build's numbers.
+
+Not fixed, reported: the corpus noise shape and the IA programme coverage
+(below); a 20 dB pause gate passes the pump (above); and on T the APL fill
+8 render reads its pause tail 0.22 dB over the raw tape's, inside the 0.35
+tie, while H2's per-window delta (+1.03) excludes it.
 
 ## Validation Round 2: Defects and Fixes
 
@@ -191,14 +293,18 @@ pairs, on every margin and excess key):
 - Fresh realisation (`fresh_floor_a` / `_b` / `_c`): programme excess median
   0.17 / 0.29 / 0.18 (limit 0.65), all-band 0.15 / 0.19 / 0.24 (0.45), pause
   excess tail 0.49 / 0.24 / 0.28 (0.55), median 0.12 / 0.20 / 0.23 (0.35).
-  **Pass.**
+  **Pass.** The adversarial review's re-run on the fixed pause reading:
+  pause tail 0.21 / 0.32 / 0.18, median 0.20 / 0.33 / 0.13, the programme
+  keys as here.
 - The ties: each grid `tie` is the report's `tie_floor` (the widest
   transform's p95) rounded up to 0.05: programme excess median 0.294 ->
-  **0.30**, all-band 0.239 -> **0.25**, pause excess tail 0.494 -> **0.50**,
-  median 0.232 -> **0.25**. H1's `max_move` takes the same values; H2's
-  bound takes its delta key's own tie floor: programme margin delta median
-  0.327 -> **0.35**, pause margin delta tail 0.341 -> **0.35**, music's
-  all-band delta 0.506 -> **0.55**. **Pass.**
+  **0.30**, all-band 0.239 -> **0.25**, pause excess tail 0.494 -> 0.50,
+  median 0.232 -> 0.25 (the review's re-run: 0.319 -> **0.35** and 0.331
+  -> **0.35**, the grids' values now). H1's `max_move` takes the same
+  values; H2's bound takes its delta key's own tie floor: programme margin
+  delta median 0.327 -> **0.35**, pause margin delta tail 0.341 -> **0.35**
+  (0.319 in the re-run), music's all-band delta 0.506 -> **0.55**.
+  **Pass.**
 
 ## Fixture Rows (`check_hiss_fixtures`)
 
@@ -210,8 +316,9 @@ of 40 on the corpus shape.
   p95 at most 0.014. **Pass.**
 - Fresh realisation: programme margin p95 0.238 (T's shape), 0.308 (hiss),
   0.666 (corpus); all-band 0.267, 0.315, 0.908; pause margin 0.212, 0.177,
-  0.762. **Pass on T's and the hiss shape**; the corpus shape is not
-  stationary noise (below).
+  0.762 (0.166, 0.125, 0.722 on the review's fixed pause reading). **Pass
+  on T's and the hiss shape**; the corpus shape is not stationary noise
+  (below).
 - Oracle ladder monotone (identity, -6, -12, -20, -30 dB, prog_only, +0.05
   dB slack): 23 of 23 (T's shape), 20 of 20 (hiss), 9 of 12 (corpus; the
   other three validated music fixtures read None). **Pass on T's and the
@@ -230,8 +337,9 @@ of 40 on the corpus shape.
 - hf_left: |median delta| 0.101 (T's shape), 0.104 (hiss), 0.078 (corpus).
   **Pass.**
 - gated_m0: margin within +0.5 dB of identity on 23 of 23 and 20 of 20, pump
-  +20.4..+25.4 and +20.2..+25.1. Corpus: 9 of 12, no pump read. **Pass on
-  T's and the hiss shape.**
+  +20.4..+25.4 and +20.2..+25.1 (the review's medians: +30.2 on all 43, the
+  gate's 30 dB). Corpus: 9 of 12, no pump read. **Pass on T's and the hiss
+  shape.**
 - islands_15: island kurtosis +0.63..+0.73 (T's shape), +0.66..+0.72
   (hiss); corpus median +0.385, 4 of 12 at 0.4 or more. **Pass on T's and
   the hiss shape.**
@@ -259,7 +367,10 @@ of 40 on the corpus shape.
   -17.4 / -47.5 / -53.9, margin below).
 - The benign floors of the hiss readings: programme margin 0.052, all-band
   0.101, pause margin 0.080 (0.337 in round 2), kept HF 0.095, pump 0.106,
-  island kurtosis 0.014, room delta 0.034.
+  island kurtosis 0.014, room delta 0.034. The review's fixed build: the
+  same 133 of 196 with every status unchanged, every hiss check passing
+  (`dead_pauses` pump +10.0 / +25.0 / +40.0), pause margin 0.077 and pump
+  0.077, every other floor unchanged.
 
 ## Tape Rows
 
@@ -278,13 +389,18 @@ of 40 on the corpus shape.
   source-minus-render gap: T 9.36 (27 renders, cathar fill 8), S 9.94 (20),
   V 6.93 (20, APL fill 8), G 9.26 (21). Pause margin tail: T 0.26, S 3.49,
   V 2.66, G 1.75 (all APL fill 8). **Pass** (round 2: T's fill 8 read 0.44
-  over the raw tape through the singing-free pause floor estimate).
+  over the raw tape through the singing-free pause floor estimate). On the
+  review's fixed pause reading: S 3.22, V 3.67, G 1.88, and T's APL fill 8
+  reads 0.22 over the raw tape (inside the 0.35 tie; H2's per-window
+  delta, +1.03, excludes it): **not passed on T's fill 8**.
 - **Session 0** (T raw against the shipped APL, cleaner 3 of 3 blind):
   programme 25.70 against 8.10 (17.6 dB, over 5); pause tail 33.55 against
-  30.67 (2.9, over 1.5). **Pass.**
+  30.67 (2.9, over 1.5; the fixed reading 32.31 against 29.85, 2.5).
+  **Pass.**
 - **"cathar alpha 2 has hiss"** (T, round one, not blind): pause tail +1.34
   (alpha 2.0 on 0.7.3) and +0.97 (beta 0.005) against -2.84 (0.7.5 alpha
-  2.0), -4.13 (alpha 2.25) and -5.26 (baseline): `listener.hiss_pause` fires
+  2.0), -4.13 (alpha 2.25) and -5.26 (baseline; -6.08 on the fixed
+  reading, the others within 0.01): `listener.hiss_pause` fires
   on both renders the user flagged and on none of the cleared ones, and both
   trip H1 against the baseline. Programme margin -3.07 / -3.51 against
   -6.16 / -7.50 / -9.79: hissier, but under the threshold, so
@@ -294,36 +410,46 @@ of 40 on the corpus shape.
   see below.
 - **"light hiss (single4s, T)"** (round one, not blind): programme -9.23
   against stitched's -9.79 (+0.56, not +2 and not over 0), pause tail
-  -4.29 against -5.26 (+0.97, hissier, past the 0.50 tie). Single4s on S
-  and V reads -12.26 and -5.20. **Not passed**; see below.
+  -4.29 against -5.26 (+0.97, hissier, past the 0.50 tie; fixed reading
+  -5.50 against -6.08, +0.58, past the 0.35 tie). Single4s on S and V reads
+  -12.26 and -5.20. **Not passed**; see below.
 - **"hiss on every v2 plateau"**: the pause flag fires on all 12 files
-  (tails 21.8-34.1); the programme flag on 10 of 12 (T, S, V: +0.22..+14.41;
-  G's cathar final +11.84; G's APL final -1.70 and B -1.93 under the
-  singing). **Not passed**; see below.
+  (tails 21.8-34.1; 20.2-31.2 on the fixed reading); the programme flag on
+  10 of 12 (T, S, V: +0.22..+14.41; G's cathar final +11.84; G's APL final
+  -1.70 and B -1.93 under the singing). **Not passed**; see below.
 - **Dead air excluded** (T round one, tata_v4, incumbent `cathar__baseline`):
-  every APL render trips pause depth (36.9-40.3) and the pump (+14.9..+95.8);
-  the roformer renders also trip the room delta (-118, -119);
-  `cathar075__alpha_2_0` and `cathar__alpha_2_25` trip nothing. **Pass.**
+  every APL render trips pause depth (36.9-40.3) and the pump (+14.9..+95.8;
+  +18.1..+95.9 with the medians); the roformer renders also trip the room
+  delta (-118, -119); `cathar075__alpha_2_0` and `cathar__alpha_2_25` trip
+  nothing. **Pass.**
 - **Less removal not refused** (alpha 2.0 against the baseline): no
   constraint trips on S or V; S's pause tail excess rises 0.33 (margin
-  -0.40 against -4.50), V's 0.13, programme excess 0 on both. **Pass.**
+  -0.40 against -4.50; -0.39 against -6.01 on the fixed reading, still
+  0.33, inside the 0.35 tie), V's 0.13, programme excess 0 on both.
+  **Pass.**
 - **Underwater renders trip the dulling guard** (known excerpts, against
   stitched): the de-esser bug reads kept HF -35.3 / -35.7 / -24.4 against
   -3.84 / -5.51 / -2.40 and trips on every tape: **pass**. Single4s reads
   -7.04 / -5.60 / -4.47 and trips on T and V, not on S (0.09 under
-  stitched).
+  stitched). T's single4s also lies past the dulling bound (-6.0) the
+  review added.
 - **Pause fill ladder** (autotune_v6 APL, incumbent fill 12): pause margin
   tail T 33.30 / 30.68 / 24.76 / 3.68 (fill 8 / 12 / 18 / keeper off), S
   29.10 / 25.03 / 18.67 / 7.05, V 28.77 / 24.78 / 18.81 / 12.58, G 37.53 /
   34.10 / 32.62 / 32.62: monotone, 0.85-1.04 dB per dB on the speech tapes
-  (G 0.49, its singing windows abstain). On T fill 8 trips both H1 and the
-  pause H2, fill 18 trips nothing and wins the hiss_pause family, keeper
-  off trips the room delta (-67.5), the pump and the modulation. **Pass.**
+  (G 0.49: its soft singing set the floor). On the review's fixed reading:
+  T 32.43 / 29.85 / 23.74 / -2.37, S 27.42 / 23.33 / 17.23 / -1.69, V
+  26.10 / 22.04 / 15.82 / 4.97, G 34.66 / 31.21 / 25.09 / 20.50, 0.87-1.03
+  dB per dB on every tape. On T fill 8 trips both H1 and the pause H2,
+  fill 18 trips nothing and wins the hiss_pause family, keeper off trips
+  the room delta (-67.5), the pump and the modulation. **Pass.**
 - **No win by deleting programme or by a pass-through** (T, synthetic from
   B, incumbent the shipped APL): the 4 kHz low-pass trips kept HF (-35.0);
   the raw tape trips H1 (programme excess +25.7 against +8.1, pause tail
   33.6 against 30.7); the gated pauses trip the room delta (-119.6) and the
-  pause texture guards (its pump, 11.5, sits under the 12 bound). **Pass.**
+  pause texture guards (its pump, 11.5, sat under the 12 bound; +103.9 with
+  the medians). **Pass.** Gating only the true pauses 20 or 30 dB passed
+  every guard and won the pause family until the review (first section).
 
 ## Loop Rows
 
@@ -364,7 +490,13 @@ orders Gaudeamus1's `final2_cathar` (+1.26) under `final2_apl` (+8.44).
 | x_y2matecom-opening-and-closin | pauses | 0 of 2 | 39.08 / 37.02 / 40.84 |
 
 On the last clip cathar's pauses read 1.8 dB over the source's: H2 would
-exclude it.
+exclude it. The adversarial review's fixed pause reading (src / APL /
+cathar, same order): Gaudeamus1 36.84 / 36.58 / 35.21; the three `m_vid`
+clips 8.45 / -2.69 / -2.06, 12.01 / 3.52 / 12.01 and 9.10 / -2.07 / 2.35;
+captain-pu 5.07 / 0.62 / -4.75; `x_vid-20230606` 22.84 / 8.73 / 17.42,
+`x_vid-20230624` 15.81 / 5.71 / 16.07 (cathar 0.26 over the source);
+videoplayback-2026 5.73 / -8.33 / -2.24; y2mate 38.38 / 36.35 / 39.90
+(cathar 1.52 over).
 
 ## IA Defect Hunt
 
@@ -380,7 +512,10 @@ exclude it.
   lion-king commercials -1.42, pingu -0.87) and 14 for APL (doctor-who
   -4.59, wombles -3.59, frank-leaves -3.08 and eleven more). **Not passed**
   against "every clip"; the renders' pauses are physically hissier there
-  (below).
+  (below). On the review's fixed pause reading: median +5.17 (cathar) and
+  +4.40 (APL), under -0.55 on the same 4 cathar clips (doctor-who -5.21)
+  and on 14 APL clips (doctor-who -4.78, impaktita -3.24, frank-leaves
+  -3.09); the programme rows read as above.
 
 ## Cost
 
@@ -472,10 +607,13 @@ the check, not the reading, is wrong:
 
 Besides the rows above: two perfect fixture outputs over 0 on music
 programmes hidden under the hiss up to 5 kHz (T's shape +0.004, the hiss
-shape +4.40; 41 of 43 pass). Everything else passed: identity, every
-same-percept row and the ties, Session 0, raw-hissier, the dead-air,
-less-removal, cheat, fill and underwater exclusions, music coverage, every
-calibration check and the cost.
+shape +4.40; 41 of 43 pass). On the adversarial review's fixed pause
+reading, T's APL fill 8 reads its pause tail 0.22 dB over the raw tape
+(inside the tie; H2 excludes it), and a 20 dB pause gate passes the pump
+(left to the listening session). Everything else passed: identity, every
+same-percept row and the ties, Session 0, the dead-air, less-removal,
+cheat, fill and underwater exclusions, music coverage, every calibration
+check and the cost.
 
 ## Quality Gate and Docs
 
@@ -491,10 +629,14 @@ Reported, not built (no restoration code changed in this item):
 - Pause hiss is pinned by `modules/pause_floor.py`: it refills the pauses
   with tape hiss at `pause_floor_fill_db` 12, so no denoiser knob moves the
   pause reading and the pause family plateaus at once. Fill 18 is allowed
-  and lowers T's pause tail 5.9 dB; keeper off is excluded (G2); fill 8
-  puts T's pauses within 0.26 dB of the raw tape. The follow-up is a
-  hiss-free shaped fill (room tone kept, 3 dB under the critical threshold
-  above about 1-1.2 kHz) behind a switch.
+  and lowers T's pause tail 6.1 dB; keeper off is excluded (G2); fill 8
+  puts T's pauses 0.22 dB over the raw tape. The follow-up is a hiss-free
+  shaped fill (room tone kept under about 2-3 kHz, which the fixed weight
+  no longer charges) behind a switch. While the hiss under the programme
+  stays audible, such a fill reads as a pause gate: the pump compares the
+  pauses' removal from 1 kHz up with the programme's, so the fill has to
+  come with more removal under the programme, or the pump (bound 12)
+  excludes it.
 - Under the programme the speech v2 plateaus read +0.2..+14.4 dB over the
   masked threshold at 75 dB (cathar over APL on T and S, APL over cathar
   on V); G's cathar final reads +11.8 under the singing, its APL final
@@ -506,6 +648,11 @@ Reported, not built (no restoration code changed in this item):
   cathar clips the programme falls against the floor: a refill capped at the
   source's pause floor, and a loudness chain that keeps the programme-to-
   floor ratio, are the first candidates to test.
-- Room tone low-passed at 3 kHz at the source's own low-band pause level
-  reads +8.5 dB of pause hiss (+0.9 at -12 dB); low-passed at 2 kHz at most
-  +0.14: the hiss weight w(f) counts the 2.5-3.5 kHz part of a room floor.
+- Room tone: with the fixed weight a pink room floor low-passed at 2 kHz,
+  as loud as the tape's own floor at 100-1000 Hz, reads -4.2 dB of pause
+  hiss (median, ten speech fixtures, none flagged); low-passed at 3 kHz it
+  reads +12.6 (+0.65 at -12 dB): a floor that reaches past 3 kHz is
+  counted, the user's "mostly below about 2-3 kHz".
+- A 20 dB expander on the true pauses keeps audible hiss there and passes
+  the pump (T +11.8, S +11.6, G +5.0); it wins the pause family. Whether it
+  breathes audibly is for the listening session; 30 dB is excluded.

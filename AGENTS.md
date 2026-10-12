@@ -301,17 +301,26 @@ user set, with their reasons:
   each file's loud frames at 75 dB SPL. The flags `listener.hiss_programme`
   and `listener.hiss_pause` fire at 0 dB.
 - "No hiss" never means dead air or a damaged programme. The user rejected
-  silent pauses (round one) and an underwater 's'. A quiet floor below about
-  1-2 kHz (room tone) may stay. Hard guards (`constraints:` in the v4 grids)
-  keep a loop from winning by deleting programme:
+  silent pauses (round one) and an underwater 's'. A quiet floor mostly
+  below about 2-3 kHz (room tone) may stay: the pause reading weighs a band
+  by w(f), half at 3.15 kHz, applied before its band smoothing, so a
+  hiss-free room floor low-passed at 2 kHz reads no audible hiss even as
+  loud as the tape's own floor. Hard guards (`constraints:` in the v4
+  grids) keep a loop from winning by deleting programme:
   - no new audible hiss over the incumbent or the raw tape;
   - pause depth on speech windows at most 35 dB, and the room band never
     emptied;
   - no hiss gated out of the pauses but kept under speech
-    (`dsp.hiss_pump_db`);
+    (`dsp.hiss_pump_db`, medians over the pause frames, bound midway
+    between the cleared and the dead round-one renders: an expander that
+    empties the true pauses 20 dB is excluded);
   - no musical noise;
   - no dulling (`dsp.hiss_prog_kept_hf_db`, R1, R2);
   - the learned vetoes, where DNSMOS BAK and SIGMOS NOISE only veto.
+- A bounded guard does not follow the incumbent past its bound: a candidate
+  worse than its incumbent and more than `max_move` past the bound is
+  excluded, or a loop could creep `max_move` further every accepted round
+  (the adversarial review of ear v4, 2026-10-12).
 - Hiss readings take their tie bands from same-percept transforms: a fresh
   realisation of the same noise, a 0.37-sample delay, +-0.1 dB, a soxr round
   trip and 16-bit requantisation. Each tie is the widest transform's p95
@@ -319,8 +328,10 @@ user set, with their reasons:
   move a hiss reading diluted the fresh draws' scatter, and H1 then refused
   a same-percept redraw (validation round 2). They never take them from
   Session 0's benign-pair floors (`reward.tie_floors` refuses those). The
-  pauses are read where the source is silent apart from its hiss: R4's
-  quiet frames on a choir tape are soft singing. The two hiss
+  pauses are read where the source is silent apart from its hiss (blocks
+  within 3 dB of its stationary hiss): R4's quiet frames on a choir tape
+  are soft singing, and a render that took the singing out would otherwise
+  win the pause family. The two hiss
   flags' thresholds are the user's rule, which no calibration and no gates
   file moves (`gates.USER_RULE_FIXED`). Only a blind session at a recorded
   device and volume moves the 75 dB SPL level.
