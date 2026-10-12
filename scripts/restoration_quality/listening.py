@@ -103,7 +103,7 @@ def render_from_files(picks, source_wav, outputs, out_dir, prefix=""):
     aligned = {}
     for label, path in outputs.items():
         output, _rate = audio_io.load_audio(audio_io.extract_wav(path, out_dir / "cache"))
-        aligned[label] = audio_io.align_pair(source, audio_io.to_mono(output))
+        aligned[label] = audio_io.align_pair(source, audio_io.to_mono(output), rate)
     lines = []
     for rank, pick in enumerate(picks, start=1):
         stem = f"{prefix}{pick.metric.replace('.', '_')}_{rank}"

@@ -68,14 +68,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
+from scripts import pair_alignment
 from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
 from scripts.run_hardware_validation import _make_video_fixture
 
 # The pipeline time-aligns its output against the source, so a restored track can sit a
 # few hundred samples off the reference; measured lags run 209-219 samples. Sample-aligned
-# metrics collapse under even a small shift, so the lag is removed before scoring.
-MAX_ALIGN_LAG = 4096
+# metrics collapse under even a small shift, so the lag is removed before scoring
+# (`scripts/pair_alignment.py`: the loudest spans voting, the old head search selectable).
+MAX_ALIGN_LAG = pair_alignment.MAX_LAG
 STFT_FRAME = 1024
 
 # Score broadband metrics only where the reference carries information. The clean
@@ -151,18 +153,15 @@ def _read_mono(path):
     return _to_mono(samples), sample_rate
 
 
-def _align(reference, estimate):
-    """Removes the residual time offset the sync stage can leave behind."""
-    span = min(len(reference), len(estimate), 10 * STFT_FRAME * 8)
-    correlation = scipy.signal.correlate(estimate[:span], reference[:span], mode="full")
-    lag = int(np.argmax(np.abs(correlation))) - (span - 1)
-    lag = max(-MAX_ALIGN_LAG, min(MAX_ALIGN_LAG, lag))
-    if lag > 0:
-        estimate = estimate[lag:]
-    elif lag < 0:
-        reference = reference[-lag:]
-    length = min(len(reference), len(estimate))
-    return reference[:length], estimate[:length], lag
+def _align(reference, estimate, rate=pair_alignment.NATIVE_RATE, method=None, prior_lag=None):
+    """Removes the residual time offset the sync stage can leave behind; returns both signals and the lag applied.
+
+    `method` names the aligner (`pair_alignment.ALIGN_METHODS`; None: `AI_RESTORE_ALIGN_METHOD`
+    or the default). When the default aligner abstains the pair is trimmed at `prior_lag`
+    (0 without one); `pair_alignment.align` returns the full record.
+    """
+    reference, estimate, alignment = pair_alignment.align(reference, estimate, rate, method, prior_lag)
+    return reference, estimate, alignment.applied_lag
 
 
 def _match_gain(reference, estimate):
@@ -268,7 +267,7 @@ def score_pair(clean_path, candidate_path, variant=None, band_hz=SCORE_BAND_HZ):
     if candidate_rate != sample_rate:
         print(f"    {Path(candidate_path).name}: {candidate_rate} Hz against the reference's {sample_rate}; not scored")
         return None
-    reference, estimate, lag = _align(reference, estimate)
+    reference, estimate, alignment = pair_alignment.align(reference, estimate, sample_rate)
     if len(reference) < STFT_FRAME:
         return None
     estimate = _match_gain(reference, estimate)
@@ -284,7 +283,8 @@ def score_pair(clean_path, candidate_path, variant=None, band_hz=SCORE_BAND_HZ):
         "hum_excess_db": None if hum_excess is None else round(hum_excess, 3),
         "residual_noise_db": round(_residual_noise_db(limited_reference, limited_estimate), 3),
         "si_sdr_db": round(_si_sdr_db(limited_reference, limited_estimate), 3),
-        "align_lag_samples": lag,
+        "align_lag_samples": alignment.applied_lag,
+        "alignment": alignment.as_dict(),
     }
 
 

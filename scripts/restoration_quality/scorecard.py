@@ -168,6 +168,10 @@ METRICS = {
         MetricSpec("file.lufs", "file", NONE, "LUFS"),
         MetricSpec("file.lra", "file", NONE, "LU"),
         MetricSpec("file.noise_removed_db", "file", HIGHER, "dB"),
+        # The same drop as the median of the quiet frames' own drops (measure_tradeoff.py): on
+        # SOTI the hottest 1 % of APL's quiet frames hold 34 % of their energy and own the
+        # pooled reading (-5.17 dB pooled, +3.00 median).
+        MetricSpec("file.noise_removed_median_db", "file", HIGHER, "dB"),
         MetricSpec("file.programme_deviation_db", "file", LOWER, "dB"),
         # The holes over the whole aligned pair (runner.dropout_entry): the window median of
         # `dsp.dropouts` reads 0 wherever a long file holds a few (calibration v3).

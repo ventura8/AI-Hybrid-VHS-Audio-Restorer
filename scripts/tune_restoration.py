@@ -519,18 +519,27 @@ def score_variant(variant_dir, engine_spec, manifest, excerpts_dir, families, re
 def merge_families(stored, fresh, families, gates):
     """`stored` with the re-scored `families` replaced from `fresh` (rows, aggregates, file metrics), verdicts re-read.
 
-    A detector fix is then a re-score of one family, not of the four; the windows are the
-    same because source, output and window settings are.
+    A detector fix is then a re-score of one family, not of the four. The kept families'
+    readings stand on the fresh windows only when source, output and window settings are the
+    same and the pair is trimmed at the same lag (`lag_samples`): a pair the aligner now trims
+    elsewhere (a re-score after the 2026-10-11 aligner change, `scripts/pair_alignment.py`)
+    or that holds another number of windows is taken whole from `fresh`, so no document mixes
+    readings of two timelines under one `alignment` record.
     """
     prefixes = tuple(f"{family}." for family in families)
     for label, variant in fresh["variants"].items():
         old = stored["variants"].get(label)
-        if old is None or len(old["rows"]) != len(variant["rows"]):
-            stored["variants"][label] = variant
-        else:
+        if same_timeline(old, variant):
             _merge_variant(old, variant, prefixes, gates)
+        else:
+            stored["variants"][label] = variant
     stored["metrics"].update(fresh["metrics"])
     return stored
+
+
+def same_timeline(old, fresh):
+    """Whether a stored variant's rows sit on the fresh variant's windows: as many rows, trimmed at the same lag."""
+    return old is not None and len(old["rows"]) == len(fresh["rows"]) and old.get("lag_samples") == fresh.get("lag_samples")
 
 
 def _merge_variant(old, fresh, prefixes, gates):
@@ -542,6 +551,7 @@ def _merge_variant(old, fresh, prefixes, gates):
             old_row[side].update(keep(new_row[side]))
     old["aggregate"].update(keep(fresh["aggregate"]))
     old["file"], old["families"] = fresh["file"], {**old["families"], **fresh["families"]}
+    old["alignment"] = fresh.get("alignment")
     old["verdicts"] = gates_mod.evaluate_gates(old["aggregate"], gates, old.get("speaker_floor"))
     old["hard_failures"] = gates_mod.hard_failures(old["verdicts"])
     old["listener_flags"] = gates_mod.flag_failures(old["verdicts"])

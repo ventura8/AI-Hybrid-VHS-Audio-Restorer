@@ -83,6 +83,12 @@ Ear v3 wiring (the dsp family):
 - R7 and the sync (`file_metrics.file_entries`) run once per pair on the raw, un-matched
   mono pair; the pause VAD that ran (`pause_metrics.resolved_vad_name`) goes into
   `card.meta["pause_vad"]`.
+- The alignment (`audio_io.aligned_pair`, `scripts/pair_alignment.py`) is recorded per
+  variant as `alignment` (method, lag or None when the aligner abstained, the lag the pair
+  was trimmed at, polarity, spans read and agreeing); `lag_samples` stays the applied lag.
+  `align_method` selects the aligner (`xcorr_head` reproduces the scores stored before
+  2026-10-11), `align_prior_s` an expected lag (the mux's 4.97 ms); the trade metric
+  re-reads the files with the same choice.
 """
 
 import gc
@@ -94,7 +100,7 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts import measure_hum
+from scripts import measure_hum, pair_alignment
 from scripts.restoration_quality import (
     audio_io,
     balance_metrics,
@@ -110,6 +116,8 @@ from scripts.restoration_quality.gates import GATES, evaluate_gates, flag_failur
 from scripts.restoration_quality.scorecard import METRICS, ScoreCard, WindowRow, aggregate
 
 ALL_FAMILIES = ("dsp", "stems", "speech", "mos")
+# The aligners a scoring may name (`scripts/pair_alignment.py`); the first is the default.
+ALIGN_METHODS = pair_alignment.ALIGN_METHODS
 SCHEMA = 1
 MOS_TARGET_LUFS = -23.0
 PEAK_GUARD = 0.99
@@ -161,7 +169,8 @@ class ModelRegistry:
 class Pair:
     """The aligned, gain-matched source/output pair and its windows, shared by every family."""
 
-    def __init__(self, source_wav, output_wav, cache_dir, seconds, hop):
+    def __init__(self, source_wav, output_wav, cache_dir, seconds, hop, align=(None, None)):
+        """`align` is `(method, prior_s)` for `audio_io.aligned_pair` (None, None: the default aligner, no prior)."""
         self.cache_dir = Path(cache_dir)
         # Path-based consumers (the stem separator, the trade metric) must see DC-free audio too.
         self.source_wav = audio_io.dc_free_copy(source_wav, self.cache_dir)
@@ -171,7 +180,10 @@ class Pair:
         if output_rate != self.rate:
             output_audio = audio_io._resample(audio_io.to_mono(output_audio), output_rate, self.rate)[:, None]
         self.raw_source, self.raw_output = audio_io.to_mono(source_audio), audio_io.to_mono(output_audio)
-        self.source, self.output, self.lag = audio_io.align_pair(self.raw_source, self.raw_output)
+        self.align_method, self.align_prior_s = align
+        aligned = audio_io.aligned_pair(self.raw_source, self.raw_output, self.rate, self.align_method, self.align_prior_s)
+        self.source, self.output, self.alignment = aligned
+        self.lag = self.alignment.applied_lag
         self.windows = audio_io.windows(len(self.source), self.rate, seconds, hop)
         self.routes = [audio_io.route_window(self.source[w.slice_of(self.rate)], self.rate) for w in self.windows]
         # The output is routed too: a window with programme whose output reads as silence is dead air.
@@ -461,13 +473,20 @@ def _dsp_family(pair, card, _registry):
     out_lufs, out_lra = dsp_metrics.loudness(pair.raw_output, pair.rate)
     card.file["file.lufs"] = {"source": src_lufs, "output": out_lufs, "delta": out_lufs - src_lufs}
     card.file["file.lra"] = {"source": src_lra, "output": out_lra, "delta": out_lra - src_lra}
-    trade = dsp_metrics.trade(pair.source_wav, pair.output_wav) or {}
+    trade = dsp_metrics.trade(pair.source_wav, pair.output_wav, *align_options(pair)) or {}
     for key, value in trade.items():
         card.file[f"file.{key}"] = {"source": 0.0, "output": value, "delta": value}
     card.file.update(file_metrics.file_entries(pair.raw_source, pair.raw_output, pair.rate))
     card.file.update(dropout_entry(pair))
     card.file.update(profile_entries(profile))
     card.meta.update({"source_profile": profile, "pause_vad": pause_metrics.resolved_vad_name()})
+
+
+def align_options(pair):
+    """`(method, prior_s)` the pair was aligned with, so the trade metric re-reads the files the same way."""
+    alignment = getattr(pair, "alignment", None)
+    method = alignment.method if alignment is not None else None
+    return method, getattr(pair, "align_prior_s", None)
 
 
 def dropout_entry(pair):
@@ -553,13 +572,19 @@ def score_pair(
     cache_dir="experiments/quality_cache",
     gates=GATES,
     language="ro",
+    align_method=None,
+    align_prior_s=None,
 ):
-    """Scores `output_wav` against `source_wav`; returns a ScoreCard with rows, aggregates and verdicts."""
+    """Scores `output_wav` against `source_wav`; returns a ScoreCard with rows, aggregates and verdicts.
+
+    `align_method` and `align_prior_s` reach `audio_io.aligned_pair` (module docstring).
+    """
     registry = registry or ModelRegistry()
     registry.language = language
-    pair = Pair(source_wav, output_wav, cache_dir, windows, hop)
+    pair = Pair(source_wav, output_wav, cache_dir, windows, hop, (align_method, align_prior_s))
     card = ScoreCard(rows=_rows_for(pair))
     card.lag = pair.lag
+    card.alignment = pair.alignment
     for name in (family for family in ALL_FAMILIES if family in families):
         _run_family(name, pair, card, registry)
     card.aggregate = aggregate(card.rows, METRICS)
@@ -574,6 +599,7 @@ def card_to_dict(card, path):
     return {
         "path": str(path),
         "lag_samples": getattr(card, "lag", 0),
+        "alignment": alignment_record(card),
         "families": card.families,
         "rows": [
             {
@@ -597,6 +623,12 @@ def card_to_dict(card, path):
         "passed": getattr(card, "passed", None),
         "meta": getattr(card, "meta", {}),
     }
+
+
+def alignment_record(card):
+    """The card's alignment as the JSON document records it, None for a card scored without one."""
+    alignment = getattr(card, "alignment", None)
+    return alignment.as_dict() if alignment is not None else None
 
 
 def score_variants(source, outputs, *, cache_dir="experiments/quality_cache", gates=GATES, **options):

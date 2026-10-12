@@ -105,7 +105,9 @@ def _stems(pair, registry):
     out_stem = separate_once(separator, pair.output_wav, stems_dir, pair.output_key)
     src_audio, rate = audio_io.load_audio(src_stem)
     out_audio, _rate = audio_io.load_audio(out_stem)
-    src, out, _lag = audio_io.align_pair(audio_io.to_mono(src_audio), audio_io.to_mono(out_audio))
+    # The pair's own aligner and prior, so a stem pair the aligner abstains on is trimmed where the pair was.
+    method, prior_s = getattr(pair, "align_method", None), getattr(pair, "align_prior_s", None)
+    src, out, _lag = audio_io.align_pair(audio_io.to_mono(src_audio), audio_io.to_mono(out_audio), rate, method, prior_s)
     return src, out, rate
 
 

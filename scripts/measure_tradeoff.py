@@ -11,13 +11,22 @@ This measures both halves directly on real captures, using the source itself to 
 to look:
 
 - **Noise removed** is the level drop in the frames the source says are quiet. Those frames
-  are mostly noise, so a drop there is noise going away. Higher is better.
+  are mostly noise, so a drop there is noise going away. Higher is better. It is read twice:
+  `noise_removed_db` on the quiet frames' pooled energy, and `noise_removed_median_db` as
+  the median of the per-frame drops. The pooled figure follows the loudest few frames: on
+  SOTI the hottest 1 % of the shipped APL output's quiet frames hold 34 % of their energy
+  (222 of its 3739 quiet frames stand 10 dB or more over the source, cathar's 2; the
+  backlog traces them to the repair stage's pop refills, unconfirmed), and the pooled
+  reading says APL removed -5.17 dB where the median says +3.00 (cathar +9.61 pooled,
+  +10.40 median; measured 2026-10-11).
 - **Programme deviation** is how far the restored spectrum moves in the frames the source
   says are loud, inside the 300-3400 Hz band where speech lives. Those frames are dominated
   by content, so movement there is the restoration altering the programme. Lower is better.
 
 Both are computed after matching gain on the loud frames, so the final loudness
-normalisation cannot flatter or penalise either number.
+normalisation cannot flatter or penalise either number, and on a pair put on one timeline
+by `scripts/pair_alignment.py` (`--align-method`; `xcorr_head` reproduces reports written
+before 2026-10-11, and every report row names the method).
 
 The two are reported separately and never combined. Which one matters more is a judgement,
 and collapsing them into a single score is precisely the mistake this replaces.
@@ -42,9 +51,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.hardware import get_gpu_name
 from modules.utils import FFMPEG_BIN
+from scripts import pair_alignment
 from scripts.cli_paths import confined_path, existing_path_arg, path_arg
 from scripts.ia_benchmark_common import _run_mode_restoration
-from scripts.score_reference import _align
 
 FRAME = 1024
 QUIET_PERCENTILE = 20.0
@@ -95,26 +104,50 @@ def _band_energy(block, rate):
     return float(np.sum(spectrum[:, band] ** 2)) + 1e-20
 
 
-def measure(source_path, restored_path):
-    """Returns noise removed and programme deviation, both in dB."""
+def measure(source_path, restored_path, align_method=None, align_prior_s=None, with_alignment=False):
+    """Returns noise removed (pooled and per-frame median) and programme deviation, all in dB.
+
+    `align_method` and `align_prior_s` (seconds) reach `pair_alignment.align`; with
+    `with_alignment` the row also carries the alignment's record under "alignment".
+    """
     source, rate = _mono(source_path)
     restored, _rate = _mono(restored_path)
-    source, restored, _lag = _align(source, restored)
+    prior = None if align_prior_s is None else int(round(align_prior_s * rate))
+    source, restored, alignment = pair_alignment.align(source, restored, rate, align_method, prior)
+    row = trade_readings(source, restored, rate)
+    if row is not None and with_alignment:
+        row["alignment"] = alignment.as_dict()
+    return row
+
+
+def common_frames(source, restored):
+    """Both signals' analysis frames cut to the same count, or None when either has none or the source fewer than eight."""
     source_frames, restored_frames = _frames(source), _frames(restored)
     if source_frames is None or restored_frames is None or len(source_frames) < 8:
         return None
-
     count = min(len(source_frames), len(restored_frames))
-    source_frames, restored_frames = source_frames[:count], restored_frames[:count]
-    level = np.sqrt(np.mean(source_frames**2, axis=1))
+    return source_frames[:count], restored_frames[:count]
+
+
+def quiet_and_loud(source, restored):
+    """`(source frames, restored frames, quiet, loud)` of an aligned pair, None when it has no quiet-to-loud spread to read."""
+    frames = common_frames(source, restored)
+    if frames is None:
+        return None
+    level = np.sqrt(np.mean(frames[0] ** 2, axis=1))
     quiet_cut, loud_cut = np.percentile(level, QUIET_PERCENTILE), np.percentile(level, LOUD_PERCENTILE)
     if 20.0 * np.log10((loud_cut + 1e-12) / (quiet_cut + 1e-12)) < MIN_DYNAMIC_SPREAD_DB:
         return None
-    quiet = level <= quiet_cut
-    loud = level >= loud_cut
-    if not quiet.any() or not loud.any():
-        return None
+    quiet, loud = level <= quiet_cut, level >= loud_cut
+    return (*frames, quiet, loud) if quiet.any() and loud.any() else None
 
+
+def trade_readings(source, restored, rate):
+    """The trade readings of an aligned pair at `rate`, None when the source has no quiet-to-loud spread."""
+    split = quiet_and_loud(source, restored)
+    if split is None:
+        return None
+    source_frames, restored_frames, quiet, loud = split
     # Gain-match on the loud frames so loudness normalisation cannot move either number.
     source_loud = float(np.sqrt(np.mean(source_frames[loud] ** 2))) + 1e-12
     restored_loud = float(np.sqrt(np.mean(restored_frames[loud] ** 2))) + 1e-12
@@ -125,7 +158,18 @@ def measure(source_path, restored_path):
     noise_removed_db = 20.0 * np.log10(source_quiet / restored_quiet)
 
     deviation_db = abs(10.0 * np.log10(_band_energy(restored_frames[loud], rate) / _band_energy(source_frames[loud], rate)))
-    return {"noise_removed_db": round(float(noise_removed_db), 3), "programme_deviation_db": round(float(deviation_db), 3)}
+    return {
+        "noise_removed_db": round(float(noise_removed_db), 3),
+        "noise_removed_median_db": round(median_drop_db(source_frames[quiet], restored_frames[quiet]), 3),
+        "programme_deviation_db": round(float(deviation_db), 3),
+    }
+
+
+def median_drop_db(source_frames, restored_frames):
+    """The median over frames of each frame's level drop in dB: a few hot frames cannot own it as they own the pooled energy."""
+    source_rms = np.sqrt(np.mean(np.asarray(source_frames, dtype=np.float64) ** 2, axis=1)) + 1e-12
+    restored_rms = np.sqrt(np.mean(np.asarray(restored_frames, dtype=np.float64) ** 2, axis=1)) + 1e-12
+    return float(np.median(20.0 * np.log10(source_rms / restored_rms)))
 
 
 def _existing_output(work_root, clip, mode):
@@ -135,7 +179,7 @@ def _existing_output(work_root, clip, mode):
     return found[0] if found else None
 
 
-def _measure_pair(clip, restored_video, mode, temp_dir):
+def _measure_pair(clip, restored_video, mode, temp_dir, align_method=None):
     """Extracts both tracks, measures them, and removes the extracted WAVs whatever happened.
 
     A corpus is thousands of clips and each extraction is 2.6 MB; kept until the run's end
@@ -146,7 +190,7 @@ def _measure_pair(clip, restored_video, mode, temp_dir):
     try:
         if _extract(clip, source_wav) is None or _extract(restored_video, restored_wav) is None:
             return None
-        return measure(source_wav, restored_wav)
+        return measure(source_wav, restored_wav, align_method=align_method, with_alignment=True)
     except subprocess.TimeoutExpired:
         sys.stderr.write(f"  extraction timed out: {clip.name} ({mode})\n")
         return None
@@ -155,21 +199,22 @@ def _measure_pair(clip, restored_video, mode, temp_dir):
         restored_wav.unlink(missing_ok=True)
 
 
-def _restore_and_measure(clip, mode, work_root, gpu_name, temp_dir, rescore=False):
+def _restore_and_measure(clip, mode, work_root, gpu_name, temp_dir, rescore=False, align_method=None):
     """Runs one mode over one clip and measures the trade."""
     work = work_root / clip.stem / mode
     work.mkdir(parents=True, exist_ok=True)
     restored_video = _existing_output(work_root, clip, mode) if rescore else _run_mode_restoration(clip, mode, work, gpu_name)
     if restored_video is None:
         return None
-    return _measure_pair(clip, restored_video, mode, temp_dir)
+    return _measure_pair(clip, restored_video, mode, temp_dir, align_method)
 
 
 def _summarise(rows, label):
     """Prints medians for one configuration."""
     removed = [r["noise_removed_db"] for r in rows]
+    removed_median = [r["noise_removed_median_db"] for r in rows]
     deviation = [r["programme_deviation_db"] for r in rows]
-    print(f"{label:<26}{np.median(removed):>16.2f}{np.median(deviation):>22.2f}   n={len(rows)}")
+    print(f"{label:<26}{np.median(removed):>16.2f}{np.median(removed_median):>18.2f}{np.median(deviation):>22.2f}   n={len(rows)}")
 
 
 def _parse_args():
@@ -185,6 +230,12 @@ def _parse_args():
         "--rescore",
         action="store_true",
         help="Measure restored outputs already in --work-dir instead of restoring; a metric change re-reads the same audio",
+    )
+    parser.add_argument(
+        "--align-method",
+        choices=pair_alignment.ALIGN_METHODS,
+        default=None,
+        help="Aligner (default: AI_RESTORE_ALIGN_METHOD, else gcc_phat_spans); xcorr_head reproduces reports before 2026-10-11",
     )
     return parser.parse_args()
 
@@ -205,7 +256,7 @@ def _measure_clip_modes(clip, record, args, labels, results, context):
     """Restores and measures one clip in every requested mode, appending the rows."""
     gpu_name, temp_dir = context
     for mode in args.modes:
-        row = _restore_and_measure(clip, mode, args.work_dir, gpu_name, temp_dir, rescore=args.rescore)
+        row = _restore_and_measure(clip, mode, args.work_dir, gpu_name, temp_dir, rescore=args.rescore, align_method=args.align_method)
         if row:
             row["identifier"] = record["identifier"]
             results[labels[mode]].append(row)
@@ -231,8 +282,8 @@ def main():
             sys.stdout.write(f"  [{seen}/{args.limit}] {record['identifier'][:44]}\n")
             sys.stdout.flush()
 
-    print(f"\n{'configuration':<26}{'noise removed dB':>16}{'programme deviation dB':>22}")
-    print(f"{'':<26}{'(higher better)':>16}{'(lower better)':>22}")
+    print(f"\n{'configuration':<26}{'noise removed dB':>16}{'median per frame':>18}{'programme deviation dB':>22}")
+    print(f"{'':<26}{'(higher better)':>16}{'(higher better)':>18}{'(lower better)':>22}")
     for label, rows in results.items():
         if rows:
             _summarise(rows, label)

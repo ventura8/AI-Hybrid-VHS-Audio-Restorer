@@ -91,6 +91,28 @@ for research use by the user's decision of 2026-10-08.
   125 s, whole clips shorter than that keep the 0.75 s probe.
 - Whole tapes are the ground truth: an excerpt's noise probe is not the full
   tape's. Confirm any winner on the full tapes.
+- A scored document names its aligner (`alignment.method`). Scores written
+  before 2026-10-11 carry none and were aligned by the head search
+  (`xcorr_head`): re-score them before comparing with new ones, or compare
+  like with like under `AI_RESTORE_ALIGN_METHOD=xcorr_head`. An abstained
+  alignment (`alignment.status`) is a reading the scorer cannot vouch for:
+  leave such clips out of a ranking rather than trusting their readings.
+  A one-family re-score (`tune_restoration.merge_families`, also behind
+  `validate_restoration.py --merge-into`) keeps the other families only
+  when the pair is trimmed at the stored `lag_samples`; where the aligner
+  moved the lag it keeps the fresh families alone, so re-score the rest
+  rather than read a document that mixes two timelines.
+- The hunt's `dsp.output_silent` failures are mostly the gain match, not
+  the lag (2026-10-11, CPU). Of the 10 (6 cathar, 4 APL), the vote aligns 7
+  at the true lag and 6 of those still fail; 3 abstain (no phase coherence
+  on any span; APL's et-el carries a 431 ms sync shift, outside the
+  search); one, a DTW clip the head search read at -1499 samples, passes
+  once aligned. `align_pair`'s least-squares gain is the waveform
+  correlation times the level ratio: on the five measured, the outputs
+  correlate 0.09-0.13 in magnitude with their source at the true lag
+  (phase coherence 0.55-0.95 in 150-7000 Hz), so the gain puts them
+  18-21 dB under their energy-matched level and their windows route as
+  silence.
 - The listener readings (v2, 2026-09-23) exist because the median level of
   the quiet frames could not tell "silent in pauses" from "has hiss" (every
   restoration drives the deepest pauses to -96..-104 dBFS): read the gaps
@@ -388,6 +410,29 @@ their module docstrings hold the full measurements.
   and offset at most 40 ms (one PAL video frame), no unmatched anchor. The
   32 v2 final pairs read lags of 4.7-5.4 ms, drift 0.02-0.26 ms, none
   unmatched.
+- **Alignment** (`scripts/pair_alignment.py`, under every paired reading;
+  2026-10-11). `gcc_phat_spans`: GCC-PHAT (150-7000 Hz) on up to seven of
+  the source's loudest 1.5 s spans, the lag at least two and half of the
+  spans with coherence 0.1 agree on within 2 samples, else an abstention
+  (lag None, trimmed at `align_prior_s` or 0, `alignment.reason` says why).
+  The prior, or 0 without one, breaks ties between distinct peaks only:
+  letting the highest peak's own shoulders contend pulled lags a sample or
+  two short (review, 2026-10-12: of the 204 shift-synced hunt clips with a
+  logged shift, exact on 175 cathar and 196 APL outputs once only local
+  maxima contend, 169 and 177 before).
+  Each scored variant carries `alignment` (method, lag, applied lag,
+  polarity, spans, agree, coherence); `lag_samples` is the applied lag. The
+  old head search (`xcorr_head`: |corr| over the first 1.86 s) stays
+  selectable: `AI_RESTORE_ALIGN_METHOD=xcorr_head`, `--align-method`. The
+  true lag is the mux's 219 samples plus the shift the app's sync stage
+  printed in its run log; on the hunt's 205 shift-synced clips the head
+  search read it within 8 samples on 137 cathar / 199 APL outputs, the vote
+  on 203 / 202; the Tata shipped outputs read exactly (head search: 5 of 8
+  off by 6-181).
+- **Noise removed, per frame** (`file.noise_removed_median_db`, beside the
+  pooled `file.noise_removed_db`). SOTI, shipped APL: the hottest 1 % of the
+  quiet frames hold 34 % of their energy, pooled -5.17 dB, median +3.00;
+  cathar +9.61 / +10.40.
 - **R11, the programme's low end** (`lf_metrics.py`: `dsp.lf_programme_db`;
   complaints: thin bass, rumble left; built 2026-10-10 for round C3, the
   cathar music profile's dewind cutoff and repair). The output's 40-200 Hz

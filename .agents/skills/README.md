@@ -71,7 +71,12 @@ the Antigravity agent system.
   - `scripts/autotune_guards.py` (a module of the self-driving loop, not a
     script): the v3 grids' guards, the verdict-reversal refusal, the
     audibility tie (stored verdicts keyed on `auditory.VERDICT_RULE`) and
-    the learned median veto.
+    the learned median veto;
+  - `scripts/pair_alignment.py` (a module under every paired reading, not a
+    script): the lag by GCC-PHAT on the loudest spans voting, abstention
+    and polarity; `AI_RESTORE_ALIGN_METHOD=xcorr_head` (or
+    `--align-method` on `validate_restoration.py` and
+    `measure_tradeoff.py`) reproduces scores stored before 2026-10-11.
 - [sonarqube-quality-gate/SKILL.md](sonarqube-quality-gate/SKILL.md): SonarQube
   Cloud on this repository: the CI scan, reading and fixing findings without
   suppressions, project settings on sonarcloud.io, failure triage.

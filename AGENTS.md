@@ -323,6 +323,11 @@ user set, with their reasons:
   learned judges only veto. A reading that cannot see a percept (a
   whole-spectrum tilt cancels in every reading net of plain or loud frames)
   gets an absolute twin before a loop tunes against it.
+- Every paired reading sits on the aligner `scripts/pair_alignment.py`
+  names in the scored JSON (2026-10-11). Scores stored before then used the
+  head search, which read 68 of 205 cathar hunt outputs more than 8 samples
+  off their true lag: re-score them before they decide anything, and leave
+  out a clip whose alignment abstained.
 - Learned training goes only where it fits (2026-10-08): GRPO for a
   per-tape settings policy, later, and only if it beats the single best
   preset; an anchored fine-tune for the Mel-RoFormer denoiser; a
