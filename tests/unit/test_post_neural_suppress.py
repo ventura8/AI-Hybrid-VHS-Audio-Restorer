@@ -113,15 +113,25 @@ def test_a_reading_that_fails_shuts_the_gate_and_says_why(tmp_path):
     assert "Shut" in (tmp_path / "session_log.txt").read_text(encoding="utf-8")
 
 
-def test_the_decision_is_logged_with_its_numbers_and_recorded(tmp_path, keys_on, monkeypatch):
-    del keys_on
+def _open_run(tmp_path, monkeypatch):
+    """Run the stage on an open reading with the event log on; returns the session log's text."""
     monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(tmp_path / "events"))
     _apply(tmp_path, OPEN, **ALL)
-    log = (tmp_path / "session_log.txt").read_text(encoding="utf-8")
+    return (tmp_path / "session_log.txt").read_text(encoding="utf-8")
+
+
+def test_the_decision_is_logged_with_its_numbers(tmp_path, keys_on, monkeypatch):
+    del keys_on
+    log = _open_run(tmp_path, monkeypatch)
     assert "[Post-Neural Hiss Gate] Open" in log
     assert "+2.2 dB" in log
     assert "-2.5 dB (3-4.8 kHz)" in log
     assert "[Air Gate] Skipping the air shelf" in log
+
+
+def test_the_decision_is_recorded_in_the_event_log(tmp_path, keys_on, monkeypatch):
+    del keys_on
+    _open_run(tmp_path, monkeypatch)
     (record,) = (tmp_path / "events").glob("post_neural_suppress__*.json")
     payload = json.loads(record.read_text(encoding="utf-8"))
     assert (payload["open"], payload["suppressed"], payload["air_shelf"], payload["reading"]) == (True, True, False, OPEN)
