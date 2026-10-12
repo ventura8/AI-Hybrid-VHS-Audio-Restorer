@@ -210,8 +210,13 @@ def round_trip_rate(rate):
 
 
 def fresh_noise(_base, rate, materials):
-    """The programme with a fresh realisation of its noise track (`same_percept.fresh_like`)."""
-    return materials["prog_linear"] + same_percept.fresh_like(materials["noise_linear"], rate, FRESH_SEED)
+    """The programme with a fresh realisation of its tape hiss: `tape_hiss` from another seed at the same 3-10 kHz level.
+
+    Exact, where `same_percept.fresh_like` (redrawing each cell around a 5 x 5 mean of the old one) carried the old
+    draw's local fluctuation into the new one and moved `dsp.hiss_island_kurt` 0.22 on a noise no listener tells apart.
+    """
+    noise = materials["noise_linear"]
+    return materials["prog_linear"] + tape_hiss(noise, rate, len(noise), FRESH_SEED)
 
 
 LINEAR_BENIGN = {

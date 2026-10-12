@@ -107,6 +107,8 @@ def test_the_fresh_noise_case_keeps_the_programme_and_redraws_the_noise():
     _source, fresh = deg.apply_benign("fresh_noise_linear", capture, RATE, None, _materials())
     residual = fresh - _materials()["prog_linear"]
     assert abs(np.corrcoef(residual, _materials()["noise_linear"])[0, 1]) < 0.1
+    level = 10.0 * np.log10(hd.band_level(residual, RATE) / hd.band_level(_materials()["noise_linear"], RATE))
+    assert abs(level) < 0.2
 
 
 @pytest.mark.parametrize("name", ["identity_linear", "requantise_linear", "resample_linear", "gain_0_1_linear", "delay_0_37_linear"])
