@@ -190,6 +190,22 @@ def loud_band_ratios_db(source, output, rate, frame=4096):
     return {name: (_band_ratio_db(freqs, src_mean, band), _band_ratio_db(freqs, out_mean, band)) for name, band in HF_BANDS_HZ.items()}
 
 
+def programme_band_ratios_db(source, output, rate, bandwidth_hz):
+    """`loud_band_ratios_db`, with `(None, None)` for a band starting at or above the programme's bandwidth.
+
+    Above R0's programme bandwidth (`source_profile`, read on the loud frames) a band holds the
+    tape's hiss, not the voice, so its loud-frame ratio reads hiss removal as "air lost". On the
+    IA hunt re-scored on 2026-10-12, 43 of the 44 `auto_pure_linear` clips failing the 8-16 kHz
+    gate had a programme bandwidth under 8 kHz (median 3.6 kHz), and the oracle check's 102
+    failures of 920 clean-reference pairs came from the same reading. With no bandwidth known
+    (no profile) every band reads as before.
+    """
+    ratios = loud_band_ratios_db(source, output, rate)
+    if bandwidth_hz is None:
+        return ratios
+    return {name: ratios[name] if HF_BANDS_HZ[name][0] < bandwidth_hz else (None, None) for name in ratios}
+
+
 def framed_psd(mono, rate, frame):
     """Per non-overlapping frame: `(freqs, power (frames, bins), rms level (frames,))`, Hann-windowed rfft power."""
     count = len(mono) // frame

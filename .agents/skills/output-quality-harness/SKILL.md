@@ -1361,9 +1361,11 @@ scores read in place).
 
 - From calibration v3: R0 naming a mains only when its fundamental stands
   about 10 dB out (after the IA and noise clips confirm it).
-- From the oracle check (2026-10-12): `dsp.whistle` and `dsp.hf_8k16k` made
-  oracle-proof (they fail 31 % and 11 % of the oracle pairs, so a calibration
-  run writes no gates file until they are), the dropout count no longer
+- From the oracle check (2026-10-12): `dsp.whistle` made oracle-proof (31 %
+  of the oracle pairs fail it, so a calibration run writes no gates file
+  until it is; `dsp.hf_4k8k` / `dsp.hf_8k16k` abstain above R0's programme
+  bandwidth since 2026-10-12, which cleared 43 of APL's 44 hunt failures,
+  and need the oracle re-run to confirm), the dropout count no longer
   reading hum and noise removal as holes, and a rate rather than a count for
   `file.dropouts` on long tapes (the shipped Tata outputs read 0-16 holes).
 - R3's harness coverage reading, `scripts/replay_post_neural.py` (it would

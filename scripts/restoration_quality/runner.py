@@ -298,7 +298,8 @@ def _dsp_window(pair, row, mute_floor=None):
     row.source["dsp.residual_noise_db"], row.output["dsp.residual_noise_db"] = 0.0, dsp_metrics.residual_noise_db(src, out)
     row.source["dsp.lkr"], row.output["dsp.lkr"] = 0.0, dsp_metrics.lkr_musical_noise(src, out, pair.rate)
     row.source["dsp.dropouts"], row.output["dsp.dropouts"] = 0.0, float(dsp_metrics.dropout_count(src, out, pair.rate))
-    for name, (src_ratio, out_ratio) in dsp_metrics.loud_band_ratios_db(src, out, pair.rate).items():
+    bands = dsp_metrics.programme_band_ratios_db(src, out, pair.rate, _field(pair, "prog_bandwidth_hz"))
+    for name, (src_ratio, out_ratio) in bands.items():
         row.source[f"dsp.{name}"], row.output[f"dsp.{name}"] = src_ratio, out_ratio
     for name, (src_value, out_value) in dsp_metrics.pause_dynamics(src, out, pair.rate).items():
         row.source[f"dsp.{name}"], row.output[f"dsp.{name}"] = src_value, out_value

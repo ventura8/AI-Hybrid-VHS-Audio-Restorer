@@ -1344,6 +1344,15 @@ at the line; the air gate reads the hiss leaving the loud frames' 8-16 kHz
 as air lost. Until those two readings are made oracle-proof, a calibration
 run with the check writes no gates file.
 
+The air gates are programme-bound since 2026-10-12: `dsp.hf_4k8k` and
+`dsp.hf_8k16k` read None on a band that starts at or above R0's programme
+bandwidth (`dsp_metrics.programme_band_ratios_db`), where the band holds
+the tape's hiss and not the voice. On the re-scored IA hunt 43 of the 44
+`auto_pure_linear` clips failing the 8-16 kHz gate had a programme
+bandwidth under 8 kHz (median 3.6 kHz): the gate was refusing the hiss
+removal the user asked for. Without a source profile both bands read as
+before.
+
 The hunt's stored scores (235 IA clips per engine, shipped defaults)
 re-gated without re-scoring, with the v2 gates file: clips failing any hard
 gate fall from 216 to 112 (cathar) and from 205 to 161 (APL). The raw
