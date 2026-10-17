@@ -55,6 +55,16 @@ skill holds the readings, their status and the measured facts behind them.
 1. List the tapes in `experiments/autotune/tapes.json` (whole tapes under
    20 min; cut longer ones, for example the first 300 s, with
    `ffmpeg -t 300 -c copy` into `D:\Tata\New folder\variants\`).
+1. Run one loop at a time on a tape list: never two restorations on one
+   source path (the user's rule). The loop renders each tape from its own
+   path, and the app keeps its work folder beside the source
+   (`.temp_work_<stem>`), so an APL loop and a cathar loop started
+   together on `tapes.json` (2026-10-17) shared those folders: cathar's
+   first render failed on two tapes with `WinError 32` and the loop
+   stopped, and APL's renders of the same minutes could not be trusted.
+   Chain the engines in one launcher instead
+   (`experiments/run_autotune_v8.cmd both`), or give each loop copies of
+   the tapes.
 1. Check the knob table against the code paths before a round: a knob is
    dead only when every path that reads it is (`apl_tonal_flatness_max`
    stays live with the subtraction off), and no list may hold both None
