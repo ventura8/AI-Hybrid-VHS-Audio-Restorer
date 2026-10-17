@@ -188,8 +188,7 @@ Not passed, with the evidence:
   programme exposes the hiss in its pauses, not in a stationary floor, so
   the ear stays blind to hiss under dense singing.
 
-Found on the way, not changed (a source whose pause anchor validates must
-read as before): the pause path validates dense music and then reads
+Found on the way: the pause path validates dense music and then reads
 revealed programme as hiss. On the variants it validates, the full-band
 programmes' perfect outputs read +1.4..+18.8 dB (24 of 24), the 4.5 kHz ones
 over 0 on 3 of 27; on the corpus fixtures it validates, 5 of 6 read
@@ -198,6 +197,62 @@ reads R0's programme bandwidth (2 kHz or more), which on music reads the
 gap frames' programme (630-1414 Hz on most of these fixtures, 500 and 891
 Hz on two music clips, 561-794 Hz on four IA clips), and has no band-edge
 test like the second anchor's (b).
+
+### The Pause Path's Hole: No Band Edge Closes It
+
+The follow-up task (the same day) was to close that hole with a band-edge
+condition on the pause anchor's validation, accepting that sources which
+validate today might change, but keeping the four Tata tapes (Tele7abc,
+SOTI, Vaccin, Gaudeamus5) and their pinned readings. No condition does both;
+nothing was changed. Per band, on the active frames (live, outside R4's true
+pauses) against the uncapped pause floor, `probe_edge2.py` read the median
+excess, its P90, the share of frames at the floor and the correlation with
+the 300-4000 Hz envelope, on every source the pause path validates (the 59
+fixtures and variants, the Tata sources, 34 IA hunt sources, 2 music clips):
+
+- **The second anchor's (b) on the pause path** (a band carries programme
+  where its median excess is over 1 dB or it follows the envelope, r over
+  0.15; two hiss-alone bands from half an octave over the programme's top
+  to 12 kHz) drops 19 of the 24 dense variants and all 5 failing corpus
+  fixtures and keeps all 27 linear ones, but it also drops all five Tata
+  tapes, all 34 IA hunt sources (26 clips, 92 windows read today) and both
+  music clips: the ear would read no tape at all.
+- **A sweep of 576 settings** (excess 0.5-8 dB, guard 1-2, a top of 12 or
+  16.5 kHz, 1-3 edge bands, the correlation test at 0.15, 0.3 or off): 71
+  keep all four Tata tapes, and the best of those still validates 25 of the
+  32 sources whose perfect output reads over 0 (20 of the 24 dense
+  variants). Giving up Vaccin, the best keeps 10 of them.
+- **Why the family cannot work.** By every source statistic the Tata tapes
+  look more like programme over the hiss than the failing music does. From
+  9.7 to 15 kHz the median excess reads +0.6..+1.0 dB on Tele7abc and SOTI
+  and +1.0..+1.4 on Gaudeamus5; Vaccin reads +3.1 at 9.7 kHz, and no band
+  above 10.8 kHz holds a floor over the dither. The dense variants read a
+  median of -0.1..+0.4 dB per source from 8.7 kHz up (90 % of their bands
+  under +0.6), with 37-100 % of their active frames at the pause floor.
+  Their programme's top (the highest band whose P90 excess passes 3 dB)
+  lies at 7.8-10.9 kHz, the Tata tapes' at 8.3-15.1 kHz (SOTI 8.3, Tele7abc
+  and Vaccin 9.7, Gaudeamus5 15.1). SOTI's top bands follow the speech
+  envelope (r 0.2-0.3 at 8.7-13 kHz: the tape's gain pumps the hiss with the
+  speech). The reading's own free share in 1-4 kHz is 0.000-0.030 per window
+  (median) on the Tata tapes and 0.000-0.055 on the dense variants.
+  Speech tolerates a wide, sparse transition into the hiss; dense music
+  fades under it continuously over 4-10 kHz, and no band-edge statistic
+  tells the two apart.
+- **Not a band edge either: tonal persistence** (`modules/tonal_persistence`,
+  music against speech) reads 0.000-0.006 on the four Tata tapes and
+  0.012-0.029 on the dense variants (speech over a music bed), but
+  0.002-0.010 on the failing corpus fixtures, so a class gate does not close
+  the hole and would blind the ear on every music clip.
+
+The defect sits in the reading, not in the validation: with the exact hiss
+as the anchor the dense perfect outputs still read over 0 (39 of 40 at m12,
+above). On `it mid01_music_m12` with tape hiss, full band, the music fades
+under the hiss over 3.5-10 kHz; those bands' noise-dominated ratios read
+-5.5..-17 dB (-13..-22 after the spectral cap) and +2..+11 dB over their
+masked threshold, while the hiss-alone 12-15 kHz bands read -38..-49: the
+revealed music fills the cap's pool. Closing it needs a reading change that
+still sees the hiss a render keeps under the programme (a pool held to the
+hiss-alone bands reads that render as clean, above).
 
 ## Adversarial Review: Defects and Fixes
 

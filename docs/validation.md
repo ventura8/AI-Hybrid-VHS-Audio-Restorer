@@ -1093,6 +1093,10 @@ places at one declared critical playback level, each file's loud frames at
   exact noise as the anchor reads a perfect output over 0 (75 of 76
   realistic-v2 music-bed and music-led fixtures), so the ear stays blind to
   hiss under dense singing (`docs/ear_v4_hiss.md`, "Continuous Programme").
+  The pause path validates dense full-band music and reads its perfect
+  outputs over 0; no band-edge condition on its validation closes that and
+  keeps the Tata tapes validated (same document, "The Pause Path's Hole"):
+  the fix belongs in the reading's spectral cap.
 - `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
   floor over Terhardt's threshold in quiet, read where the source's pause
   is silent apart from its hiss (a 200 ms block standing 3 dB over the

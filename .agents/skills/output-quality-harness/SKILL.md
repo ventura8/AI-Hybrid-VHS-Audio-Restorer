@@ -1494,7 +1494,14 @@ only a blind session at a recorded device and volume moves L_crit.
   over 0 on 75 of 76, and real programme exposes its hiss in pauses, not
   in a stationary floor (`docs/ear_v4_hiss.md`, "Continuous Programme").
   The pause path itself validates dense full-band music and reads its
-  perfect outputs +1.4..+18.8 dB (found, not changed; same section).
+  perfect outputs +1.4..+18.8 dB, and no band-edge condition on its
+  validation closes that without dropping the Tata tapes: the strictest
+  drops all five tapes and all 34 IA sources, and of 576 settings the best
+  that keeps the four tapes still validates 25 of the 32 failing sources.
+  The Tata tapes read more programme over the hiss above 9 kHz than the
+  failing music does; the defect is the reading's spectral-cap pool, which
+  revealed music fades into over 4-10 kHz (same section, "The Pause Path's
+  Hole").
 
 `hiss_programme.py`, the hiss left under the programme (the `hup3`
 prototype's estimator, rebuilt after validation round 1):
