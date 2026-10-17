@@ -173,6 +173,26 @@ def _preserved_audio_args(video_suffix, audio_args):
     return ["-c:a:1", "copy"]
 
 
+# A player starts on the audio stream flagged default. With the archival track kept, ffmpeg
+# carries the source stream's default flag over to it and leaves the restored track (a filter
+# output) unflagged, so MP4 and MOV opened on the unrestored tape audio (measured 2026-10-17 on
+# synthetic sources: restored 0, archival 1; matroska happened to flag the first). The restored
+# track is flagged default and the archival one cleared on every container that keeps the flag;
+# AVI and MPEG-PS store none, and a player takes their first audio stream, the restored one.
+ARCHIVAL_DISPOSITION_ARGS = ("-disposition:a:0", "default", "-disposition:a:1", "0")
+
+
+def _archival_track_args(video_suffix, audio_args):
+    """Output arguments that keep the source's first audio stream as the second track, the restored track the default."""
+    return [
+        "-map",
+        "0:a:0?",
+        *_preserved_audio_args(video_suffix, audio_args),
+        *_scope_audio_args_for_stream(audio_args, 0),
+        *ARCHIVAL_DISPOSITION_ARGS,
+    ]
+
+
 def _sanitize_mix_level(vol_val):
     """Normalizes a configured mix volume, falling back to unity gain."""
     val = _parse_mix_float(vol_val)

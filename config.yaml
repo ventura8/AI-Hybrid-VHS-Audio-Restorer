@@ -911,6 +911,9 @@ cathar_dereverb_strength: 2.0
 #
 # preserve_original_audio_track:
 #   - true:  Preserves original untouched audio as Stream 2 alongside restored audio in container.
+#            The restored track is flagged default and the archival one cleared, so a player
+#            starts on the restored audio (MP4 and MOV opened on the tape audio until
+#            2026-10-17: ffmpeg copied the source stream's default flag to the archival copy).
 #   - false: Output container contains restored clean audio track only (Default).
 # ------------------------------------------------------------------------------
 enable_deesser: true

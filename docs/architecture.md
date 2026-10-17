@@ -229,7 +229,12 @@ Single-track modes share this chain. They carry one processed stream instead of
 two stems, so the graph starts at `[1:a]` rather than an `amix`, but the
 measurement pass, resample, and limiter are the same code. The mastered stream is
 routed through a `filter_complex` label rather than `-af`, because the optional
-archival track is a second audio output that must not be normalized.
+archival track is a second audio output that must not be normalized. With it
+kept, the restored track is flagged default and the archival one cleared
+(`mastering.ARCHIVAL_DISPOSITION_ARGS`): ffmpeg copies the source stream's
+default flag to the archival copy, so MP4 and MOV used to open on the tape's
+own audio. AVI and MPEG-PS store no such flag, and a player takes their first
+audio stream, the restored one.
 
 Both mux commands take a plan from `modules/mux_format.py`, built from one
 ffprobe of the source: `-copyts` and `-itsoffset` place each restored input

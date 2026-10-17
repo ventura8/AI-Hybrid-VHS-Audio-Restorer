@@ -750,7 +750,7 @@ def _final_mix_output_command(
         *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
-        cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
+        cmd.extend(_archival_track_args(video_path.suffix, audio_args))
     else:
         cmd.extend(audio_args)
     cmd.extend(["-y", str(tmp_output_video)])
@@ -901,7 +901,7 @@ def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_
         *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
-        cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
+        cmd.extend(_archival_track_args(video_path.suffix, audio_args))
     else:
         cmd.extend(audio_args)
     cmd.extend(["-y", str(tmp_output_video)])
@@ -1690,6 +1690,7 @@ _loudnorm_target_args = _mastering._loudnorm_target_args
 _mastering_chain = _mastering._mastering_chain
 _measured_loudnorm_args = _mastering._measured_loudnorm_args
 _parse_loudnorm_json = _mastering._parse_loudnorm_json
+_archival_track_args = _mastering._archival_track_args
 _preserved_audio_args = _mastering._preserved_audio_args
 _resolve_loudnorm_args = _mastering._resolve_loudnorm_args
 _resolve_measured_loudnorm = _mastering._resolve_measured_loudnorm

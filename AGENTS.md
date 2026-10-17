@@ -56,7 +56,8 @@ alignment:
   `loudnorm`, EBU R128 measurement, -16 LUFS and -1 dBTP) followed by a
   sample-peak limiter (`alimiter` at -1 dBFS) in every mode,
   container-dependent final encoding, stream-copied video (`-c:v copy`), and
-  optional dual-track archival audio preservation. loudnorm holds its linear
+  optional dual-track archival audio preservation (the restored track flagged
+  default, so a player starts on it). loudnorm holds its linear
   mode only while the range and the true-peak rule allow it, and always on
   a programme under 3 s; 37% of the logged "linear" decisions broke the
   true-peak half and rode the gain (`loudnorm_linear_fallback`,
