@@ -30,7 +30,10 @@ reading uses. With p that weight, n the noise and P the programme:
   100-1000 Hz power x 10^(L/10): a quiet room floor must not read as hiss;
 - `hiss_islands`: P + the noise at -12 dB broken into STFT islands (a guard proof);
 - `hiss_removed_dulled`: P low-passed at L Hz + n at -30 dB: hiss removed by dulling (a guard
-  proof).
+  proof);
+- `soft_programme_cut`: P with the STFT cells (2048 / 1024, Hann) the capture holds 6-18 dB over
+  the hiss's own mean per bin, from 1 kHz up, cut L dB, + n at -30 dB: an SNR-dependent
+  suppressor that takes the soft programme with the hiss (the soft-programme guard's proof).
 
 The builders draw from their own seeds, never from the calibration's shared generator: the
 benign cases are built after the degradations, and a draw taken here would move every
@@ -65,6 +68,10 @@ TAPE_HISS_SEED = 20261015
 TAPE_HISS_CORNER_HZ = 2000.0
 TAPE_HISS_BAND_HZ = (3000.0, 10000.0)
 LINEAR_SUFFIX = "_linear"
+SOFT_FRAME = 2048
+SOFT_BAND_DB = (6.0, 18.0)
+SOFT_LO_HZ = 1000.0
+SOFT_EPS = 1e-30
 
 
 def lowpass(mono, rate, cutoff_hz, order=LOWPASS_ORDER):
@@ -191,6 +198,28 @@ def dulled(level, _base, rate, materials, _rng):
     return source, lowpass(programme, rate, level) + noise * _db(HISS_LEFT_DB)
 
 
+def _spectrum(mono, rate):
+    return scipy.signal.stft(np.asarray(mono, dtype=np.float64), rate, nperseg=SOFT_FRAME, noverlap=SOFT_FRAME // 2)[2]
+
+
+def soft_mask(source, noise, rate, level):
+    """Per STFT cell, the amplitude gain L dB down where the source stands 6-18 dB over the noise's own mean in its bin
+    (bins of 1 kHz and up), 1 elsewhere."""
+    hiss = np.mean(np.abs(_spectrum(noise, rate)) ** 2, axis=1)
+    snr = 10.0 * np.log10(np.abs(_spectrum(source, rate)) ** 2 / np.maximum(hiss, SOFT_EPS)[:, np.newaxis] + SOFT_EPS)
+    high = np.fft.rfftfreq(SOFT_FRAME, 1.0 / rate) >= SOFT_LO_HZ
+    cells = (snr >= SOFT_BAND_DB[0]) & (snr < SOFT_BAND_DB[1]) & high[:, np.newaxis]
+    return np.where(cells, _db(level), 1.0)
+
+
+def soft_cut(level, _base, rate, materials, _rng):
+    """`soft_programme_cut`: the programme with its soft cells (`soft_mask` on the capture) cut L dB, the hiss 30 dB down."""
+    programme, noise, source = _parts(materials)
+    spectrum = _spectrum(programme, rate) * soft_mask(source, noise, rate, level)
+    cut = scipy.signal.istft(spectrum, rate, nperseg=SOFT_FRAME, noverlap=SOFT_FRAME // 2)[1][: len(programme)]
+    return source, np.pad(cut, (0, len(programme) - len(cut))) + noise * _db(HISS_LEFT_DB)
+
+
 BUILDERS = {
     "hiss_under_programme": under_programme,
     "hiss_in_pauses_only": in_pauses_only,
@@ -199,6 +228,7 @@ BUILDERS = {
     "dead_pauses": in_pauses_only,
     "hiss_islands": islands,
     "hiss_removed_dulled": dulled,
+    "soft_programme_cut": soft_cut,
 }
 
 

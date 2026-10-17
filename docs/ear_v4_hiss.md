@@ -7,7 +7,7 @@ first acceptance run failed; validation round 1 (the same day) traced each
 failure to a defect in the readings or in the transforms that set their tie
 bands and fixed the implementation; validation round 2 failed that build
 on 20 of 33 rows, and the fixes below answer it; validation round 3 and
-the adversarial review that followed it (first section) found the guards
+the adversarial review that followed it ("Adversarial Review") found the guards
 could still be won by emptying the pauses and the pause reading charged
 room tone and soft singing, and fixed both. The bars were not moved:
 where a row's own check contradicts the user's verdicts or the signal, the
@@ -17,11 +17,241 @@ Contradicts the Evidence". Nothing here shipped a default: the blind block
 recorded) and the realistic-v2 plus IA confirmation come first. T, S, V and
 G are Tele7abc, SOTI, Vaccin and Gaudeamus5. The readings and the grids are
 described in the output-quality-harness skill, "Critical of hiss (ear v4,
-2026-10-12)". The continuous-programme round of 2026-10-17 (first section)
-added a second anchor for the programme reading and measured why it cannot
+2026-10-12)". The continuous-programme round of 2026-10-17 (second
+section) added a second anchor for the programme reading and measured why it cannot
 reach dense singing; its follow-ups found that neither a band edge, nor a
 split in time, nor a reading of the within-band valleys tells revealed
-programme from residual hiss.
+programme from residual hiss. The soft-programme guard of the same day
+(first section) reads what an SNR-dependent suppressor takes from programme
+standing only 6-18 dB over the hiss.
+
+## The Soft Programme Kept (2026-10-17)
+
+The reference-SNR suppressor (`apl_reference_suppress`,
+`cathar_reference_suppress`, docs/configuration.md "Reference-SNR
+Suppressor") takes the Tata tapes' hiss under speech to inaudible, but it
+also lowers programme that stands only a little over the hiss. Measured on
+the replays with and without it (the source's cells, 1-8 kHz, classed by
+their SNR against the source's quantile print): cells under 3 dB moved
+-4.8..-7.5 dB (the hiss), 3-6 dB -6.6..-8.7, 6-12 dB -3.5..-4.1, 12-18 dB
+-0.9..-1.2, over 18 dB -0.1..-0.2. A perfect denoiser takes a 6 dB cell down
+about 1.0 dB and a 12 dB cell 0.3 dB. No ear reading saw it: kept HF reads
+only cells 18 dB over the floor at 3 kHz and up, R1's balance cells 12 dB
+over. `dsp.hiss_prog_kept_soft_db` is kept HF's twin for the soft programme
+(consonant onsets, breaths, tails), and a v4 guard.
+
+### The Reading
+
+Per window, inside the programme reading (`hiss_programme.kept_readings`,
+the same floor, active frames and dither hold as kept HF): per band of 1 kHz
+and up, the median output over source dB on the active cells whose source
+stands 6-18 dB over the floor, spread over the band's bins by the source's
+own shape (`shaped_floor`), and whose 3 x 3 neighbourhood mean (bins f +- 1,
+frames t +- 1) stands 6 dB over it too (`soft_cells`); the mean over the
+bands holding 20 such cells; None without one. Paired (0, value) like kept
+HF; the output median is the guarded key. Each piece was measured:
+
+- The neighbourhood test. A cell of hiss alone stands 6 dB over its mean
+  1.9 % of the time (the exponential's tail: 1.87 % on a synthetic field,
+  4.6 % in Tele7abc's true pauses). On the cell's own power alone, the bands
+  above a 4.5 kHz programme held hundreds of such cells and a perfect output
+  read -17.7..-24.1 dB (median -20.3, the 40 gapped linear fixtures on
+  Tele7abc's shape). With the neighbourhood: 0 of 800,000 synthetic hiss
+  cells, 0.8 % of Tele7abc's true-pause cells (0.0-0.35 % in its bands of
+  4.4-14 kHz).
+- The shaped floor. The band floor is the band's mean; Tele7abc's shape
+  spans 4.5-9.8 dB inside its 12-15 kHz bands, so with a flat floor the
+  band at 13.6 kHz kept 77 hiss cells and read -55.6 dB, and the perfect
+  outputs of the German fixtures read -4.8..-5.9 dB. Spread by the shape,
+  those bands keep 0-2 cells.
+- 1 kHz, not 3 kHz. On Tele7abc 34-38 % of the active cells of each band
+  from 1 to 3.5 kHz are soft programme, and the suppressor acts from 1 kHz
+  (the measurement above read 1-8 kHz). On a 4.5 kHz programme the 3 kHz
+  form averages about 6 bands against 15, the programme's skirt band among
+  them. Both forms separate a perfect output from a soft cut (3 kHz: -0.75
+  against -3.17 on Tele7abc's shape; 1 kHz -0.56 against -2.76) and move
+  little under a fresh floor (0.008 against 0.045).
+- The mean over bands, as kept HF takes it. The median over bands moved less
+  under a fresh floor (0.019) and is not carried by one band whose floor is
+  misread (Tele7abc's top band, 15.1 kHz, passes 9.75 % of its true-pause
+  cells, and takes the accepted APL render's mean to -1.78 where every band
+  to 12 kHz reads -0.15..-1.54 and its median -0.60). But it reads a 4 kHz
+  low pass at 0.00 (every fixture; Vaccin -0.01) and Tele7abc's de-esser bug
+  (-29.8) over the single4s renders the user ranked first on SOTI and Vaccin
+  (-31.7, -33.5), so no bound at the judged files' edge exists on it. The
+  pooled median over every soft cell moved 0.35 dB under a fresh floor.
+
+### Same-Percept Rows
+
+- The jitter report's eight pairs (v4_air `B_air_1dB` and v2
+  `final2_cathar` of T, S, V and G against their sources, the first 125 s,
+  `reward_noise_floor`'s hiss transforms, the runner's pair, anchor and
+  windows): gain +-0.1 dB 0.000, the 0.37
+  sample delay 0.001, the soxr round trip 0.000, requantisation 0.004, the
+  fresh floor 0.042 / 0.041 / 0.045 (p95; max 0.046). The tie floor 0.045,
+  rounded up to 0.05, is the guard's `max_move`. Kept HF on the same run:
+  0.002.
+- The fixtures (40 per shape): gain, delay, soxr and requantisation at most
+  0.003 (p95) on Tele7abc's shape and the tape-hiss shape.
+- A fresh draw of the whole hiss under an untouched programme (the
+  fixtures' `fresh`, a pass-through) reads -0.18..-0.93 dB (median -0.37,
+  Tele7abc's shape; -0.44 tape hiss; -0.35 on the unit tests' capture): the
+  cells are chosen on the source's own draw, so any output that does not
+  carry that draw reads the hiss's share in them, as a perfect output does.
+  A restoration never carries it; its own residual's fresh draw is the
+  fresh-floor row above.
+
+### Calibration Rows
+
+The fixtures (`artifacts/realistic-v2`, the 40 gapped m12 linear
+programmes per shape, `check_hiss_fixtures`' material;
+`D:\ai_restore_work\scratch_soft` holds the probes and their JSON):
+
+| case | Tele7abc's shape | tape-hiss shape |
+|---|---|---|
+| hiss 6 / 12 / 20 dB down | -0.31 / -0.45 / -0.52 | -0.36 / -0.51 / -0.60 |
+| perfect output | -0.56 (-0.30..-1.33) | -0.65 (-0.25..-1.97) |
+| perfect, soft cells cut 3 dB | -2.76 (-2.06..-3.06) | -2.87 (-1.98..-4.04) |
+| perfect, soft cells cut 6 dB | -4.64 (-3.42..-5.24) | -4.92 (-3.31..-5.94) |
+| perfect, 4 kHz low pass | -7.11 (-3.90..-8.07) | -4.44 (-2.02..-7.70) |
+| capture, soft cells cut 3 / 6 dB | -2.24 / -4.22 | -2.31 / -4.36 |
+| capture, 4 kHz low pass | -6.40 (-3.29..-7.04) | -3.64 (-1.41..-6.69) |
+
+Medians (ranges). The oracle ladder and the cut ladder are monotone on 40 of
+40 fixtures of both shapes; a perfect output stands 1.39-2.35 dB over the
+same output cut 3 dB (tape hiss 1.43-2.54). The soft cut is an STFT mask
+(2048 / 1024) on the cells the capture holds 6-18 dB over the hiss's true
+mean per bin, from 1 kHz up. Kept HF reads the 6 dB cut at -0.23 (median).
+
+Not passed: the corpus shape (the fixtures' own recorded noise, which
+wanders 8.5-8.7 dB p5-p95 over 100 ms frames) reads a perfect output at
+-23.4 dB (median), and the raw realistic-v2 pairs (clean against vhs, no
+gaps) at -7.16 (-17.35..+1.25). The floor, the P10 of the valley per 1 s
+block, sits under a wandering noise's mean, so cells 6-18 dB over it hold
+noise surges a perfect output removes. Kept HF fails there too (-27.4 and
+-4.25). On the Tata tapes the floor holds: Tele7abc's true-pause cells sit
+-1.12 dB under it (median), 0.5 dB over the exponential's -1.59.
+
+The Tata tapes (v4_air, the source and the accepted APL render B on one
+timeline; the mask from the source's own quantile print, 6-18 dB, 1 kHz
+up):
+
+| tape | source | cut 3 | cut 6 | lp 4k | B | B cut 3 | B cut 6 | B lp 4k |
+|---|---|---|---|---|---|---|---|---|
+| T | 0.00 | -2.12 | -3.94 | -18.01 | -1.78 | -3.94 | -5.98 | -18.51 |
+| S | 0.00 | -2.03 | -3.82 | -17.76 | -3.43 | -5.59 | -7.67 | -18.77 |
+| V | 0.00 | -1.18 | -2.21 | -12.29 | -2.48 | -3.76 | -5.07 | -14.59 |
+| G | 0.00 | -1.43 | -2.68 | -18.65 | -9.07 | -10.55 | -11.94 | -20.79 |
+
+Every ladder is monotone. On the unit tests' synthetic capture: perfect
+-0.49, cut 3 / 6 dB -1.90 / -3.05, low pass -6.07.
+
+The calibration (`calibrate_quality_metrics` on en and fr, dsp family, no
+ledger, CPU, `SCORE_SCHEMA` 9) asserts the reading in three degradations,
+and all five checks pass: flat under `hiss_under_programme`
+(moves 0.28 / 0.40 / 0.47 dB against 1.0), down under `hiss_removed_dulled`
+(-8.49 / -17.09 / -29.64) and under the new `soft_programme_cut` (-3.54 /
+-6.36 / -8.68 at 4 / 8 / 12 dB, the mildest 12.1 benign floors), with kept
+HF moving less than it there (0.38 / 0.55 / 0.65; asserted against 0.5 dB it
+failed at 8 and 12 dB, because a cell 6-18 dB over the hiss in its own bin
+can stand 18 dB over the band's flat floor) and the programme margin below
+the centre. Its benign floor is 0.292 dB (the `*_linear` cases, the fresh
+hiss draw carrying it). The run reads 123 of 215 checks passing with 12
+non-blind failures, none on a reading this change touches: the new builder
+draws nothing from the shared generator, so every other case and benign draw
+is the base tree's and every other reading is the base code's (`hiss`,
+`hum`, `gated_pauses`, `hiss_in_pauses`, both `lf_highpass` cases,
+`pause_residual_scaled`, `pause_residual_islands` twice,
+`hifi_compander_mistrack`, `phasey_resynth`, `hiss_in_pauses_only` on
+`gap_atten_db`); the base tree was not re-run.
+
+### The Judged Files
+
+The reading on every file the ledger judged
+(`assets/quality_calibration/verdicts.jsonl`), output median over 15 s
+windows, hop 7.5 s, GCC-PHAT. Round one, the known excerpts and the full
+tapes:
+
+| file | T | S | V |
+|---|---|---|---|
+| stitched | -16.92 | -22.44 | -21.81 |
+| single4s | **-27.46** | -26.09 | -26.51 |
+| cathar075 | -11.28 | -14.64 | -12.14 |
+| apl | -11.29 | | |
+| deesser_bug | **-28.62** | **-33.91** | **-30.00** |
+| full tape, cathar | -12.39..-16.92 | -18.45, -22.44 | -18.90, -21.81 |
+| full tape, apl | -10.65..-11.80 | -12.64 | -16.76 |
+
+Rounds two (the v2 finals) and three (v4_air) and Session 0:
+
+| file | T | S | V | G |
+|---|---|---|---|---|
+| v2 apl | -1.54 | -3.25 | -2.35 | -9.00 |
+| v2 cathar | -5.59 | -8.57 | -6.05 | -6.37 |
+| v4_air A | -1.53 | -3.23 | -2.35 | -9.00 |
+| v4_air B | -1.78 | -3.43 | -2.48 | -9.07 |
+| v4_air C | -2.04 | -3.63 | -2.61 | -9.19 |
+| Session 0 APL | -1.81 | | | |
+
+Bold: called underwater (`listener.dull`): the de-esser bug on every tape
+and single4s on Tele7abc ("underwater again, light hiss"). Single4s on SOTI
+and Vaccin was ranked first with stitched and not called dull. The music
+finals ("music fine on both"): Gaudeamus1 APL -0.65, cathar -5.59; eight of
+the eleven clips read -27.32 (captain-pu APL, one window) to +3.86, three
+read no window. Round two preferred APL on speech (it reads higher on
+T, S and V); round three preferred B, 0.07-0.25 dB under A on every tape (a
+lower air shelf, fewer soft cells lifted), so the reading must not be ranked.
+
+The bound, set as kept HF's was: the lowest reading of a file the user did
+not call dull is V single4s, -26.51 (S single4s -26.09); T single4s reads
+-27.46 and the de-esser bugs -28.62..-33.91. **Bound -27.0**, the next whole
+decibel under the accepted edge, with `max_move` 0.05: the floor holds at
+-27.05, over T single4s. music_v4 takes -28.0, the next whole decibel under
+the captain-pu APL final (-27.32); no music verdict names dulling.
+
+### The Reference Suppressor's Replays
+
+The CPU replays of docs/configuration.md (the kept work folders on the
+hardlinked tape copies), scored with `validate_restoration.py --metrics dsp`
+against the tapes. APL: `v1_frame_shelf` (the per-frame fill, no
+suppressor), `w_f_qfix` (with it), `w_i_qfix_shelf3k18` (with it, today's
+shelf). cathar: `c1_frame_shelf` and `c4_frame_sh2k30_ref`. Kept HF beside
+it:
+
+| tape | APL | + ref | + ref, 3 kHz shelf | cathar | + ref |
+|---|---|---|---|---|---|
+| T | -1.85 | -6.03 | -6.01 | -5.76 | -10.41 |
+| S | -3.47 | -7.55 | -7.55 | -8.42 | -12.83 |
+| V | -2.79 | -7.00 | -6.80 | -6.12 | -9.22 |
+| G | -9.53 | -16.49 | -16.39 | -6.57 | -14.36 |
+
+Kept HF on the same renders:
+
+| tape | APL | + ref | + ref, 3 kHz shelf | cathar | + ref |
+|---|---|---|---|---|---|
+| T | 0.18 | -0.39 | -0.39 | -0.60 | -1.36 |
+| S | -1.75 | -2.17 | -2.17 | -2.04 | -3.56 |
+| V | -0.22 | -0.79 | -0.79 | -0.89 | -1.32 |
+| G | -3.31 | -4.05 | -4.05 | -1.84 | -4.20 |
+
+The shipped renders read within 0.5
+dB of the frame column (APL -1.79 / -3.45 / -2.45 / -9.00, cathar -5.70 /
+-8.56 / -6.19 / -6.33), and the kept HF values reproduce the configuration
+document's replay tables.
+
+The suppressor takes the soft programme 4.1-4.2 dB down on the speech
+tapes with APL and 3.1-4.7 dB with cathar, 7.0 / 7.8 dB on Gaudeamus5's
+soft singing, where kept HF moved 0.4-0.7 dB (APL) and 0.4-2.4 dB (cathar).
+The first suppressor (the quietest 4 s as its noise, `v3_frame_shelf_ref`)
+read -12.3 / -13.4 / -10.7 / -16.7. **The bound does not exclude the
+suppressor**: every variant reads inside it (the deepest -16.49), no deeper
+than the round-one renders the user accepted (-10.65..-26.51). The guard keeps
+a loop from the region the user called underwater; it does not decide the
+suppressor. A guard on the move alone (no bound) would exclude it at any
+`max_move` under 4 dB and would pass round three's B against A at 0.3; that
+is the listening session's question: whether the soft programme the
+suppressor takes is heard (the blind block at a recorded device and volume),
+not the reading's.
 
 ## Continuous Programme: the Second Anchor (2026-10-17)
 
@@ -885,7 +1115,7 @@ of 40 on the corpus shape.
   33.6 against 30.7); the gated pauses trip the room delta (-119.6) and the
   pause texture guards (its pump, 11.5, sat under the 12 bound; +103.9 with
   the medians). **Pass.** Gating only the true pauses 20 or 30 dB passed
-  every guard and won the pause family until the review (first section).
+  every guard and won the pause family until the adversarial review.
 
 ## Loop Rows
 
@@ -937,7 +1167,7 @@ merge's adversarial review re-scored the 29 pinned outputs of
 
 The programme reading reads Gaudeamus1 on 5 of its 8 windows per render and
 one window of `x_vid-20230624-142023`; it abstains on the other ten clips
-(and still does with the second anchor of 2026-10-17, first section),
+(and still does with the second anchor of 2026-10-17, second section),
 and unvalidated windows read None, never a number. The all-band excess
 orders Gaudeamus1's `final2_cathar` (+1.26) under `final2_apl` (+8.44).
 **Pass.**

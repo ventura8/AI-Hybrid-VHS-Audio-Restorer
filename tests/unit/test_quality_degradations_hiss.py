@@ -80,12 +80,29 @@ def test_the_room_floor_sits_at_its_level_under_1_khz():
     assert hd.band_power(room, RATE, hd.ROOM_BAND_HZ).mean() == pytest.approx(target, rel=1e-6)
 
 
-@pytest.mark.parametrize("name", ["hiss_hf_tilt", "low_floor_kept", "hiss_islands", "hiss_removed_dulled"])
+@pytest.mark.parametrize("name", ["hiss_hf_tilt", "low_floor_kept", "hiss_islands", "hiss_removed_dulled", "soft_programme_cut"])
 def test_every_hiss_builder_returns_the_capture_as_its_source(name):
     """The source of every case is the hissy capture; the output keeps its length."""
     source, output = deg.apply(name, deg.DEGRADATIONS[name].levels[0], None, RATE, _materials(), None)
     assert source is _materials()["vhs_linear"]
     assert len(output) == len(source)
+
+
+def test_the_soft_cut_takes_only_the_cells_6_to_18_db_over_the_hiss_from_1_khz():
+    """The mask is L dB down on the capture's cells 6-18 dB over its hiss's mean per bin, from 1 kHz up, 1 elsewhere."""
+    _programme, noise, source = (_materials()[key] for key in LINEAR_KEYS)
+    mask = hd.soft_mask(source, noise, RATE, 6.0)
+    low = np.fft.rfftfreq(hd.SOFT_FRAME, 1.0 / RATE) < 1000.0
+    assert set(np.unique(mask).round(6)) == {round(10.0 ** (-6.0 / 20.0), 6), 1.0}
+    assert (mask[low] == 1.0).all()
+    assert (mask < 1.0).mean() == pytest.approx(0.1, abs=0.09)
+
+
+def test_the_soft_cut_keeps_the_programme_near_itself():
+    """The cut programme stays within the programme's own power of it (a mask, not a replacement)."""
+    programme = _materials()["prog_linear"]
+    _source, output = deg.apply("soft_programme_cut", 6.0, None, RATE, _materials(), None)
+    assert np.mean((output - programme) ** 2) < np.mean(programme**2)
 
 
 def test_the_hiss_degradations_need_the_fixtures_noise():

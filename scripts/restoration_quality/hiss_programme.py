@@ -74,9 +74,14 @@ one timeline:
    over the pause frames, `paused_ratio`), `hiss_prog_kept_hf_db` (per band of 3 kHz and up, the median
    output over source on active cells standing 18 dB over the floor, both held at the 16-bit
    dither, averaged over the bands holding 20 such cells: dulling inside the bands the margin
-   rewards, a cut of a few bands as visible as a low pass) and `hiss_island_kurt` (R4's frame
-   kurtosis on 20 ms frames of the active frames, 3 kHz to 1.06 x the top readable band, the
-   output in the source's gain; None where the output's margin is under -10 dB, where the
+   rewards, a cut of a few bands as visible as a low pass), `hiss_prog_kept_soft_db` (its twin
+   for the soft programme: per band of 1 kHz and up, the same median on active cells standing
+   6-18 dB over the floor spread over the band's bins by the source's shape, whose 3 x 3
+   neighbourhood stands 6 dB over it too, averaged over the bands holding 20 such cells: what an
+   SNR-dependent suppressor takes from consonants, breaths and tails; a perfect output reads only
+   the hiss's share, -0.3..-1.3 dB on the fixtures; `soft_cells`) and `hiss_island_kurt` (R4's
+   frame kurtosis on 20 ms frames of the active frames, 3 kHz to 1.06 x the top readable band,
+   the output in the source's gain; None where the output's margin is under -10 dB, where the
    texture is inaudible).
 
 Checked on `artifacts/realistic-v2` m12 tape-noise fixtures with two spliced 1.2 s gaps at the
@@ -114,6 +119,9 @@ TONAL_CONTEXT_BINS = 24
 SUMMARY_LO_HZ = 1000.0
 HF_LO_HZ = 3000.0
 PROG_MARGIN_DB = 18.0
+SOFT_MARGIN_DB = 6.0
+# The soft cells' neighbourhood: (frames, bins), the cell at its centre.
+SOFT_CONTEXT = (3, 3)
 ISLAND_MIN_MARGIN_DB = -10.0
 AUDIBLE_DB = 0.0
 BOUND_FRAMES = 5
@@ -141,6 +149,7 @@ PROGRAMME_NAMES = (
     "hiss_pump_db",
     "hiss_island_kurt",
     "hiss_prog_kept_hf_db",
+    "hiss_prog_kept_soft_db",
     "hiss_prog_active_s",
     "hiss_prog_bands",
     "hiss_prog_validated",
@@ -523,6 +532,36 @@ def programme_cells(src_power, floor, layout, active):
     return cells & (src_power >= cell_floor * 10.0 ** (PROG_MARGIN_DB / 10.0))
 
 
+def shaped_floor(floor, layout):
+    """`(frames, bins)`: each band's floor spread over its kept bins by the source's own shape (`Layout.shape`).
+
+    The band floor is the mean over the band's bins; a band holding a tape's roll-off or the brickwall's edge spans up to
+    10 dB of hiss (Tele7abc's shape at 12-15 kHz), so a flat floor read the band's hissier bins 6 dB over it. Infinite
+    off every band and where the floor is unread.
+    """
+    kept = layout.kindex >= 0
+    mean_shape = np.bincount(layout.kindex[kept], weights=layout.shape[kept], minlength=layout.nb) / np.maximum(layout.nbins, 1.0)
+    out = np.full((floor.shape[0], len(layout.kindex)), np.inf)
+    relative = layout.shape[kept] / np.maximum(mean_shape[layout.kindex[kept]], EPS)
+    out[:, kept] = np.nan_to_num(floor[:, layout.kindex[kept]], nan=np.inf) * relative[np.newaxis, :]
+    return out
+
+
+def soft_cells(src_power, floor, layout, active):
+    """Active cells of 1 kHz and up standing 6-18 dB over the shaped floor, their 3 x 3 neighbourhood 6 dB over it too.
+
+    The soft programme (consonant onsets, breaths, reverb tails, the quiet partials) the 18 dB test leaves out. A cell
+    of hiss alone stands 6 dB over its mean 1.9 % of the time (the exponential's tail), so in the bands above the
+    programme its own power selected hundreds of hiss cells, and a perfect output read them -29..-61 dB; the
+    neighbourhood mean (bins f +- 1, frames t +- 1) of hiss alone almost never stands that high.
+    """
+    cell_floor = shaped_floor(floor, layout)
+    low = cell_floor * 10.0 ** (SOFT_MARGIN_DB / 10.0)
+    near = np.maximum(scipy.ndimage.uniform_filter(src_power, size=SOFT_CONTEXT, mode="nearest"), 0.0)
+    cells = active[:, np.newaxis] & layout.bins_of(layout.centres >= SUMMARY_LO_HZ)[np.newaxis, :]
+    return cells & (src_power >= low) & (src_power < cell_floor * 10.0 ** (PROG_MARGIN_DB / 10.0)) & (near >= low)
+
+
 def band_medians(level, cells, layout):
     """Per band holding at least 20 of `cells`, the median of `level` over them."""
     medians = []
@@ -533,17 +572,39 @@ def band_medians(level, cells, layout):
     return medians
 
 
-def kept_hf_db(powers, floor, layout, active):
-    """The mean over bands of 3 kHz and up of each band's median output over source dB on its programme cells.
+def held_level_db(powers):
+    """Per cell, output over source in dB with both sides held at the 16-bit dither per bin.
 
-    Both sides are held at the 16-bit dither per bin (requantising a render whose top sits near the 16-bit floor moved
-    the guard 2-3 dB); a band counts with at least 20 programme cells; None with no such band.
+    Requantising a render whose top sits near the 16-bit floor moved the kept-HF guard 2-3 dB before the hold.
     """
     src_power, out_power = powers
     dither = hiss_floor.dither_floor_per_bin()
-    level = 10.0 * np.log10(np.maximum(out_power, dither) / np.maximum(src_power, dither))
-    medians = band_medians(level, programme_cells(src_power, floor, layout, active), layout)
+    return 10.0 * np.log10(np.maximum(out_power, dither) / np.maximum(src_power, dither))
+
+
+def kept_db(level, cells, layout):
+    """The mean over the bands holding at least 20 of `cells` of each band's median `level` on them; None with none."""
+    medians = band_medians(level, cells, layout)
     return float(np.mean(medians)) if medians else None
+
+
+def kept_readings(powers, floor, layout, active):
+    """`{kept_hf_db, kept_soft_db}`: per band, the median output over source dB on its loud programme cells of 3 kHz and
+    up (`programme_cells`) and on its soft programme cells of 1 kHz and up (`soft_cells`), each the mean over the bands.
+
+    The soft reading takes the mean over bands as kept HF does: of the forms measured (docs/ear_v4_hiss.md, "The Soft
+    Programme Kept") it alone keeps the judged files apart at an edge and reads a 4 kHz low pass. The median over bands
+    moved less under a fresh floor (0.019 dB p95 against 0.045) and shrugs off a band whose floor is misread (Tele7abc's
+    top band, 15.1 kHz, passes 9.75 % of its true-pause cells and takes the accepted APL render's mean to -1.78 dB, its
+    median to -0.60), but it reads Tele7abc's de-esser bug (-29.8) over the single4s renders the user ranked first on
+    SOTI and Vaccin (-31.7, -33.5) and a 4 kHz low pass at 0.00; the pooled median over every soft cell moved 0.35 dB
+    under a fresh floor.
+    """
+    level = held_level_db(powers)
+    return {
+        "kept_hf_db": kept_db(level, programme_cells(powers[0], floor, layout, active), layout),
+        "kept_soft_db": kept_db(level, soft_cells(powers[0], floor, layout, active), layout),
+    }
 
 
 def island_top_hz(layout, readable):
@@ -686,7 +747,7 @@ class Window:
             "src": src_side,
             "out": out_side,
             "pump_db": pump_db((self.src_power, self.out_power), pause, ratio_w, self.layout, self.rate),
-            "kept_hf_db": kept_hf_db((self.src_power, self.out_power), floor, self.layout, active),
+            **kept_readings((self.src_power, self.out_power), floor, self.layout, active),
             "island_kurt": island_kurt(self.pair, self.rate, active, top, gain),
         }
 
@@ -720,7 +781,7 @@ def paired(found, ok):
         "hiss_prog_audible_frac": (src["audible_frac"], out["audible_frac"]),
     }
     guards = {f"hiss_{name}": _guard(found, name) for name in ("pump_db", "island_kurt")}
-    guards["hiss_prog_kept_hf_db"] = _guard(found, "kept_hf_db")
+    guards["hiss_prog_kept_hf_db"], guards["hiss_prog_kept_soft_db"] = _guard(found, "kept_hf_db"), _guard(found, "kept_soft_db")
     guards["hiss_prog_removed_db"], guards["hiss_prog_removed_hf_db"] = _guard(found, "removed_db"), _guard(found, "removed_hf_db")
     coverage = {f"hiss_prog_{name}": (found[name], found[name]) for name in ("active_s", "bands")}
     coverage["hiss_prog_validated"] = (float(ok), float(ok))

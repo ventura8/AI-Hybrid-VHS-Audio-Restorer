@@ -1087,6 +1087,16 @@ reads 1.32 at most, `lkr` 1.47 at most (SOTI), the pause islands 0.99. Here
 "frame" is the shelf at 3000 Hz, 18 dB, and "+ ref" the shelf at 2000 Hz,
 30 dB. cathar never reads the stage cache; off, cathar keeps its bytes.
 
+What the suppressor takes from the programme that stands only 6-18 dB over
+the hiss, which kept HF's 18 dB cells never see: the soft-programme guard
+(`dsp.hiss_prog_kept_soft_db`, ear v4, 2026-10-17) reads the APL replays
+4.1-4.2 dB under the same stages without it on the speech tapes (Tele7abc
+-1.85 to -6.03) and 7.0 dB on Gaudeamus5's soft singing, cathar's 3.1-4.7 dB
+and 7.8 dB. Its bound (-27 dB, the judged files the user did not call dull)
+does not exclude either; whether the soft programme it takes is heard is the
+listening session's question (`docs/ear_v4_hiss.md`, "The Soft Programme
+Kept").
+
 ## auto_pure_linear Burst Ceiling
 
 Two `auto_pure_linear` keys added on 2026-10-12 for the hiss the

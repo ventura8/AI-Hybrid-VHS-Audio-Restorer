@@ -15,6 +15,7 @@ ALL_BAND, PAUSE_MEDIAN = "dsp.hiss_prog_excess_all_db.output.median", "dsp.hiss_
 PAUSE_DELTA, DEPTH = "dsp.hiss_pause_margin_db.delta.tail", "dsp.pause_depth_speech_db.delta.median"
 ROOM, PUMP = "dsp.hiss_room_delta_db.output.median", "dsp.hiss_pump_db.output.median"
 KEPT_HF, MODULATION = "dsp.hiss_prog_kept_hf_db.output.median", "dsp.gap_mod_dist_db.output.median"
+KEPT_SOFT = "dsp.hiss_prog_kept_soft_db.output.median"
 ISLANDS = "dsp.hiss_island_kurt.output.median"
 PAUSE_HISS = "listener.hiss_pause"
 BASELINE, GATE_B = "r1_tele7abc/cathar__baseline", "gate_tele7abc/B"
@@ -40,6 +41,7 @@ TATA_CONSTRAINTS = {
     ROOM: {"worse": "down", "bound": -54.0},
     PUMP: {"worse": "up", "max_move": 3.0, "bound": 12.0},
     KEPT_HF: {"worse": "down", "max_move": 1.0, "bound": -6.0},
+    KEPT_SOFT: {"worse": "down", "max_move": 0.05, "bound": -27.0},
     ISLANDS: {"worse": "up", "max_move": 0.3, "bound": 2.0},
     "dsp.gap_island_kurt.output.median": {"worse": "up", "max_move": 0.3, "bound": 1.85},
     MODULATION: {"worse": "up", "max_move": 1.2, "bound": 10.0},
@@ -55,13 +57,15 @@ MUSIC_CONSTRAINTS = {
     "dsp.hiss_prog_margin_all_db.delta.median": {"worse": "up", "bound": 0.55},
     PUMP: {"worse": "up", "max_move": 3.0, "bound": 12.0},
     KEPT_HF: {"worse": "down", "max_move": 1.0, "bound": -6.0},
+    KEPT_SOFT: {"worse": "down", "max_move": 0.05, "bound": -28.0},
     ISLANDS: {"worse": "up", "max_move": 0.3, "bound": 2.0},
     ROOM: {"worse": "down", "bound": -54.0},
     "dsp.balance_presence_db.output.median": {"worse": "down", "max_move": 0.25},
 }
 
 PROG_FLAG, PAUSE_FLAG = "dsp.hiss_prog_margin_db.output.median", "dsp.hiss_pause_margin_db.output.tail"
-READINGS = (*TATA_CONSTRAINTS, PROG_FLAG, PAUSE_FLAG)
+# The pinned table's columns: the sixteen constraints of the acceptance run (the soft guard has its own table) and the flags.
+READINGS = (*(key for key in TATA_CONSTRAINTS if key != KEPT_SOFT), PROG_FLAG, PAUSE_FLAG)
 DEAD_APL = (
     "apl__baseline",
     "apl__no_air",
@@ -190,7 +194,8 @@ def test_the_speech_vetoes_are_v3_plus_the_noise_judges():
 
 
 def test_the_speech_constraints_are_the_specified_set():
-    """Sixteen hard guards: no new hiss, never hissier than the tape, no dead air, no gated hiss, no dulling, no islands."""
+    """Seventeen hard guards: no new hiss, never hissier than the tape, no dead air, no gated hiss, no dulling (loud or
+    soft programme), no islands."""
     assert _grid(TATA_V4)["constraints"] == TATA_CONSTRAINTS
 
 
@@ -202,7 +207,7 @@ def test_the_rest_of_the_speech_grid_is_v3():
 
 
 def test_the_music_grid_is_v3_plus_the_hiss_entries_and_its_guards():
-    """music_v4 keeps every music_v3 entry and veto; the all-band hiss weighs 3.0; eight relative guards."""
+    """music_v4 keeps every music_v3 entry and veto; the all-band hiss weighs 3.0; nine relative guards."""
     v3, v4 = _grid("music_v3.yaml"), _grid("music_v4.yaml")
     assert {key: v4["ranking"][key] for key in v3["ranking"]} == v3["ranking"]
     assert _hiss_entries(v4["ranking"]) == HISS_MUSIC
@@ -342,3 +347,104 @@ def test_past_the_bound_a_worse_pause_texture_still_trips_it():
     """Keeper off (11.47) against the shipped fill (4.64), and a small creep past the bound."""
     guard = _modulation_guard()
     assert (guard.trips(11.47, 4.64), guard.trips(11.5, 10.1)) == (True, True)
+
+
+# The soft programme kept (`dsp.hiss_prog_kept_soft_db.output.median`, 2026-10-17; docs/ear_v4_hiss.md, "The Soft Programme
+# Kept"): every judged file's reading and the reference suppressor's replays, through the runner's pair, anchor and
+# windows (15 s, hop 7.5 s) on the GCC-PHAT aligner. Numbers only; the family tapes stay on the machine.
+SOFT_PINNED = {
+    "known_tele/stitched": -16.92,
+    "known_tele/single4s": -27.46,
+    "known_tele/deesser_bug": -28.62,
+    "known_tele/cathar075": -11.28,
+    "known_tele/apl": -11.29,
+    "known_soti/stitched": -22.44,
+    "known_soti/single4s": -26.09,
+    "known_soti/deesser_bug": -33.91,
+    "known_soti/cathar075": -14.64,
+    "known_vaccin/stitched": -21.81,
+    "known_vaccin/single4s": -26.51,
+    "known_vaccin/deesser_bug": -30.00,
+    "known_vaccin/cathar075": -12.14,
+    "v4air_tele7abc/A_as_heard": -1.53,
+    "v4air_tele7abc/B_air_1dB": -1.78,
+    "v4air_tele7abc/C_air_off": -2.04,
+    "v4air_soti/A_as_heard": -3.23,
+    "v4air_soti/B_air_1dB": -3.43,
+    "v4air_soti/C_air_off": -3.63,
+    "v4air_vaccin/A_as_heard": -2.35,
+    "v4air_vaccin/B_air_1dB": -2.48,
+    "v4air_vaccin/C_air_off": -2.61,
+    "v4air_gaudeamus5/A_as_heard": -9.00,
+    "v4air_gaudeamus5/B_air_1dB": -9.07,
+    "v4air_gaudeamus5/C_air_off": -9.19,
+    "v2_x_the-adventures-of-captain-pu/final2_apl": -27.32,
+    "v2_x_the-adventures-of-captain-pu/final2_cathar": -0.42,
+    "replay_tele7abc/v1_frame_shelf": -1.85,
+    "replay_tele7abc/w_f_qfix": -6.03,
+    "replay_tele7abc/c1_frame_shelf": -5.76,
+    "replay_tele7abc/c4_frame_sh2k30_ref": -10.41,
+    "replay_soti/v1_frame_shelf": -3.47,
+    "replay_soti/w_f_qfix": -7.55,
+    "replay_soti/c1_frame_shelf": -8.42,
+    "replay_soti/c4_frame_sh2k30_ref": -12.83,
+    "replay_vaccin/v1_frame_shelf": -2.79,
+    "replay_vaccin/w_f_qfix": -7.00,
+    "replay_vaccin/c1_frame_shelf": -6.12,
+    "replay_vaccin/c4_frame_sh2k30_ref": -9.22,
+    "replay_gaudeamus5/v1_frame_shelf": -9.53,
+    "replay_gaudeamus5/w_f_qfix": -16.49,
+    "replay_gaudeamus5/c1_frame_shelf": -6.57,
+    "replay_gaudeamus5/c4_frame_sh2k30_ref": -14.36,
+}
+
+
+def _soft_trips(candidate, incumbent, grid=TATA_V4):
+    """Whether the grid's soft guard excludes `candidate` against `incumbent`, both pinned soft readings."""
+    guard = reward.parse_constraints(_grid(grid)["constraints"])[KEPT_SOFT]
+    return guard.trips(SOFT_PINNED[candidate], SOFT_PINNED[incumbent])
+
+
+@pytest.mark.parametrize("tape", ["tele", "soti", "vaccin"])
+def test_the_de_esser_bug_trips_the_soft_guard(tape):
+    """'Speech from under water' on every tape: the de-esser bug reads -28.6..-33.9 against stitched, past the -27 bound."""
+    assert _soft_trips(f"known_{tape}/deesser_bug", f"known_{tape}/stitched")
+
+
+def test_single4s_trips_the_soft_guard_only_where_it_was_heard_underwater():
+    """'Underwater again' (Tele7abc, -27.46) trips; SOTI's and Vaccin's single4s, ranked first (-26.09, -26.51), do not."""
+    assert _soft_trips("known_tele/single4s", "known_tele/stitched")
+    assert not _soft_trips("known_soti/single4s", "known_soti/stitched")
+    assert not _soft_trips("known_vaccin/single4s", "known_vaccin/stitched")
+
+
+@pytest.mark.parametrize("tape", ["tele7abc", "soti", "vaccin", "gaudeamus5"])
+def test_the_air_shelf_round_passes_the_soft_guard(tape):
+    """Round three preferred B (+1 dB air) over A (+2 dB) and C (off): each reads 0.07-0.26 dB under A, inside the bound."""
+    assert not _soft_trips(f"v4air_{tape}/B_air_1dB", f"v4air_{tape}/A_as_heard")
+    assert not _soft_trips(f"v4air_{tape}/C_air_off", f"v4air_{tape}/B_air_1dB")
+
+
+def test_the_accepted_music_finals_pass_the_music_soft_guard():
+    """'Music fine on both': the captain-pu APL final reads -27.32 (one window) against its cathar final's -0.42; music_v4's
+    bound, -28.0, admits it where tata_v4's -27.0 would not."""
+    candidate, incumbent = "v2_x_the-adventures-of-captain-pu/final2_apl", "v2_x_the-adventures-of-captain-pu/final2_cathar"
+    assert not _soft_trips(candidate, incumbent, "music_v4.yaml")
+    assert _soft_trips(candidate, incumbent)
+
+
+def test_past_the_bound_a_soft_loss_beyond_jitter_trips_it():
+    """Past -27 the guard does not follow the incumbent: a worse candidate more than 0.05 dB past it trips, one within the
+    jitter of the bound does not, and inside the bound no move trips (the reference suppressor's replays stay there)."""
+    guard = reward.parse_constraints(_grid(TATA_V4)["constraints"])[KEPT_SOFT]
+    assert (guard.trips(-27.2, -27.1), guard.trips(-27.03, -27.01), guard.trips(-20.0, -1.8)) == (True, False, False)
+
+
+@pytest.mark.parametrize("tape", ["tele7abc", "soti", "vaccin", "gaudeamus5"])
+@pytest.mark.parametrize(("without", "with_it"), [("v1_frame_shelf", "w_f_qfix"), ("c1_frame_shelf", "c4_frame_sh2k30_ref")])
+def test_the_reference_suppressor_takes_soft_programme_inside_the_bound(tape, without, with_it):
+    """The suppressor takes the soft programme 3.1-7.8 dB down (APL and cathar replays), but no variant reaches -27: the
+    bound set by the judged files does not exclude it; that question is the listening session's."""
+    candidate, incumbent = f"replay_{tape}/{with_it}", f"replay_{tape}/{without}"
+    assert SOFT_PINNED[candidate] <= SOFT_PINNED[incumbent] - 3.0
+    assert not _soft_trips(candidate, incumbent)

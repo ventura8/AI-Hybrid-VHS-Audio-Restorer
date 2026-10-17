@@ -1591,9 +1591,13 @@ prototype's estimator, rebuilt after validation round 1):
    standing 18 dB over the floor, both held at the 16-bit dither, averaged
    over the bands with 20 such cells: dulling; round 1's median over all
    cells hid a cut of the band edge behind the 3-4 kHz cells and missed the
-   4 kHz low pass on 9 of 23 fixtures) and `hiss_island_kurt` (R4's frame
-   kurtosis on 20 ms frames, 3 kHz to 1.06 x the top readable band; None
-   when the output's margin is under -10 dB).
+   4 kHz low pass on 9 of 23 fixtures), `hiss_prog_kept_soft_db` (its twin
+   for the soft programme, 2026-10-17: per band of 1 kHz and up, the same
+   median on active cells standing 6-18 dB over the floor spread over the
+   band's bins by the source's shape, whose 3 x 3 neighbourhood mean stands
+   6 dB over it too, averaged over the bands with 20 such cells; below) and
+   `hiss_island_kurt` (R4's frame kurtosis on 20 ms frames, 3 kHz to 1.06 x
+   the top readable band; None when the output's margin is under -10 dB).
 
 `hiss_pause.py`, the hiss in the pauses (the pause design's prototype with
 block estimator, q 0.5, raw shape, no trim, Terhardt):
@@ -1659,6 +1663,7 @@ Card fields (all `dsp.*`, programme routes; `meta.*` source side):
 | `hiss_pump_db` | 0, out | lower | constraint |
 | `hiss_island_kurt` | 0, out | lower | constraint |
 | `hiss_prog_kept_hf_db` | 0, out | higher | constraint |
+| `hiss_prog_kept_soft_db` | 0, out | higher | constraint |
 | `hiss_pause_margin_db` | src, out | lower | flag (tail); H2 (tail) |
 | `hiss_pause_excess_db` | max(0, .) | lower | ranked (tail 3.0, median 1.5) |
 | `hiss_pause_onset_db`, `_sone` | src, out | display | |
@@ -1704,11 +1709,11 @@ the v3 grids stay for reproducibility.
   `dsp.hiss_pause_excess_db.output.tail` (3.0, 0.35) and `.median` (1.5, 0.35),
   each one-sided (target 0, dead zone 0, scale 1). The vetoes are v3's six plus
   DNSMOS BAK and SIGMOS NOISE (floor multiple 1): the guards line reads "8
-  learned vetoes, 1 verdict reversals, 16 constraints, audibility tie at a 24 dB
+  learned vetoes, 1 verdict reversals, 17 constraints, audibility tie at a 24 dB
   masking offset".
 - `music_v4`: every music_v3 entry and veto, the all-band excess at 3.0
   (it carries singing) and the programme excess at 1.5, the same pause
-  entries, eight relative constraints (accepted music finals sit outside
+  entries, nine relative constraints (accepted music finals sit outside
   music_v3's uncalibrated R1 dead zones).
 - `tie` is the jitter report's `tie_floor` for that flat key (the widest
   same-percept transform's p95), rounded up to 0.05: programme excess median
@@ -1740,7 +1745,11 @@ the v3 grids stay for reproducibility.
   +6.49, and the dead APL, +18.09 and up; a 30 dB gate of the true pauses
   reads +21.8 on Tele7abc and is excluded, a 20 dB one +11.8 and passes),
   kept HF (`max_move` 1.0, `bound` -6.0: the floor holds at -7.0, over T
-  single4s' -7.04, "underwater again"), the islands (0.3 each; the programme
+  single4s' -7.04, "underwater again"), the soft programme kept (`max_move`
+  0.05, the jitter report's tie floor 0.045; `bound` -27.0, the next whole
+  decibel under the lowest file the user did not call dull, V single4s
+  -26.51, over T single4s' -27.46; music_v4 -28.0 under the captain-pu APL
+  final's -27.32), the islands (0.3 each; the programme
   islands `bound` 2.0), modulation (1.2) and the
   timbre and 's' edges. Two bounds the specification did not give:
   `gap_island_kurt` 1.85 (tata_v3's dead-zone edge) and `balance_top_db` -1.0
@@ -1806,7 +1815,12 @@ The degradations (`scripts/degradations_hiss.py`,
 (`linear_capture`: the clean programme low-passed at 4.5 kHz with two
 1.2 s gaps, plus stationary tape hiss at the fixture noise's 3-10 kHz
 level) and `hiss_under_programme`, `hiss_in_pauses_only`, `hiss_hf_tilt`,
-`low_floor_kept`, `dead_pauses`, `hiss_islands`, `hiss_removed_dulled`.
+`low_floor_kept`, `dead_pauses`, `hiss_islands`, `hiss_removed_dulled` and,
+since 2026-10-17, `soft_programme_cut` (the programme with the cells the
+capture holds 6-18 dB over its hiss's mean, from 1 kHz up, cut 4 / 8 / 12 dB:
+the soft guard reads it down, kept HF moves less than it, 0.38-0.65 dB;
+`hiss_under_programme` holds the soft guard flat within 1.0 dB and
+`hiss_removed_dulled` reads it down; `SCORE_SCHEMA` 9).
 The specification named the fixture's recorded noise for the capture; that
 noise is rumble-heavy, the VAD found no true pauses in the gapped capture
 and `low_floor_kept` read NaN, so the capture takes tape hiss instead. The
@@ -1973,6 +1987,39 @@ Pitfalls:
   readable bands of 1 kHz and up), Gaudeamus5 all 38, and one window of
   `x_vid-20230624-142023`; the other 10 music clips abstain (anchor
   unvalidated, or a programme band under 1 kHz).
+
+The soft programme kept (2026-10-17, `hiss_programme.soft_cells`,
+`kept_readings`; the record in `docs/ear_v4_hiss.md`, "The Soft Programme
+Kept"). The reference-SNR suppressor took the Tata hiss under speech to
+inaudible and the programme 3-12 dB over the hiss 3.5-8.7 dB down, which no
+reading saw: kept HF reads 18 dB cells only. Facts that decided its form:
+
+- A hiss cell stands 6 dB over its mean 1.9 % of the time, so the cell's own
+  power alone filled the bands above a 4.5 kHz programme with hiss cells and
+  read a perfect output -20.3 dB (fixtures); the 3 x 3 neighbourhood mean
+  must stand 6 dB over the floor too (0 hiss cells of 800,000 synthetic; 0.8
+  % of Tele7abc's true-pause cells).
+- The band floor is the band's mean; a tape's roll-off spans 4.5-9.8 dB
+  inside Tele7abc's 12-15 kHz bands, so the floor is spread over the bins by
+  the source's shape (`shaped_floor`).
+- The mean over bands, as kept HF: the median over bands read a 4 kHz low
+  pass at 0.00 and put Tele7abc's de-esser bug over the accepted single4s of
+  SOTI and Vaccin; the pooled median moved 0.35 dB under a fresh floor.
+- It is valid only on stationary hiss: on the fixtures' wandering corpus
+  noise (and the raw realistic-v2 pairs) a perfect output reads -23.4 / -7.2
+  dB, as kept HF fails there; on the Tata tapes the floor holds (true-pause
+  cells -1.12 dB under it, the exponential's -1.59).
+- Same-percept p95 0.045 (fresh floor; the rest at most 0.004) on the
+  jitter pairs; a perfect output -0.56 / -0.65 (Tele7abc's / tape-hiss
+  shape), a 3 dB soft cut -2.76 / -2.87, 40 of 40 monotone.
+- The judged files: accepted down to V single4s -26.51 (round one, ranked
+  first; the round-one cathar renders -11..-22), rejected T single4s -27.46
+  and the de-esser bugs -28.6..-33.9; the v2 / v4_air plateaus -1.5..-9.2.
+  The guard: `max_move` 0.05, `bound` -27.0 (music -28.0, captain-pu APL
+  -27.32). It does not exclude the suppressor (APL 4.1-7.0 dB, cathar
+  3.1-7.8 dB under the same stages without it, the deepest -16.49); a
+  move-only guard would, and round three's B (0.07-0.25 dB under A,
+  preferred) says it must not be ranked. The listening session decides.
 
 ### One loop judging: ear v4 merged with the judging resolution (2026-10-12)
 
@@ -2382,7 +2429,7 @@ as before:
   does not split as `metric.side.stat` (a registered metric, side output or
   delta, a stat `runner.FLAT_STATS` holds) stops the loop.
   `describe_guards` counts them: tata_v4 reads "8 learned vetoes, 1 verdict
-  reversals, 16 constraints, audibility tie at a 24 dB masking offset" with
+  reversals, 17 constraints, audibility tie at a 24 dB masking offset" with
   the benign-pair floors.
 
 Before a v3 round, write the floor report on the shipped APL and cathar
