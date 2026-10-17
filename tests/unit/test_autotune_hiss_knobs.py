@@ -15,6 +15,7 @@ CATHAR_ONLY = (
 APL_ONLY = (
     "apl_post_neural_suppress",
     "apl_post_neural_suppress_min_residual_db",
+    "apl_reference_suppress",
     "apl_neural_level_restore",
     "linear_air_gate",
     "apl_burst_ceiling",
@@ -108,6 +109,13 @@ def test_the_gain_floor_is_live_when_either_suppressor_runs():
     floor = "apl_suppress_gain_floor_db"
     assert floor not in at.inert_knobs("apl", {"apl_enable_spectral_denoise": True, "apl_post_neural_suppress": True})
     assert floor in at.inert_knobs("apl", {"apl_enable_spectral_denoise": True})
+    assert floor not in at.inert_knobs("apl", {"apl_enable_spectral_denoise": True, "apl_reference_suppress": True})
+
+
+def test_the_reference_suppressor_is_one_move_from_the_shipped_state():
+    """Ungated and needing no other switch, the reference suppressor is a single move the loop can make."""
+    assert at.SWITCH_DEFAULTS["apl_reference_suppress"] is False
+    assert _moves("apl", {"apl_reference_suppress": False})["apl_reference_suppress"] == {True}
 
 
 def test_from_the_shipped_state_the_fill_steps_to_a_shaped_frame_fill():

@@ -708,6 +708,38 @@ audio alignment, or FFmpeg multiplexing.
   8.9 dB on tape: test its effect on real stage WAVs, not on fixtures. The
   air gate reads nothing when `enable_linear_air` is off or
   `linear_air_gain_db` is 0: there is no shelf to skip.
+- **APL reference-SNR suppressor (2026-10-17)**: `apl_reference_suppress`
+  (off; `spectral_suppress.ReferenceSuppressor`, run in
+  `modules/post_neural_suppress.py` after the gated suppressor, through the
+  same `post_neural_suppress` opt-in; `docs/configuration.md`,
+  "auto_pure_linear Reference-SNR Suppressor"). The gain is read on the
+  pre-conditioned source's SNR and applied to the post-neural audio, so the
+  RoFormer's mask and the source's SNR multiply and it only removes; it runs
+  ungated. Facts that shaped it: (1) the quietest-4 s probe
+  (`spectral_suppress.noise_profile`, cathar's rule, also what
+  `apl_use_native_suppress` and the gated suppressor learn from) read
+  13-25 dB over the Tata tapes' true-pause floor below 8 kHz: on a speech
+  tape that probe is speech, so do not trust a suppressor fed from it on
+  speech; (2) the whole-file quantile print in power on the suppressor's
+  grid (`reference_noise`: p5 of the 16-frame moving mean, +2.0 dB, built on
+  `noiseprint_quantile.MovingQuantile`, now parametrised with cathar's print
+  unchanged) read that floor within 2.7 dB; (3) a level tracker on top
+  raised the estimate during speech, so the print is held (`HeldLevel`);
+  (4) with no 0.37 s of hiss alone in 5 % of the windows the print learns
+  the programme (a gapless fixture lost 15 dB of its partials), hence
+  `MIN_DEPTH_DB` 18 on the loud frames' 300-3000 Hz P90 (Tata 24.7-31.9,
+  one gapless music clip 1.7); (5) frequency or time smoothing of the
+  reference power and a faster decision-directed alpha let hiss through
+  under speech and trip the pump guard. On CPU replay of the v9 incumbent
+  with the per-frame fill shelved at 2 kHz by 30 dB the hiss reads
+  inaudible under speech and in the pauses on Tele7abc, SOTI and Vaccin
+  (Gaudeamus5's pause tail 21.7 to 6.4), pump 8.8-9.6, kept HF -0.39 to
+  -4.05, lkr up to 1.41, every v4 guard passing. The production stage
+  matched the prototype to -83 dB. Without the suppressor that fill trips
+  the pump (35.7-40.9). The replay harness (kept work folders of one render
+  on hardlinked tape copies, `processing._post_neural_stages` run
+  in-process per variant from a config.yaml in a fresh folder) lives in
+  `D:/ai_restore_work/scratch_resid` (`replay.py`, `table.py`).
 - **APL burst ceiling (2026-10-12)**: `apl_burst_ceiling` (`none`, `gaps`,
   `edges`) and `apl_burst_ceiling_depth_db` (30), `modules/burst_ceiling.py`
   between the polish and the pause floor (`docs/configuration.md`,

@@ -841,6 +841,21 @@ cathar_dereverb_strength: 2.0
 #     false (Default): every output keeps its bytes; a GPU render with the per-frame
 #     pause fill and a listening session judge it.
 #
+# apl_reference_suppress (auto_pure_linear only):
+#   - The same MMSE-LSA gain, read on the pre-conditioned source instead of the
+#     post-neural audio and applied to the post-neural audio, after the sibilant
+#     guard: the neural stage's mask and the source's SNR multiply, so a cell where
+#     the source held only hiss loses up to apl_suppress_gain_floor_db and a cell
+#     where the programme stood over the hiss keeps its level. Its noise is the
+#     source's whole-file quantile print (5th percentile of the 0.37 s moving mean,
+#     +2 dB), held at its level: the quietest 4 s stretch the gated suppressor and
+#     the native one learn from read 13-25 dB over the Tata tapes' true pauses
+#     below 8 kHz (speech), the quantile print within 2.7 dB. Ungated. CPU replay
+#     of the v9 incumbent on the four Tata tapes, with the per-frame pause fill
+#     shelved at 2 kHz by 30 dB: docs/configuration.md, "Reference-SNR Suppressor".
+#     false (Default): every output keeps its bytes until the loop and a listening
+#     session judge it.
+#
 # apl_neural_level_restore (auto_pure_linear only):
 #   - The separator peak-normalises to 0.9, so a hot or declipped tape leaves the
 #     neural stage up to 10.7 dB quieter (fourstarrevue) and the expander's knee and
@@ -942,6 +957,7 @@ linear_air_gate: "none"
 apl_post_neural_suppress: false
 apl_post_neural_suppress_floor_gap_db: 3.0
 apl_post_neural_suppress_min_residual_db: 6.0
+apl_reference_suppress: false
 apl_neural_level_restore: false
 apl_burst_ceiling: "none"
 apl_burst_ceiling_depth_db: 30.0

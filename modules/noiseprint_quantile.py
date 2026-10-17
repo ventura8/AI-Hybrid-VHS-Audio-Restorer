@@ -103,18 +103,28 @@ def frame_magnitudes(samples):
     if count <= 0:
         return np.zeros((0, BINS)), np.zeros(0, dtype=bool)
     frames = np.lib.stride_tricks.sliding_window_view(samples, FRAME)[::HOP][:count]
+    return np.abs(np.fft.rfft(frames * WINDOW, axis=1)), live_frames(frames)
+
+
+def live_frames(frames):
+    """Per mono frame (one per row), whether it is live: neither under the digital floor nor holding half its samples."""
     rms = np.sqrt(np.mean(frames**2, axis=1))
     held = np.mean(np.diff(frames, axis=1) == 0, axis=1)
-    live = (20.0 * np.log10(np.maximum(rms, 1e-12)) > NOISEPRINT_DIGITAL_FLOOR_DBFS) & (held < NOISEPRINT_MUTE_HELD_SHARE)
-    return np.abs(np.fft.rfft(frames * WINDOW, axis=1)), live
+    return (20.0 * np.log10(np.maximum(rms, 1e-12)) > NOISEPRINT_DIGITAL_FLOOR_DBFS) & (held < NOISEPRINT_MUTE_HELD_SHARE)
 
 
 class MovingQuantile:
-    """Per-bin histogram of the SMOOTH_FRAMES-frame moving mean of the magnitudes, fed block by block in order."""
+    """Per-bin histogram of the `smooth`-frame moving mean of the magnitudes, fed block by block in order.
 
-    def __init__(self):
-        self.counts = np.zeros(BINS * HIST_BINS, dtype=np.int64)
-        self.tail = np.zeros((0, BINS))
+    The defaults are this print's: BINS bins, SMOOTH_FRAMES frames, levels as 20 log10 of a
+    magnitude. The reference-SNR suppressor (`spectral_suppress.quantile_noise_profile`) feeds
+    powers on its own grid, `scale` 10.
+    """
+
+    def __init__(self, bins=BINS, smooth=SMOOTH_FRAMES, scale=20.0):
+        self.bins, self.smooth, self.scale = bins, smooth, scale
+        self.counts = np.zeros(bins * HIST_BINS, dtype=np.int64)
+        self.tail = np.zeros((0, bins))
         self.tail_live = np.zeros(0, dtype=bool)
         self.windows = 0
         self.frames = 0
@@ -126,34 +136,35 @@ class MovingQuantile:
         self.muted += int(np.count_nonzero(~live))
         mags = np.concatenate((self.tail, magnitudes))
         alive = np.concatenate((self.tail_live, live))
-        start = max(len(mags) - (SMOOTH_FRAMES - 1), 0)
+        start = max(len(mags) - (self.smooth - 1), 0)
         self.tail, self.tail_live = mags[start:], alive[start:]
-        if len(mags) < SMOOTH_FRAMES:
+        if len(mags) < self.smooth:
             return
-        summed = np.cumsum(np.vstack((np.zeros((1, BINS)), mags)), axis=0)
-        means = (summed[SMOOTH_FRAMES:] - summed[:-SMOOTH_FRAMES]) / SMOOTH_FRAMES
+        span = self.smooth
+        summed = np.cumsum(np.vstack((np.zeros((1, self.bins)), mags)), axis=0)
+        means = (summed[span:] - summed[:-span]) / span
         dead = np.cumsum(np.concatenate(([0], (~alive).astype(np.int64))))
-        clean = (dead[SMOOTH_FRAMES:] - dead[:-SMOOTH_FRAMES]) == 0
+        clean = (dead[span:] - dead[:-span]) == 0
         self._count(means[clean])
 
     def _count(self, means):
         self.windows += len(means)
         if not len(means):
             return
-        level = 20.0 * np.log10(np.maximum(means, 1e-12))
+        level = self.scale * np.log10(np.maximum(means, 1e-12))
         index = np.clip(np.floor((level - HIST_LO_DB) / HIST_STEP_DB), 0, HIST_BINS - 1).astype(np.int64)
-        self.counts += np.bincount((index + np.arange(BINS) * HIST_BINS).ravel(), minlength=BINS * HIST_BINS)
+        self.counts += np.bincount((index + np.arange(self.bins) * HIST_BINS).ravel(), minlength=self.bins * HIST_BINS)
 
     def quantile(self, q=QUANTILE):
         """Per-bin magnitude at quantile q of the counted moving means, linear in dB within a histogram bin."""
-        counts = self.counts.reshape(BINS, HIST_BINS)
+        counts = self.counts.reshape(self.bins, HIST_BINS)
         cumulative = np.cumsum(counts, axis=1)
         target = q * self.windows
         index = np.argmax(cumulative >= target, axis=1)
-        rows = np.arange(BINS)
+        rows = np.arange(self.bins)
         below = np.where(index > 0, cumulative[rows, np.maximum(index - 1, 0)], 0)
         fraction = (target - below) / counts[rows, index]
-        return 10.0 ** ((HIST_LO_DB + (index + fraction) * HIST_STEP_DB) / 20.0)
+        return 10.0 ** ((HIST_LO_DB + (index + fraction) * HIST_STEP_DB) / self.scale)
 
 
 def learn(wav_path):

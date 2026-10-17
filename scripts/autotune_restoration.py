@@ -320,6 +320,8 @@ KNOBS = {
         # shelf skipped on a hiss-dominated tape, and the ceiling on the hiss left next to speech.
         "apl_post_neural_suppress": [False, True],
         "apl_post_neural_suppress_min_residual_db": [3.0, 6.0, 9.0],
+        # The reference-SNR suppressor: the gain read on the source, applied after the neural stage (ungated).
+        "apl_reference_suppress": [False, True],
         "apl_neural_level_restore": [False, True],
         "linear_air_gate": ["none", "hiss_dominated"],
         "apl_burst_ceiling": ["none", "gaps", "edges"],
@@ -465,7 +467,10 @@ INERT_WHEN = {
         ({"apl_enable_spectral_denoise": False, "apl_music_bg_floor_db": 0.0}, ("apl_noiseprint_tonal_s",)),
         # The native suppressor and the post-neural one read the gain floor (spectral_denoise._native_suppress,
         # post_neural_suppress): it is dead only with both off.
-        ({"apl_use_native_suppress": False, "apl_post_neural_suppress": False}, ("apl_suppress_gain_floor_db",)),
+        (
+            {"apl_use_native_suppress": False, "apl_post_neural_suppress": False, "apl_reference_suppress": False},
+            ("apl_suppress_gain_floor_db",),
+        ),
         ({"apl_post_neural_suppress": False}, ("apl_post_neural_suppress_min_residual_db",)),
         ({"apl_burst_ceiling": "none"}, ("apl_burst_ceiling_depth_db",)),
         # apl_music_persistence_min is not here: it also picks the tapes that take apl_music_neural_model.
@@ -544,6 +549,7 @@ SWITCH_DEFAULTS = {
     "cathar_enable_dehum": True,
     "pause_floor_shape": "flat",
     "apl_post_neural_suppress": False,
+    "apl_reference_suppress": False,
     "apl_burst_ceiling": "none",
     "cathar_noiseprint_min_depth_db": 0.0,
 }

@@ -29,6 +29,7 @@ import numpy as np
 import scipy.signal
 import soundfile as sf
 
+from . import noiseprint_quantile
 from .blend_weights import FRAME, HOP, _frame_count, _read_frames
 from .hygiene import atomic_target
 from .utils import log_msg
@@ -62,6 +63,26 @@ PROBE_POSITIONS = 40
 NU_MIN = 1e-10
 EPS = 1e-20
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
+# The reference-SNR suppressor's noise (`quantile_noise_profile`): per bin, the 5th percentile
+# over the whole recording of the 16-frame (0.37 s) moving mean of the channel-mean power, the
+# quantile print's estimator (`noiseprint_quantile`) read in power on this grid. The quietest
+# stretch above holds speech on a speech tape: on the four Tata tapes it read 13-25 dB over the
+# floor of their true pauses below 8 kHz (0-3 dB over it at 12-16 kHz), and a gain read against
+# it took the loud programme over 3 kHz down 4 dB. The quantile read that floor within -2.7 to
+# +2.2 dB per band before its bias; a 16-frame mean's 5th percentile sits 2.3 dB under the mean
+# on white noise, and +2.0 dB centres it.
+QUANTILE_SMOOTH_FRAMES = 16
+QUANTILE = 0.05
+QUANTILE_BIAS_DB = 2.0
+# With no 0.37 s of hiss alone in 5 % of the windows (dense music) the print learns the programme,
+# and a gain read against it takes the programme down: a fixture of 0.3 s bursts and 0.2 s gaps
+# lost 15 dB of its partials. Such a print sits close under the loud frames: over 300-3000 Hz the
+# loud frames' P90 stood 24.7-31.9 dB over the print on the four Tata tapes and 32.5 on bursts with
+# a 0.8 s pause every 3 s, 3.8 on the gapless bursts and 1.7-58.6 on the twelve music clips (14.6,
+# 19.9 and 21.0 the three nearest the line). Under MIN_DEPTH_DB the suppressor does not run.
+DEPTH_BAND_HZ = (300.0, 3000.0)
+DEPTH_LOUD_PERCENTILE = 90.0
+MIN_DEPTH_DB = 18.0
 
 
 def _window():
@@ -127,6 +148,33 @@ def noise_profile(source_wav, probe_s):
         samples = handle.read(count, dtype="float32", always_2d=True)
     power = np.abs(_spectra(samples)) ** 2
     return power.mean(axis=(0, 1)) + EPS
+
+
+def frame_powers(span):
+    """`(channel-mean power per frame and bin, live mask)` of a span read on the blend's grid; live as the quantile print's."""
+    frames = np.lib.stride_tricks.sliding_window_view(span, FRAME, axis=0)[::HOP]
+    power = np.mean(np.abs(np.fft.rfft(frames * _window(), axis=-1)) ** 2, axis=1)
+    return power, noiseprint_quantile.live_frames(np.mean(frames, axis=1))
+
+
+def reference_noise(source_wav):
+    """`(noise power per bin, depth in dB)` from the whole recording: the quantile print (QUANTILE_* above) and how far
+    the live frames' DEPTH_LOUD_PERCENTILE stands over it in DEPTH_BAND_HZ; `(None, None)` under the print's minimum of
+    live windows."""
+    acc = noiseprint_quantile.MovingQuantile(bins=FRAME // 2 + 1, smooth=QUANTILE_SMOOTH_FRAMES, scale=10.0)
+    levels = []
+    with sf.SoundFile(str(source_wav)) as source:
+        length, freqs = source.frames, np.fft.rfftfreq(FRAME, 1.0 / source.samplerate)
+        band = (freqs >= DEPTH_BAND_HZ[0]) & (freqs < DEPTH_BAND_HZ[1])
+        for first in range(0, _frame_count(length), BLOCK_FRAMES):
+            power, live = frame_powers(_read_frames(source, first, min(first + BLOCK_FRAMES, _frame_count(length)), length))
+            acc.add(power, live)
+            levels.append(power[live][:, band].mean(axis=1))
+    if acc.windows < noiseprint_quantile.MIN_WINDOWS:
+        return None, None
+    noise = acc.quantile(QUANTILE) * 10.0 ** (QUANTILE_BIAS_DB / 10.0) + EPS
+    loud = np.percentile(np.concatenate(levels), DEPTH_LOUD_PERCENTILE)
+    return noise, float(10.0 * np.log10(loud / np.mean(noise[band])))
 
 
 # Abramowitz and Stegun 5.1.53 and 5.1.56: the exponential integral E1 to better than 2e-7
@@ -208,6 +256,37 @@ class Suppressor:
         return out
 
 
+class HeldLevel:
+    """No level tracking: tape hiss is stationary, and the whole-file print is its level already."""
+
+    def update(self, energy):
+        """The level for a frame: always the print's own."""
+        del energy
+        return 1.0
+
+
+class ReferenceSuppressor(Suppressor):
+    """The estimator's gain read on the reference's frame and applied to the restored audio's frame.
+
+    Model the neural stage as a mask M = |restored| / |reference|: the hiss it leaves is M^2 N,
+    so the restored audio's a posteriori ratio against that hiss is the reference's own,
+    |reference|^2 / N. The gain read on the reference therefore applies to the restored audio:
+    the two masks multiply, a cell where the reference held only hiss loses up to the gain floor
+    and a cell where the programme stood over the hiss keeps its level.
+    """
+
+    def __init__(self, noise, noise_bias, gain_floor_db, dd_alpha):
+        super().__init__(noise, noise_bias, gain_floor_db, dd_alpha)
+        self.tracker = HeldLevel()
+
+    def apply_pair(self, reference, restored):
+        """Gains every restored frame of a block by the gain its reference frame reads, in order."""
+        out = np.empty_like(restored)
+        for index, (ref_frame, frame) in enumerate(zip(reference, restored)):
+            out[index] = frame * self._gain(np.mean(np.abs(ref_frame) ** 2, axis=0))[None, :]
+        return out
+
+
 def _resynthesise(spectrum):
     """Frames back to windowed samples: (frames x channels x FRAME)."""
     return np.fft.irfft(spectrum, n=FRAME, axis=-1) * _window()
@@ -239,6 +318,17 @@ def _overlap_add(frames, carry):
     return buffer[:ready], buffer[ready:]
 
 
+def _stream(out, length, channels, gained):
+    """Writes the overlap-added resynthesis of `gained(first, last)`, the gained spectra of each block of frames, in order."""
+    emitter = _Emitter(out, length)
+    carry = np.zeros((FRAME - HOP, channels))
+    for first in range(0, _frame_count(length), BLOCK_FRAMES):
+        last = min(first + BLOCK_FRAMES, _frame_count(length))
+        ready, carry = _overlap_add(_resynthesise(gained(first, last)), carry)
+        emitter.push(ready)
+    emitter.push(carry)
+
+
 def suppress_file(source_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, probe_s):
     """Writes the suppressed recording a block at a time; returns the target, or None when there is no probe to learn from."""
     noise = noise_profile(source_wav, probe_s)
@@ -249,16 +339,52 @@ def suppress_file(source_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, p
         sf.SoundFile(str(source_wav)) as source,
         sf.SoundFile(str(partial), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
     ):
-        length, channels = source.frames, source.channels
-        suppressor, emitter = Suppressor(noise, noise_bias, gain_floor_db, dd_alpha), _Emitter(out, length)
-        carry = np.zeros((FRAME - HOP, channels))
-        for first in range(0, _frame_count(length), BLOCK_FRAMES):
-            last = min(first + BLOCK_FRAMES, _frame_count(length))
-            frames = _resynthesise(suppressor.apply(_spectra(_read_frames(source, first, last, length))))
-            ready, carry = _overlap_add(frames, carry)
-            emitter.push(ready)
-        emitter.push(carry)
+        length, suppressor = source.frames, Suppressor(noise, noise_bias, gain_floor_db, dd_alpha)
+        _stream(out, length, source.channels, lambda first, last: suppressor.apply(_spectra(_read_frames(source, first, last, length))))
     return Path(target_wav)
+
+
+def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, gain_floor_db, dd_alpha):
+    """Writes the restored recording gained by the reference's SNR (`ReferenceSuppressor`); returns the target, or None
+    when the reference holds too few live windows to learn its noise from or its print holds programme (MIN_DEPTH_DB).
+    Raises when the two rates differ."""
+    noise, depth = reference_noise(reference_wav)
+    if noise is None:
+        log_msg("    [Reference Suppress] Too little live audio in the source to learn its noise from.")
+        return None
+    if depth < MIN_DEPTH_DB:
+        log_msg(
+            f"    [Reference Suppress] The source's noise print sits {depth:.1f} dB under its loud frames "
+            f"({DEPTH_BAND_HZ[0]:.0f}-{DEPTH_BAND_HZ[1]:.0f} Hz), under {MIN_DEPTH_DB:.0f}: it holds programme."
+        )
+        return None
+    log_msg(f"    [Reference Suppress] The source's noise print sits {depth:.1f} dB under its loud frames.")
+    with (
+        atomic_target(target_wav) as partial,
+        sf.SoundFile(str(reference_wav)) as reference,
+        sf.SoundFile(str(restored_wav)) as restored,
+        sf.SoundFile(str(partial), "w", samplerate=restored.samplerate, channels=restored.channels, subtype="FLOAT") as out,
+    ):
+        if reference.samplerate != restored.samplerate:
+            raise ValueError(f"reference {reference.samplerate} Hz and restored {restored.samplerate} Hz do not match")
+        suppressor = ReferenceSuppressor(noise, noise_bias, gain_floor_db, dd_alpha)
+
+        def gained(first, last):
+            """The restored frames [first, last) gained by their reference frames."""
+            ref = _spectra(_read_frames(reference, first, last, reference.frames))
+            return suppressor.apply_pair(ref, _spectra(_read_frames(restored, first, last, restored.frames)))
+
+        _stream(out, restored.frames, restored.channels, gained)
+    return Path(target_wav)
+
+
+def suppress_by_reference_or_none(reference_wav, restored_wav, target_wav, **settings):
+    """The reference suppressor's guarded entry: a failure is logged and returns None, so the caller keeps its input."""
+    try:
+        return suppress_by_reference(reference_wav, restored_wav, target_wav, **settings)
+    except STAGE_FAILURES as exc:
+        log_msg(f"    [Reference Suppress] Failed ({exc}); keeping the restored audio.", level="WARNING")
+        return None
 
 
 def suppress_or_none(source_wav, target_wav, **settings):

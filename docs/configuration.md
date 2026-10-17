@@ -956,6 +956,109 @@ All three act after the stage cache's cached point
 the neural stage. The suppressor's own settings stay keyed, because the
 subtraction stage before the cached point reads them too.
 
+## auto_pure_linear Reference-SNR Suppressor
+
+`apl_reference_suppress` (false; 2026-10-17) reads the mode's MMSE-LSA gain
+on the pre-conditioned source and applies it to the audio after the sibilant
+guard (`spectral_suppress.ReferenceSuppressor`, run by
+`modules/post_neural_suppress.py`). Model the neural stage as a mask, the
+restored magnitude over the source's: the hiss it leaves is that mask
+squared times the source's hiss, so the restored audio's a posteriori ratio
+against it is the source's own. The two masks multiply. A cell where the
+source held only hiss loses up to `apl_suppress_gain_floor_db` (-20); a
+cell where the programme stood over the hiss keeps its level. It can only
+remove, so it runs ungated. With `apl_post_neural_suppress` also on, the
+gated suppressor runs first and this one on its output.
+
+Why the gated suppressor could not do this on the Tata tapes:
+
+- Its gate stays shut there. The Mel-RoFormer already took the floor under
+  the programme 16-33 dB under the source's at 3-4.8 kHz and 24-68 dB on the
+  3-16 kHz band median; Vaccin's 8-16 kHz band also reads 3.7 dB of
+  stationarity, over the 3.0 the gate wants.
+- Its noise is the post-neural audio's quietest stretch, the RoFormer's
+  near-empty pauses, and its level tracker stays within 6 dB of that, while
+  the hiss it passes under speech follows the speech about 20 dB higher.
+- The quietest stretch is the wrong estimate on any speech tape. The
+  probe both suppressors learn from (`noise_profile`, the quietest 4 s,
+  cathar's rule) read 13-25 dB over the floor of the true pauses below
+  8 kHz on all four Tata tapes (0-3 dB at 12-16 kHz): the quietest 4 s of
+  an interview holds speech. Read against it, the reference gain took the
+  loud programme over 3 kHz down 4 dB on Tele7abc (`hiss_prog_kept_hf_db`
+  0.18 to -4.01, `balance_top_db` -1.77 and `sib_texture_db` 2.43, both
+  past their v4 guards).
+
+So the reference suppressor learns its own noise, the source's whole-file
+quantile print (`reference_noise`): per bin, the 5th percentile of the
+16-frame (0.37 s) moving mean of the channel-mean power, the cathar quantile
+print's estimator read in power (`noiseprint_quantile.MovingQuantile`, now
+parametrised; cathar's print is unchanged), +2.0 dB, held at its level
+(`HeldLevel`). It read the true pauses' floor within -2.7 to +2.2 dB per band
+before its bias; a 16-frame mean's 5th percentile sits 2.3 dB under the mean
+on white noise. With no 0.37 s of hiss alone in 5 % of the windows the print
+learns the programme, and the gain took a gapless fixture's partials down
+15 dB, so a print whose loud frames (P90, 300-3000 Hz) stand under
+`MIN_DEPTH_DB` (18) over it runs no suppressor. Measured depths: the Tata
+tapes 24.7-31.9 dB, the twelve music clips 1.7-58.6 (14.6, 19.9 and 21.0
+nearest the line; one gapless clip 1.7).
+
+CPU replay of the v9 incumbent's post-neural stages on the four Tata tapes
+(the kept work folders of one render on hardlinked copies, the stages run
+in-process from the neural output, before the mux; scored with the dsp
+family against the tape). "Frame" is `pause_floor_target: frame` with
+`pause_floor_shape: shelf` at 3000 Hz, 18 dB; "+ ref" adds this suppressor
+with the shelf at 2000 Hz, 30 dB. Hiss readings are dB over the threshold
+at 75 dB SPL; `kept_hf` and `lkr` are the guards they trade against:
+
+| tape | reading | shipped | frame | + ref |
+|---|---|---|---|---|
+| Tele7abc | under speech | 6.35 | 1.02 | 0.00 |
+| | pause tail | 29.50 | 11.16 | 0.00 |
+| | pump | -8.75 | 10.89 | 9.58 |
+| | kept HF / lkr | 0.18 / 0.15 | 0.18 / 0.20 | -0.39 / 0.44 |
+| SOTI | under speech | 0.00 | 0.00 | 0.00 |
+| | pause tail | 23.24 | 8.10 | 0.00 |
+| | pump | -7.84 | 8.64 | 8.79 |
+| | kept HF / lkr | -1.73 / 0.66 | -1.75 / 0.95 | -2.17 / 1.21 |
+| Vaccin | under speech | 9.43 | 6.42 | 0.00 |
+| | pause tail | 21.15 | 9.47 | 0.00 |
+| | kept HF / lkr | -0.21 / 0.36 | -0.22 / 0.40 | -0.79 / 0.65 |
+| Gaudeamus5 | under speech | 0.00 | 0.00 | 0.00 |
+| | pause tail | 31.34 | 21.67 | 6.43 |
+| | pump | -11.22 | -2.24 | -3.60 |
+| | kept HF / lkr | -3.28 / 0.43 | -3.31 / 1.12 | -4.05 / 1.41 |
+
+Every v4 guard passes on every tape (pump bound 12, kept HF -6, balance top
+-1.0, `sib_texture_db` 2.0, the 35 dB pause depth, the islands, `lkr` 1.747);
+`balance_top_db` moves 0.04-0.19 dB. Vaccin's windows hold no 0.5 s of
+pause over the dither, so its pump reads none. Gaudeamus5's remaining pause
+reading includes the soft singing the pause reading takes for hiss (see
+`docs/ear_v4_hiss.md`).
+
+What did not help, on Tele7abc: smoothing the reference's power over a third
+or a whole octave (and over time) before the gain, the textbook cure for a
+noise-like fricative's fading bins, left the probe-noise dulling at
+-3.9..-6.7 dB, and with the quantile print it lets more hiss through under
+speech (pump 16.6, past the bound); a faster decision-directed smoothing
+(0.8) does the same (pump 14.7). The level tracker on the quantile print
+lowered the pump to 7.2 at a little more dulling (kept HF -0.87); the held
+level was kept as the more principled for stationary tape hiss.
+
+The suppressor needs the pause fill's shelf at 2 kHz and 30 dB to empty the
+pauses: with today's 3 kHz and 18 dB shelf the pause tail stays at 10.1
+(Tele7abc), 7.3 (SOTI), 8.6 (Vaccin) and 13.9 (Gaudeamus5), while the hiss
+under speech still reads 0. Without the suppressor the 2 kHz fill trips the
+pump guard (Tele7abc 40.9, SOTI 35.7): with the hiss under speech at
+-21 dB of the source's, emptying the pauses gates the hiss. The suppressor is
+a loop knob (`scripts/autotune_restoration.py`), so the loop can reach the
+pair one move at a time (the suppressor, then the fill's corner and cut), if
+each step wins on its own.
+
+The key is read after the stage cache's cached point
+(`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the
+neural stage. Off, every output keeps its bytes; the loop and a listening
+session judge it.
+
 ## auto_pure_linear Burst Ceiling
 
 Two `auto_pure_linear` keys added on 2026-10-12 for the hiss the

@@ -100,6 +100,7 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "apl_post_neural_suppress",
         "apl_post_neural_suppress_floor_gap_db",
         "apl_post_neural_suppress_min_residual_db",
+        "apl_reference_suppress",
         "linear_air_gate",
         "apl_neural_level_restore",
         # The burst ceiling after the polish (modules/burst_ceiling.py).

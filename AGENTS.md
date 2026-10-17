@@ -139,7 +139,17 @@ The engine supports 10 execution modes configured in `config.yaml`:
     committed it read tails under 6 dB as hiss and ate them (word-edge cells
     3-6 dB over the floor 3.7-6.1 dB down). Open: pumping where the hiss
     under the programme stays near the source's level
-    (`docs/configuration.md`).
+    (`docs/configuration.md`). `apl_reference_suppress` (2026-10-17, off)
+    reads the suppressor's gain on the source's SNR and applies it to the
+    post-neural audio, ungated (the masks multiply), with the source's
+    whole-file quantile print as its noise: the quietest 4 s probe the
+    other suppressors learn from read 13-25 dB over the Tata tapes' true
+    pauses below 8 kHz (an interview's quietest 4 s hold speech). On CPU
+    replay with the per-frame fill shelved at 2 kHz by 30 dB, the hiss read
+    inaudible under speech and in the pauses of Tele7abc, SOTI and Vaccin
+    (Gaudeamus5's pauses 21.7 to 6.4) with every v4 guard passing; not yet
+    rendered or heard (`docs/configuration.md`, "Reference-SNR
+    Suppressor").
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing

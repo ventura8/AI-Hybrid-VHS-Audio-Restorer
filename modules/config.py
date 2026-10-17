@@ -731,6 +731,16 @@ _BOOL_CONFIG_FIELDS = (
     # floor under the programme up on 6, by up to 19 dB). Off: every output keeps its bytes until a
     # GPU render with the per-frame pause fill and a listening session judge it.
     ("apl_post_neural_suppress", False),
+    # The reference-SNR suppressor (modules/post_neural_suppress.py, spectral_suppress.ReferenceSuppressor):
+    # the mode's MMSE-LSA gain read on the pre-conditioned source against its whole-file quantile noise print
+    # and applied to the audio after the sibilant guard, ungated (the two masks multiply, so it only removes).
+    # The gated suppressor above learns its noise from the post-neural audio's quietest stretch, the
+    # RoFormer's near-empty pauses, while the hiss it passes under speech follows the speech 16-33 dB under
+    # the source's (3-4.8 kHz, the Tata tapes): its gate stays shut there and its estimate is far too low.
+    # CPU replay of the v9 incumbent's post-neural stages on the four Tata tapes with the per-frame shelved
+    # pause fill (2 kHz, 30 dB): see docs/configuration.md, "Reference-SNR Suppressor". Off: every output
+    # keeps its bytes until the loop and a listening session judge it.
+    ("apl_reference_suppress", False),
     # The separator peak-normalises to 0.9, so on a hot or declipped source the programme leaves
     # the neural stage up to 10.7 dB under its input (fourstarrevue; 11 of 235 hunt clips 3 dB or
     # more) and the expander's knee and the pause floor's target read the wrong level. On, the
@@ -1402,6 +1412,7 @@ LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 1.0))
 LINEAR_AIR_FREQ_HZ = float(CONFIG.get("linear_air_freq_hz", 7500.0))
 LINEAR_AIR_GATE = str(CONFIG.get("linear_air_gate", "none"))
 APL_POST_NEURAL_SUPPRESS = bool(CONFIG.get("apl_post_neural_suppress", False))
+APL_REFERENCE_SUPPRESS = bool(CONFIG.get("apl_reference_suppress", False))
 APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB = float(CONFIG.get("apl_post_neural_suppress_floor_gap_db", 3.0))
 APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB = float(CONFIG.get("apl_post_neural_suppress_min_residual_db", 6.0))
 APL_NEURAL_LEVEL_RESTORE = bool(CONFIG.get("apl_neural_level_restore", False))
