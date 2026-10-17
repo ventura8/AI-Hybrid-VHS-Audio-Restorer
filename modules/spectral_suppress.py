@@ -78,11 +78,14 @@ QUANTILE_BIAS_DB = 2.0
 # and a gain read against it takes the programme down: a fixture of 0.3 s bursts and 0.2 s gaps
 # lost 15 dB of its partials. Such a print sits close under the loud frames: over 300-3000 Hz the
 # loud frames' P90 stood 24.7-31.9 dB over the print on the four Tata tapes and 32.5 on bursts with
-# a 0.8 s pause every 3 s, 3.8 on the gapless bursts and 1.7-58.6 on the twelve music clips (14.6,
-# 19.9 and 21.0 the three nearest the line). Under MIN_DEPTH_DB the suppressor does not run.
+# a 0.8 s pause every 3 s, 3.8 on the gapless bursts and 1.7-58.6 on the twelve music clips. Under
+# MIN_DEPTH_DB the suppressor does not run. On the IA hunt's 15 s clips (CPU replay, 2026-10-17) a
+# print 18-23 dB down still held programme often enough to matter: on 37 such clips the loud HF fell
+# more than 1 dB on 11 and a v4 guard newly tripped on 4, against 9 and 5 of the 63 clips at 23 dB and
+# over, for the same share of clear hiss wins (8 and 14, 22 % each). 23 dB keeps every Tata tape.
 DEPTH_BAND_HZ = (300.0, 3000.0)
 DEPTH_LOUD_PERCENTILE = 90.0
-MIN_DEPTH_DB = 18.0
+MIN_DEPTH_DB = 23.0
 
 
 def _window():

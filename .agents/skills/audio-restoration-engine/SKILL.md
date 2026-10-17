@@ -727,8 +727,12 @@ audio alignment, or FFmpeg multiplexing.
   raised the estimate during speech, so the print is held (`HeldLevel`);
   (4) with no 0.37 s of hiss alone in 5 % of the windows the print learns
   the programme (a gapless fixture lost 15 dB of its partials), hence
-  `MIN_DEPTH_DB` 18 on the loud frames' 300-3000 Hz P90 (Tata 24.7-31.9,
-  one gapless music clip 1.7); (5) frequency or time smoothing of the
+  `MIN_DEPTH_DB` 23 on the loud frames' 300-3000 Hz P90 (Tata 24.7-31.9,
+  one gapless music clip 1.7; on the IA hunt's 15 s clips a print 18-23 dB
+  down dulled the loud HF over 1 dB on 11 of 37 and newly tripped a guard
+  on 4, against 9 and 5 of 63 deeper prints, for the same 22 % of hiss
+  wins; past the line it still trips a guard on 8 % of those clips, so it
+  is a loop knob, not a default); (5) frequency or time smoothing of the
   reference power and a faster decision-directed alpha let hiss through
   under speech and trip the pump guard. On CPU replay of the v9 incumbent
   with the per-frame fill shelved at 2 kHz by 30 dB the hiss reads

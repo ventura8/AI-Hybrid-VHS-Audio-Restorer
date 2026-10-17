@@ -998,9 +998,9 @@ before its bias; a 16-frame mean's 5th percentile sits 2.3 dB under the mean
 on white noise. With no 0.37 s of hiss alone in 5 % of the windows the print
 learns the programme, and the gain took a gapless fixture's partials down
 15 dB, so a print whose loud frames (P90, 300-3000 Hz) stand under
-`MIN_DEPTH_DB` (18) over it runs no suppressor. Measured depths: the Tata
-tapes 24.7-31.9 dB, the twelve music clips 1.7-58.6 (14.6, 19.9 and 21.0
-nearest the line; one gapless clip 1.7).
+`MIN_DEPTH_DB` (23) over it runs no suppressor. Measured depths: the Tata
+tapes 24.7-31.9 dB, the twelve music clips 1.7-58.6 (one gapless clip 1.7).
+The IA hunt set the line (below).
 
 CPU replay of the v9 incumbent's post-neural stages on the four Tata tapes
 (the kept work folders of one render on hardlinked copies, the stages run
@@ -1053,6 +1053,25 @@ pump guard (Tele7abc 40.9, SOTI 35.7): with the hiss under speech at
 a loop knob (`scripts/autotune_restoration.py`), so the loop can reach the
 pair one move at a time (the suppressor, then the fill's corner and cut), if
 each step wins on its own.
+
+On the IA hunt's kept work folders (202 clips of 15 s: music beds,
+adverts, news, home video; the neural output after its cleanup replayed
+in-process with the per-frame fill shelved at 2 kHz by 30 dB, with and
+without the suppressor, no sibilant guard, no scan strategy; scored against
+each clip's extracted source), at the 18 dB line first used: the print held
+programme on 98 clips, 3 had too little live audio, and the suppressor ran
+on 101. On the 100 scored, medians with and without: the pump 20.9 to 8.1,
+kept HF -0.22 to -1.04 (p10 of the change -2.08), `balance_top_db` -0.02 to
+-0.13, `lkr` 0.12 to 0.35, the pause depth on speech windows +2.5 dB; the
+hiss under the programme fell up to 7.7 dB and the pause tail up to 15.2
+(p10). Newly past a v4 guard: kept HF on 5 clips (the 2003 Hollywood promo,
+Filter's EPK, Pingu, Professor Playtime, all with prints 18.6-22.6 dB down),
+`balance_top_db` on 3 and `lkr` on 2 (F1 1980, Captain Pugwash). By depth:
+18-23 dB, 37 clips, the loud HF more than 1 dB down on 11, a guard newly
+tripped on 4, a clear hiss win on 8; 23 dB and over, 63 clips, 9, 5 and 14.
+So the line is 23 dB. Even past it the suppressor trips a guard on 8 % of
+these clips: it is a loop knob, not a default, until a per-file check or
+the user's ear says otherwise.
 
 The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the

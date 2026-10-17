@@ -850,9 +850,11 @@ cathar_dereverb_strength: 2.0
 #     source's whole-file quantile print (5th percentile of the 0.37 s moving mean,
 #     +2 dB), held at its level: the quietest 4 s stretch the gated suppressor and
 #     the native one learn from read 13-25 dB over the Tata tapes' true pauses
-#     below 8 kHz (speech), the quantile print within 2.7 dB. Ungated. CPU replay
-#     of the v9 incumbent on the four Tata tapes, with the per-frame pause fill
-#     shelved at 2 kHz by 30 dB: docs/configuration.md, "Reference-SNR Suppressor".
+#     below 8 kHz (speech), the quantile print within 2.7 dB. Ungated, but a
+#     print standing under 23 dB below the loud frames (it learned programme)
+#     runs no suppressor. CPU replay of the v9 incumbent on the four Tata
+#     tapes, with the per-frame pause fill shelved at 2 kHz by 30 dB, and on
+#     the IA hunt: docs/configuration.md, "Reference-SNR Suppressor".
 #     false (Default): every output keeps its bytes until the loop and a listening
 #     session judge it.
 #
