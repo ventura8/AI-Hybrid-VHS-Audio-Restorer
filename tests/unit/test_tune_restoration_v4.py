@@ -42,7 +42,7 @@ TATA_CONSTRAINTS = {
     KEPT_HF: {"worse": "down", "max_move": 1.0, "bound": -6.0},
     ISLANDS: {"worse": "up", "max_move": 0.3, "bound": 2.0},
     "dsp.gap_island_kurt.output.median": {"worse": "up", "max_move": 0.3, "bound": 1.85},
-    MODULATION: {"worse": "up", "max_move": 1.2},
+    MODULATION: {"worse": "up", "max_move": 1.2, "bound": 10.0},
     "dsp.balance_top_db.output.median": {"worse": "down", "max_move": 0.25, "bound": -1.0},
     "dsp.balance_tilt_db_oct.output.median": {"worse": "down", "bound": -2.25},
     "dsp.balance_presence_db.output.median": {"worse": "down", "bound": -2.25},
@@ -326,3 +326,19 @@ def test_the_underwater_renders_trip_the_dulling_guard(label):
 def test_the_hiss_flags_reproduce_the_verdicts(case, expected):
     """Round one's hiss labels on Tele7abc, and the shipped plateau render the user hears hiss on (the 2026-10-11 rule)."""
     assert _flags(case) == expected
+
+
+def _modulation_guard():
+    """tata_v4's pause modulation guard, parsed from the grid file as the loop parses it."""
+    return reward.parse_constraints(_grid(TATA_V4)["constraints"])[MODULATION]
+
+
+def test_a_pause_texture_change_inside_the_accepted_range_passes_the_modulation_guard():
+    """The first ear v4 APL round: the per-frame fill took Tele7abc to 2.32; the shelf fill reads 6.74 (2026-10-17)."""
+    assert not _modulation_guard().trips(6.74, 2.32)
+
+
+def test_past_the_bound_a_worse_pause_texture_still_trips_it():
+    """Keeper off (11.47) against the shipped fill (4.64), and a small creep past the bound."""
+    guard = _modulation_guard()
+    assert (guard.trips(11.47, 4.64), guard.trips(11.5, 10.1)) == (True, True)

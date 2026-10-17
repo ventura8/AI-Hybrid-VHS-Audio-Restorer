@@ -1907,6 +1907,13 @@ Pitfalls:
 - A bounded guard whose limit follows the incumbent can be crept past, one
   `max_move` per accepted round: `reward.Constraint` excludes a worse
   candidate more than `max_move` past the bound whatever its incumbent read.
+- The reverse holds too: a guard with no bound follows the incumbent down.
+  In the first ear v4 APL round (2026-10-17) the per-frame fill took
+  Tele7abc's `gap_mod_dist_db` to 2.32, under every judged file, and from
+  there the hiss-free shelf fill (6.74) tripped the 1.2 step while staying
+  inside the accepted range. The guard now takes the ranking's dead-zone
+  edge, 10.0, as its bound; keeper off (11.47) and the gated render (27.6)
+  still trip it.
 - The window guard is part of the programme reading: misaligned windows
   read +19..+28 on SOTI and Vaccin renders without it. It is the 300-4000
   Hz envelope correlation (at least 0.5), not the waveform's (Gaudeamus'

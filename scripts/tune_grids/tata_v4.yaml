@@ -397,7 +397,13 @@ constraints:
   # and T r1l cathar__baseline, accepted), plus one 0.1 unit, rounded up to 0.05; no judged file reaches it.
   dsp.hiss_island_kurt.output.median: {worse: up, max_move: 0.3, bound: 2.0}
   dsp.gap_island_kurt.output.median: {worse: up, max_move: 0.3, bound: 1.85}
-  dsp.gap_mod_dist_db.output.median: {worse: up, max_move: 1.2}
+  # The pause modulation guard takes the ranking entry's dead-zone edge, 10.0, as its bound (2026-10-17). With max_move
+  # alone it followed the incumbent down: the first ear v4 APL round accepted the per-frame fill, which took Tele7abc
+  # from 4.64 to 2.32 (under every judged file: v2 finals 3.76-5.97), and from there any pause texture change, the
+  # hiss-free shelf fill (6.74 from the shipped incumbent) included, tripped a 1.2 step while staying inside the range
+  # the user accepted. Below the bound it no longer trips; past it a move worse by 1.2 still does. The cheats stay out:
+  # keeper off 11.47 and the synthetic gated render 27.6 trip it, and the pump guard excludes gating on its own.
+  dsp.gap_mod_dist_db.output.median: {worse: up, max_move: 1.2, bound: 10.0}
   # Timbre and the 's' may not be traded for hiss: R1 presence/air (2 x its 0.12 benign floor) and the v3 dead-zone
   # edges on the dull side as hard limits. balance_top also needs the dull flag's edge, -1.0 dB: cathar075 alpha 2 (cleared,
   # T r1l) reads -0.963 against the baseline's -0.231 and was excluded by the move alone.
