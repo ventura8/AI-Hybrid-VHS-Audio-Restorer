@@ -191,6 +191,9 @@ constraints:
   dsp.hiss_prog_margin_all_db.delta.median: {worse: up, bound: 0.55}
   dsp.hiss_pump_db.output.median: {worse: up, max_move: 3.0, bound: 12.0}
   dsp.hiss_prog_kept_hf_db.output.median: {worse: down, max_move: 1.0, bound: -6.0}
+  # The soft programme kept (tata_v4's evidence): no music verdict names dulling; the bound is the next whole decibel
+  # under the lowest accepted music final, the captain-pu APL final (-27.32, one window, "music fine on both").
+  dsp.hiss_prog_kept_soft_db.output.median: {worse: down, max_move: 0.05, bound: -28.0}
   dsp.hiss_island_kurt.output.median: {worse: up, max_move: 0.3, bound: 2.0}
   dsp.hiss_room_delta_db.output.median: {worse: down, bound: -54.0}
   dsp.balance_presence_db.output.median: {worse: down, max_move: 0.25}

@@ -438,7 +438,10 @@ user set, with their reasons:
     between the cleared and the dead round-one renders: an expander that
     empties the true pauses 20 dB is excluded);
   - no musical noise;
-  - no dulling (`dsp.hiss_prog_kept_hf_db`, R1, R2);
+  - no dulling (`dsp.hiss_prog_kept_hf_db`, R1, R2), loud or soft: the
+    soft programme 6-18 dB over the hiss (`dsp.hiss_prog_kept_soft_db`,
+    bound -27 dB, the edge of the judged files the user did not call
+    dull) is read too, where an SNR-dependent suppressor takes it;
   - the learned vetoes, where DNSMOS BAK and SIGMOS NOISE only veto.
 - A bounded guard does not follow the incumbent past its bound: a candidate
   worse than its incumbent and more than `max_move` past the bound is

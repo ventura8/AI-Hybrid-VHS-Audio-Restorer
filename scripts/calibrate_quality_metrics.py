@@ -109,7 +109,9 @@ GATES = gates_mod.GATES
 # (`dsp.hiss_*`) and `dsp.pause_depth_speech_db` on the other; each branch's schema-7 score lacks the other's.
 # 8 (2026-10-12, their merge): every score carries both, so the new hard gates, the `sync_holds` / `sync_drift`
 # checks and the `*_linear` benign cases' hiss floors all have readings to stand on.
-SCORE_SCHEMA = 8
+# 9 (2026-10-17): the soft-programme guard (`dsp.hiss_prog_kept_soft_db`) is new and `soft_programme_cut` with it; a
+# schema-8 score lacks the reading, so its benign floor and every check on it would read nothing.
+SCORE_SCHEMA = 9
 SPEECH_FIXTURE = "mid00_speech_m15"
 DONOR_FIXTURE = "mid01_speech_m15"
 MUSIC_FIXTURE = "mid00_musiconly_m15"

@@ -159,6 +159,9 @@ METRICS = {
         MetricSpec("dsp.hiss_pump_db", "dsp", LOWER, "dB"),
         MetricSpec("dsp.hiss_island_kurt", "dsp", LOWER, LOG_RATIO),
         MetricSpec("dsp.hiss_prog_kept_hf_db", "dsp", HIGHER, "dB"),
+        # The soft programme kept (cells 6-18 dB over the floor, 1 kHz and up): what a suppressor takes from programme
+        # that stands only a little over the hiss, which the 18 dB cells of kept HF never see.
+        MetricSpec("dsp.hiss_prog_kept_soft_db", "dsp", HIGHER, "dB"),
         MetricSpec("dsp.hiss_prog_active_s", "dsp", NONE, "s"),
         MetricSpec("dsp.hiss_prog_bands", "dsp", NONE, "count"),
         MetricSpec("dsp.hiss_prog_validated", "dsp", NONE, ""),

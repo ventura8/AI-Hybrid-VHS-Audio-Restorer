@@ -1036,12 +1036,17 @@ HISS_PROGRAMME = "dsp.hiss_prog_margin_db"
 HISS_PAUSE = "dsp.hiss_pause_margin_db"
 HISS_PUMP = "dsp.hiss_pump_db"
 HISS_KEPT_HF = "dsp.hiss_prog_kept_hf_db"
+HISS_KEPT_SOFT = "dsp.hiss_prog_kept_soft_db"
 ROOM_DELTA = "dsp.hiss_room_delta_db"
 # The programme reading's tie band (the fresh realisation's p95 at 75 dB), its pause twin's and the guards' benign moves.
 PROGRAMME_STEADY_DB = 0.65
 PAUSE_STEADY_DB = 0.5
 PAUSE_FLAT_DB = 0.3
 KEPT_HF_FLAT_DB = 0.5
+# Hiss removed from the programme takes the soft cells only its own share down: a perfect output reads -0.30..-1.33 dB
+# on the realistic-v2 fixtures (Tele7abc's shape, median -0.56; the tape-hiss shape -0.25..-1.97, median -0.65).
+KEPT_SOFT_FLAT_DB = 1.0
+SOFT_CUT_DB = (4.0, 8.0, 12.0)
 LINEAR = "vhs_linear"
 PROGRAMME_STEADY = Expectation(HISS_PROGRAMME, "steady", tolerance=PROGRAMME_STEADY_DB)
 REMOVED_DB = (6.0, 12.0, 20.0)
@@ -1055,6 +1060,7 @@ HISS_DEGRADATIONS = {
             Expectation(HISS_PAUSE, "flat", tolerance=PAUSE_FLAT_DB),
             Expectation(HISS_PUMP, "down"),
             Expectation(HISS_KEPT_HF, "flat", tolerance=KEPT_HF_FLAT_DB),
+            Expectation(HISS_KEPT_SOFT, "flat", tolerance=KEPT_SOFT_FLAT_DB),
             Expectation(TILT, "flat", tolerance=PAUSE_FLAT_DB),
         ),
     ),
@@ -1101,7 +1107,22 @@ HISS_DEGRADATIONS = {
         (Expectation("dsp.hiss_island_kurt", "up"), Expectation(GAP_ISLAND_KURT, "up", True), Expectation(LKR, "up", True)),
     ),
     "hiss_removed_dulled": Degradation(
-        LINEAR, (3500.0, 2500.0, 1500.0), (Expectation(HISS_KEPT_HF, "down"), Expectation(HISS_PROGRAMME, "below"))
+        LINEAR,
+        (3500.0, 2500.0, 1500.0),
+        (Expectation(HISS_KEPT_HF, "down"), Expectation(HISS_KEPT_SOFT, "down"), Expectation(HISS_PROGRAMME, "below")),
+    ),
+    # The soft programme taken with the hiss (an SNR-dependent suppressor): the soft guard reads it, the 18 dB cells of
+    # kept HF move far less (en / fr: 0.38 / 0.55 / 0.65 dB against the soft guard's 3.54 / 6.36 / 8.68; a cell the mask
+    # holds 6-18 dB over the hiss's mean in its own bin can stand 18 dB over the band's flat floor), so kept HF is asserted
+    # under its twin's move, not within a tolerance.
+    "soft_programme_cut": Degradation(
+        LINEAR,
+        SOFT_CUT_DB,
+        (
+            Expectation(HISS_KEPT_SOFT, "down"),
+            Expectation(HISS_KEPT_HF, "flat", twin=HISS_KEPT_SOFT),
+            Expectation(HISS_PROGRAMME, "below"),
+        ),
     ),
 }
 DEGRADATIONS.update(HISS_DEGRADATIONS)

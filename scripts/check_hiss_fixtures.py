@@ -56,6 +56,7 @@ READINGS = (
     "hiss_pump_db",
     "hiss_island_kurt",
     "hiss_prog_kept_hf_db",
+    "hiss_prog_kept_soft_db",
     "hiss_prog_validated",
 )
 ORACLE_DB = (6.0, 12.0, 20.0, 30.0)
@@ -324,6 +325,7 @@ def guard_lines(rows):
         f"gated_m0: margin within +0.5 dB of identity {share(within)}, pump >= 15 {share([p >= 15.0 for p in pumps])} {_stats(pumps)}",
         f"islands_15: island kurtosis {_stats(_readings_of(rows, 'islands_15', 'hiss_island_kurt'))}",
         f"lp4k_all: kept HF <= -1 dB {share([k <= -1.0 for k in kept])} {_stats(kept)}",
+        f"prog_only: kept soft (the hiss's share) {_stats(_readings_of(rows, 'prog_only', 'hiss_prog_kept_soft_db'))}",
     ]
 
 

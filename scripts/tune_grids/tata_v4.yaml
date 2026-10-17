@@ -139,7 +139,7 @@
 # - the hiss margins (v4): dsp.hiss_prog_margin_db and dsp.hiss_pause_margin_db feed the flags and
 #   the constraints, their excess is ranked; dsp.hiss_prog_removed*_db (physical removal), the
 #   all-band and HF margins, the onset, sone and room onset are shown; dsp.hiss_pump_db,
-#   hiss_prog_kept_hf_db, hiss_island_kurt and hiss_room_delta_db are constraints;
+#   hiss_prog_kept_hf_db, hiss_prog_kept_soft_db, hiss_island_kurt and hiss_room_delta_db are constraints;
 # - dsp.hf_4k8k / dsp.hf_8k16k: one-sided, they ranked a brighter top better (tata_v2 ranked
 #   hf_4k8k "up" while the user heard +2 dB air thin); they stay as backstop gates in gates.py;
 # - dsp.residual_noise_db, file.noise_removed_db: more noise removed is shown, never ranked;
@@ -387,6 +387,17 @@ constraints:
   # admits every judged file the user did not call dull (lowest S single4s -5.60, ranked first; S stitched -5.51) and,
   # with the max_move allowance past it, holds the floor at -7.0, over T single4s (-7.04, "underwater again").
   dsp.hiss_prog_kept_hf_db.output.median: {worse: down, max_move: 1.0, bound: -6.0}
+  # The soft programme kept (2026-10-17, kept HF's twin): the mean over bands of 1 kHz and up of each band's median on
+  # the cells 6-18 dB over the floor (shaped; their 3 x 3 neighbourhood 6 dB over it too), where an SNR-dependent
+  # suppressor takes consonants, breaths and tails that the 18 dB cells never see. A perfect output reads only the hiss's
+  # share (-0.30..-1.33 on the fixtures; a 3 / 6 dB soft cut -2.06..-3.06 / -3.42..-5.24). max_move = the jitter
+  # report's tie floor 0.045 rounded up to 0.05. Bound -27.0, the next whole decibel under the lowest judged file the user
+  # did not call dull (V single4s -26.51, ranked first; S single4s -26.09), over T single4s (-27.46, "underwater again")
+  # and every de-esser bug (-28.62..-33.91). The accepted plateaus read far inside (v2 finals -1.54..-9.00, v4_air
+  # -1.53..-9.19, round one -10.65..-22.44), and so do the reference suppressor's replays (APL -6.0..-16.5, cathar
+  # -9.2..-14.4: 3.1-7.8 dB under the same stages without it), which it does not exclude (docs/ear_v4_hiss.md, "The Soft
+  # Programme Kept").
+  dsp.hiss_prog_kept_soft_db.output.median: {worse: down, max_move: 0.05, bound: -27.0}
   # Musical noise under the programme (islands +0.55..+0.71) and in the pauses (R4 texture). The pause islands also need
   # tata_v3's dead-zone edge, 1.85 (the largest judged reading is 1.754): with max_move alone the cleared round-one cathar
   # renders (cathar075 alpha 2 1.734, alpha 2.25 1.736 against the baseline's 0.959, T r1l) were excluded, which the

@@ -383,7 +383,7 @@ PUMP = "dsp.hiss_pump_db.output.median"
 EXCESS = "dsp.hiss_prog_excess_db.output.median"
 
 
-@pytest.mark.parametrize(("name", "constraints"), [("tata_v4.yaml", 16), ("music_v4.yaml", 8)])
+@pytest.mark.parametrize(("name", "constraints"), [("tata_v4.yaml", 17), ("music_v4.yaml", 9)])
 def test_a_v4_grid_brings_its_constraints(name, constraints):
     """The v4 grids parse with their vetoes measured in benign floors, the air reversal, the tie and the constraints."""
     guards = _guards(name, V4_FLOORS | _v3_floors(name))
