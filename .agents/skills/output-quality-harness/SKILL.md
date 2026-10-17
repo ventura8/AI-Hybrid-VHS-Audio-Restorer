@@ -2187,6 +2187,22 @@ the incumbent. The knob tables were re-read from the code paths on
   (`profile.has_clipping_any_channel`), so the dead-channel tapes, whose
   mono mix never reaches 0.985, are judged on their live side; a render
   whose scan left no verdict declips as `always` and logs a WARNING.
+- Hiss and scan knobs (2026-10-17, for the ear v4 rounds): both engines
+  take the hiss-free fill (`pause_floor_target`, `pause_floor_shape`,
+  `pause_floor_shelf_hz`, `pause_floor_hf_cut_db`) and the scan's searches
+  (`crt_detect_mode`, `scanner_mains_vote`, `azimuth_estimate_method`,
+  `sync_dtw_enable`); cathar the print guards
+  (`cathar_noiseprint_mute_guard`, `cathar_noiseprint_min_depth_db`,
+  `cathar_noiseprint_shallow_action`, `cathar_noiseprint_method`); APL the
+  post-neural stages (`apl_post_neural_suppress` and its residual gate,
+  `apl_neural_level_restore`, `linear_air_gate`, `apl_burst_ceiling` and
+  its depth, `apl_surgical_ring_guard`, `apl_depop_min_prominence_db`).
+  Inert rules: the keeper off kills everything it reads
+  (`PAUSE_FLOOR_KNOBS`); a flat fill reads no corner or cut, a low-pass no
+  cut; no print kills every print guard (`NOISEPRINT_KNOBS`); the depth
+  guard's action needs the guard on; the post-neural parameters need their
+  switches; `apl_suppress_gain_floor_db` is dead only with both suppressors
+  off (`tests/unit/test_autotune_hiss_knobs.py`).
   Default changes: they go to the C3 listening session. Tests:
   `tests/unit/test_autotune_cathar_c4_knobs.py`,
   `tests/unit/test_cathar_round_c4.py`.

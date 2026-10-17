@@ -57,10 +57,19 @@ def test_every_switch_of_the_inert_table_has_a_default():
     assert switches == set(at.SWITCH_DEFAULTS)
 
 
+# Dead at the shipped defaults in both engines: the flat fill reads no corner or cut.
+FLAT_FILL_DEAD = {"pause_floor_shelf_hz", "pause_floor_hf_cut_db"}
+# APL's post-neural stages ship off, so their parameters are dead with them.
+APL_HISS_DEAD = {"apl_post_neural_suppress_min_residual_db", "apl_burst_ceiling_depth_db"}
+
+
 def test_at_the_shipped_defaults_only_the_dead_stages_are_left_out():
-    """cathar loses only the split-band factors; APL the subtraction stage, the stem path's floor and the shared depth."""
-    assert at.inert_knobs("cathar", {}) == {"cathar_alpha_high", "cathar_music_alpha_high"}
-    assert at.inert_knobs("apl", {}) == {*at.SUBTRACTION_KNOBS, "apl_noiseprint_tonal_s", "apl_music_bg_floor_db", "expander_depth_db"}
+    """cathar loses the split-band factors, the flat fill's shape and the off depth guard's action; APL the subtraction
+    stage, the stem path's floor, the shared depth, the flat fill's shape and the off post-neural stages' parameters."""
+    cathar_dead = {"cathar_alpha_high", "cathar_music_alpha_high", "cathar_noiseprint_shallow_action", *FLAT_FILL_DEAD}
+    apl_dead = {*at.SUBTRACTION_KNOBS, "apl_noiseprint_tonal_s", "apl_music_bg_floor_db", "expander_depth_db"}
+    assert at.inert_knobs("cathar", {}) == cathar_dead
+    assert at.inert_knobs("apl", {}) == apl_dead | FLAT_FILL_DEAD | APL_HISS_DEAD
 
 
 def test_the_deesser_threshold_is_inert_only_when_no_material_runs_the_deesser():

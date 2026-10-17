@@ -202,6 +202,20 @@ SHARED_KNOBS = {
     # this many dB under its level, so a pause never collapses to dead air.
     "enable_pause_floor": [False, True],
     "pause_floor_fill_db": [8.0, 12.0, 18.0, 24.0],
+    # The hiss-free fill (2026-10-12): each quiet frame filled under the source frame ('frame') rather than
+    # under the quiet cluster's median, from a copy of the source with its hiss cut above the corner
+    # ('shelf') or low-passed there ('lowpass'), so a pause keeps its room tone and loses the tape hiss.
+    "pause_floor_target": ["cluster", "frame"],
+    "pause_floor_shape": ["flat", "shelf", "lowpass"],
+    "pause_floor_shelf_hz": [2000.0, 3000.0, 4000.0],
+    "pause_floor_hf_cut_db": [12.0, 18.0, 24.0, 30.0],
+    # The scan's searches every mode reads (2026-10-12): the CRT line on the whole file, the mains notch
+    # confirmed on the whole file, the azimuth skew from the loudest spans with the sign the graph corrects.
+    "crt_detect_mode": ["head", "welch"],
+    "scanner_mains_vote": ["head", "confirmed"],
+    "azimuth_estimate_method": ["head", "spans"],
+    # Drift clips to shift sync instead of DTW, whose 40 ms holds the ear's time base reads.
+    "sync_dtw_enable": [True, False],
 }
 
 # Ordered candidate values per knob; None means "the app's default" (the override is dropped).
@@ -251,6 +265,12 @@ KNOBS = {
         "cathar_split_band_hz": [0, 4000, 6000, 8000],
         "cathar_alpha_high": [0.5, 1.0, 1.5, 2.0, 3.0],
         "cathar_music_alpha_high": [0.25, 0.5, 1.0],
+        # The noise print's guards (2026-10-12): no digital mute in the pick, a print too close to the
+        # programme scaled, dropped or replaced by the whole-file quantile print, or that print throughout.
+        "cathar_noiseprint_mute_guard": [False, True],
+        "cathar_noiseprint_min_depth_db": [0.0, 13.0, 20.0],
+        "cathar_noiseprint_shallow_action": ["scale", "drop", "quantile"],
+        "cathar_noiseprint_method": ["window", "quantile"],
         **SHARED_KNOBS,
     },
     # On the Tata tapes the scanner reads a spectral flatness of 0.022 (< apl_tonal_flatness_max 0.035),
@@ -295,6 +315,18 @@ KNOBS = {
         "apl_music_stem_path": [False, True],
         "apl_music_persistence_min": [0.005, 0.02, 0.05],
         "apl_music_bg_floor_db": [-20.0, -10.0, -5.0, 0.0],
+        # Post-neural hiss stages (2026-10-12): the gated MMSE-LSA suppressor where the neural stage left
+        # the source's hiss, the programme level restored after the separator's peak normalisation, the air
+        # shelf skipped on a hiss-dominated tape, and the ceiling on the hiss left next to speech.
+        "apl_post_neural_suppress": [False, True],
+        "apl_post_neural_suppress_min_residual_db": [3.0, 6.0, 9.0],
+        "apl_neural_level_restore": [False, True],
+        "linear_air_gate": ["none", "hiss_dominated"],
+        "apl_burst_ceiling": ["none", "gaps", "edges"],
+        "apl_burst_ceiling_depth_db": [20.0, 30.0, 40.0],
+        # The surgical notch's ring into gaps capped, and a depop span refused unless it stands out.
+        "apl_surgical_ring_guard": [False, True],
+        "apl_depop_min_prominence_db": [0.0, 6.0, 12.0],
         **SHARED_KNOBS,
     },
 }
@@ -413,6 +445,16 @@ _CATHAR_MUSIC_KEYS = (
     "cathar_music_dewind_cutoff",
 )
 # The polish expander's knee and compand timing (filters._build_full_audio_expander_filter), shared by both engines.
+# Everything the pause floor keeper reads besides its switch (modules/pause_floor.py).
+PAUSE_FLOOR_KNOBS = ("pause_floor_fill_db", "pause_floor_target", "pause_floor_shape", "pause_floor_shelf_hz", "pause_floor_hf_cut_db")
+# Everything cathar reads about its noise print besides the switches (modules/cathar.py, noiseprint_*.py).
+NOISEPRINT_KNOBS = (
+    "cathar_noiseprint_duration_s",
+    "cathar_noiseprint_mute_guard",
+    "cathar_noiseprint_min_depth_db",
+    "cathar_noiseprint_shallow_action",
+    "cathar_noiseprint_method",
+)
 EXPANDER_SHAPE_KNOBS = ("expander_knee_offset_db", "expander_attack_s", "expander_decay_s")
 INERT_WHEN = {
     "apl": (
@@ -421,12 +463,18 @@ INERT_WHEN = {
         # runs only on the stem path and only with a floor below 0 (apl_stems._background_pass).
         ({"apl_enable_spectral_denoise": False, "apl_music_stem_path": False}, ("apl_noiseprint_tonal_s",)),
         ({"apl_enable_spectral_denoise": False, "apl_music_bg_floor_db": 0.0}, ("apl_noiseprint_tonal_s",)),
-        # Only the native suppressor reads its gain floor (spectral_denoise._native_suppress).
-        ({"apl_use_native_suppress": False}, ("apl_suppress_gain_floor_db",)),
+        # The native suppressor and the post-neural one read the gain floor (spectral_denoise._native_suppress,
+        # post_neural_suppress): it is dead only with both off.
+        ({"apl_use_native_suppress": False, "apl_post_neural_suppress": False}, ("apl_suppress_gain_floor_db",)),
+        ({"apl_post_neural_suppress": False}, ("apl_post_neural_suppress_min_residual_db",)),
+        ({"apl_burst_ceiling": "none"}, ("apl_burst_ceiling_depth_db",)),
         # apl_music_persistence_min is not here: it also picks the tapes that take apl_music_neural_model.
         ({"apl_music_stem_path": False}, ("apl_music_bg_floor_db",)),
         ({"apl_enable_sibilant_guard": False}, ("apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_sibilant_hf_share_min")),
-        ({"enable_pause_floor": False}, ("pause_floor_fill_db",)),
+        ({"enable_pause_floor": False}, PAUSE_FLOOR_KNOBS),
+        # pause_floor.shaper_for: a flat fill reads neither the corner nor the cut, a low-pass not the cut.
+        ({"pause_floor_shape": "flat"}, ("pause_floor_shelf_hz", "pause_floor_hf_cut_db")),
+        ({"pause_floor_shape": "lowpass"}, ("pause_floor_hf_cut_db",)),
         # filters._append_expander_stage builds no compand with the expander off: its depth, knee and timing are dead.
         ({"enable_dynamic_expander": False}, ("apl_expander_depth_db",) + EXPANDER_SHAPE_KNOBS),
         # filters._build_linear_air_filter returns no shelf with the air off, whatever the gain or corner.
@@ -456,9 +504,14 @@ INERT_WHEN = {
             {"cathar_enable_deesser": False, "cathar_music_enable_deesser": False},
             ("cathar_deesser_threshold", "cathar_deesser_freq", "cathar_deesser_bands"),
         ),
-        ({"cathar_enable_noiseprint": False, "cathar_music_enable_noiseprint": False}, ("cathar_noiseprint_duration_s",)),
+        ({"cathar_enable_noiseprint": False, "cathar_music_enable_noiseprint": False}, NOISEPRINT_KNOBS),
+        # The depth guard's action is read only once the guard is on (cathar._learned_print).
+        ({"cathar_noiseprint_min_depth_db": 0.0}, ("cathar_noiseprint_shallow_action",)),
         ({"cathar_music_profile": False}, _CATHAR_MUSIC_KEYS),
-        ({"enable_pause_floor": False}, ("pause_floor_fill_db",)),
+        ({"enable_pause_floor": False}, PAUSE_FLOOR_KNOBS),
+        # pause_floor.shaper_for: a flat fill reads neither the corner nor the cut, a low-pass not the cut.
+        ({"pause_floor_shape": "flat"}, ("pause_floor_shelf_hz", "pause_floor_hf_cut_db")),
+        ({"pause_floor_shape": "lowpass"}, ("pause_floor_hf_cut_db",)),
         ({"enable_dynamic_expander": False}, ("expander_depth_db", "cathar_music_expander_depth_db") + EXPANDER_SHAPE_KNOBS),
         # cathar._cathar_analog_repair_pass runs no declip or dehum with its switch off, whatever the mode or frequency.
         ({"cathar_enable_declip": False}, ("cathar_declip_mode",)),
@@ -489,6 +542,10 @@ SWITCH_DEFAULTS = {
     "cathar_music_enable_repair": True,
     "cathar_enable_declip": True,
     "cathar_enable_dehum": True,
+    "pause_floor_shape": "flat",
+    "apl_post_neural_suppress": False,
+    "apl_burst_ceiling": "none",
+    "cathar_noiseprint_min_depth_db": 0.0,
 }
 
 
