@@ -65,6 +65,26 @@ skill holds the readings, their status and the measured facts behind them.
    Chain the engines in one launcher instead
    (`experiments/run_autotune_v8.cmd both`), or give each loop copies of
    the tapes.
+1. Stopping a loop to change its code (2026-10-17) leaves three traps:
+   - The app writes each tape's output beside the tape and skips a tape
+     whose output exists ("Output already exists. Skipping."), so a render
+     stopped after one tape handed that output to the next candidate: three
+     stale outputs of a stopped v8 run became the v9 incumbent's audio, and
+     one stopped candidate's Tele7abc became the next candidate's. The loop
+     now moves any `<stem><suffix>` beside a tape into
+     `<out>/stale_outputs/` before it renders (and says so); still kill the
+     launcher's `cmd` first (else `both` starts the next engine), then the
+     Python tree, and remove the `.temp_work_<stem>` folder the kill left.
+   - A knob added to the table is seeded into the incumbent on resume, and
+     candidate ids hash the whole override set, so every id changes and the
+     round renders again. With the new key off the audio is unchanged:
+     copy each old candidate folder to its new id with the key added at its
+     off value (scores read the output against the tape, not the
+     incumbent; audibility verdicts are keyed on the files and are read
+     again). A knob of the other engine changes no id.
+   - The stage cache keys on every module's source, `config.py` included,
+     so the first candidate of each pre-neural setting renders the neural
+     stage again after any code change.
 1. Check the knob table against the code paths before a round: a knob is
    dead only when every path that reads it is (`apl_tonal_flatness_max`
    stays live with the subtraction off), and no list may hold both None

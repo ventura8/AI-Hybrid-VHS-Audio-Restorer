@@ -692,6 +692,7 @@ def run_candidate(engine, overrides, tapes, out_dir):
     spec = {**ENGINES[engine], "env": split_overrides(overrides)[1]}
     extra_env = _prepare_candidate(cid, cand_dir, spec, overrides)
     started = time.time()
+    _move_stale_outputs(cid, tapes, spec["suffix"], out_dir)
     _restore(cand_dir, tapes, extra_env)
     _collect_outputs(cid, tapes, spec["suffix"], wavs)
     timing = {"wall_s": time.time() - started, "stage_cache": stage_cache_counts(cand_dir / RUN_LOG)}
@@ -753,10 +754,33 @@ def _restore(cand_dir, tapes, extra_env):
         )
 
 
+def _produced(tape, suffix):
+    """The restored video the app writes beside a tape: `<stem><suffix><ext>`."""
+    return Path(tape).with_name(f"{Path(tape).stem}{suffix}{Path(tape).suffix}")
+
+
+def _move_stale_outputs(cid, tapes, suffix, out_dir):
+    """Moves an output already beside a tape into `out_dir/stale_outputs/` before the render, and says so.
+
+    The app skips a tape whose output exists ("Output already exists. Skipping."), and the loop
+    would collect that file as this candidate's audio. A render stopped after one tape left one:
+    on 2026-10-17 a stopped v8 run handed three of its outputs to the v9 incumbent, and a stopped
+    candidate's Tele7abc to the next candidate. Moved, never deleted: the file may be the user's.
+    """
+    for tape in tapes.values():
+        produced = _produced(tape, suffix)
+        if produced.exists():
+            stale = out_dir / "stale_outputs"
+            stale.mkdir(parents=True, exist_ok=True)
+            target = stale / f"{cid}__{produced.name}"
+            shutil.move(str(produced), str(target))
+            print(f"  {cid}: moved {produced.name}, already beside its tape, to {target}", flush=True)
+
+
 def _collect_outputs(cid, tapes, suffix, wavs):
     """Moves each restored tape's audio into the candidate's WAV and deletes the restored video beside the tape."""
     for slug, tape in tapes.items():
-        produced = Path(tape).with_name(f"{Path(tape).stem}{suffix}{Path(tape).suffix}")
+        produced = _produced(tape, suffix)
         if not produced.exists():
             raise SystemExit(f"{cid}: no output for {slug} ({produced.name})")
         shutil.move(str(audio_io.extract_wav(produced, wavs[slug].parent)), str(wavs[slug]))
