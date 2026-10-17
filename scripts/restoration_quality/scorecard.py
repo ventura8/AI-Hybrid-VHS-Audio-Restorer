@@ -245,6 +245,8 @@ METRICS = {
         # Ear v4: the hiss anchor's coverage (hiss_floor.source_anchor), read once per source, displayed.
         MetricSpec("meta.hiss_anchor_pause_s", "meta", NONE, "s"),
         MetricSpec("meta.hiss_anchor_validated", "meta", NONE, ""),
+        # The programme reading's anchor path (runner.ANCHOR_HOW_CODES): 1 pauses, 2 stationary (hiss_stationary), 0 none.
+        MetricSpec("meta.hiss_anchor_how", "meta", NONE, ""),
     )
 }
 

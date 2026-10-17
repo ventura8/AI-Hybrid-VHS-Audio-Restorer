@@ -51,6 +51,7 @@ def test_the_probe_scores_every_case_of_each_m12_tape_noise_fixture(fixtures, tm
         "islands_15",
     }
     assert "oracle ladder monotone" in capsys.readouterr().out
+    assert rows[0]["programme_how"] in {chf.hiss_floor.PAUSES, chf.hiss_floor.STATIONARY, chf.hiss_floor.NO_ANCHOR}
 
 
 def test_a_shape_written_from_a_capture_drives_the_noise(fixtures, tmp_path):

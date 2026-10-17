@@ -17,7 +17,187 @@ Contradicts the Evidence". Nothing here shipped a default: the blind block
 recorded) and the realistic-v2 plus IA confirmation come first. T, S, V and
 G are Tele7abc, SOTI, Vaccin and Gaudeamus5. The readings and the grids are
 described in the output-quality-harness skill, "Critical of hiss (ear v4,
-2026-10-12)".
+2026-10-12)". The continuous-programme round of 2026-10-17 (first section)
+added a second anchor for the programme reading and measured why it cannot
+reach dense singing.
+
+## Continuous Programme: the Second Anchor (2026-10-17)
+
+The programme reading reports its margins only on a validated anchor, and
+the anchor validated only from R4's true pauses. Music and singing rarely
+hold 1 s of them, so the reading read 26 of 235 IA hunt clips and 2 of 12
+music clips: the ear was blind to hiss under singing, half of the user's
+rule. This round (`wip/ear-music-anchor`) built a second validated anchor
+for continuous programme, `hiss_stationary.py`, and measured why it can
+only be narrow. CPU only, stored files only; the family tapes never left
+the machine.
+
+### What No Anchor Fixes
+
+The programme reading cannot tell programme that a hiss-free output reveals
+from residual hiss in a noise-dominated cell; the spectral cap (round 1)
+tells them apart only where the programme leaves bands or gaps to the hiss.
+On dense programme no anchor removes the ambiguity:
+
+- **The exact noise as the anchor.** On realistic-v2's music fixtures (de,
+  en, es, fr, it at m09, m12, m18 and m24; the target as the perfect output;
+  `vhs - clean` as the anchor, validated by hand) the perfect output read at
+  or under 0 on 0 of 36 music-bed fixtures (+2.6..+29.1 dB, median +21.1),
+  on 1 of 40 music-led and on 23 of 40 music-only fixtures, which hold real
+  silences. The clean reference, which keeps the generator's ambience bed
+  (up to 23 dB over the tape noise in some bands), read at or under 0 on one
+  of 116 fixtures. The fixtures' corpus noise is not stationary hiss: its
+  1 s block levels span 2-15 dB per band, and it is often band-limited at
+  5-7 kHz.
+- **Stationary hiss under the same programmes.** The target plus stationary
+  tape hiss (white noise plus a 2 kHz high-passed copy at the recorded
+  noise's 3-10 kHz level, or Tele7abc's pause spectrum placed against the
+  programme as on the tape), full band or low-passed at 4.5 kHz, at m12:
+  with the exact hiss as the anchor the full-band music-bed and music-led
+  perfect outputs read over 0 on 39 of 40 (up to +17.0 dB); the low-passed
+  ones read at or under 0 on 50 of 60, the misses dense programme (nine
+  music-led, one music bed; +0.4..+11.1).
+- **Each dB the anchor stands over the true hiss reads about 3 dB on a
+  perfect output.** A stationary anchor 0.7-0.9 dB over the exact hiss in
+  three note bands read a perfect output +0.22 where the exact hiss reads
+  -2.96.
+
+The task's second candidate, the bands over the programme extrapolated
+down, failed both ways. An anchor from the hiss-alone bands (mean within 1
+dB of the floor, 1 s spread under 1.5 dB, no correlation with the programme
+envelope), held at their median plus 3 dB under them, read perfect outputs
+up to +23.7 dB on the stationary-hiss variants: the tape-hiss shape sits
+about 9.5 dB lower under 2 kHz than over 4 kHz, so a flat extrapolation
+stands over the hiss there. Holding the reading to those bands alone fixed
+the perfect output and went blind under the programme: a render that kept
+the hiss under 5 kHz and removed it above, which the exact anchor reads
++13..+30 dB over its masked threshold on music-led and music-only
+programme, read -21.9..+20.8, at or under 0 on 37 of the 67 variants it
+validated. That render is the user's complaint itself, so neither form was
+kept.
+
+### The Second Anchor
+
+`scripts/restoration_quality/hiss_stationary.py` is tried only when the
+pause anchor is not validated, and is carried as `Anchor.programme`. The
+pause reading keeps the pause anchor; the programme reading takes the second
+one only when it alone validated (`Anchor.for_programme`), so a source whose
+pause anchor validates reads exactly as before.
+
+1. Per 15 s segment, each band's floor per 3 s block is C_b x P10 of its
+   valley. A band is accepted where the block floors span at most 1 dB from
+   p10 to p90 and every block holds over the 16-bit dither plus 10 dB; its
+   level is the blocks' P25. The median read one perfect output +0.22; the
+   lowest block biased a fresh draw of the raw tape +0.44 dB (p95 of three
+   draws per source); the P25 reads +0.34 with every perfect output under
+   -1.7.
+1. A band carries programme where its mean stands more than 1 dB over the
+   segment's floor or its frame power correlates over 0.15 with the
+   300-4000 Hz envelope; it is hiss alone where neither holds and its 1 s
+   block means span at most 1.5 dB.
+1. Over the segments a band counts where half of them say so. The anchor is
+   validated when (a) every band of 1 kHz and up that holds a floor is
+   accepted but at most four, and six at least: the programme leaves the
+   hiss exposed in every band within every 3 s; and (b) two hiss-alone
+   bands lie from half an octave over the programme's top to 12 kHz: the
+   programme stops, so the spectral cap has bands where nothing can be
+   revealed. Bands not accepted read NaN and the reading interpolates them.
+
+The runner caches it with the pause anchor (`runner.HISS_CODE` covers the
+module) and writes `meta.hiss_anchor_how` (1 pauses, 2 stationary, 0 none)
+and `card.meta["hiss_anchor"]["programme_how"]`; `check_hiss_fixtures`
+reads the same anchor.
+
+### Validation
+
+`D:\ai_restore_work\scratch_manchor` holds the scripts and their JSON. The
+fixture rows read realistic-v2's music, music-led and music-only fixtures
+(5 languages x 3 kinds x 2 programmes x m09-m24, 150) and, built on
+their targets, the stationary-hiss variants: tape hiss over the full-band
+and the 4.5 kHz programme at every margin (150 each) and Tele7abc's shape
+over both (30 each, the shape does not follow the margin).
+
+Coverage, before (the pause path alone) and after (with the second anchor):
+
+| sources | before | after |
+|---|---|---|
+| corpus fixtures | 8 of 150 | 8 + 0 |
+| tape hiss, full band | 20 of 150 | 20 + 0 |
+| tape hiss, 4.5 kHz programme | 22 of 150 | 22 + 36 |
+| Tele7abc shape, full band | 4 of 30 | 4 + 0 |
+| Tele7abc shape, 4.5 kHz programme | 5 of 30 | 5 + 2 |
+
+The rows of the 38 sources the second anchor validates:
+
+- **Perfect output** (the programme alone) at or under 0 on 38 of 38:
+  -29.98..-1.70 dB, median -19.6; the all-band margin the same. **Pass.**
+- **Raw tape** reads the hiss on 38 of 38: +24.0..+37.3. **Pass.**
+- **Ladder** (raw, hiss -6, -12, -20 dB, perfect) monotone within 0.05 dB
+  on 38 of 38. **Pass.**
+- **Hiss kept under 5 kHz, removed above** read on 38 of 38: +19.6..+32.6
+  (the render the bands-above candidate read as clean). **Pass.**
+- **Same-percept**, +-0.1 dB, a 0.37-sample delay and a soxr round trip:
+  p95 at most 0.001 dB, max 0.005. **Pass.**
+- **Same-percept, a fresh realisation** of the hiss from its own process
+  (three draws per source, at the raw level and 12 dB down): p95 0.36 dB,
+  max 0.54 (the pause path on the variants it validates: 0.34, max 0.56);
+  `same_percept.fresh_like`, an envelope-imposed redraw: p95 0.69 (pause
+  path 0.52). **Not passed** against the 0.30 / 0.25 ties (below).
+
+Through the runner's own pair, anchor and windows, base code (the main
+checkout at ee14637) against this branch:
+
+- **Tata v2 pairs** (Tele7abc, SOTI, Vaccin, Gaudeamus5, Gaudeamus1; the
+  identity, the APL and the cathar final): all five validate from their
+  pauses; 0 of 11,655 hiss readings moved. **Pass.**
+- **Music clips** (12, the source against itself and every stored
+  autotune_v6_music candidate, 2,484 pairs): 2 of 12 read before and after
+  (`x_vid-20230624-142023` 207 of 207 windows, Gaudeamus1 1,035 of 1,656);
+  no source validates the second anchor; 0 of 30,870 readings moved on the
+  942 pairs read with both codes.
+- **IA hunt** (470 pairs, 235 sources): 34 sources validate from their
+  pauses, 26 clips and 92 of 902 windows read, before and after; 0 of
+  18,942 readings moved.
+- **Fixture probe** (`check_hiss_fixtures`, the 40 gapped m12 fixtures):
+  the hiss shape validates 20 from the pauses and 3 more through the second
+  anchor (perfect -20.7..-16.7), Tele7abc's shape 23 and 1 more (-15.7),
+  the corpus shape 12 and none more.
+
+Not passed, with the evidence:
+
+- **The fresh realisation.** A redraw of the hiss from its own process
+  reads p95 0.36 dB (median 0.15, max 0.54) on the sources the second anchor
+  validates, over the grids' ties (0.30 on `hiss_prog_excess_db`, 0.25 on
+  the all-band excess). It is a bias of the reading, not of the anchor: the
+  deviations are positive (a fresh draw reads more hiss than the source's
+  own, whose low cells the noise-dominated test picked), and the pause path
+  reads p95 0.34 (max 0.56) on the variants it validates. The ties are p95s
+  of window medians over the first 125 s of eight tape pairs (16 windows
+  each); a 15 s clip has one or two windows.
+- **The realistic-v2 corpus fixtures.** No anchor validates them without
+  reading revealed programme as hiss (the exact noise above); the second
+  anchor abstains on all 150 (a median of 3 of 23 bands accepted, none
+  with a band edge).
+- **Real continuous programme.** The second anchor validates no music clip
+  and no IA hunt source. On the music clips 0-9 of 12-24 bands of 1 kHz and
+  up are accepted and no band is hiss alone over the programme; on the IA
+  hunt sources a median of 21.5 bands miss (p10 15.3), 4 of 234 are covered
+  and 3 have a band edge, none both; even the Tata speech tapes accept 0-8
+  of 20-24 bands (their programme bands' 3 s floors span 2-4 dB; over the
+  programme 0.4-1.3 dB, within -0.2..+1.3 dB of the pause anchor). Real
+  programme exposes the hiss in its pauses, not in a stationary floor, so
+  the ear stays blind to hiss under dense singing.
+
+Found on the way, not changed (a source whose pause anchor validates must
+read as before): the pause path validates dense music and then reads
+revealed programme as hiss. On the variants it validates, the full-band
+programmes' perfect outputs read +1.4..+18.8 dB (24 of 24), the 4.5 kHz ones
+over 0 on 3 of 27; on the corpus fixtures it validates, 5 of 6 read
++3.9..+15.3 and the clean reference 0 of 6 at or under 0. Its validation
+reads R0's programme bandwidth (2 kHz or more), which on music reads the
+gap frames' programme (630-1414 Hz on most of these fixtures, 500 and 891
+Hz on two music clips, 561-794 Hz on four IA clips), and has no band-edge
+test like the second anchor's (b).
 
 ## Adversarial Review: Defects and Fixes
 
@@ -500,7 +680,8 @@ merge's adversarial review re-scored the 29 pinned outputs of
 ## Music Coverage per Clip
 
 The programme reading reads Gaudeamus1 on 5 of its 8 windows per render and
-one window of `x_vid-20230624-142023`; it abstains on the other ten clips,
+one window of `x_vid-20230624-142023`; it abstains on the other ten clips
+(and still does with the second anchor of 2026-10-17, first section),
 and unvalidated windows read None, never a number. The all-band excess
 orders Gaudeamus1's `final2_cathar` (+1.26) under `final2_apl` (+8.44).
 **Pass.**
@@ -533,7 +714,8 @@ videoplayback-2026 5.73 / -8.33 / -2.24; y2mate 38.38 / 36.35 / 39.90
 
 235 excerpts with both renders, the cathar and APL baselines.
 
-- The programme reading validates on 26 clips. Median programme margin:
+- The programme reading validates on 26 clips (26 still with the second
+  anchor of 2026-10-17, which validates no hunt source). Median programme margin:
   source 21.39, cathar 12.02, APL 6.79; the source is hissier on 25 of 26
   clips against cathar (das-chaos-duo reads 0.36 dB over its source) and 26
   of 26 against APL. **Pass.**

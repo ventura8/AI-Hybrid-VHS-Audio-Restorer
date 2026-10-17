@@ -1469,6 +1469,32 @@ only a blind session at a recorded device and volume moves L_crit.
   the band otherwise read as hiss). `validated` only from the pauses, with
   a band of 2 kHz or more and at least two reference bands; an unvalidated
   window abstains from the ranked fields.
+- `hiss_stationary.py` (2026-10-17), the second anchor, for continuous
+  programme (music, singing, dense speech): read only when the pause anchor
+  is not validated and carried as `Anchor.programme`; the runner and
+  `check_hiss_fixtures` call `hiss_stationary.source_anchor`. Per 15 s
+  segment each band's floor per 3 s block (C_b x P10 of its valley) is
+  accepted where the blocks span at most 1 dB p10-p90, at their P25; a band
+  carries programme where its mean stands over 1 dB above the segment's
+  floor or its frame power follows the 300-4000 Hz envelope (correlation
+  over 0.15). Validated when every band of 1 kHz and up holding a floor is
+  accepted but at most four (six at least) and two hiss-alone bands lie from
+  half an octave over the programme's top to 12 kHz. Only then does the
+  programme reading cap with it and report margins
+  (`Anchor.for_programme`); the pause reading keeps the pause anchor, so a
+  source whose pause anchor validates reads bit for bit as before (the Tata
+  v2 pairs: 11,655 readings, none moved). `meta.hiss_anchor_how` names the
+  path (1 pauses, 2 stationary, 0 none). It validates where the reading is
+  demonstrably right and nowhere else: 38 of 360 stationary-hiss music
+  variants (music-only programme low-passed at 4.5 kHz; every perfect
+  output at or under 0, max -1.70; a render keeping the hiss under the
+  programme reads +19.6..+32.6), no realistic-v2 corpus fixture, no music
+  clip, no IA hunt source. No anchor can do more there: with the exact noise
+  as the anchor the music-bed and music-led fixtures' perfect outputs read
+  over 0 on 75 of 76, and real programme exposes its hiss in pauses, not
+  in a stationary floor (`docs/ear_v4_hiss.md`, "Continuous Programme").
+  The pause path itself validates dense full-band music and reads its
+  perfect outputs +1.4..+18.8 dB (found, not changed; same section).
 
 `hiss_programme.py`, the hiss left under the programme (the `hup3`
 prototype's estimator, rebuilt after validation round 1):
@@ -1623,6 +1649,7 @@ Card fields (all `dsp.*`, programme routes; `meta.*` source side):
 | `pause_depth_speech_db` | as pause depth | lower | G1, speech route |
 | `meta.hiss_anchor_pause_s` | source | none | display |
 | `meta.hiss_anchor_validated` | source | none | display |
+| `meta.hiss_anchor_how` | source | none | display (anchor path) |
 
 Decisions that reconciled the two designs: one level (75) for both places;
 the margin in dB over the threshold in both, ranked as the one-sided

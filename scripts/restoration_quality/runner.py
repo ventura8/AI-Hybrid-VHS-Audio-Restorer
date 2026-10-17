@@ -98,8 +98,9 @@ Ear v4 wiring (the user's rule of 2026-10-11: be very critical of VHS hiss under
 singing and in the pauses):
 
 - The hiss anchor (`hiss_floor.source_anchor`, the source's stationary floor per band from
-  R4's true pauses) is read once per source on the RAW source mono (a property of the source
-  file alone) with R0's programme bandwidth and brickwall, and cached as
+  R4's true pauses; when it is not validated, `hiss_stationary` adds the continuous-programme
+  anchor the programme reading may validate on) is read once per source on the RAW source mono
+  (a property of the source file alone) with R0's programme bandwidth and brickwall, and cached as
   `<cache>/profile/<source key>_hiss_<code hash>.json`; the hash covers `HISS_CODE`, so a
   change to either reading or the modules they read with re-reads it (0.3-0.6 s per 134 s).
 - Every window not routed as silence reads `hiss_programme.programme_readings` and
@@ -112,8 +113,9 @@ singing and in the pauses):
   file's own loud frames for the pause reading. About 0.13 s + 0.03-0.1 s per 15 s window
   per output.
 - `dsp.pause_depth_speech_db` repeats `dsp.pause_depth_db` on the speech route alone (the
-  dead-air guard of the v4 grids); `meta.hiss_anchor_pause_s`, `meta.hiss_anchor_validated`
-  and `card.meta["hiss_anchor"]` say what the anchor stands on.
+  dead-air guard of the v4 grids); `meta.hiss_anchor_pause_s`, `meta.hiss_anchor_validated`,
+  `meta.hiss_anchor_how` (the programme reading's path: 1 pauses, 2 stationary, 0 none) and
+  `card.meta["hiss_anchor"]` (its `programme_how`) say what the anchor stands on.
 - The trade (`dsp_metrics.trade`, `measure_tradeoff.measure`) reads both files at their
   native rates, so a 48 kHz source against a 44.1 kHz output read `file.noise_removed_db`
   -23.49 dB, a meaningless number: on a rate mismatch it is skipped and
@@ -140,6 +142,7 @@ from scripts.restoration_quality import (
     hiss_floor,
     hiss_pause,
     hiss_programme,
+    hiss_stationary,
     lf_metrics,
     pause_metrics,
     sibilance,
@@ -254,7 +257,7 @@ class Pair:
 
 PROFILE_CODE = (source_profile, measure_hum, dsp_metrics, pause_metrics)
 # The code a hiss anchor comes from (ear v4): a cached anchor from other code is never served.
-HISS_CODE = (hiss_floor, hiss_programme, hiss_pause, pause_metrics, source_profile, dsp_metrics, auditory)
+HISS_CODE = (hiss_floor, hiss_programme, hiss_pause, hiss_stationary, pause_metrics, source_profile, dsp_metrics, auditory)
 
 
 def _code_hash(modules):
@@ -337,11 +340,14 @@ def _stored_anchor(path):
 
 
 def load_hiss_anchor(pair, profile):
-    """The source's hiss anchor: from the cache, else read on the raw source mono with R0's band and brickwall, and cached."""
+    """The source's hiss anchor: from the cache, else read on the raw source mono with R0's band and brickwall, and cached.
+
+    `hiss_stationary.source_anchor` is the pause anchor, carrying the continuous-programme anchor when it is not validated.
+    """
     path = hiss_anchor_path(pair.cache_dir, pair.source_key)
     anchor = _stored_anchor(path)
     if anchor is None:
-        anchor = hiss_floor.source_anchor(pair.raw_source, pair.rate, profile.get("prog_bandwidth_hz"), profile.get("brickwall_hz"))
+        anchor = hiss_stationary.source_anchor(pair.raw_source, pair.rate, profile.get("prog_bandwidth_hz"), profile.get("brickwall_hz"))
         write_profile(path, anchor.to_dict())
     return anchor
 
@@ -354,17 +360,28 @@ def hiss_context(pair, profile, anchor):
     )
 
 
+# `meta.hiss_anchor_how`: which path validated the programme reading's anchor (0 when none did).
+ANCHOR_HOW_CODES = {hiss_floor.NO_ANCHOR: 0.0, hiss_floor.PAUSES: 1.0, hiss_floor.STATIONARY: 2.0}
+
+
 def anchor_entries(anchor):
     """The anchor's coverage as source-side `meta.*` file entries."""
     return {
         "meta.hiss_anchor_pause_s": {"source": float(anchor.pause_s)},
         "meta.hiss_anchor_validated": {"source": float(anchor.validated)},
+        "meta.hiss_anchor_how": {"source": ANCHOR_HOW_CODES[anchor.programme_how()]},
     }
 
 
 def anchor_meta(anchor):
-    """`card.meta["hiss_anchor"]`: how the anchor was read and the playback level the readings assume."""
-    return {"how": anchor.how, "pause_s": float(anchor.pause_s), "validated": bool(anchor.validated), "l_crit_db": hiss_floor.L_CRIT_DB}
+    """`card.meta["hiss_anchor"]`: how the anchor was read, the programme reading's path and the playback level assumed."""
+    return {
+        "how": anchor.how,
+        "pause_s": float(anchor.pause_s),
+        "validated": bool(anchor.validated),
+        "programme_how": anchor.programme_how(),
+        "l_crit_db": hiss_floor.L_CRIT_DB,
+    }
 
 
 def _profile(pair):

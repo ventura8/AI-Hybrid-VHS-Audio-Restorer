@@ -1084,7 +1084,15 @@ places at one declared critical playback level, each file's loud frames at
   +9..+22 dB, the fixed one at or under 0 on 41 of 43 linear fixtures). It
   reads the STFT frames wholly inside each window only (validation round 2:
   the half-padded edge frames moved a window 2.4 dB under a 0.37-sample
-  shift of the output).
+  shift of the output). Where the pause anchor does not validate, a second
+  one (`hiss_stationary.py`, 2026-10-17) may: the stationary floor of
+  continuous programme, accepted only where the hiss shows through every
+  band within every 3 s and the programme stops under two hiss-alone bands.
+  It validated 38 of 360 stationary-hiss music variants with every perfect
+  output at or under 0, and no real source: on dense programme even the
+  exact noise as the anchor reads a perfect output over 0 (75 of 76
+  realistic-v2 music-bed and music-led fixtures), so the ear stays blind to
+  hiss under dense singing (`docs/ear_v4_hiss.md`, "Continuous Programme").
 - `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
   floor over Terhardt's threshold in quiet, read where the source's pause
   is silent apart from its hiss (a 200 ms block standing 3 dB over the

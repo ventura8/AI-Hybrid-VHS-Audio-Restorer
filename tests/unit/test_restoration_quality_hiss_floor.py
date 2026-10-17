@@ -162,6 +162,34 @@ def test_an_anchor_survives_its_dict_round_trip():
     assert (float(back.level[0]), back.pause_s, back.how, back.validated) == (1e-8, 2.5, hiss_floor.PAUSES, True)
 
 
+def _second(validated):
+    """A stationary anchor with one band read."""
+    return hiss_floor.Anchor(np.array([2e-8]), np.array([1000.0]), 0.0, hiss_floor.STATIONARY, validated)
+
+
+def test_the_programme_reading_takes_the_second_anchor_only_when_it_alone_validated():
+    """A validated pause anchor stays; an unvalidated one gives way to a validated second anchor, not to an unvalidated one."""
+    first = hiss_floor.Anchor(np.array([1e-8]), np.array([1000.0]), 2.5, hiss_floor.PAUSES, True, _second(True))
+    unvalidated = dataclasses.replace(first, validated=False)
+    neither = dataclasses.replace(unvalidated, programme=_second(False))
+    alone = dataclasses.replace(unvalidated, programme=None)
+    assert [anchor.for_programme().how for anchor in (first, unvalidated, neither, alone)] == [hiss_floor.PAUSES, hiss_floor.STATIONARY] + [
+        hiss_floor.PAUSES
+    ] * 2
+    assert [anchor.programme_how() for anchor in (first, unvalidated, neither)] == [
+        hiss_floor.PAUSES,
+        hiss_floor.STATIONARY,
+        hiss_floor.NO_ANCHOR,
+    ]
+
+
+def test_the_second_anchor_survives_the_dict_round_trip():
+    """The nested stationary anchor is written and read back with its level and its verdict."""
+    first = hiss_floor.Anchor(np.array([1e-8]), np.array([1000.0]), 0.0, hiss_floor.ALL_FRAMES, False, _second(True))
+    back = hiss_floor.Anchor.from_dict(first.to_dict())
+    assert (back.programme.how, back.programme.validated, float(back.programme.level[0])) == (hiss_floor.STATIONARY, True, 2e-8)
+
+
 def test_an_anchor_without_a_level_stays_without_one():
     """`no_floor` round-trips with no level."""
     empty = hiss_floor.Anchor.from_dict(hiss_floor.Anchor(None, np.zeros(0), 0.0, hiss_floor.NO_FLOOR, False).to_dict())

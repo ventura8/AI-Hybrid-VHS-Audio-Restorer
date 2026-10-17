@@ -16,7 +16,9 @@ flat noise at that level (`white`), or noise shaped by a pause spectrum (a `SHAP
 scaling), placed against the programme's loud frames as the tape's hiss stands against its own.
 A shape derived from a family tape stays under the gitignored `artifacts/`; never commit it.
 
-Each source (programme + hiss) is read with its own capture profile and hiss anchor, and these
+Each source (programme + hiss) is read with its own capture profile and hiss anchor (the
+runner's: `hiss_stationary.source_anchor`, the pause anchor or, when that one is not validated,
+the continuous-programme anchor the programme reading may validate on), and these
 outputs are scored through the two readings: the identity; the oracle, the hiss 6 / 12 / 20 /
 30 dB down; the programme alone; a fresh realisation of the hiss; the source delayed 0.37
 samples, +-0.1 dB, through a soxr round trip and requantised to 16 bits; `hf_left` (the hiss
@@ -37,7 +39,7 @@ import soundfile as sf
 
 from scripts import degradations_hiss, quality_degradations, same_percept
 from scripts.cli_paths import confined_path
-from scripts.restoration_quality import hiss_floor, hiss_pause, hiss_programme, pause_metrics, source_profile
+from scripts.restoration_quality import hiss_floor, hiss_pause, hiss_programme, hiss_stationary, pause_metrics, source_profile
 
 DEFAULT_FIXTURES = Path("artifacts/realistic-v2")
 DEFAULT_OUT = Path("experiments/hiss_v4/fixtures.jsonl")
@@ -233,17 +235,21 @@ def anchor_error(anchor, noise, rate, top):
 
 
 def score_fixture(programme, noise, fresh, rate):
-    """One fixture's row: its capture profile, its anchor and every case's readings."""
+    """One fixture's row: its capture profile, its anchor (with the runner's second path) and every case's readings.
+
+    `validated` is the programme reading's anchor (`hiss_floor.Anchor.for_programme`), `programme_how` its path.
+    """
     source = programme + noise
     profile = source_profile.capture_profile(source.astype(np.float32), rate)
     top = profile.get("brickwall_hz")
-    anchor = hiss_floor.source_anchor(source, rate, profile.get("prog_bandwidth_hz"), top)
+    anchor = hiss_stationary.source_anchor(source, rate, profile.get("prog_bandwidth_hz"), top)
     cases = {name: case_readings(source, output, rate, (anchor, top)) for name, output in cases_for(programme, noise, fresh, rate).items()}
     row = {
         "prog_bw": profile.get("prog_bandwidth_hz"),
         "how": anchor.how,
         "pause_s": round(anchor.pause_s, 2),
-        "validated": anchor.validated,
+        "validated": anchor.for_programme().validated,
+        "programme_how": anchor.programme_how(),
     }
     return {**row, "anchor_err_1k_up": anchor_error(anchor, noise, rate, top), "cases": cases}
 

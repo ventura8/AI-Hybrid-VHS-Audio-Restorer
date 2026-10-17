@@ -38,7 +38,10 @@ This module holds what both readings share:
   reverb tails and room tone 20-48 dB over the hiss, so those bands are held at the hiss level
   above the band plus 3 dB (`hiss_cap`). The anchor is `validated` only when it came from the
   pauses, the programme band reaches 2 kHz and at least two reference bands set the cap: an
-  unvalidated window abstains from the ranked hiss readings rather than guess.
+  unvalidated window abstains from the ranked hiss readings rather than guess. When it is not
+  validated, `hiss_stationary` may add a second anchor for the programme reading alone
+  (`Anchor.programme`, chosen by `Anchor.for_programme`): continuous programme whose hiss shows
+  through every band.
 """
 
 from dataclasses import dataclass
@@ -77,17 +80,36 @@ MIN_TONAL_FRAMES = 12
 QUIET_PCT = 20.0
 EPS = 1e-20
 PAUSES, ALL_FRAMES, NO_FLOOR = "pauses", "all_frames", "no_floor"
+# The second, continuous-programme path (`hiss_stationary`), and a programme reading with no validated anchor at all.
+STATIONARY, NO_ANCHOR = "stationary", "none"
 
 
 @dataclass(frozen=True)
 class Anchor:
-    """The source's stationary floor per band (per-bin mean power, NaN where unread), and how it was read."""
+    """The source's stationary floor per band (per-bin mean power, NaN where unread), and how it was read.
+
+    `programme` is the second anchor `hiss_stationary` reads for the programme reading when this one is not validated
+    (None when it was not tried); the pause reading always reads this one.
+    """
 
     level: np.ndarray | None
     centres: np.ndarray
     pause_s: float
     how: str
     validated: bool
+    programme: "Anchor | None" = None
+
+    def for_programme(self):
+        """The anchor the programme reading caps with and validates on: this one, or the second path's when only it validated."""
+        second = self.programme
+        return second if not self.validated and second is not None and second.validated else self
+
+    def programme_how(self):
+        """Which path validated the programme reading's anchor: `PAUSES`, `STATIONARY` or `NO_ANCHOR`."""
+        chosen = self.for_programme()
+        if not chosen.validated:
+            return NO_ANCHOR
+        return PAUSES if chosen is self else STATIONARY
 
     def to_dict(self):
         """A JSON-ready view; NaN is stored as null."""
@@ -97,13 +119,16 @@ class Anchor:
             "pause_s": float(self.pause_s),
             "how": self.how,
             "validated": bool(self.validated),
+            "programme": None if self.programme is None else self.programme.to_dict(),
         }
 
     @classmethod
     def from_dict(cls, data):
         """The anchor `to_dict` wrote (null back to NaN)."""
         centres = np.asarray(data.get("centres", []), dtype=np.float64)
-        return cls(none_to_nan(data.get("level")), centres, float(data["pause_s"]), str(data["how"]), bool(data["validated"]))
+        second = data.get("programme")
+        programme = None if second is None else cls.from_dict(second)
+        return cls(none_to_nan(data.get("level")), centres, float(data["pause_s"]), str(data["how"]), bool(data["validated"]), programme)
 
 
 def nan_to_none(values):

@@ -64,7 +64,10 @@ one timeline:
    The ranked form is the excess, max(0, margin): inaudible is the target and nothing under it
    counts. Under two readable bands of 1 kHz and up the margins and guards read None; on a
    window whose anchor is not validated (`hiss_floor.source_anchor`) the margins, excesses and
-   the audible share read None while the guards and the removal still read.
+   the audible share read None while the guards and the removal still read. A source whose pause
+   anchor is not validated may carry a second anchor (`hiss_stationary`, continuous programme
+   whose hiss shows through every band); when that one is validated, this reading caps with it and
+   reports its margins (`hiss_floor.Anchor.for_programme`), the pause reading keeping the first.
 8. Guards, paired as (0, value): `hiss_pump_db` (the hiss kept under the programme against the
    pauses' own removal, median over bands of 1 kHz and up: positive = gated out of the pauses
    and left under speech; the pauses' removal per band is the ratio of the two sides' medians
@@ -209,9 +212,15 @@ def programme_gain(src_power, out_power, freqs):
     return None if abs(gain) > MAX_GAIN_DB else gain
 
 
-def anchor_level(context):
-    """The anchor's per-band floor, or None without one."""
+def programme_anchor(context):
+    """The anchor this reading caps with and validates on (`hiss_floor.Anchor.for_programme`), or None without one."""
     anchor = context.anchor
+    return None if anchor is None else anchor.for_programme()
+
+
+def anchor_level(context):
+    """The programme anchor's per-band floor, or None without one."""
+    anchor = programme_anchor(context)
     return None if anchor is None else anchor.level
 
 
@@ -683,8 +692,8 @@ class Window:
 
 
 def validated(context, found):
-    """Whether the window's margins may be reported: a validated anchor and at least two readable bands of 1 kHz and up."""
-    anchor = context.anchor
+    """Whether the window's margins may be reported: a validated programme anchor and two readable bands of 1 kHz and up."""
+    anchor = programme_anchor(context)
     return bool(anchor is not None and anchor.validated and found.get("bands", 0.0) >= MIN_READABLE_BANDS)
 
 

@@ -12,6 +12,7 @@ from scripts.restoration_quality import audio_io, dsp_metrics, hiss_floor, runne
 from tests.unit.test_restoration_quality_hiss_floor import RATE, capture
 
 HISS_FIELDS = ("dsp.hiss_prog_margin_db", "dsp.hiss_prog_excess_db", "dsp.hiss_pause_margin_db", "dsp.hiss_room_delta_db")
+ANCHOR_META, HOW_ENTRY, PROGRAMME_HOW, SOURCE = "hiss_anchor", "meta.hiss_anchor_how", "programme_how", "source"
 
 
 def _registry():
@@ -65,9 +66,29 @@ def test_pause_depth_on_speech_windows_reads_only_them(scored):
 def test_the_anchor_lands_in_the_card(scored):
     """The anchor's coverage is a source-side `meta.*` entry; the run notes say how it was read and at which level."""
     _result, card, _pair, _folder = scored
-    assert set(card.file["meta.hiss_anchor_pause_s"]) == set(card.file["meta.hiss_anchor_validated"]) == {"source"}
-    assert card.meta["hiss_anchor"]["l_crit_db"] == hiss_floor.L_CRIT_DB
-    assert card.meta["hiss_anchor"]["how"] == hiss_floor.PAUSES
+    assert set(card.file["meta.hiss_anchor_pause_s"]) == set(card.file["meta.hiss_anchor_validated"]) == {SOURCE}
+    assert card.meta[ANCHOR_META]["l_crit_db"] == hiss_floor.L_CRIT_DB
+    assert card.meta[ANCHOR_META]["how"] == hiss_floor.PAUSES
+
+
+def test_the_anchor_path_lands_in_the_card(scored):
+    """The synthetic capture validates from its pauses: path code 1 and `programme_how` "pauses"."""
+    _result, card, _pair, _folder = scored
+    assert card.file[HOW_ENTRY] == {SOURCE: runner.ANCHOR_HOW_CODES[hiss_floor.PAUSES]}
+    assert card.meta[ANCHOR_META][PROGRAMME_HOW] == hiss_floor.PAUSES
+
+
+def test_each_programme_path_has_its_code():
+    """No validated anchor reads 0, the pause anchor 1, the stationary anchor 2."""
+    second = hiss_floor.Anchor(np.array([1e-8]), np.array([1000.0]), 0.0, hiss_floor.STATIONARY, True)
+    cases = [
+        hiss_floor.Anchor(None, np.zeros(0), 0.0, hiss_floor.NO_FLOOR, False),
+        hiss_floor.Anchor(np.array([1e-8]), np.array([1000.0]), 2.0, hiss_floor.PAUSES, True),
+        hiss_floor.Anchor(np.array([1e-8]), np.array([1000.0]), 0.0, hiss_floor.ALL_FRAMES, False, second),
+    ]
+    codes = [runner.anchor_entries(anchor)[HOW_ENTRY][SOURCE] for anchor in cases]
+    assert codes == pytest.approx([0.0, 1.0, 2.0])
+    assert runner.anchor_meta(cases[2])[PROGRAMME_HOW] == hiss_floor.STATIONARY
 
 
 def test_the_anchor_is_cached_and_served_by_the_code_hash(scored, monkeypatch):
