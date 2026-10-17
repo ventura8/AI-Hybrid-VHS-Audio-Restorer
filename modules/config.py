@@ -840,6 +840,18 @@ VALID_AZIMUTH_ESTIMATE_METHODS = {"head", "spans"}
 # tones R0 does not track notched, noise never.
 VALID_CRT_DETECT_MODES = {"head", "welch"}
 
+# The scan's mains vote (modules/filters.py, every mode's scan; it sets the pre-conditioning's Q 15 notches at the
+# fundamental and its second harmonic, cathar's dehum family and auto_pure_linear's mains notches). 'head' reads the
+# first 32768 samples, one bin per candidate against the bins two either side, as every release has: on the IA hunt
+# (2026-10-12, cathar 0.8.0 on CPU) it notched 123 of the 203 clips R0 reads as hum-free, and cathar without those
+# notches moved R11 nearer 0 on 100 of 122. 'confirmed' keeps the head's notch only where the whole analysed
+# signal's eight mains harmonics stand 6 dB (mains_vote.MIN_EXCESS_DB) over their neighbourhood at its family
+# (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on). R0 reads hum with the same
+# computation at the same 6 dB, so on the IA sets it agrees with R0 by construction (122 of those 123 dropped, every
+# right-family notch kept) and that does not test it; against realistic-v2's labels it clears 17 of the 29 false
+# fires and drops 5 of the 71 right-family hum notches. Not judged by ear yet.
+VALID_SCANNER_MAINS_VOTES = {"head", "confirmed"}
+
 
 def _reject_config_value(param_name, raw_value, default):
     """Logs a normalisation warning and returns the field's default."""
@@ -880,6 +892,8 @@ def _normalize_azimuth_estimate_method(raw_value):
 
 def _normalize_crt_detect_mode(raw_value):
     return _normalize_choice(raw_value, VALID_CRT_DETECT_MODES, "crt_detect_mode", "head")
+def _normalize_scanner_mains_vote(raw_value):
+    return _normalize_choice(raw_value, VALID_SCANNER_MAINS_VOTES, "scanner_mains_vote", "head")
 
 
 def _normalize_cathar_declip_mode(raw_value):
@@ -1044,6 +1058,7 @@ def _apply_user_config(defaults, user_config):
     defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
     defaults["azimuth_estimate_method"] = _normalize_azimuth_estimate_method(defaults.get("azimuth_estimate_method"))
     defaults["crt_detect_mode"] = _normalize_crt_detect_mode(defaults.get("crt_detect_mode"))
+    defaults["scanner_mains_vote"] = _normalize_scanner_mains_vote(defaults.get("scanner_mains_vote"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -1116,6 +1131,10 @@ def load_config():
         # output keeps its bytes) or the whole file's averaged spectrum ('welch',
         # VALID_CRT_DETECT_MODES); not yet judged by ear.
         "crt_detect_mode": "head",
+        # The scan's mains vote: the first 32768 samples' single-bin vote ('head', every release's, so every
+        # output keeps its bytes) or that vote confirmed by the whole analysed signal's harmonic excess
+        # ('confirmed', VALID_SCANNER_MAINS_VOTES); not yet judged by ear.
+        "scanner_mains_vote": "head",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -1303,6 +1322,7 @@ MUX_SAMPLE_RATE = str(CONFIG.get("mux_sample_rate", "pipeline"))
 AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
 AZIMUTH_ESTIMATE_METHOD = str(CONFIG.get("azimuth_estimate_method", "head"))
 CRT_DETECT_MODE = str(CONFIG.get("crt_detect_mode", "head"))
+SCANNER_MAINS_VOTE = str(CONFIG.get("scanner_mains_vote", "head"))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
 EXPANDER_ATTACK_S = float(CONFIG.get("expander_attack_s", 0.04))

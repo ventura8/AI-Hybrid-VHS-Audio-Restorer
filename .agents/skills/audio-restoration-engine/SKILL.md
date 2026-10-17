@@ -150,6 +150,25 @@ audio alignment, or FFmpeg multiplexing.
      `render_set.py`, `validate_renders2.py`, `validate_welch3.json`).
    - `_detect_mains_buzz_notch`: Hum vote constrained to the family the detected
      line rate allows; `_append_mains_notches` always covers the fundamental.
+     `scanner_mains_vote` (2026-10-12, backlog B2) picks the vote: `head`
+     (`_head_mains_vote`, default) reads one bin per candidate in the first
+     32768 samples and fires on noise: 123 of the 203 IA hunt clips R0 reads
+     as hum-free and 29 of the 200 hum-free realistic-v2 speech and chord
+     fixtures. `confirmed` (`modules/mains_vote.py`) keeps that notch only
+     where `spectral_denoise.harmonic_excess_db` at its family reaches 6 dB
+     over the whole analysed signal and never adds one. On the labelled
+     fixtures it clears 17 of the 29 and drops 5 of the 71 right-family hum
+     notches (their 50 Hz hum reads 3.9-5.9 dB). Its IA counts (122 of the
+     123 cleared, all 35 right-family notches kept) agree with R0 by
+     construction: R0's `mains_excess_db` is `measure_hum.hum_excess_db`,
+     the same computation at the same 6 dB (0.002 dB apart, median of 284
+     IA sources). Never judge a harmonic-excess gate against R0's hum
+     excess; use fixture labels or R0's frame evidence. Do not build a vote
+     that adds notches on that reading: chord partials near multiples of 50 Hz
+     read as hum (musicled / musiconly targets 13.4 / 15.2 dB median excess
+     with no hum), so it notched 112 of the 200; hum_cancel's quiet-frame
+     reading fires on 99 because the beds never pause. R0's frame-median
+     evidence separates the fixtures (hum p10 53.7, hum-free p90 34.4).
    - `_detect_enclosure_resonance_notch`: Requires a high-contrast bump of
      moderate width in the averaged spectral envelope, so speech formants and
      harmonic spikes are rejected.
@@ -572,6 +591,44 @@ audio alignment, or FFmpeg multiplexing.
   HEAD 549705a's command lines for ten strategies and APL's two calls); APL
   never reads them: its physical repair keeps its own `has_clipping` plan
   and its tonal cleanup calls the dehum step without `autodetect`.
+- **Hum vote and dehum skip (backlog B2, 2026-10-12)**: measured with
+  cathar 0.8.0 on CPU from a worktree (`D:/ai_restore_work/scratch_hum`,
+  local: `tools/render_cathar.py`, `render_fixtures.py` with the vote
+  monkeypatched as head / none / whole / the real key, `measure_step1.py`,
+  `votes.py`, `notch_cost.py`, `measure_fixtures.py`, `measure_hunt_ff.py`).
+  `cathar_dehum_freq: 0` against `scanner` on 82 clips (`catalog_hum48`, the
+  hunt's other 29 hum clips, the five identity clips): 73 byte-identical,
+  identity 5/5 at both values; on the 38 hum clips the scan read as
+  hum-free, 31 unchanged, three readable tapes +2.9-6.1 dB of excess removed
+  (wives-and-daughters, vid-20230624-142023, channel-4-continuity; low-band
+  deviation +0.05-0.66 dB, R11 0.1-2.6 dB lower), and two notched tapes did
+  worse (diamonds-are-forever -0.61 dB). Paired change on the readable
+  scanner-zero hum tapes 0.0 dB (17 of 20 and 5 of 7 unchanged; the group
+  medians moved +0.05 / +0.40 dB, source excess 6-12 / 12+): no flip. The
+  adaptive dehum gave `--freq 0` the
+  family's output on 37 of the 39 notched hum tapes and passed 31 of the 38
+  unnotched ones through untouched, so the scanner's vote reaches cathar
+  mostly through the Q 15 notches. Those notches alone take a median
+  1.6-1.7 dB of LSD 40-400 Hz from a hum-free target; dropping the hunt's
+  false fires moves R11 nearer 0 on 100 of 122 (median 0.13 dB) and the
+  fixtures' LSD 40-400 Hz 0.23 dB nearer the target (14 of 17), hence
+  `scanner_mains_vote: confirmed` (off, `docs/configuration.md`,
+  "Pre-Conditioning Mains Vote"). On the realistic-v2 hum fixtures every
+  reading prefers no notch at all (LSD 40-400 Hz on 51 of 71 right-family
+  notches; the notch and dehum leave the harmonic bins 11 dB under the
+  target), so those fixtures cannot price a lost hum catch. Rendering a
+  fixture through the app: mux it to an mkv with pcm_f32le audio and a black
+  video (`run_hardware_validation._make_video_fixture`), run from a folder
+  holding only a `config.yaml`, and the scratch `render_cathar.py`
+  reproduced `cathar_ab_head.json` 5/5 at 24 s a clip. Adversarial review
+  (same day, scratch `review/`): every vote count re-ran through the
+  committed `_detect_mains_buzz_notch`; the real key's renders equal the
+  patched head / none renders on 105 of 105 fixtures (both runs); a second
+  reading (Welch power within 6 Hz of f0 and 2f0, gain-matched on
+  300-3000 Hz) puts the no-notch render nearer the target on 16 of the 17
+  cleared false fires (median 1.9 dB); identity 5/5 at the default, and
+  `confirmed` changes only tugs (50 Hz, 1.93 dB) and vid-20220331 (100 Hz,
+  4.20 dB).
 - **Pause floor target and shape (2026-10-12)**: the hiss diagnosis of
   2026-10-11 found the pause floor is where `auto_pure_linear` puts the tape
   hiss back. The Mel-RoFormer takes the true pauses to about -93 dB; the

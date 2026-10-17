@@ -272,6 +272,7 @@ def known_config_fields():
     fields["mux_sample_rate"] = (set(config_mod.VALID_MUX_SAMPLE_RATES), None, None)
     fields["azimuth_estimate_method"] = (set(config_mod.VALID_AZIMUTH_ESTIMATE_METHODS), None, None)
     fields["crt_detect_mode"] = (set(config_mod.VALID_CRT_DETECT_MODES), None, None)
+    fields["scanner_mains_vote"] = (set(config_mod.VALID_SCANNER_MAINS_VOTES), None, None)
     fields["apl_neural_model"] = (str, None, None)
     return fields
 

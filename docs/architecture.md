@@ -183,7 +183,11 @@ actually correlate, because a lag measured against a silent channel is noise.
 "Pre-Conditioning Azimuth Estimate" in `docs/configuration.md`. In the same
 way `crt_detect_mode` chooses where the CRT line is looked for, and so which
 mains family the hum notch may take: the first 0.74 s (`head`, the default)
-or the whole file's averaged spectrum (`welch`); see "CRT Line Search".
+or the whole file's averaged spectrum (`welch`); see "CRT Line Search". The
+mains notches follow the scan's vote on the same first 0.74 s; with
+`scanner_mains_vote: confirmed` (`modules/mains_vote.py`) that notch is kept
+only where the whole scanned signal carries the hum; see "Pre-Conditioning
+Mains Vote" in `docs/configuration.md`.
 
 ## Shared Stage: Mastering and Mux
 

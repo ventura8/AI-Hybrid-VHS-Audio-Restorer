@@ -9,7 +9,8 @@ and robust process execution for VHS native DSP restoration and pre-conditioning
   azimuth_estimate_method reads it from the head or from the loudest spans' GCC-PHAT vote).
 - Stage 4: Analog Preamp De-Clipping (peak clipping threshold reconstruction via adeclip).
 - Stage 5: Impulsive Pop/Click Suppression (adeclick) and Motor Rumble Highpass (45-75 Hz).
-- Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters).
+- Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters;
+  scanner_mains_vote keeps the head's vote or confirms it on the whole analysed signal).
 - Stage 7: CRT Horizontal Flyback Line Whine Notch (15.625 kHz PAL / 15.734 kHz NTSC; crt_detect_mode
   finds the line in the first 0.74 s or in the whole file's averaged spectrum).
 - Stage 8: Camcorder Plastic Enclosure Acoustic Resonance Notching (1.5 kHz - 3.5 kHz).
@@ -55,6 +56,7 @@ from .config import (
     LINEAR_AIR_FREQ_HZ,
     LINEAR_AIR_GAIN_DB,
     NOTCH_FREQ,
+    SCANNER_MAINS_VOTE,
 )
 from .hardware import CPU_THREADS
 from .utils import (
@@ -645,6 +647,9 @@ MAINS_CANDIDATES_DEFAULT = (50.0, 60.0, 100.0, 120.0)
 def _detect_mains_buzz_notch(signal_data, sr, line_rate_hz=0.0):
     """Detects 50Hz (PAL), 59.94/60Hz (NTSC), or harmonic buzz peaks.
 
+    `scanner_mains_vote` picks the vote: 'head' (`_head_mains_vote`, every release's) or
+    'confirmed' (`modules/mains_vote.py`: that vote, kept where the whole signal carries hum).
+
     Args:
         signal_data (numpy.ndarray): Mono audio waveform samples.
         sr (int): Sampling rate in Hz.
@@ -654,6 +659,16 @@ def _detect_mains_buzz_notch(signal_data, sr, line_rate_hz=0.0):
     Returns:
         float: Detected notch frequency in Hz (0.0 if no buzz detected).
     """
+    notch = _head_mains_vote(signal_data, sr, line_rate_hz)
+    if SCANNER_MAINS_VOTE != "confirmed":
+        return notch
+    from . import mains_vote
+
+    return mains_vote.confirmed_notch(signal_data, sr, notch)
+
+
+def _head_mains_vote(signal_data, sr, line_rate_hz):
+    """The 'head' vote: the first 32768 samples, each candidate's bin against the bins two either side (over 1.8 wins)."""
     if len(signal_data) < 8192 or np is None:
         return 0.0
 
