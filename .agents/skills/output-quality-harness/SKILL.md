@@ -1501,7 +1501,13 @@ only a blind session at a recorded device and volume moves L_crit.
   The Tata tapes read more programme over the hiss above 9 kHz than the
   failing music does; the defect is the reading's spectral-cap pool, which
   revealed music fades into over 4-10 kHz (same section, "The Pause Path's
-  Hole").
+  Hole"). Telling revealed programme from residual hiss by time does not
+  work: hiss an SNR-dependent gain lets through with the programme follows
+  the music as closely (an expander-gated render correlates 0.55-0.83 with
+  the programme cells), and capping each band at its stationary ratio reads
+  that gated hiss 9-14 dB lower while still reading two of three dense
+  perfect outputs over 0 (same document, "Revealed Programme Is Not Told
+  Apart in Time").
 
 `hiss_programme.py`, the hiss left under the programme (the `hup3`
 prototype's estimator, rebuilt after validation round 1):

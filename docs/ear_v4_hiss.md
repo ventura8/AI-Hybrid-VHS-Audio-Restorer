@@ -254,6 +254,61 @@ revealed music fills the cap's pool. Closing it needs a reading change that
 still sees the hiss a render keeps under the programme (a pool held to the
 hiss-alone bands reads that render as clean, above).
 
+### Revealed Programme Is Not Told Apart in Time
+
+The next task (the same day) tested the hypothesis that residual hiss and
+revealed programme differ in time: residual hiss stationary, revealed
+programme following the music. It fails, and nothing was changed. Per band,
+in the noise-dominated cells of each frame, the output's mean power against
+the source's (`probe_rp1.py` to `probe_rp4.py` in the scratch folder):
+
+- **Revealed programme does follow the music.** On `it mid01_music_m12`
+  with tape hiss, full band, the perfect output's NDC power correlates
+  0.15-0.83 (0.48 or more in 7 of 11 bands) with the output's own programme
+  cells in the same band over 3.5-10 kHz. Its P10 over frames sits 12-29 dB
+  under the source's, where the mean sits 3-16 dB under; renders keeping the
+  hiss 6, 12 and 20 dB down read P10 ratios of -4.3..-5.9, -8.4..-11.6 and
+  -11.1..-18.6 dB there.
+- **So does hiss a render lets through with the programme.** A render that
+  keeps the hiss at full level under the louder half of the programme and
+  20 dB down under the quieter half (an expander's gate; every
+  SNR-dependent gain, a subtractor's or a mask's, lets hiss through where
+  the programme is) correlates 0.55-0.83 with the programme cells over
+  5-15 kHz on `en mid00_music_m12` with tape hiss over the 4.5 kHz
+  programme, as strongly as revealed programme. Its NDC power sits 1.0-3.3
+  dB under the hiss floor on average, its P10 ratio 15-19 dB under (the 20 dB
+  render's 17.5-20), and a regression on the programme envelope leaves an
+  intercept 4.7-10.9 dB under the floor.
+- **Capping each band's removal at its stationary ratio** (the output's P10
+  over the source's per-frame NDC power) lowers the perfect outputs, under 0
+  on one of the three dense sources, and reads the gated hiss as removed:
+
+Margins in dB. A is Italian `mid01_music_m12` with tape hiss, full band;
+B English `mid00_music_m12`, the same; C is B's programme low-passed at 4.5
+kHz; D English `mid00_music_m18` with its corpus noise; -6 to -20 keep the
+hiss that far down:
+
+| source | cap | perfect | -6 | -12 | -20 | kept under | gated |
+|---|---|---|---|---|---|---|---|
+| A | none | 16.65 | 27.77 | 23.52 | 19.76 | 19.52 | 29.63 |
+| A | P10 | 11.26 | 27.51 | 22.15 | 16.26 | 15.58 | 17.90 |
+| B | none | 5.42 | 23.29 | 18.95 | 13.64 | 5.58 | 25.67 |
+| B | P10 | -0.34 | 23.17 | 17.79 | 12.31 | 0.17 | 15.79 |
+| C | none | -34.31 | 24.82 | 18.87 | 11.07 | -5.83 | 27.30 |
+| C | P10 | -35.52 | 24.82 | 18.84 | 10.98 | -5.92 | 12.99 |
+| D | none | 15.26 | 21.60 | 18.69 | 16.08 | 16.26 | 21.70 |
+| D | P10 | 2.62 | 21.52 | 16.86 | 11.25 | 11.34 | 12.38 |
+
+The gated render keeps the hiss at full level under the programme's louder
+half and reads 21.7..29.6 dB today; capped, it reads 12.4..17.9, under the
+render that keeps the hiss 12 dB down everywhere. A P25 cap is between
+(perfect 14.16 / 1.50 / -34.96 / 10.48, gated 23.57 / 20.36 / 16.54 /
+17.69). Hiss gated out of the quiet moments and left under the programme is
+the user's complaint itself, so a split by time cannot be the fix: the
+residual of the engines this ear judges follows the programme in time just
+as revealed programme does. A later attempt has to tell the two apart by
+something they do not share.
+
 ## Adversarial Review: Defects and Fixes
 
 Validation round 3 (on 6fd0295) and the adversarial review that followed

@@ -1096,7 +1096,9 @@ places at one declared critical playback level, each file's loud frames at
   The pause path validates dense full-band music and reads its perfect
   outputs over 0; no band-edge condition on its validation closes that and
   keeps the Tata tapes validated (same document, "The Pause Path's Hole"):
-  the fix belongs in the reading's spectral cap.
+  the fix belongs in the reading's spectral cap, and not in a split by time,
+  which reads hiss gated out of the programme's quiet moments as removed
+  ("Revealed Programme Is Not Told Apart in Time").
 - `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
   floor over Terhardt's threshold in quiet, read where the source's pause
   is silent apart from its hiss (a 200 ms block standing 3 dB over the
