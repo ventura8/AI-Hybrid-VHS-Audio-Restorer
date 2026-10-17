@@ -892,6 +892,8 @@ def _normalize_azimuth_estimate_method(raw_value):
 
 def _normalize_crt_detect_mode(raw_value):
     return _normalize_choice(raw_value, VALID_CRT_DETECT_MODES, "crt_detect_mode", "head")
+
+
 def _normalize_scanner_mains_vote(raw_value):
     return _normalize_choice(raw_value, VALID_SCANNER_MAINS_VOTES, "scanner_mains_vote", "head")
 
