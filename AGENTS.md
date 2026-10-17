@@ -257,6 +257,16 @@ The engine supports 10 execution modes configured in `config.yaml`:
     `cathar_alpha` 1.25 brings the removal back. `window` keeps HEAD
     053ba30's command lines (`tests/unit/test_cathar_quantile_print.py`); it
     waits for a blind listening session.
+  - Reference-SNR suppressor (2026-10-17, `cathar_reference_suppress`,
+    off): the MMSE-LSA gain read on the pre-conditioned source's SNR, against
+    its whole-file quantile print, applied to cathar's output before the
+    polish (`modules/reference_suppress.py`, shared with
+    `apl_reference_suppress`). On CPU replay with the per-frame fill
+    shelved at 2 kHz by 30 dB the hiss under speech went from 14.5 / 9.0 /
+    7.8 / 11.6 dB over its masked threshold to 0 on the four Tata tapes and
+    the pause tail to 3.3 / 0 / 0 / 11.3, every v4 guard passing; not yet
+    rendered by the loop or heard (`docs/configuration.md`, "Reference-SNR
+    Suppressor").
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

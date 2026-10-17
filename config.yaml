@@ -856,6 +856,15 @@ cathar_dereverb_strength: 2.0
 #     false (Default): every output keeps its bytes until the loop and a listening
 #     session judge it.
 #
+# cathar_reference_suppress (cathar only):
+#   - The same gain on cathar's output before the polish, at the estimator's
+#     shipped settings (noise bias 1.0, gain floor -20 dB, decision-directed
+#     0.96). CPU replay on the four Tata tapes with the per-frame fill shelved at
+#     2 kHz by 30 dB: the hiss under speech 14.5 / 9.0 / 7.8 / 11.6 dB over its
+#     masked threshold to 0 on every tape, the pause tail 26.8 / 19.9 / 19.5 /
+#     31.0 to 3.3 / 0 / 0 / 11.3, every v4 guard passing.
+#     false (Default): cathar keeps its bytes.
+#
 # apl_neural_level_restore (auto_pure_linear only):
 #   - The separator peak-normalises to 0.9, so a hot or declipped tape leaves the
 #     neural stage up to 10.7 dB quieter (fourstarrevue) and the expander's knee and
@@ -958,6 +967,7 @@ apl_post_neural_suppress: false
 apl_post_neural_suppress_floor_gap_db: 3.0
 apl_post_neural_suppress_min_residual_db: 6.0
 apl_reference_suppress: false
+cathar_reference_suppress: false
 apl_neural_level_restore: false
 apl_burst_ceiling: "none"
 apl_burst_ceiling_depth_db: 30.0

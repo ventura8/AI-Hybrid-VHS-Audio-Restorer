@@ -3,7 +3,16 @@
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .. import reference_suppress
+from ..config import CATHAR_REFERENCE_SUPPRESS
 from .base import BaseRestorationMode
+
+
+def reference_suppressed(source_wav, restored_wav, audio_dir):
+    """cathar's output gained by the source's SNR when `cathar_reference_suppress` is on; as it came otherwise."""
+    if not CATHAR_REFERENCE_SUPPRESS:
+        return restored_wav
+    return reference_suppress.suppress(source_wav, restored_wav, audio_dir, reference_suppress.CATHAR_SETTINGS)
 
 
 class CatharMode(BaseRestorationMode):
@@ -31,6 +40,8 @@ class CatharMode(BaseRestorationMode):
             from .. import pause_floor
 
             raw_restored = filter_cathar_vhs_pipeline(in_wav, out_dir, total_duration=total_duration, strategy=strategy)
+            # The source's SNR on cathar's output (cathar_reference_suppress, off): it only removes.
+            raw_restored = reference_suppressed(in_wav, raw_restored, out_dir)
             # The expander's depth follows the material: the shared depth on speech, the music profile's on music.
             polished = processing._polish_full_audio_step(
                 raw_restored,

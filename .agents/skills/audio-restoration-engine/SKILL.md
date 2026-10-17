@@ -712,7 +712,7 @@ audio alignment, or FFmpeg multiplexing.
   (off; `spectral_suppress.ReferenceSuppressor`, run in
   `modules/post_neural_suppress.py` after the gated suppressor, through the
   same `post_neural_suppress` opt-in; `docs/configuration.md`,
-  "auto_pure_linear Reference-SNR Suppressor"). The gain is read on the
+  "Reference-SNR Suppressor"). The gain is read on the
   pre-conditioned source's SNR and applied to the post-neural audio, so the
   RoFormer's mask and the source's SNR multiply and it only removes; it runs
   ungated. Facts that shaped it: (1) the quietest-4 s probe
@@ -740,6 +740,17 @@ audio alignment, or FFmpeg multiplexing.
   on hardlinked tape copies, `processing._post_neural_stages` run
   in-process per variant from a config.yaml in a fresh folder) lives in
   `D:/ai_restore_work/scratch_resid` (`replay.py`, `table.py`).
+  `cathar_reference_suppress` runs the same stage
+  (`modules/reference_suppress.py`) on cathar's output before the polish at
+  the estimator's shipped settings: on replay (`replay_cathar.py`, one
+  cathar render per tape with `AI_RESTORE_TEST_MODE=1` on a second set of
+  hardlinked copies, since the work folder is named by the tape's stem, not
+  the mode) the hiss under speech went 14.5 / 9.0 / 7.8 / 11.6 to 0 and the
+  pause tail to 3.3 / 0 / 0 / 11.3 (Tata), guards passing, kept HF down to
+  -4.20 on Gaudeamus5. Replaying cathar needs the scan's strategy, which
+  cathar never stores; the APL stage cache's `key.json` (`call.strategy`)
+  for the same tape served, and the shipped replay matched cathar's own
+  output exactly.
 - **APL burst ceiling (2026-10-12)**: `apl_burst_ceiling` (`none`, `gaps`,
   `edges`) and `apl_burst_ceiling_depth_db` (30), `modules/burst_ceiling.py`
   between the polish and the pause floor (`docs/configuration.md`,

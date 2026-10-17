@@ -956,7 +956,7 @@ All three act after the stage cache's cached point
 the neural stage. The suppressor's own settings stay keyed, because the
 subtraction stage before the cached point reads them too.
 
-## auto_pure_linear Reference-SNR Suppressor
+## Reference-SNR Suppressor (auto_pure_linear and cathar)
 
 `apl_reference_suppress` (false; 2026-10-17) reads the mode's MMSE-LSA gain
 on the pre-conditioned source and applies it to the audio after the sibilant
@@ -1058,6 +1058,34 @@ The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the
 neural stage. Off, every output keeps its bytes; the loop and a listening
 session judge it.
+
+`cathar_reference_suppress` (false) runs the same stage
+(`modules/reference_suppress.py`) on cathar's output before the polish, at
+the estimator's shipped settings (noise bias 1.0, gain floor -20 dB,
+decision-directed 0.96); cathar's subtraction is the mask the source's SNR
+multiplies. The same replay on cathar (one render per tape with its work
+folder kept, then the polish and the pause floor in-process; the shipped
+replay reproduced cathar's own pre-mux output exactly):
+
+| tape | reading | shipped | frame | + ref |
+|---|---|---|---|---|
+| Tele7abc | under speech | 14.53 | 13.25 | 0.00 |
+| | pause tail | 26.83 | 18.78 | 3.31 |
+| | pump / kept HF | -5.36 / -0.60 | 2.00 / -0.60 | 3.39 / -1.36 |
+| SOTI | under speech | 8.97 | 7.98 | 0.00 |
+| | pause tail | 19.94 | 12.67 | 0.00 |
+| | pump / kept HF | -3.37 / -2.01 | 0.38 / -2.04 | 2.00 / -3.56 |
+| Vaccin | under speech | 7.75 | 4.31 | 0.00 |
+| | pause tail | 19.46 | 13.44 | 0.00 |
+| | kept HF | -0.88 | -0.89 | -1.32 |
+| Gaudeamus5 | under speech | 11.55 | 11.00 | 0.00 |
+| | pause tail | 30.98 | 24.95 | 11.28 |
+| | pump / kept HF | -4.60 / -1.74 | 0.32 / -1.84 | 0.78 / -4.20 |
+
+Every v4 guard passes: `balance_top_db` moves 0.01-0.22 dB, `sib_texture_db`
+reads 1.32 at most, `lkr` 1.47 at most (SOTI), the pause islands 0.99. Here
+"frame" is the shelf at 3000 Hz, 18 dB, and "+ ref" the shelf at 2000 Hz,
+30 dB. cathar never reads the stage cache; off, cathar keeps its bytes.
 
 ## auto_pure_linear Burst Ceiling
 

@@ -55,7 +55,7 @@ defaults nothing is read and the audio is untouched.
 import hashlib
 from pathlib import Path
 
-from . import event_log, hiss_floor, spectral_suppress
+from . import event_log, hiss_floor, reference_suppress, spectral_suppress
 from .config import (
     APL_NOISEPRINT_DURATION_S,
     APL_POST_NEURAL_SUPPRESS,
@@ -177,26 +177,9 @@ def _reference_settings():
     return settings
 
 
-def _reference_target(restored_wav, audio_dir):
-    """Where the reference-suppressed audio goes: its settings in the name, so a changed setting is never reused stale."""
-    settings = ",".join(f"{key}={value:g}" for key, value in _reference_settings().items())
-    fingerprint = hashlib.sha256(settings.encode("utf-8")).hexdigest()[:12]
-    return Path(audio_dir) / STAGE / f"referenced_{fingerprint}_{Path(restored_wav).name}"
-
-
 def suppress_by_reference(source_wav, restored_wav, audio_dir):
     """The restored audio gained by the source's SNR (`apl_reference_suppress`); the input when it could not run."""
-    target = _reference_target(restored_wav, audio_dir)
-    if is_valid_audio(target):
-        log_msg(f"    [Reference Suppress] Reusing {target.name}.")
-        return target
-    target.parent.mkdir(parents=True, exist_ok=True)
-    log_msg("    [Reference Suppress] MMSE-LSA gain read on the source's SNR, applied to the post-neural audio...")
-    result = spectral_suppress.suppress_by_reference_or_none(source_wav, restored_wav, target, **_reference_settings())
-    if result is None:
-        log_msg("    [Reference Suppress] Skipped: the restored audio goes on as it came.")
-        return Path(restored_wav)
-    return result
+    return reference_suppress.suppress(source_wav, restored_wav, audio_dir, _reference_settings())
 
 
 def _record(restored_wav, verdict, suppressed, air, referenced=False):

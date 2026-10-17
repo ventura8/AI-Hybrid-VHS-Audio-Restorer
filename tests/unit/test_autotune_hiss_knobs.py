@@ -11,6 +11,7 @@ CATHAR_ONLY = (
     "cathar_noiseprint_min_depth_db",
     "cathar_noiseprint_shallow_action",
     "cathar_noiseprint_method",
+    "cathar_reference_suppress",
 )
 APL_ONLY = (
     "apl_post_neural_suppress",

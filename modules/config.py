@@ -748,6 +748,12 @@ _BOOL_CONFIG_FIELDS = (
     # Off: every output keeps its bytes.
     ("apl_neural_level_restore", False),
     ("cathar_enable_deesser", True),
+    # The reference-SNR suppressor on cathar's output before the polish (modules/reference_suppress.py): the
+    # MMSE-LSA gain read on the pre-conditioned source against its whole-file quantile print, applied to what
+    # cathar returned. CPU replay on the four Tata tapes, the per-frame fill shelved at 2 kHz by 30 dB: the hiss
+    # under speech 14.5 / 9.0 / 7.8 / 11.6 dB over its masked threshold to 0 on every tape (docs/configuration.md,
+    # "Reference-SNR Suppressor"). Off: cathar keeps its bytes until the loop and a listening session judge it.
+    ("cathar_reference_suppress", False),
     ("cathar_enable_dereverb", False),
     ("cathar_dereverb_wpe", True),
 )
@@ -1306,6 +1312,7 @@ CATHAR_MONO_BELOW_HZ = int(CONFIG.get("cathar_mono_below_hz", 100))
 CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))
 CATHAR_DEPLOSIVE_STRENGTH = int(CONFIG.get("cathar_deplosive_strength", 4))
 CATHAR_ENABLE_DEESSER = bool(CONFIG.get("cathar_enable_deesser", True))
+CATHAR_REFERENCE_SUPPRESS = bool(CONFIG.get("cathar_reference_suppress", False))
 CATHAR_DEESSER_BANDS = int(CONFIG.get("cathar_deesser_bands", 3))
 CATHAR_DEESSER_FREQ = int(CONFIG.get("cathar_deesser_freq", 4000))
 CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", 12.0))

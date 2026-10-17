@@ -271,6 +271,8 @@ KNOBS = {
         "cathar_noiseprint_min_depth_db": [0.0, 13.0, 20.0],
         "cathar_noiseprint_shallow_action": ["scale", "drop", "quantile"],
         "cathar_noiseprint_method": ["window", "quantile"],
+        # The reference-SNR suppressor on cathar's output (modules/reference_suppress.py), ungated.
+        "cathar_reference_suppress": [False, True],
         **SHARED_KNOBS,
     },
     # On the Tata tapes the scanner reads a spectral flatness of 0.022 (< apl_tonal_flatness_max 0.035),

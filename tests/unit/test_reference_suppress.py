@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from modules import hiss_floor, noiseprint_quantile, post_neural_suppress, spectral_suppress, utils
+from modules import hiss_floor, noiseprint_quantile, post_neural_suppress, reference_suppress, spectral_suppress, utils
 from modules.blend_weights import FRAME
 from tests.unit.test_hiss_floor import RATE, _bursts, _hiss, _write
 
@@ -201,7 +201,7 @@ def test_on_real_files_the_stage_writes_and_reuses(tmp_path, reference_on):
     del reference_on
     source, restored, _programme, _gaps_ = _leaky_pair(tmp_path, seconds=6.0)
     output, _air = post_neural_suppress.apply_when_needed(source, restored, tmp_path, ALL)
-    assert output.parent.name == post_neural_suppress.STAGE and output.name.startswith("referenced_")
+    assert output.parent.name == reference_suppress.STAGE and output.name.startswith("referenced_")
     assert post_neural_suppress.suppress_by_reference(source, restored, tmp_path) == output
     assert "[Reference Suppress] Reusing" in (tmp_path / "session_log.txt").read_text(encoding="utf-8")
 
@@ -211,3 +211,49 @@ def test_a_reference_suppressor_that_cannot_run_hands_back_its_input(tmp_path):
     silent = _write(tmp_path / "silent.wav", np.zeros(int(6.0 * RATE)))
     assert post_neural_suppress.suppress_by_reference(silent, restored, tmp_path / "other") == restored
     assert "[Reference Suppress] Skipped" in (tmp_path / "session_log.txt").read_text(encoding="utf-8")
+
+
+# ----------------------------------------------------------------------------- cathar
+
+
+def test_cathar_s_key_is_off_and_leaves_its_output_alone(tmp_path):
+    from modules import config as cfg
+    from modules.modes import cathar as cathar_mode
+
+    assert (cfg.CONFIG["cathar_reference_suppress"], cathar_mode.CATHAR_REFERENCE_SUPPRESS) == (False, False)
+    with patch.object(reference_suppress, "suppress", side_effect=AssertionError("suppress")):
+        assert cathar_mode.reference_suppressed(tmp_path / "s.wav", tmp_path / "r.wav", tmp_path) == tmp_path / "r.wav"
+
+
+def test_on_cathar_s_output_takes_the_estimator_s_shipped_settings(tmp_path, monkeypatch):
+    from modules.modes import cathar as cathar_mode
+
+    monkeypatch.setattr(cathar_mode, "CATHAR_REFERENCE_SUPPRESS", True)
+    with patch.object(reference_suppress, "suppress", return_value=tmp_path / "ref.wav") as run:
+        assert cathar_mode.reference_suppressed(tmp_path / "s.wav", tmp_path / "r.wav", tmp_path) == tmp_path / "ref.wav"
+    run.assert_called_once_with(tmp_path / "s.wav", tmp_path / "r.wav", tmp_path, reference_suppress.CATHAR_SETTINGS)
+
+
+def test_the_cathar_mode_hands_the_suppressed_output_to_the_polish(tmp_path):
+    from modules import pause_floor, processing
+    from modules.modes import cathar as cathar_mode
+
+    captured = {}
+    with (
+        patch.object(processing, "_resolve_preconditioned_audio", return_value=(tmp_path / "clean.wav", {})),
+        patch.object(processing, "_process_single_track_pipeline", side_effect=lambda *a, **k: captured.update(step=a[5])),
+        patch("modules.cathar.filter_cathar_vhs_pipeline", return_value=tmp_path / "raw.wav"),
+        patch.object(cathar_mode, "reference_suppressed", return_value=tmp_path / "ref.wav") as referenced,
+        patch.object(processing, "_polish_full_audio_step", return_value=tmp_path / "pol.wav") as polish,
+        patch.object(pause_floor, "apply_when_needed", return_value=tmp_path / "out.wav"),
+    ):
+        cathar_mode.CatharMode().execute(tmp_path, tmp_path / "o.wav", tmp_path / "v.mp4", tmp_path / "f.mp4", 10.0, {})
+        assert captured["step"](tmp_path / "in.wav", tmp_path) == tmp_path / "out.wav"
+    referenced.assert_called_once_with(tmp_path / "in.wav", tmp_path / "raw.wav", tmp_path)
+    assert polish.call_args.args[0] == tmp_path / "ref.wav"
+
+
+def test_the_shared_stage_names_its_output_by_its_settings(tmp_path):
+    first = reference_suppress.target_for(tmp_path / "r.wav", tmp_path, reference_suppress.CATHAR_SETTINGS)
+    other = reference_suppress.target_for(tmp_path / "r.wav", tmp_path, {**reference_suppress.CATHAR_SETTINGS, "gain_floor_db": -12.0})
+    assert first.parent.name == reference_suppress.STAGE and first != other
