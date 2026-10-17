@@ -1,5 +1,6 @@
 """Duration-based chunking of the neural denoiser: the plan, the streaming split and join, and the seams."""
 
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -301,6 +302,21 @@ def test_a_finished_retry_is_reused_on_resume(tmp_path):
     again = []
     chunking.run(source, tmp_path / "out", _limiting_denoiser(again), chunk_seconds=7)
     assert again == []
+
+
+def test_a_retry_input_left_by_an_interrupted_run_is_denoised_without_being_rewritten(tmp_path):
+    source = _wav(tmp_path / "in.wav", 30)
+    chunking.run(source, tmp_path / "out", _limiting_denoiser([]), chunk_seconds=7)
+    chunk_dir = next((tmp_path / "out").glob("chunks_*"))
+    retry_input = chunk_dir / "chunk_0000_retry.wav"
+    written = retry_input.stat().st_mtime_ns
+    shutil.rmtree(chunk_dir / "out_0000_retry")
+    next((tmp_path / "out").glob("*.wav")).unlink()
+    again = []
+    joined = chunking.run(source, tmp_path / "out", _limiting_denoiser(again), chunk_seconds=7)
+    assert again == ["chunk_0000_retry.wav"]
+    assert retry_input.stat().st_mtime_ns == written
+    np.testing.assert_allclose(_read(joined), _read(source), atol=1e-6)
 
 
 def test_joined_name_keeps_the_separator_suffix():

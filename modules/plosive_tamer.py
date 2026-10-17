@@ -14,6 +14,13 @@ in the proportion by which it exceeds the level it had just before the event, so
 fundamental under the blast keeps its level where a high-pass would take it, and outside
 the events the output is the input to the bit. Tonal material skips the stage outright:
 bass is what its low band is made of.
+
+With `AI_RESTORE_EVENT_LOG=<dir>` set, the plosives found are written there as seconds
+(`modules/event_log.py`) with the excess threshold they were found at, and a skipped
+recording writes its reason (tonal material, unreadable, switched off), so the harness
+can tell a stage that found nothing from one that never looked; a stage that raised records
+`failed: <error>` (a failure after the detection replaces the events, since the output then
+carries no repair). Unset, nothing is written.
 """
 
 from pathlib import Path
@@ -23,6 +30,7 @@ import scipy.ndimage
 import scipy.signal
 import soundfile as sf
 
+from . import event_log
 from .config import APL_ENABLE_PLOSIVE_TAMER, APL_PLOSIVE_EXCESS_DB, APL_TONAL_FLATNESS_MAX
 from .hygiene import atomic_target
 from .impulse_repair import _spans
@@ -55,6 +63,7 @@ RAMP_MS = 5.0
 PAD_S = 0.5
 BLOCK_SAMPLES = 1 << 20
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, MemoryError)
+STAGE = "plosive_tamer"
 
 
 def _band_filters(rate):
@@ -242,11 +251,13 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
     del strategy
     reason = _skip_reason(source_wav)
     if reason is not None:
+        event_log.write_skip(STAGE, source_wav, reason, excess_db=APL_PLOSIVE_EXCESS_DB)
         if reason != "switched off":
             log_msg(f"    [Plosive Tamer] Skipped: {reason}.")
         return source_wav
     try:
-        events, low_db, baseline, _rate = detect_events(source_wav)
+        events, low_db, baseline, rate = detect_events(source_wav)
+        event_log.write_spans(STAGE, source_wav, events, rate, excess_db=APL_PLOSIVE_EXCESS_DB)
         if not events:
             log_msg("    [Plosive Tamer] Skipped: no plosives found.")
             return source_wav
@@ -254,7 +265,8 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
         output_dir.mkdir(parents=True, exist_ok=True)
         produced = tame_file(source_wav, output_dir / f"tamed_{Path(source_wav).name}", events, low_db, baseline)
     except STAGE_FAILURES as exc:
-        log_msg(f"    [Plosive Tamer] Skipped after failure: {exc}")
+        log_msg(f"    [Plosive Tamer] Skipped after failure: {exc}", level="WARNING")
+        event_log.write_skip(STAGE, source_wav, f"failed: {exc}", excess_db=APL_PLOSIVE_EXCESS_DB)
         return source_wav
     log_msg(f"    [Plosive Tamer] Tamed {len(events)} plosives.")
     return produced

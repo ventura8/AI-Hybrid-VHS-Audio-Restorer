@@ -1,0 +1,2776 @@
+{
+ "provenance": "experiments/tune_ia_hunt_v3/runs/cathar__baseline/scores (shipped cathar defaults, 15 s IA excerpts, scored 2026-10-11 with every family and the v2 gates file), trimmed to the aggregate statistics the gates read; hard_failures_stored is the hunt's own verdict",
+ "clips": {
+  "16-april-2009-cnn-weather-update": {
+   "aggregate": {
+    "dsp.attack_db": {
+     "output": {
+      "median": 8.544356472144885,
+      "tail": 8.461583216459514
+     },
+     "delta": {
+      "median": -0.17835964817667893,
+      "tail": -0.2716777551902904
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -3.0722731463705784,
+      "tail": -3.0722731463705784
+     },
+     "delta": {
+      "median": 0.08162334829001416,
+      "tail": 0.08162334829001416
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -14.08517540650034,
+      "tail": -14.08517540650034
+     },
+     "delta": {
+      "median": 0.2701643735823751,
+      "tail": 0.2701643735823751
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -21.944404028966957,
+      "tail": -21.944404028966957
+     },
+     "delta": {
+      "median": 0.9139401486461836,
+      "tail": 0.9139401486461836
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 9.72149210561033,
+      "tail": 11.645902850420219
+     },
+     "delta": {
+      "median": 0.4211874861787752,
+      "tail": 0.6165585249030432
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.0008593473747321445,
+      "tail": 0.0008771772896541518
+     },
+     "delta": {
+      "median": 0.0008593473747321445,
+      "tail": 0.0008771772896541518
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 3.4240572743331334,
+      "tail": 3.4240572743331334
+     },
+     "delta": {
+      "median": 0.0015380394300166245,
+      "tail": 0.0015380394300166245
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 8.586901715024833,
+      "tail": 14.926652166008818
+     },
+     "delta": {
+      "median": 0.5566273183302217,
+      "tail": 0.9741837591499704
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": -0.9248841520410389,
+      "tail": -0.48308572058569627
+     },
+     "delta": {
+      "median": -15.739506329053409,
+      "tail": -14.801434465480781
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 2.9928322027450207,
+      "tail": 2.9928322027450207
+     },
+     "delta": {
+      "median": 0.05443259008179879,
+      "tail": 0.05443259008179879
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -18.983337124000393,
+      "tail": -18.983337124000393
+     },
+     "delta": {
+      "median": 4.442552045424197,
+      "tail": 4.442552045424197
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {},
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 5.637968063354492,
+      "tail": 5.3904975891113285
+     },
+     "delta": {
+      "median": -0.28420352935791016,
+      "tail": -0.41574916839599607
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 6.721988201141357,
+      "tail": 6.710246562957764
+     },
+     "delta": {
+      "median": -0.48520636558532715,
+      "tail": -0.5171271800994873
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 1.9622770547866821,
+      "tail": 1.9622770547866821
+     },
+     "delta": {
+      "median": 0.3595656156539917,
+      "tail": 0.3595656156539917
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 4.686041355133057,
+      "tail": 4.686041355133057
+     },
+     "delta": {
+      "median": 0.6407766342163086,
+      "tail": 0.6407766342163086
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 1.4055827856063843,
+      "tail": 1.4055827856063843
+     },
+     "delta": {
+      "median": 0.2942845821380615,
+      "tail": 0.2942845821380615
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.576596200466156,
+      "tail": -0.576596200466156
+     },
+     "delta": {
+      "median": 0.8259515166282654,
+      "tail": 0.8259515166282654
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 1.0,
+      "tail": 1.0
+     },
+     "delta": {
+      "median": 1.0,
+      "tail": 1.0
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9972894191741943,
+      "tail": 0.9972894191741943
+     },
+     "delta": {
+      "median": 0.9972894191741943,
+      "tail": 0.9972894191741943
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.6482625007629395,
+      "tail": 1.6482625007629395
+     },
+     "delta": {
+      "median": 0.10535979270935059,
+      "tail": 0.10535979270935059
+     }
+    },
+    "stems.octave_ratio_db": {
+     "output": {
+      "median": -1.87690427633135,
+      "tail": -1.883200330581782
+     },
+     "delta": {
+      "median": -1.87690427633135,
+      "tail": -1.883200330581782
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.cer_median"
+   ]
+  },
+  "1994-6-ntsc20241207": {
+   "aggregate": {
+    "dsp.attack_db": {
+     "output": {
+      "median": 15.726177741704124,
+      "tail": 14.900037586465325
+     },
+     "delta": {
+      "median": 3.452438823997447,
+      "tail": 3.0868543245393667
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 1.5,
+      "tail": 1.9
+     },
+     "delta": {
+      "median": 1.5,
+      "tail": 1.9
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": 1.784453936919506,
+      "tail": 3.046309173280309
+     },
+     "delta": {
+      "median": 0.9677599457968952,
+      "tail": 1.6858078182865224
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -27.094085448318374,
+      "tail": -27.91006765831318
+     },
+     "delta": {
+      "median": -1.8724291886052438,
+      "tail": -2.155864511997255
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -42.13865128697406,
+      "tail": -42.295838728550706
+     },
+     "delta": {
+      "median": -5.867919312297854,
+      "tail": -5.94673128094223
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 2.882595122971097,
+      "tail": 2.9367799736062747
+     },
+     "delta": {
+      "median": -0.0435504288814339,
+      "tail": 0.024525880282807094
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.2537624222080046,
+      "tail": 0.2548949989403644
+     },
+     "delta": {
+      "median": 0.2537624222080046,
+      "tail": 0.2548949989403644
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 12.855110410456657,
+      "tail": 13.20428910265665
+     },
+     "delta": {
+      "median": 3.7609258996709762,
+      "tail": 3.7968561040398887
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 5.913003768677153,
+      "tail": 6.409515732965474
+     },
+     "delta": {
+      "median": 4.433799240431021,
+      "tail": 4.913437887908453
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": 1.9900934377382755,
+      "tail": 2.132296071498785
+     },
+     "delta": {
+      "median": -1.9883406409383566,
+      "tail": -0.9787685577992815
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 2.0,
+      "tail": 2.0
+     },
+     "delta": {
+      "median": 2.0,
+      "tail": 2.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 1.1451707695399698,
+      "tail": 1.1451707695399698
+     },
+     "delta": {
+      "median": 0.330483235087879,
+      "tail": 0.330483235087879
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -18.72218019640257,
+      "tail": -18.72218019640257
+     },
+     "delta": {
+      "median": 12.675233823391906,
+      "tail": 12.675233823391906
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {},
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 6.593081474304199,
+      "tail": 6.54751148223877
+     },
+     "delta": {
+      "median": -0.40521788597106934,
+      "tail": -0.4631644725799561
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 7.12019944190979,
+      "tail": 7.062049913406372
+     },
+     "delta": {
+      "median": 0.0839238166809082,
+      "tail": 0.06213235855102539
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": 0.5270000000000001,
+      "tail": 0.5270000000000001
+     },
+     "delta": {
+      "median": 0.009000000000000119,
+      "tail": 0.009000000000000119
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 3.2303712368011475,
+      "tail": 3.1271995067596436
+     },
+     "delta": {
+      "median": 0.9632078409194946,
+      "tail": 0.9617995500564576
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 3.671341300010681,
+      "tail": 3.6583801984786986
+     },
+     "delta": {
+      "median": 0.6477397680282593,
+      "tail": 0.5019903898239135
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 2.8061935901641846,
+      "tail": 2.7256117343902586
+     },
+     "delta": {
+      "median": 1.6335118412971497,
+      "tail": 1.5143104195594788
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -1.3359194993972778,
+      "tail": -1.397563099861145
+     },
+     "delta": {
+      "median": 0.004884600639343262,
+      "tail": -0.17876732349395752
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9784103035926819,
+      "tail": 0.9742203831672669
+     },
+     "delta": {
+      "median": 0.9784103035926819,
+      "tail": 0.9742203831672669
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.2363418340682983,
+      "tail": 1.2278938055038453
+     },
+     "delta": {
+      "median": -0.15057885646820068,
+      "tail": -0.22957932949066162
+     }
+    },
+    "stems.octave_ratio_db": {
+     "output": {
+      "median": -8.371588314953613,
+      "tail": -8.371588314953613
+     },
+     "delta": {
+      "median": -8.371588314953613,
+      "tail": -8.371588314953613
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.logprob",
+    "stems.octave"
+   ]
+  },
+  "1996-commercial-for-a-joan-armatrading-concert-2": {
+   "aggregate": {
+    "dsp.attack_db": {
+     "output": {
+      "median": 14.56408085588405,
+      "tail": 14.051284787499876
+     },
+     "delta": {
+      "median": 2.2961065738553534,
+      "tail": 2.0487417207776826
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -2.7084895677330807,
+      "tail": -1.3092876935964923
+     },
+     "delta": {
+      "median": -2.150462732754999,
+      "tail": -1.6463446004950457
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -36.29219609157419,
+      "tail": -38.27600315535704
+     },
+     "delta": {
+      "median": -6.83893387225503,
+      "tail": -7.7667866811097195
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -42.376738314910796,
+      "tail": -42.70545910459254
+     },
+     "delta": {
+      "median": -7.660782340642292,
+      "tail": -7.721469333548076
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 1.3646764738530677,
+      "tail": 1.4567951747129397
+     },
+     "delta": {
+      "median": -0.1438076426634627,
+      "tail": -0.0919880162182748
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.2678917452511931,
+      "tail": 0.292261656489924
+     },
+     "delta": {
+      "median": 0.2678917452511931,
+      "tail": 0.292261656489924
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 12.264349631065475,
+      "tail": 13.694790122922317
+     },
+     "delta": {
+      "median": 2.546720042792403,
+      "tail": 2.707320678972039
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 4.810206587021916,
+      "tail": 6.522778880502959
+     },
+     "delta": {
+      "median": 0.5267559219513461,
+      "tail": 0.8542849310688905
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": -6.296827465039897,
+      "tail": -5.403009477994896
+     },
+     "delta": {
+      "median": -27.648313271449386,
+      "tail": -26.76622856046424
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 2.4848468783752757,
+      "tail": 2.4848468783752757
+     },
+     "delta": {
+      "median": -0.9818157215619472,
+      "tail": -0.9818157215619472
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -19.013163239349783,
+      "tail": -19.013163239349783
+     },
+     "delta": {
+      "median": 1.1764684513741237,
+      "tail": 1.1764684513741237
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {},
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 6.012335300445557,
+      "tail": 5.742878818511963
+     },
+     "delta": {
+      "median": -0.5326049327850342,
+      "tail": -0.6490075588226318
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 6.277684450149536,
+      "tail": 6.195574426651001
+     },
+     "delta": {
+      "median": -0.4553539752960205,
+      "tail": -0.5625452518463134
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": 0.867,
+      "tail": 0.867
+     },
+     "delta": {
+      "median": 0.008000000000000007,
+      "tail": 0.008000000000000007
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 2.9661829471588135,
+      "tail": 2.8763187885284425
+     },
+     "delta": {
+      "median": 0.6635032892227173,
+      "tail": 0.5028214693069458
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 4.1215373277664185,
+      "tail": 3.9292713403701782
+     },
+     "delta": {
+      "median": -0.20516502857208252,
+      "tail": -0.35802156925201417
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 2.590859055519104,
+      "tail": 2.3891787767410277
+     },
+     "delta": {
+      "median": 0.7981244921684265,
+      "tail": 0.6388591170310974
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.15485243871808052,
+      "tail": -0.18958941474556923
+     },
+     "delta": {
+      "median": 0.06422576680779457,
+      "tail": 0.038273120671510695
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 0.009811320754716982,
+      "tail": 0.012628930817610063
+     },
+     "delta": {
+      "median": 0.009811320754716982,
+      "tail": 0.012628930817610063
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9834788143634796,
+      "tail": 0.9831150591373443
+     },
+     "delta": {
+      "median": 0.9834788143634796,
+      "tail": 0.9831150591373443
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.2656248807907104,
+      "tail": 1.263656783103943
+     },
+     "delta": {
+      "median": -0.005376636981964111,
+      "tail": -0.006025755405426025
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "mos.sigmos_disc",
+    "mos.audiobox_pc"
+   ]
+  },
+  "1plus2lvcontinuity06092022": {
+   "aggregate": {
+    "dsp.balance_top_db": {
+     "output": {
+      "median": -0.23083481353174762,
+      "tail": -0.23083481353174762
+     },
+     "delta": {
+      "median": -0.23083481353174762,
+      "tail": -0.23083481353174762
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 0.5,
+      "tail": 0.9
+     },
+     "delta": {
+      "median": 0.5,
+      "tail": 0.9
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -13.252148180625953,
+      "tail": -13.04096144146803
+     },
+     "delta": {
+      "median": -0.06883584341588911,
+      "tail": 0.07869830076030429
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -11.563807336028276,
+      "tail": -12.258845193412162
+     },
+     "delta": {
+      "median": 0.13820549292767037,
+      "tail": 0.08830042723119842
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -21.49525322826028,
+      "tail": -22.049860629739666
+     },
+     "delta": {
+      "median": -0.0746237404537684,
+      "tail": -0.1390561481668005
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 2.0666145543028147,
+      "tail": 2.2035492956996876
+     },
+     "delta": {
+      "median": -1.7134131978157285,
+      "tail": -1.1050542124619098
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.021272917921378642,
+      "tail": 0.04035737517270466
+     },
+     "delta": {
+      "median": 0.021272917921378642,
+      "tail": 0.04035737517270466
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 18.83093612986151,
+      "tail": 20.84998126273727
+     },
+     "delta": {
+      "median": 2.9435290623522903,
+      "tail": 3.9749664735148698
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 11.653652060591106,
+      "tail": 11.918814062695525
+     },
+     "delta": {
+      "median": -0.039527860189536135,
+      "tail": 0.2189097255444084
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": 2.105610721543262,
+      "tail": 2.6838167020488743
+     },
+     "delta": {
+      "median": -0.9994967277181919,
+      "tail": 0.19892314244862003
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 1.0,
+      "tail": 1.0
+     },
+     "delta": {
+      "median": 1.0,
+      "tail": 1.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 9.313361487871177,
+      "tail": 9.313361487871177
+     },
+     "delta": {
+      "median": 1.2170212126489588,
+      "tail": 1.2170212126489588
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -18.53212163184733,
+      "tail": -18.53212163184733
+     },
+     "delta": {
+      "median": 5.860691246563846,
+      "tail": 5.860691246563846
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {},
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 5.268639802932739,
+      "tail": 4.647825479507446
+     },
+     "delta": {
+      "median": -0.5238757133483887,
+      "tail": -0.5453207969665528
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 6.880568265914917,
+      "tail": 6.6713502407073975
+     },
+     "delta": {
+      "median": 0.003991365432739258,
+      "tail": -0.07227797508239746
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": 1.0590000000000002,
+      "tail": 1.0590000000000002
+     },
+     "delta": {
+      "median": -0.1809999999999996,
+      "tail": -0.1809999999999996
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 2.9375905990600586,
+      "tail": 2.7588054656982424
+     },
+     "delta": {
+      "median": -0.1708301305770874,
+      "tail": -0.25660502910614014
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 3.740273594856262,
+      "tail": 3.5849510431289673
+     },
+     "delta": {
+      "median": 0.2829657793045044,
+      "tail": 0.24898550510406495
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 1.6766067743301392,
+      "tail": 1.6380710840225219
+     },
+     "delta": {
+      "median": -0.0497705340385437,
+      "tail": -0.06321080923080444
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.62021604180336,
+      "tail": -0.7252214252948761
+     },
+     "delta": {
+      "median": -0.0945775955915451,
+      "tail": -0.11230760514736175
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 5.208333333333333,
+      "tail": 9.375
+     },
+     "delta": {
+      "median": 5.208333333333333,
+      "tail": 9.375
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9693362712860107,
+      "tail": 0.9542853832244873
+     },
+     "delta": {
+      "median": 0.9693362712860107,
+      "tail": 0.9542853832244873
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.3208822011947632,
+      "tail": 1.2881523847579956
+     },
+     "delta": {
+      "median": -0.03324317932128906,
+      "tail": -0.04873933792114258
+     }
+    },
+    "stems.octave_ratio_db": {
+     "output": {
+      "median": -14.009820345398555,
+      "tail": -15.28187893938936
+     },
+     "delta": {
+      "median": -14.009820345398555,
+      "tail": -15.28187893938936
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.cer_median",
+    "mos.sigmos_noise",
+    "stems.octave",
+    "mos.audiobox_pc"
+   ]
+  },
+  "2003-commercial-for-toshiba": {
+   "aggregate": {
+    "dsp.attack_db": {
+     "output": {
+      "median": 18.287066808201104,
+      "tail": 18.135483345554547
+     },
+     "delta": {
+      "median": -0.9193988843843766,
+      "tail": -1.0802148760361345
+     }
+    },
+    "dsp.balance_top_db": {
+     "output": {
+      "median": 1.5329795570846945,
+      "tail": 1.5329795570846945
+     },
+     "delta": {
+      "median": 1.5329795570846945,
+      "tail": 1.5329795570846945
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 2.5,
+      "tail": 2.9
+     },
+     "delta": {
+      "median": 2.5,
+      "tail": 2.9
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -1.8098052367965745,
+      "tail": -1.8098052367965745
+     },
+     "delta": {
+      "median": -0.35327477565236864,
+      "tail": -0.35327477565236864
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -16.670787087193936,
+      "tail": -16.670787087193936
+     },
+     "delta": {
+      "median": 3.350081994085194,
+      "tail": 3.350081994085194
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -27.169004768591655,
+      "tail": -27.169004768591655
+     },
+     "delta": {
+      "median": -4.546799908810669,
+      "tail": -4.546799908810669
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 3.9582368476548835,
+      "tail": 4.239997175706339
+     },
+     "delta": {
+      "median": 0.6072135302226556,
+      "tail": 0.6498417046660977
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.21135526150554818,
+      "tail": 0.2345580866353652
+     },
+     "delta": {
+      "median": 0.21135526150554818,
+      "tail": 0.2345580866353652
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 14.235612796967434,
+      "tail": 14.235612796967434
+     },
+     "delta": {
+      "median": 0.5114600051729248,
+      "tail": 0.5114600051729248
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 7.225014767114327,
+      "tail": 10.371542370157421
+     },
+     "delta": {
+      "median": -1.482245116444973,
+      "tail": 0.35411165605418715
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": 5.937658821879925,
+      "tail": 6.0483354268473315
+     },
+     "delta": {
+      "median": -6.203657431791941,
+      "tail": -5.863252718186798
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 3.0,
+      "tail": 3.0
+     },
+     "delta": {
+      "median": 3.0,
+      "tail": 3.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 4.631405946477933,
+      "tail": 4.631405946477933
+     },
+     "delta": {
+      "median": -0.38964852945376904,
+      "tail": -0.38964852945376904
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -21.369984757286165,
+      "tail": -21.369984757286165
+     },
+     "delta": {
+      "median": 10.621319571524609,
+      "tail": 10.621319571524609
+     }
+    },
+    "file.sync_drift_ms": {
+     "output": {
+      "median": 0.1445517202681259,
+      "tail": 0.1445517202681259
+     },
+     "delta": {
+      "median": 0.1445517202681259,
+      "tail": 0.1445517202681259
+     }
+    },
+    "file.sync_offset_ms": {
+     "output": {
+      "median": 4.849852814882574,
+      "tail": 4.849852814882574
+     },
+     "delta": {
+      "median": 4.849852814882574,
+      "tail": 4.849852814882574
+     }
+    },
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 5.957980632781982,
+      "tail": 5.711732006072998
+     },
+     "delta": {
+      "median": -0.029033660888671875,
+      "tail": -0.034386825561523435
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 5.804756164550781,
+      "tail": 5.606325912475586
+     },
+     "delta": {
+      "median": -0.5924744606018066,
+      "tail": -0.7836976051330566
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 2.3732731342315674,
+      "tail": 2.3732731342315674
+     },
+     "delta": {
+      "median": -0.7991979122161865,
+      "tail": -0.7991979122161865
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 4.813071250915527,
+      "tail": 4.813071250915527
+     },
+     "delta": {
+      "median": 0.9849607944488525,
+      "tail": 0.9849607944488525
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 1.2312248945236206,
+      "tail": 1.2312248945236206
+     },
+     "delta": {
+      "median": 0.1736992597579956,
+      "tail": 0.1736992597579956
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.7901462316513062,
+      "tail": -0.7901462316513062
+     },
+     "delta": {
+      "median": -0.10772651433944702,
+      "tail": -0.10772651433944702
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 0.6666666666666666,
+      "tail": 0.6666666666666666
+     },
+     "delta": {
+      "median": 0.6666666666666666,
+      "tail": 0.6666666666666666
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9456239342689514,
+      "tail": 0.9456239342689514
+     },
+     "delta": {
+      "median": 0.9456239342689514,
+      "tail": 0.9456239342689514
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.2730902433395386,
+      "tail": 1.2730902433395386
+     },
+     "delta": {
+      "median": -0.010763406753540039,
+      "tail": -0.010763406753540039
+     }
+    },
+    "stems.octave_ratio_db": {
+     "output": {
+      "median": -7.111497240864726,
+      "tail": -7.156140665738508
+     },
+     "delta": {
+      "median": -7.111497240864726,
+      "tail": -7.156140665738508
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.cer_median",
+    "mos.sigmos_col",
+    "stems.octave"
+   ]
+  },
+  "2004-nickelodeon-promo-break-33-late-night": {
+   "aggregate": {
+    "dsp.attack_db": {
+     "output": {
+      "median": 19.527970010909605,
+      "tail": 19.23451846376391
+     },
+     "delta": {
+      "median": 2.419113308479819,
+      "tail": 2.033614292463448
+     }
+    },
+    "dsp.balance_top_db": {
+     "output": {
+      "median": 0.08894178087702354,
+      "tail": 0.22317466224979657
+     },
+     "delta": {
+      "median": 0.08894178087702354,
+      "tail": 0.22317466224979657
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 1.5,
+      "tail": 1.9
+     },
+     "delta": {
+      "median": 1.5,
+      "tail": 1.9
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -2.6821860474595915,
+      "tail": -2.227491878814594
+     },
+     "delta": {
+      "median": -1.6026753449859648,
+      "tail": -1.2729192222371677
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -26.36437164293501,
+      "tail": -27.03114821188937
+     },
+     "delta": {
+      "median": -6.431581526015568,
+      "tail": -6.495689324565562
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -27.590281273172472,
+      "tail": -28.208895785703778
+     },
+     "delta": {
+      "median": -6.348620517046488,
+      "tail": -6.417192515541948
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 2.902529955489743,
+      "tail": 3.873448980220749
+     },
+     "delta": {
+      "median": 0.3463992901399314,
+      "tail": 0.4623869364549669
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.9557844230870481,
+      "tail": 1.131357491234687
+     },
+     "delta": {
+      "median": 0.9557844230870481,
+      "tail": 1.131357491234687
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 20.854739953549497,
+      "tail": 24.176087371017356
+     },
+     "delta": {
+      "median": 6.450063179297814,
+      "tail": 7.877217372355671
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 3.097281453555439,
+      "tail": 4.506111740704397
+     },
+     "delta": {
+      "median": 1.8197488467205147,
+      "tail": 2.5159756646717937
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": -6.330647328083886,
+      "tail": -5.711523934752485
+     },
+     "delta": {
+      "median": -31.9772846792021,
+      "tail": -31.328587514215293
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 2.0,
+      "tail": 2.0
+     },
+     "delta": {
+      "median": 2.0,
+      "tail": 2.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 5.214162135996453,
+      "tail": 5.214162135996453
+     },
+     "delta": {
+      "median": 1.2157442486051337,
+      "tail": 1.2157442486051337
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -18.992570847529247,
+      "tail": -18.992570847529247
+     },
+     "delta": {
+      "median": 27.889876434462533,
+      "tail": 27.889876434462533
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {
+     "output": {
+      "median": 5.30946448405303,
+      "tail": 5.30946448405303
+     },
+     "delta": {
+      "median": 5.30946448405303,
+      "tail": 5.30946448405303
+     }
+    },
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 6.040188550949097,
+      "tail": 6.028167104721069
+     },
+     "delta": {
+      "median": 0.02976822853088379,
+      "tail": -0.007767820358276367
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 5.746900320053101,
+      "tail": 5.618140745162964
+     },
+     "delta": {
+      "median": 1.0441045761108398,
+      "tail": 0.9666349411010742
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": 0.754,
+      "tail": 0.754
+     },
+     "delta": {
+      "median": -0.5149999999999999,
+      "tail": -0.5149999999999999
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 2.2230379581451416,
+      "tail": 2.146727991104126
+     },
+     "delta": {
+      "median": -0.3639124631881714,
+      "tail": -0.5366693258285522
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 3.4867780208587646,
+      "tail": 3.2902461528778075
+     },
+     "delta": {
+      "median": -0.5853028297424316,
+      "tail": -0.6740715980529786
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 1.5201861262321472,
+      "tail": 1.2604281783103943
+     },
+     "delta": {
+      "median": 0.362140417098999,
+      "tail": 0.1029162883758545
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.695172056555748,
+      "tail": -1.0141732662916183
+     },
+     "delta": {
+      "median": 0.20639966428279877,
+      "tail": 0.1122759073972702
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 0.60625,
+      "tail": 0.92125
+     },
+     "delta": {
+      "median": 0.60625,
+      "tail": 0.92125
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9443021416664124,
+      "tail": 0.9267019391059875
+     },
+     "delta": {
+      "median": 0.9443021416664124,
+      "tail": 0.9267019391059875
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.4078081250190735,
+      "tail": 1.291987955570221
+     },
+     "delta": {
+      "median": -0.007778286933898926,
+      "tail": -0.01388380527496338
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.cer_median",
+    "mos.sigmos_col",
+    "mos.sigmos_disc"
+   ]
+  },
+  "22-april-2009-bloomberg-promo-break-40": {
+   "aggregate": {
+    "dsp.attack_db": {
+     "output": {
+      "median": 17.111554450355417,
+      "tail": 16.973368427297704
+     },
+     "delta": {
+      "median": -1.0480628514547412,
+      "tail": -1.0651402416253568
+     }
+    },
+    "dsp.balance_top_db": {
+     "output": {
+      "median": 0.024175156506454187,
+      "tail": 0.02965209808572695
+     },
+     "delta": {
+      "median": 0.024175156506454187,
+      "tail": 0.02965209808572695
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 0.5,
+      "tail": 0.9
+     },
+     "delta": {
+      "median": 0.5,
+      "tail": 0.9
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -5.307027323959382,
+      "tail": -4.432462243132923
+     },
+     "delta": {
+      "median": 0.44303830280026846,
+      "tail": 0.4870392601092505
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -13.706129783116825,
+      "tail": -14.00691147661157
+     },
+     "delta": {
+      "median": -0.2145629117914689,
+      "tail": -0.2410960927784389
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -18.869795179817608,
+      "tail": -19.415459265434933
+     },
+     "delta": {
+      "median": 0.54292093029974,
+      "tail": 0.5272551112569254
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 6.079491788732715,
+      "tail": 6.447465509808337
+     },
+     "delta": {
+      "median": 0.5375718392534243,
+      "tail": 0.6498333975172124
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.0014465680865970443,
+      "tail": 0.00440194429105214
+     },
+     "delta": {
+      "median": 0.0014465680865970443,
+      "tail": 0.00440194429105214
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 5.934877164231111,
+      "tail": 6.218746249825355
+     },
+     "delta": {
+      "median": 0.38073737048729583,
+      "tail": 0.5221529797398858
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 1.501717144640402,
+      "tail": 1.587665456620925
+     },
+     "delta": {
+      "median": 0.11910519966570265,
+      "tail": 0.12295018355159537
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": -2.0251622852979185,
+      "tail": -1.8228866474615508
+     },
+     "delta": {
+      "median": -13.134900495660364,
+      "tail": -12.738583039670072
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 1.0,
+      "tail": 1.0
+     },
+     "delta": {
+      "median": 1.0,
+      "tail": 1.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 1.4335418633236685,
+      "tail": 1.4335418633236685
+     },
+     "delta": {
+      "median": 0.15092766273365754,
+      "tail": 0.15092766273365754
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -19.174371792439025,
+      "tail": -19.174371792439025
+     },
+     "delta": {
+      "median": 8.28196595352075,
+      "tail": 8.28196595352075
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {},
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 5.882054090499878,
+      "tail": 5.761998510360717
+     },
+     "delta": {
+      "median": -0.020295143127441406,
+      "tail": -0.03756732940673828
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 8.138550281524658,
+      "tail": 8.130534458160401
+     },
+     "delta": {
+      "median": -0.06125211715698242,
+      "tail": -0.06512823104858398
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": 0.029000000000000137,
+      "tail": 0.029000000000000137
+     },
+     "delta": {
+      "median": 0.006000000000000227,
+      "tail": 0.006000000000000227
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 2.627886652946472,
+      "tail": 2.5397077322006227
+     },
+     "delta": {
+      "median": -0.14001774787902832,
+      "tail": -0.19463868141174318
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 3.2574968338012695,
+      "tail": 3.1559656143188475
+     },
+     "delta": {
+      "median": -0.40990638732910156,
+      "tail": -0.48532752990722655
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 1.1566168069839478,
+      "tail": 1.1200034379959107
+     },
+     "delta": {
+      "median": -0.063937246799469,
+      "tail": -0.15902539491653442
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.5937357842922211,
+      "tail": -0.6601117789745331
+     },
+     "delta": {
+      "median": 0.6441002786159515,
+      "tail": 0.331187504529953
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 2.5,
+      "tail": 3.7
+     },
+     "delta": {
+      "median": 2.5,
+      "tail": 3.7
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9936192333698273,
+      "tail": 0.9934424459934235
+     },
+     "delta": {
+      "median": 0.9936192333698273,
+      "tail": 0.9934424459934235
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.3812738060951233,
+      "tail": 1.346678364276886
+     },
+     "delta": {
+      "median": 0.04730558395385742,
+      "tail": 0.025070762634277342
+     }
+    },
+    "stems.octave_ratio_db": {
+     "output": {
+      "median": -2.5046620262098385,
+      "tail": -2.546359613725706
+     },
+     "delta": {
+      "median": -2.5046620262098385,
+      "tail": -2.546359613725706
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.cer_median",
+    "mos.sigmos_disc",
+    "mos.sigmos_noise"
+   ]
+  },
+  "andrew-and-sarah-royal-wedding-l": {
+   "aggregate": {
+    "dsp.balance_top_db": {
+     "output": {
+      "median": -0.8960319019380436,
+      "tail": -1.1461650323809462
+     },
+     "delta": {
+      "median": -0.8960319019380436,
+      "tail": -1.1461650323809462
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -18.0757774406187,
+      "tail": -11.894367838870275
+     },
+     "delta": {
+      "median": -12.409258494134372,
+      "tail": -8.733939855154091
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -33.42014662765819,
+      "tail": -34.644253038916816
+     },
+     "delta": {
+      "median": -9.757564522278763,
+      "tail": -10.11130291154801
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -48.01838087760716,
+      "tail": -48.798573179854
+     },
+     "delta": {
+      "median": -13.368013748568664,
+      "tail": -13.557920036433034
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 2.1633373567221796,
+      "tail": 2.90143345465534
+     },
+     "delta": {
+      "median": -0.01962575823074808,
+      "tail": 0.2132538666628241
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 1.0347769870850554,
+      "tail": 1.1229205330944065
+     },
+     "delta": {
+      "median": 1.0347769870850554,
+      "tail": 1.1229205330944065
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 26.68981428448158,
+      "tail": 27.403776219943193
+     },
+     "delta": {
+      "median": 8.43878627029336,
+      "tail": 8.459654732496613
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 2.4038368462219166,
+      "tail": 2.548307051434809
+     },
+     "delta": {
+      "median": 1.3668499394815332,
+      "tail": 1.474121243252447
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": -5.421445150272368,
+      "tail": -5.1342641772433755
+     },
+     "delta": {
+      "median": -42.22240453302663,
+      "tail": -41.886630088689415
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 1.8107368593553659,
+      "tail": 1.8107368593553659
+     },
+     "delta": {
+      "median": 0.7962534832683517,
+      "tail": 0.7962534832683517
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -18.740921789714587,
+      "tail": -18.740921789714587
+     },
+     "delta": {
+      "median": 10.659827733067555,
+      "tail": 10.659827733067555
+     }
+    },
+    "file.sync_drift_ms": {
+     "output": {
+      "median": 0.1762463389735931,
+      "tail": 0.1762463389735931
+     },
+     "delta": {
+      "median": 0.1762463389735931,
+      "tail": 0.1762463389735931
+     }
+    },
+    "file.sync_offset_ms": {
+     "output": {
+      "median": 5.175077358273339,
+      "tail": 5.175077358273339
+     },
+     "delta": {
+      "median": 5.175077358273339,
+      "tail": 5.175077358273339
+     }
+    },
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 2.850143074989319,
+      "tail": 2.81620991230011
+     },
+     "delta": {
+      "median": -1.5566602945327759,
+      "tail": -1.7052190065383912
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 4.674828767776489,
+      "tail": 4.604579019546509
+     },
+     "delta": {
+      "median": -0.06519937515258789,
+      "tail": -0.15239229202270507
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": 0.18800000000000017,
+      "tail": 0.18800000000000017
+     },
+     "delta": {
+      "median": -0.6869999999999998,
+      "tail": -0.6869999999999998
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 2.59079909324646,
+      "tail": 2.5876494884490966
+     },
+     "delta": {
+      "median": 0.20860862731933594,
+      "tail": -0.01253871917724609
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 3.650627851486206,
+      "tail": 3.384192419052124
+     },
+     "delta": {
+      "median": 0.14189040660858154,
+      "tail": -0.20211622714996336
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 2.4991683959960938,
+      "tail": 2.384908676147461
+     },
+     "delta": {
+      "median": 1.390334665775299,
+      "tail": 1.2804142117500306
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.13854338601231575,
+      "tail": -0.16779145374894142
+     },
+     "delta": {
+      "median": 0.0338442325592041,
+      "tail": -0.0022597908973693848
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 0.009370648844333054,
+      "tail": 0.013904204956836535
+     },
+     "delta": {
+      "median": 0.009370648844333054,
+      "tail": 0.013904204956836535
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.9714105725288391,
+      "tail": 0.9706000924110413
+     },
+     "delta": {
+      "median": 0.9714105725288391,
+      "tail": 0.9706000924110413
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.3845654726028442,
+      "tail": 1.380447506904602
+     },
+     "delta": {
+      "median": 0.0821872353553772,
+      "tail": 0.058113586902618405
+     }
+    },
+    "stems.octave_ratio_db": {
+     "output": {
+      "median": -12.224709026963213,
+      "tail": -12.444615894834277
+     },
+     "delta": {
+      "median": -12.224709026963213,
+      "tail": -12.444615894834277
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "stems.octave",
+    "dsp.hf_4k8k",
+    "dsp.hf_8k16k",
+    "mos.audiobox_pc"
+   ]
+  },
+  "bbc-london-last-news-intro-outro-bloopers-cctv-p": {
+   "aggregate": {
+    "dsp.balance_top_db": {
+     "output": {
+      "median": 0.016418021360259223,
+      "tail": 0.016418021360259223
+     },
+     "delta": {
+      "median": 0.016418021360259223,
+      "tail": 0.016418021360259223
+     }
+    },
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.dropouts": {
+     "output": {
+      "median": 8.5,
+      "tail": 9.7
+     },
+     "delta": {
+      "median": 8.5,
+      "tail": 9.7
+     }
+    },
+    "dsp.gap_air_db": {
+     "output": {
+      "median": -13.69093880675533,
+      "tail": -11.530163508856504
+     },
+     "delta": {
+      "median": -0.42686012173539556,
+      "tail": 0.1208995570604243
+     }
+    },
+    "dsp.hf_4k8k": {
+     "output": {
+      "median": -28.130072054108446,
+      "tail": -29.424367743689675
+     },
+     "delta": {
+      "median": 2.7006787509825507,
+      "tail": 0.9140819480998865
+     }
+    },
+    "dsp.hf_8k16k": {
+     "output": {
+      "median": -38.51749322666015,
+      "tail": -39.44333924730431
+     },
+     "delta": {
+      "median": 3.693099303891298,
+      "tail": 1.243634597077834
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 1.0348402359953421,
+      "tail": 1.238946908423423
+     },
+     "delta": {
+      "median": -0.6472434333044667,
+      "tail": -0.21106779553374508
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 0.42198984150319074,
+      "tail": 0.6748084140417081
+     },
+     "delta": {
+      "median": 0.42198984150319074,
+      "tail": 0.6748084140417081
+     }
+    },
+    "dsp.output_silent": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.pause_depth_db": {
+     "output": {
+      "median": 39.959164513728695,
+      "tail": 44.28466253521226
+     },
+     "delta": {
+      "median": -0.9744298746539464,
+      "tail": -0.27882386896069633
+     }
+    },
+    "dsp.pause_pumping_db": {
+     "output": {
+      "median": 5.298582659140399,
+      "tail": 8.459045169671986
+     },
+     "delta": {
+      "median": 0.45822225051105514,
+      "tail": 1.3708754882326402
+     }
+    },
+    "dsp.sib_centroid_hz": {
+     "output": {
+      "median": 5907.173253526507,
+      "tail": 5907.173253526507
+     },
+     "delta": {
+      "median": -360.0568814996095,
+      "tail": -360.0568814996095
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": -0.476318092387656,
+      "tail": -0.3920446509956278
+     },
+     "delta": {
+      "median": -0.575337150034213,
+      "tail": -0.18196136122559012
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 10.0,
+      "tail": 10.0
+     },
+     "delta": {
+      "median": 10.0,
+      "tail": 10.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 8.305543030565346,
+      "tail": 8.305543030565346
+     },
+     "delta": {
+      "median": -3.8030143104580922,
+      "tail": -3.8030143104580922
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -18.885591332593677,
+      "tail": -18.885591332593677
+     },
+     "delta": {
+      "median": 6.104465939105285,
+      "tail": 6.104465939105285
+     }
+    },
+    "file.sync_drift_ms": {
+     "output": {
+      "median": 7.094504767126377,
+      "tail": 7.094504767126377
+     },
+     "delta": {
+      "median": 7.094504767126377,
+      "tail": 7.094504767126377
+     }
+    },
+    "file.sync_offset_ms": {
+     "output": {
+      "median": 5.575553362777796,
+      "tail": 5.575553362777796
+     },
+     "delta": {
+      "median": 5.575553362777796,
+      "tail": 5.575553362777796
+     }
+    },
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "mos.audiobox_pc": {
+     "output": {
+      "median": 2.035900354385376,
+      "tail": 2.0046921253204344
+     },
+     "delta": {
+      "median": 0.15249156951904297,
+      "tail": 0.07288684844970703
+     }
+    },
+    "mos.audiobox_pq": {
+     "output": {
+      "median": 5.623666524887085,
+      "tail": 4.902584028244019
+     },
+     "delta": {
+      "median": -0.909170389175415,
+      "tail": -1.325249147415161
+     }
+    },
+    "mos.dnsmos_gap": {
+     "output": {
+      "median": -0.27700000000000014,
+      "tail": -0.27700000000000014
+     },
+     "delta": {
+      "median": 0.04999999999999982,
+      "tail": 0.04999999999999982
+     }
+    },
+    "mos.sigmos_col": {
+     "output": {
+      "median": 3.4297854900360107,
+      "tail": 3.278114652633667
+     },
+     "delta": {
+      "median": -0.48403167724609375,
+      "tail": -0.5315820693969726
+     }
+    },
+    "mos.sigmos_disc": {
+     "output": {
+      "median": 3.8597627878189087,
+      "tail": 3.7603060960769654
+     },
+     "delta": {
+      "median": -0.47807276248931885,
+      "tail": -0.5919055223464966
+     }
+    },
+    "mos.sigmos_noise": {
+     "output": {
+      "median": 3.6292850971221924,
+      "tail": 3.603234338760376
+     },
+     "delta": {
+      "median": -0.08702492713928223,
+      "tail": -0.11884465217590331
+     }
+    },
+    "speech.avg_logprob": {
+     "output": {
+      "median": -0.09861370921134949,
+      "tail": -0.13342226147651673
+     },
+     "delta": {
+      "median": 0.010311879217624664,
+      "tail": -0.011454443633556365
+     }
+    },
+    "speech.cer": {
+     "output": {
+      "median": 0.056578947368421055,
+      "tail": 0.09131578947368421
+     },
+     "delta": {
+      "median": 0.056578947368421055,
+      "tail": 0.09131578947368421
+     }
+    },
+    "speech.hallucinated": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "speech.speaker_cos": {
+     "output": {
+      "median": 0.993381917476654,
+      "tail": 0.9913884043693543
+     },
+     "delta": {
+      "median": 0.993381917476654,
+      "tail": 0.9913884043693543
+     }
+    },
+    "speech.utmos": {
+     "output": {
+      "median": 1.8537689447402954,
+      "tail": 1.8229576349258423
+     },
+     "delta": {
+      "median": -1.3834855556488037,
+      "tail": -1.499952745437622
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "speech.cer_median",
+    "mos.sigmos_col",
+    "mos.sigmos_disc",
+    "mos.sigmos_noise",
+    "file.lra"
+   ]
+  },
+  "bbciplayerbbcnewsspecialtheresamayconfirmsexitop": {
+   "aggregate": {
+    "dsp.clicks_per_s": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "dsp.hum_excess_db": {
+     "output": {
+      "median": 2.968330126114087e-10,
+      "tail": 4.5229224348383875e-10
+     },
+     "delta": {
+      "median": -30.51867240062485,
+      "tail": -30.518668374034508
+     }
+    },
+    "dsp.lkr": {
+     "output": {
+      "median": 4.025998650110221,
+      "tail": 4.437860226099738
+     },
+     "delta": {
+      "median": 4.025998650110221,
+      "tail": 4.437860226099738
+     }
+    },
+    "dsp.whistle_db": {
+     "output": {
+      "median": 1.673560219746207e-07,
+      "tail": 3.0121423105939827e-07
+     },
+     "delta": {
+      "median": -38.14662961718837,
+      "tail": -38.146629284065426
+     }
+    },
+    "file.dropouts": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "file.lra": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    },
+    "file.lufs": {
+     "output": {
+      "median": -Infinity,
+      "tail": -Infinity
+     },
+     "delta": {
+      "median": NaN,
+      "tail": NaN
+     }
+    },
+    "file.sync_drift_ms": {},
+    "file.sync_offset_ms": {},
+    "file.sync_unmatched": {
+     "output": {
+      "median": 0.0,
+      "tail": 0.0
+     },
+     "delta": {
+      "median": 0.0,
+      "tail": 0.0
+     }
+    }
+   },
+   "speaker_floor": null,
+   "hard_failures_stored": [
+    "dsp.lkr"
+   ]
+  }
+ }
+}

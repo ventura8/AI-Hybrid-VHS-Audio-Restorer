@@ -37,8 +37,8 @@ poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
   - Exactly one top-level `#` title per document.
 - **Lists (MD004, MD007, MD029)**:
   - Unordered lists must use hyphens (`-`).
-  - Ordered lists must use `1.` prefixes for all items (or sequential numbers
-    consistently).
+  - Ordered lists must use `1.` prefixes for all items: `mdformat --check`
+    fails on `2.`, `3.` (it renumbers every item to `1.`).
 - **Blank Lines (MD012, MD031, MD032)**:
   - No consecutive blank lines.
   - Fenced code blocks and lists must be surrounded by blank lines.
@@ -58,6 +58,17 @@ poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
   across lines but never reflows a paragraph, so a sentence inserted into
   a wrapped paragraph must be wrapped by hand to 80 columns, and a code span
   must stay on one line (move it to the start of a line if it is long).
+- Three rewrites `mdformat --check` reports as "not formatted" (ear v4,
+  2026-10-12): a blank line inside one list item (a fenced block, a second
+  paragraph) makes the whole list loose, so it adds a blank line between
+  every item (keep a command inline in a tight list, or end the list first);
+  a wrapped line that starts with a dash or `35)` inside a list item turns
+  into a nested list or an escaped marker (rewrap so a number or a dash
+  does not open the line); and a code span split across lines is joined,
+  which also makes the line too long for MD013.
+- pymarkdown's MD013 is not strict: a line whose last word crosses column
+  80 passes the scan. The 80-column rule still holds; check added lines with
+  `awk 'length > 80'`.
 - The CI Markdown job scans every tracked `.md`, including generated ones
   such as `models/*/README.md`; MD034 rejects a bare URL there, so a
   generator writes `<https://...>`.

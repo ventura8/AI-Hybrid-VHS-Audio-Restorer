@@ -70,6 +70,30 @@ def test_softened_attacks_read_lower_and_less_correlated():
     assert readings["onset_corr"][1] < 0.95
 
 
+def _envelope(rises, onsets, hop=transient_metrics.STFT_HOP):
+    """A flat 0 dB envelope with one sample at each rise on each onset: `attack_rise_db` reads exactly `rises`."""
+    env = np.zeros((int(onsets[-1]) + 10) * hop)
+    for rise, onset in zip(rises, onsets):
+        env[int(onset) * hop] = rise
+    return env
+
+
+def test_attack_change_is_paired_on_the_onsets():
+    """The change is the median per-onset change (-1.0 dB), not the difference of the two medians (+0.2 dB)."""
+    onsets = np.array([10, 20, 30, 40, 50])
+    src_env, out_env = _envelope([10.0, 13.9, 14.0, 20.0, 21.0], onsets), _envelope([9.0, 14.2, 13.9, 19.0, 20.0], onsets)
+    assert list(transient_metrics.attack_rise_db(src_env, onsets, RATE, transient_metrics.STFT_HOP)) == [10.0, 13.9, 14.0, 20.0, 21.0]
+    source, output = transient_metrics.paired_attack_db(src_env, out_env, onsets, RATE)
+    assert source == 14.0
+    assert abs(output - source + 1.0) < 1e-9
+
+
+def test_an_attack_without_a_whole_onset_reads_none():
+    """No onset has its 30 ms before inside the window: nothing to pair."""
+    env = np.zeros(4096)
+    assert transient_metrics.paired_attack_db(env, env, np.array([0]), RATE) == (None, None)
+
+
 def test_too_few_onsets_or_too_little_signal_reads_none():
     nones = {name: (None, None) for name in transient_metrics.NAMES}
     bed, hits, _spans = _fixture(hiss=0.0)

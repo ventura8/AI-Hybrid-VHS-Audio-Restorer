@@ -17,13 +17,16 @@ from modules.auto_scanner import _compute_chunk_spectrum, _music_ratio_from_spec
 # The router's readings, shared with the app (re-exported for the tests and the calibration).
 from modules.tonal_persistence import syllabic_modulation, tonal_persistence  # noqa: F401
 from modules.utils import FFMPEG_BIN
-from scripts.score_reference import _align, _match_gain
+from scripts import pair_alignment
+from scripts.score_reference import _match_gain
 
 NATIVE_RATE = 44100
 SPEECH_RATE = 16000
 SIGMOS_RATE = 48000
 MIN_TAIL_WINDOW_S = 5.0
 SILENCE_DBFS = -50.0
+# The polyphase fallback's anti-alias window when librosa (soxr) is not installed (`_resample`).
+FALLBACK_WINDOW = ("kaiser", 16.0)
 SPEECH_RATIO_MIN = 0.25
 MUSIC_RATIO_MIN = 0.20
 # The scanner's music ratio reads 0.03-0.06 on the music of a 1991 VHS (Gaudeamus), so the
@@ -146,15 +149,31 @@ def to_mono(audio):
     return np.asarray(audio, dtype=np.float32).mean(axis=1) if audio.ndim > 1 else np.asarray(audio, dtype=np.float32)
 
 
-def align_pair(source, output):
-    """Source and output on one timeline, the output gain-matched to the source.
+def align_pair(source, output, rate=NATIVE_RATE, method=None, prior_s=None):
+    """Source and output on one timeline, the output gain-matched to the source; returns `(source, output, lag)`.
 
     The sync stage leaves lags of a few hundred samples; every paired metric would read
-    that lag as damage. Alignment and gain matching are the same primitives the reference
-    scorer uses (`scripts/score_reference`).
+    that lag as damage. Alignment (`scripts/pair_alignment.py`) and gain matching are the
+    primitives the reference scorer uses (`scripts/score_reference`); `aligned_pair` also
+    returns the alignment's record (method, status, polarity).
     """
-    aligned_source, aligned_output, lag = _align(np.asarray(source, dtype=np.float64), np.asarray(output, dtype=np.float64))
-    return aligned_source.astype(np.float32), _match_gain(aligned_source, aligned_output).astype(np.float32), int(lag)
+    aligned_source, aligned_output, alignment = aligned_pair(source, output, rate, method, prior_s)
+    return aligned_source, aligned_output, alignment.applied_lag
+
+
+def aligned_pair(source, output, rate=NATIVE_RATE, method=None, prior_s=None):
+    """`(source, output, Alignment)` on one timeline, the output gain-matched to the source.
+
+    `method` names the aligner (None: `AI_RESTORE_ALIGN_METHOD` or the default,
+    `gcc_phat_spans`); `prior_s` is an expected lag in seconds (the mux's is
+    `pair_alignment.MUX_DELAY_S`), which breaks ties and is where an abstaining aligner
+    trims the pair (0 without one).
+    """
+    prior = None if prior_s is None else int(round(prior_s * rate))
+    source, output = np.asarray(source, dtype=np.float64), np.asarray(output, dtype=np.float64)
+    aligned_source, aligned_output, alignment = pair_alignment.align(source, output, rate, method, prior)
+    matched = _match_gain(aligned_source, aligned_output)
+    return aligned_source.astype(np.float32), matched.astype(np.float32), alignment
 
 
 def resample_cached(mono, rate, target_rate, cache_dir, key):
@@ -171,6 +190,11 @@ def resample_cached(mono, rate, target_rate, cache_dir, key):
     return resampled
 
 
+def resample(mono, rate, target_rate):
+    """`mono` at `target_rate` (`_resample`): the public name the same-percept transforms call."""
+    return _resample(mono, rate, target_rate)
+
+
 def _resample(mono, rate, target_rate):
     """soxr through librosa when it is installed, scipy's polyphase resampler otherwise."""
     try:
@@ -182,8 +206,11 @@ def _resample(mono, rate, target_rate):
 
         from scipy.signal import resample_poly
 
+        # A Kaiser window of beta 16 instead of resample_poly's default (beta 5): its images sit near
+        # -60 dB, where they land in the hiss readings' noise cells; a CI without the ml group (no
+        # librosa) read a soxr-less round trip at -58 dB against the -60 dB its test asks of soxr.
         factor = gcd(rate, target_rate)
-        return resample_poly(mono, target_rate // factor, rate // factor).astype(np.float32)
+        return resample_poly(mono, target_rate // factor, rate // factor, window=FALLBACK_WINDOW).astype(np.float32)
 
 
 def windows(n_samples, rate, seconds=15.0, hop=7.5):
@@ -197,6 +224,27 @@ def windows(n_samples, rate, seconds=15.0, hop=7.5):
             out.append(Window(len(out), start, end))
         start += hop
     return out
+
+
+def level_matched(reference, estimate):
+    """`estimate` scaled to `reference`'s RMS over the pair: the level a window's silence is judged at.
+
+    The pair's own gain match is a least-squares projection (`score_reference._match_gain`),
+    which falls toward 0 when the output keeps little of the source's waveform: a quiet,
+    noise-dominated tape whose noise the restoration removed. On the IA hunt (2026-10-12) it
+    scaled outputs playing at -20 dBFS mean under the -50 dBFS silence line, and 8 cathar and
+    4 auto_pure_linear clips failed `dsp.output_silent` on audio that was never silent.
+    """
+    estimate = np.asarray(estimate, dtype=np.float32)
+    ref = float(np.sqrt(np.mean(np.square(np.asarray(reference, dtype=np.float64))))) if len(reference) else 0.0
+    est = float(np.sqrt(np.mean(np.square(estimate.astype(np.float64))))) if len(estimate) else 0.0
+    return estimate if est <= 0.0 else estimate * np.float32(ref / est)
+
+
+def output_routes(source, output, windows_, rate):
+    """Each window's route on the output, read at the source's level (`level_matched`), not the projection's."""
+    levelled = level_matched(source, output)
+    return [route_window(levelled[w.slice_of(rate)], rate) for w in windows_]
 
 
 def route_window(mono, rate):

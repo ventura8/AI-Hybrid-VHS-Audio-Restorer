@@ -264,3 +264,102 @@ def test_model_filename_rejects_paths(capsys, value):
 @pytest.mark.parametrize("value, expected", [("UVR-DeNoise.pth", "UVR-DeNoise.pth"), ("  x.ckpt ", "x.ckpt"), ("", "d"), (None, "d")])
 def test_model_filename_accepts_bare_names(value, expected):
     assert modules.config._model_filename("denoise_model", value, "d") == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "cb.rnnn';amovie=/etc/hosts",
+        "x';amovie=target.wav",
+        "a[b],c.rnnn",
+        "a;b.rnnn",
+        "../../../etc/passwd",
+        "sub/model.rnnn",
+        "D:model.rnnn",
+        "model.ckpt",
+        ".rnnn",
+        True,
+        ["x.rnnn"],
+    ],
+)
+def test_arnndn_model_filename_rejects_injection_and_paths(capsys, value):
+    """An arnndn_model that could inject filters or escape the store falls back to the default."""
+    default = modules.config.DEFAULT_ARNNDN_MODEL
+    assert modules.config._arnndn_model_filename("arnndn_model", value, default) == default
+    assert "arnndn_model" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (modules.config.DEFAULT_ARNNDN_MODEL, modules.config.DEFAULT_ARNNDN_MODEL),
+        ("  my_model.rnnn ", "my_model.rnnn"),
+        ("", modules.config.DEFAULT_ARNNDN_MODEL),
+        (None, modules.config.DEFAULT_ARNNDN_MODEL),
+    ],
+)
+def test_arnndn_model_filename_accepts_bare_rnnn(value, expected):
+    """A bare .rnnn filename is accepted; unset or empty falls back to the default silently."""
+    assert modules.config._arnndn_model_filename("arnndn_model", value, modules.config.DEFAULT_ARNNDN_MODEL) == expected
+
+
+def _loaded(user_config):
+    """The configuration load_config resolves from a config.yaml holding `user_config`."""
+    mock_yaml = MagicMock()
+    mock_yaml.safe_load.return_value = user_config
+    with patch("modules.config.Path.exists", return_value=True), patch.object(modules.config, "yaml", mock_yaml):
+        with patch("builtins.open", MagicMock()), patch("builtins.print") as warn:
+            conf, _ = modules.config.load_config()
+    return conf, warn
+
+
+def test_the_engine_fix_keys_default_to_todays_behaviour():
+    """No config.yaml entry: ffmpeg's own fallback in the mux and no inverted-pair refusal in the azimuth scan."""
+    conf, warn = _loaded({"process_mode": "cathar"})
+    assert conf["loudnorm_linear_fallback"] == "ffmpeg"
+    assert conf["azimuth_reject_inverted_pair"] is False
+    warn.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "raw, expected, warned", [(" Gain_Limiter ", "gain_limiter", False), ("ffmpeg", "ffmpeg", False), ("ride", "ffmpeg", True)]
+)
+def test_the_loudnorm_fallback_is_a_choice(raw, expected, warned):
+    """Case and spaces are forgiven; an unknown value warns and keeps ffmpeg's."""
+    conf, warn = _loaded({"loudnorm_linear_fallback": raw})
+    assert conf["loudnorm_linear_fallback"] == expected
+    assert warn.called is warned
+
+
+@pytest.mark.parametrize("raw, expected, warned", [("yes", True, False), ("off", False, False), ("sometimes", False, True)])
+def test_the_inverted_pair_switch_parses_like_every_boolean(raw, expected, warned):
+    """A quoted 'yes' is on and 'off' is off; anything else warns and keeps today's reading."""
+    conf, warn = _loaded({"azimuth_reject_inverted_pair": raw})
+    assert conf["azimuth_reject_inverted_pair"] is expected
+    assert warn.called is warned
+
+
+def test_the_depop_and_ring_guards_default_to_todays_audio():
+    """No config.yaml entry: the pop repair's prominence guard and the notch's ring guard are both off."""
+    conf, warn = _loaded({"process_mode": "auto_pure_linear"})
+    assert conf["apl_depop_min_prominence_db"] == 0.0
+    assert conf["apl_surgical_ring_guard"] is False
+    warn.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "raw, expected, warned",
+    [(6, 6.0, False), ("9.0", 9.0, False), (120, 120.0, False), (-3.0, 0.0, True), (True, 0.0, True), (7000.0, 0.0, True)],
+)
+def test_the_prominence_guard_takes_a_non_negative_number(raw, expected, warned):
+    """A number or a numeric string sets it; a negative value, a Boolean or a value past the cap warns and keeps it off."""
+    conf, warn = _loaded({"apl_depop_min_prominence_db": raw})
+    assert conf["apl_depop_min_prominence_db"] == expected
+    assert warn.called is warned
+
+
+@pytest.mark.parametrize("raw, expected, warned", [("on", True, False), (False, False, False), ("maybe", False, True)])
+def test_the_ring_guard_switch_parses_like_every_boolean(raw, expected, warned):
+    conf, warn = _loaded({"apl_surgical_ring_guard": raw})
+    assert conf["apl_surgical_ring_guard"] is expected
+    assert warn.called is warned

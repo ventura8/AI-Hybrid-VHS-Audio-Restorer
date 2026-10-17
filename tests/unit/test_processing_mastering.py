@@ -68,7 +68,7 @@ def test_measured_loudnorm_args_carry_every_value(fragment):
 
 
 def test_two_pass_expression_applies_measured_args_and_limiter():
-    """The applied mix carries the measured pass and ends at the true-peak limiter."""
+    """The applied mix carries the measured pass and ends at the sample-peak limiter (LOUDNORM_TRUE_PEAK_LIMITER, alimiter at -1 dBFS)."""
     measurements = modules.processing._parse_loudnorm_json(LOUDNORM_ANALYSIS_JSON)
     args = modules.processing._measured_loudnorm_args(measurements)
 

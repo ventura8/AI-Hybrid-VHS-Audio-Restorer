@@ -106,11 +106,6 @@ here and in `docs/validation.md` ("CI Parity") in the same change.
   branch, so a test may hold at most four assertions after the split. Split
   the test over a shared builder instead (`_board()`, `_merged_variant()`
   style), never merge the asserts back.
-- Sonar's `S5857` suggestion `[^"]*` for `refresh_lock.block_meta` is wrong:
-  `poetry.lock` markers hold escaped quotes (`python_version >= \"3.9\"`),
-  so the negated class stops early and the marker reads as absent. A lock
-  value ends at its line, so the greedy `.*` with `$` under `re.M` is the
-  equivalent form that Sonar accepts.
 - `S1172` (unused parameter) on a function that is one of a table of
   same-shaped callables (the degradations, the model loaders): drop the
   parameter and adapt the call site or the lambda in the registry; a leading
