@@ -19,7 +19,9 @@ G are Tele7abc, SOTI, Vaccin and Gaudeamus5. The readings and the grids are
 described in the output-quality-harness skill, "Critical of hiss (ear v4,
 2026-10-12)". The continuous-programme round of 2026-10-17 (first section)
 added a second anchor for the programme reading and measured why it cannot
-reach dense singing.
+reach dense singing; its follow-ups found that neither a band edge, nor a
+split in time, nor a reading of the within-band valleys tells revealed
+programme from residual hiss.
 
 ## Continuous Programme: the Second Anchor (2026-10-17)
 
@@ -308,6 +310,150 @@ the user's complaint itself, so a split by time cannot be the fix: the
 residual of the engines this ear judges follows the programme in time just
 as revealed programme does. A later attempt has to tell the two apart by
 something they do not share.
+
+### Revealed Programme Is Not Told Apart by Its Valleys
+
+The next task (the same day) tested a difference in fine structure:
+revealed programme (singing, instruments, voiced speech) mostly harmonic,
+its power at partials with valleys between them, and residual hiss (kept
+everywhere, kept under the programme or let through by an SNR-dependent
+gain) filling the valleys. In the noise-dominated cells the output's hiss
+would be read from each band's within-frame valley instead of its mean. It
+fails on every must-pass row, and nothing was changed (`valley_proto.py`
+and the probes beside it in `D:\ai_restore_work\scratch_valley`).
+
+The estimator: per frame and band, the P20 of the band's kept bins, each
+whitened by the source's smooth shape (`hiss_floor.band_shape`), over
+-ln(0.8) (the exponential's P20 over its mean: pure noise reads its mean),
+times the band's mean shape. Both sides are read so, each band-frame
+weighted by its NDC cells, and the removal is the output's valley over the
+source's: the identity reads exactly 1, and for noise of one shape the
+calibration cancels. The local ratio, the classes, the spectral cap and the
+fill follow as today. Hann 2048 at 44.1 kHz (21.5 Hz bins, main lobe +-43
+Hz, sidelobes from -31 dB falling 18 dB per octave) resolves steady partials
+100 Hz apart. A 5.5 Hz vibrato of +-3 % sweeps a partial at 5 kHz about 240
+Hz within that frame, and a frame short enough to hold it still (about 28
+ms) widens the lobe to about +-70 Hz: no length resolves the high partials
+of sung vibrato. P10 and P25, Hann 4096 at the same hop, the valley over
+each band-frame's NDC cells alone and a cap (today's ratio held under the
+valley's) were measured as well.
+
+The fixtures' revealed programme is not harmonic. Over 3.5-10 kHz, in the
+NDC frames, the perfect output's valley sits 0.1-3.0 dB under its own mean
+band power on A, B and D at Hann 2048 (0.5-3.3 at 4096), against
+-0.2..+0.9 for white noise: the programme there is a voice in a room, whose
+reverb tails, breaths and aperiodic top fill the valleys. Only the bands
+straddling the voices' own band limits (8 and 11 kHz) read 15-21 dB under.
+The previous section's table with the valley (P20, Hann 2048), its sources
+and renders:
+
+| source | reading | perfect | -6 | -12 | -20 | kept under | gated |
+|---|---|---|---|---|---|---|---|
+| A | today | 16.65 | 27.77 | 23.52 | 19.76 | 19.52 | 29.63 |
+| A | valley | 15.10 | 27.73 | 23.14 | 19.15 | 18.24 | 29.74 |
+| B | today | 5.42 | 23.29 | 18.95 | 13.64 | 5.58 | 25.67 |
+| B | valley | 0.41 | 23.27 | 18.62 | 13.33 | 1.42 | 25.73 |
+| C | today | -34.31 | 24.82 | 18.87 | 11.07 | -5.83 | 27.30 |
+| C | valley | -39.74 | 24.82 | 18.89 | 11.07 | -6.08 | 27.39 |
+| D | today | 15.26 | 21.60 | 18.69 | 16.08 | 16.26 | 21.70 |
+| D | valley | 14.10 | 21.60 | 18.35 | 15.68 | 15.31 | 21.59 |
+
+- **Row 1, A-D: not passed.** The ladder stays monotone and the gated
+  render reads over the -12 dB render on all four, but the perfect output
+  falls only 1.2-1.6 dB on A and D (+15.10, +14.10; B 5.0 dB, to +0.41).
+  The other forms read A / B / D at 14.95 / -0.13 / 14.17 (P10), 15.37 /
+  0.30 / 14.14 (P25), 14.95 / 0.51 / 13.85 (Hann 4096), 14.61-15.08 /
+  0.38-1.28 / 13.68-14.19 (the NDC cells' valley, P10 and P20) and 15.10 /
+  0.40 / 13.99 (the cap).
+- **Row 2, the second anchor's 38 sources: not passed.** The perfect output
+  reads at or under 0 on 37 of 38: en `mid00_musiconly_m09` (tape hiss over
+  the 4.5 kHz programme) reads -1.70 -> +1.24, and the perfect outputs rise
+  a median 0.40 dB (-2.60..+4.32). Where a band's NDC cells are the
+  programme's gaps, the band's P20 stands 3-6 dB over them. The raw tape,
+  the ladder (within 0.05 dB) and the hiss kept under 5 kHz read on 38 of
+  38 (+19.7..+32.4). On the pause path's 59 validated sources the perfect
+  outputs fall a median 1.99 dB (0.72-6.10); the full-band tape-hiss hole
+  (20 sources) falls 1.41 (0.89-5.01) and reads at or under 0 on 1 of 20
+  (median +10.02, was +11.75), its kept-under renders 1.48 (up to 4.15).
+- **Row 3, same-percept: not passed.** Gain, the 0.37-sample delay and the
+  soxr round trip move p95 at most 0.003 dB. The exact fresh realisation
+  reads p95 0.557 (max 0.930) on the second anchor's sources (today 0.362)
+  and 0.420 on the pause path's (today 0.338): a frame's valley carries
+  about twice the scatter of the mean over the same bins. `fresh_like`
+  reads p95 0.416 / 0.363 (today 0.691 / 0.522).
+- **Row 4, the Tata v2 pairs: not passed.** T, S, V, G and Gaudeamus1, the
+  identity, the APL and the cathar final, through the runner's own pair,
+  anchor and windows (this branch's head against the prototype): 1,982 of
+  4,437 readings moved, none of the pause readings, none on an identity.
+  The APL finals move a median -0.45..-0.14 dB per window on T, S, G and
+  Gaudeamus1 (the excess at most -0.12) and Vaccin's +3.73 (up to +8.45):
+  its 9.7 kHz band straddles the top of the tape's band, the NDC cells sit
+  in the band's quiet top, and the band's P20 stands 9.5-12 dB over them.
+  The cathar finals of T, S, V and G, which read +8.1..+14.4 dB today (the
+  hiss the user heard on every Tata tape), fall a median 2.12-4.61 dB (T
+  3.01, S 3.86, V 2.12, G 4.61; up to 6.7 per window), Gaudeamus1's 5.49.
+  Their residual is peaky in band: cathar's output valley sits 2.2-4.7 dB
+  under its NDC mean (median per tape), the APL finals' -0.4..+0.3, the
+  sources' -0.4..+0.5. A subtractor keeps each bin by its own noisy power,
+  so the bins where the hiss drew high survive, and the residual takes the
+  in-band spread of harmonic programme. Three cathar windows lost
+  `hiss_island_kurt` (a margin under -10 dB), which the guards count as a
+  lost reading.
+- **Row 5, Gaudeamus5's pauses (38-97 s): no.** A valley pause floor (the
+  same P20 on Hann 2048 frames mapped onto the pause blocks, calibrated on
+  white noise, today's silent blocks): APL's windows at 75 and 82.5 s,
+  where its pauses keep what the tape holds (32.39 / 30.12 against 32.91 /
+  33.22 today), read 32.84 / 30.27. What APL keeps there is as flat as the
+  hiss (its valley 0.0 dB under its mean, the tape's 0.0-0.2), so the valley
+  does not tell it apart. The APL final plus a stationary hiss of the tape's
+  own pause shape at 0, -6 and -12 dB reads in order in every window
+  (+17.9..+35.5); the identity moves -0.3..+0.7 dB; the cathar final reads
+  3.4-7.7 dB lower (its pause residual's valley 3.9-4.8 dB under its mean).
+
+Row 6, the risks, on synthetic programme with an oracle anchor (20 s,
+chords changing every 0.5 s, 2 s on and 0.8 s off): a 1/k harmonic stack to
+13 kHz under hiss (white plus a 2 kHz high-passed copy) meeting the
+programme's band power at 3 kHz. Margins in dB. The programmes: the
+stack steady, with a 5.5 Hz vibrato of +-1 % and +-3 %, steady in a hall
+(RT60 1.2 s), four voices at +-1 %, four voices at +-3 % in the hall, and
+band-passed noise; musical noise (mus.) is the hiss through a 2x power
+over-subtraction, floor 0:
+
+| programme | reading | perfect | -20 | kept under | gated | mus. |
+|---|---|---|---|---|---|---|
+| steady | today | 21.95 | 22.37 | 22.10 | 28.55 | 24.23 |
+| steady | valley | -0.95 | 15.00 | 7.25 | 28.51 | 14.63 |
+| +-1 % | today | 20.29 | 20.74 | 20.15 | 27.12 | 22.99 |
+| +-1 % | valley | 9.38 | 15.85 | 10.03 | 27.01 | 17.32 |
+| +-3 % | today | 22.14 | 22.85 | 22.18 | 28.49 | 24.64 |
+| +-3 % | valley | 22.27 | 22.93 | 22.38 | 28.51 | 23.65 |
+| hall | today | 20.73 | 21.24 | 21.09 | 28.07 | 23.24 |
+| hall | valley | 3.97 | 14.76 | 8.53 | 28.08 | 15.37 |
+| four, +-1 % | today | 21.23 | 21.81 | 21.22 | 27.57 | 23.84 |
+| four, +-1 % | valley | 16.05 | 18.89 | 16.34 | 27.53 | 20.84 |
+| four, +-3 %, hall | today | 22.40 | 22.86 | 23.08 | 29.50 | 24.83 |
+| four, +-3 %, hall | valley | 22.07 | 22.75 | 22.88 | 29.54 | 23.87 |
+| noise | today | 18.25 | 18.62 | 18.29 | 24.16 | 20.24 |
+| noise | valley | 18.07 | 18.58 | 18.16 | 24.12 | 19.50 |
+
+- **Vibrato, reverb and polyphony.** Only steady, resolved partials gain:
+  vibrato of +-3 % and four voices in a hall read as today, vibrato of +-1 %
+  keeps about half the gain, four voices at +-1 % a quarter. Reverb of
+  steady notes keeps most of their structure (+3.97).
+- **Noise-like programme** (fricatives, breath, cymbals) reads as today.
+- **Musical noise** reads 0.7-9.6 dB lower than today and still +14.6..+23.9.
+  Its islands read +0.88..+1.32 against -0.31..+0.18 for the -12 dB render
+  and do not move (`hiss_island_kurt` does not take the ratio), so the
+  islands guard (`max_move` 0.3, bound 2.0) still excludes it while its
+  margin stays over -10 dB, under which the island reading goes unread.
+
+The valley tells steady, resolved partials from noise and nothing else. The
+fixtures' revealed programme, a voice in a room, is as noise-like in band
+as the hiss and gains 1.2-1.6 dB of the 15-17 it needs; sung vibrato and
+polyphony fill the valleys; and the residual of the subtraction this ear
+judges is peaky in band, so a valley reads 2-5 dB less of the hiss the
+user heard. Revealed programme and residual hiss share the trait this
+reading measures, in band as in time.
 
 ## Adversarial Review: Defects and Fixes
 

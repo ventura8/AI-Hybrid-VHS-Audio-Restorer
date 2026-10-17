@@ -1507,7 +1507,14 @@ only a blind session at a recorded device and volume moves L_crit.
   the programme cells), and capping each band at its stationary ratio reads
   that gated hiss 9-14 dB lower while still reading two of three dense
   perfect outputs over 0 (same document, "Revealed Programme Is Not Told
-  Apart in Time").
+  Apart in Time"). Nor does the fine structure: reading the output's hiss
+  from each band's within-frame valley (P20 over -ln 0.8) lowers the dense
+  perfect outputs only 1.2-1.6 dB (+15.10, +14.10), because the revealed
+  programme is as noise-like in band as the hiss, and it reads the cathar
+  finals 2.1-5.5 dB lower, because a subtractor's residual is peaky in band
+  (its valley 2.2-4.7 dB under its mean); its fresh-realisation p95 is
+  0.56 (same document, "Revealed Programme Is Not Told Apart by Its
+  Valleys").
 
 `hiss_programme.py`, the hiss left under the programme (the `hup3`
 prototype's estimator, rebuilt after validation round 1):
