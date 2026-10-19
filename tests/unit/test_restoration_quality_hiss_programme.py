@@ -166,6 +166,15 @@ def test_islands_trip_the_musical_noise_guard():
     assert out_of(read(programme + _islands(noise, 0.15)), "hiss_island_kurt") >= 0.3
 
 
+def test_an_inaudible_residual_reads_no_islands_rather_than_none():
+    """Where the output's margin sits under -10 dB the island guard reads 0.0: no island can be heard, and a None would
+    trip the guard as a lost reading against the render that removed the hiss best."""
+    programme, noise, _source = capture()
+    margin = out_of(read(programme + 0.001 * noise), "hiss_prog_margin_db")
+    assert margin is not None and margin < hiss_programme.ISLAND_MIN_MARGIN_DB
+    assert out_of(read(programme + 0.001 * noise), "hiss_island_kurt") == 0.0
+
+
 def test_a_low_pass_trips_the_dulling_guard():
     """Removing hiss by a 4 kHz low pass of everything reads the kept programme highs at -1 dB or less."""
     assert out_of(read(_lowpass(capture()[2], 4000.0)), "hiss_prog_kept_hf_db") <= -1.0

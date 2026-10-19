@@ -81,8 +81,11 @@ one timeline:
    SNR-dependent suppressor takes from consonants, breaths and tails; a perfect output reads only
    the hiss's share, -0.3..-1.3 dB on the fixtures; `soft_cells`) and `hiss_island_kurt` (R4's
    frame kurtosis on 20 ms frames of the active frames, 3 kHz to 1.06 x the top readable band,
-   the output in the source's gain; None where the output's margin is under -10 dB, where the
-   texture is inaudible).
+   the output in the source's gain; 0.0 where the output's margin is under -10 dB: its residual
+   sits 10 dB under its masked threshold, so no island in it can be heard. Read as None there,
+   it tripped the guard as a lost reading and excluded the render that removed the hiss best:
+   the v9 APL round 1's combined candidate, on Gaudeamus5, 2026-10-19. None stays for a window
+   with no readable band of 3 kHz and up or too few frames, where nothing was measured).
 
 Checked on `artifacts/realistic-v2` m12 tape-noise fixtures with two spliced 1.2 s gaps at the
 tape's noise relation (`scripts/check_hiss_fixtures.py`, docs/ear_v4_hiss.md): see the
@@ -742,13 +745,13 @@ class Window:
         pause, active = frames
         alpha = programme_tonality(self.src_power, self.layout, floor)
         src_side, out_side = self._margins(self._hiss(cells, floor, reading), alpha, (readable, active), gain)
-        top = island_top_hz(self.layout, readable) if out_side["margin"] >= ISLAND_MIN_MARGIN_DB else None
+        inaudible = out_side["margin"] < ISLAND_MIN_MARGIN_DB
         return {
             "src": src_side,
             "out": out_side,
             "pump_db": pump_db((self.src_power, self.out_power), pause, ratio_w, self.layout, self.rate),
             **kept_readings((self.src_power, self.out_power), floor, self.layout, active),
-            "island_kurt": island_kurt(self.pair, self.rate, active, top, gain),
+            "island_kurt": 0.0 if inaudible else island_kurt(self.pair, self.rate, active, island_top_hz(self.layout, readable), gain),
         }
 
 

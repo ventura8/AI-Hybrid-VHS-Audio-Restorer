@@ -25,6 +25,23 @@ programme from residual hiss. The soft-programme guard of the same day
 (first section) reads what an SNR-dependent suppressor takes from programme
 standing only 6-18 dB over the hiss.
 
+## The Island Guard and an Inaudible Residual (2026-10-19)
+
+`hiss_island_kurt` read None where the output's margin sits under -10 dB:
+the residual is 10 dB under its masked threshold, so its texture cannot be
+heard. The loop's constraints count a reading the incumbent had and the
+candidate lost as a trip (an unread reading loses, so an optimiser cannot
+win by making readings unread). In the v9 APL round 1 that excluded the
+loop's own combined candidate (the per-frame fill, the shelf, the reference
+suppressor, the aggressive model and an 18 dB fill) with one reason only:
+Gaudeamus5's island reading unread, because that candidate had taken the
+hiss under the programme out of audibility. The reading now returns 0.0
+there, no audible islands, and keeps None for a window with no readable
+band of 3 kHz and up or too few active frames, where nothing was measured.
+Musical noise is still caught: its islands live in a residual over the -10
+dB margin (+14.6..+23.9 in the valley study's musical-noise renders), and
+the guard reads them there as before.
+
 ## The Soft Programme Kept (2026-10-17)
 
 The reference-SNR suppressor (`apl_reference_suppress`,

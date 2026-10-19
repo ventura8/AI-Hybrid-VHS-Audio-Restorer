@@ -1597,7 +1597,11 @@ prototype's estimator, rebuilt after validation round 1):
    band's bins by the source's shape, whose 3 x 3 neighbourhood mean stands
    6 dB over it too, averaged over the bands with 20 such cells; below) and
    `hiss_island_kurt` (R4's frame kurtosis on 20 ms frames, 3 kHz to 1.06 x
-   the top readable band; None when the output's margin is under -10 dB).
+   the top readable band; 0.0 when the output's margin is under -10 dB, where
+   no island can be heard, since 2026-10-19: as None it tripped the guard as a
+   lost reading and excluded the v9 APL round 1's combined candidate, the one
+   that removed the hiss best, on Gaudeamus5; None stays where nothing could
+   be measured).
 
 `hiss_pause.py`, the hiss in the pauses (the pause design's prototype with
 block estimator, q 0.5, raw shape, no trim, Terhardt):
