@@ -217,8 +217,13 @@ excerpt alone.
   noise.
 - The fresh draws move the pause reading more where few windows remain: the
   corpus shape's fresh row (0.72 -> 1.11) and the jitter report's tie floors
-  (G's excerpt, above). The v4 grids' pause ties are re-derived from the new
-  report before a loop ranks on this reading; nothing here changed them.
+  (G's 125 s excerpt, one window, above). Over G's whole 300 s, as the loop
+  reads it (the same two pairs, `--max-seconds 300`, 2026-10-19), the pause
+  tail's tie floor reads 0.025 and the median's 0.009 (the margin delta
+  0.079 / 0.045): the grids' 0.35 pause ties stay, and were not changed. The
+  same whole-tape run reads the programme margin's fresh-draw p95 at 0.347
+  (one draw 0.365), over its grid tie of 0.30, where G's first 125 s read
+  0.029: re-derive that tie on whole tapes before it decides a close round.
 - Nothing here was heard: the blind block comes before any default moves.
 
 ## The Island Guard and an Inaudible Residual (2026-10-19)
