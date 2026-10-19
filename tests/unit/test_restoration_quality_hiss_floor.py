@@ -212,7 +212,7 @@ def test_the_anchor_carries_the_pause_spectrum_of_its_pause_frames():
 def test_a_source_without_pause_frames_has_no_pause_spectrum():
     """Steady hiss alone holds no true pause (its loud frames stand under 6 dB over its quiet ones): no pause spectrum."""
     anchor = hiss_floor.source_anchor(np.asarray(hiss(20 * RATE), dtype=np.float32), RATE, PROG_BANDWIDTH_HZ, None)
-    assert anchor.pause_spectrum is None and anchor.how == hiss_floor.ALL_FRAMES
+    assert (anchor.pause_spectrum, anchor.how) == (None, hiss_floor.ALL_FRAMES)
 
 
 def test_the_spl_offset_puts_the_loud_frames_at_the_critical_level():

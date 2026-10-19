@@ -75,7 +75,7 @@ def test_hiss_alone_holds_no_partials():
     """Tape hiss of 0.25-2 s reads r around 0 and never 0.3, the null's sd near 0.1 whatever the length."""
     found = np.array([r_of(tape_hiss(seconds, seed)) for seconds in (0.25, 0.5, 1.0, 2.0) for seed in range(30, 50)])
     assert found.max() < pause_partials.HELD_R
-    assert abs(float(np.median(found))) < 0.05 and 0.05 < float(np.std(found)) < 0.15
+    assert (abs(float(np.median(found))) < 0.05, 0.05 < float(np.std(found)) < 0.15) == (True, True)
 
 
 def test_a_held_note_under_the_hiss_holds_partials():
@@ -113,7 +113,7 @@ def test_a_fitted_control_gains_nothing_on_hiss():
     _freqs, power = hiss_floor.stft_power(tape_hiss(30.0, 98) + comb(30 * RATE), RATE)
     control = pause_partials.file_control(power.mean(axis=0), len(FREQS))
     found = np.array([r_of(tape_hiss(seconds, seed), control) for seconds in (0.5, 1.0) for seed in range(60, 75)])
-    assert found.max() < pause_partials.HELD_R and abs(float(np.median(found))) < 0.05
+    assert (bool(found.max() < pause_partials.HELD_R), abs(float(np.median(found))) < 0.05) == (True, True)
 
 
 def _pauses(count, spans):
@@ -143,7 +143,8 @@ def test_a_sung_run_leaves_the_mask_alone():
     source = _with_song(noise, SPANS, [SPANS[1]])
     pauses = _pauses(len(source) // int(pause_metrics.FRAME_S * RATE), SPANS)
     kept = pause_partials.unsung(source, RATE, pauses)
-    assert int(pauses[0].sum() - kept.sum()) == 40 and not kept[200:240].any() and kept[50:100].all() and kept[400:460].all()
+    left_out = (int(pauses[0].sum() - kept.sum()), bool(kept[200:240].any()), bool(kept[50:100].all()), bool(kept[400:460].all()))
+    assert left_out == (40, False, True, True)
 
 
 def test_a_sung_passage_keeps_no_pause():
@@ -161,7 +162,7 @@ def test_short_masks_and_short_runs_are_not_judged():
     assert np.array_equal(pause_partials.unsung(noise, RATE, small), small[0])
     short = _pauses(len(noise) // 882, [(10, 18), (50, 90)])
     found = pause_partials.run_correlations(noise, RATE, short)
-    assert found[0][2] is None and found[1][2] is not None
+    assert (found[0][2] is None, found[1][2] is None) == (True, False)
     assert pause_partials.split_correlation(pause_partials.fine_power(noise), np.zeros(len(FREQS), dtype=bool), NO_CONTROL) is None
     assert not pause_partials.held(None)
 
@@ -174,7 +175,8 @@ def test_the_windows_tones_leave_the_judged_bins():
     mask = np.ones(len(noise) // 882, dtype=bool)
     keep = pause_partials.judged_bins(source, RATE, mask)
     assert not keep[(FREQS > 890.0) & (FREQS < 1110.0)].any()
-    assert keep[(FREQS > 1500.0) & (FREQS < 3000.0)].all() and not keep[FREQS < 250.0].any() and not keep[FREQS >= 4000.0].any()
+    bands = (bool(keep[(FREQS > 1500.0) & (FREQS < 3000.0)].all()), bool(keep[FREQS < 250.0].any()), bool(keep[FREQS >= 4000.0].any()))
+    assert bands == (True, False, False)
 
 
 def test_no_control_and_a_constant_one_fit_nothing():

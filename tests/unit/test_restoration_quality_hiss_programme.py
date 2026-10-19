@@ -171,7 +171,7 @@ def test_an_inaudible_residual_reads_no_islands_rather_than_none():
     trip the guard as a lost reading against the render that removed the hiss best."""
     programme, noise, _source = capture()
     margin = out_of(read(programme + 0.001 * noise), "hiss_prog_margin_db")
-    assert margin is not None and margin < hiss_programme.ISLAND_MIN_MARGIN_DB
+    assert margin < hiss_programme.ISLAND_MIN_MARGIN_DB
     assert out_of(read(programme + 0.001 * noise), "hiss_island_kurt") == 0.0
 
 

@@ -137,7 +137,7 @@ def test_mismatched_rates_and_a_silent_reference_hand_back_none(tmp_path):
 def test_a_print_that_learned_the_programme_runs_no_suppressor(tmp_path):
     gapless = _write(tmp_path / "gapless.wav", _bursts(8.0) + _hiss(8.0))
     noise, depth = spectral_suppress.reference_noise(gapless)
-    assert noise is not None and depth < spectral_suppress.MIN_DEPTH_DB
+    assert (noise is None, depth < spectral_suppress.MIN_DEPTH_DB) == (False, True)
     restored = _write(tmp_path / "restored.wav", _bursts(8.0) + 0.5 * _hiss(8.0))
     assert spectral_suppress.suppress_by_reference(gapless, restored, tmp_path / "out.wav", **SETTINGS) is None
     assert "it holds programme" in (tmp_path / "session_log.txt").read_text(encoding="utf-8")
@@ -201,7 +201,7 @@ def test_on_real_files_the_stage_writes_and_reuses(tmp_path, reference_on):
     del reference_on
     source, restored, _programme, _gaps_ = _leaky_pair(tmp_path, seconds=6.0)
     output, _air = post_neural_suppress.apply_when_needed(source, restored, tmp_path, ALL)
-    assert output.parent.name == reference_suppress.STAGE and output.name.startswith("referenced_")
+    assert (output.parent.name, output.name.startswith("referenced_")) == (reference_suppress.STAGE, True)
     assert post_neural_suppress.suppress_by_reference(source, restored, tmp_path) == output
     assert "[Reference Suppress] Reusing" in (tmp_path / "session_log.txt").read_text(encoding="utf-8")
 
@@ -256,4 +256,4 @@ def test_the_cathar_mode_hands_the_suppressed_output_to_the_polish(tmp_path):
 def test_the_shared_stage_names_its_output_by_its_settings(tmp_path):
     first = reference_suppress.target_for(tmp_path / "r.wav", tmp_path, reference_suppress.CATHAR_SETTINGS)
     other = reference_suppress.target_for(tmp_path / "r.wav", tmp_path, {**reference_suppress.CATHAR_SETTINGS, "gain_floor_db": -12.0})
-    assert first.parent.name == reference_suppress.STAGE and first != other
+    assert (first.parent.name, first == other) == (reference_suppress.STAGE, False)
