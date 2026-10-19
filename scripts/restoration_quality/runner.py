@@ -145,6 +145,7 @@ from scripts.restoration_quality import (
     hiss_stationary,
     lf_metrics,
     pause_metrics,
+    pause_partials,
     sibilance,
     source_profile,
     timebase_metrics,
@@ -257,7 +258,7 @@ class Pair:
 
 PROFILE_CODE = (source_profile, measure_hum, dsp_metrics, pause_metrics)
 # The code a hiss anchor comes from (ear v4): a cached anchor from other code is never served.
-HISS_CODE = (hiss_floor, hiss_programme, hiss_pause, hiss_stationary, pause_metrics, source_profile, dsp_metrics, auditory)
+HISS_CODE = (hiss_floor, hiss_programme, hiss_pause, hiss_stationary, pause_metrics, pause_partials, source_profile, dsp_metrics, auditory)
 
 
 def _code_hash(modules):

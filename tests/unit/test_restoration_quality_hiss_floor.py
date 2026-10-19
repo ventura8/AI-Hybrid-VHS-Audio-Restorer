@@ -194,6 +194,25 @@ def test_an_anchor_without_a_level_stays_without_one():
     """`no_floor` round-trips with no level."""
     empty = hiss_floor.Anchor.from_dict(hiss_floor.Anchor(None, np.zeros(0), 0.0, hiss_floor.NO_FLOOR, False).to_dict())
     assert (empty.level, empty.how) == (None, hiss_floor.NO_FLOOR)
+    assert empty.pause_spectrum is None
+
+
+def test_the_anchor_carries_the_pause_spectrum_of_its_pause_frames():
+    """The capture's anchor holds the mean power of its pause frames on the 2048-point grid, which survives the round trip
+    and stands at the hiss's own level (its 2-8 kHz mean within 1 dB of the hiss alone's)."""
+    anchor = anchor_of()
+    freqs, power = hiss_floor.stft_power(hiss(len(capture()[2])), RATE)
+    band = (freqs >= 2000.0) & (freqs < 8000.0)
+    assert anchor.pause_spectrum.shape == (hiss_floor.FRAME // 2 + 1,)
+    assert abs(10.0 * np.log10(anchor.pause_spectrum[band].mean() / power[:, band].mean())) < 1.0
+    back = hiss_floor.Anchor.from_dict(anchor.to_dict())
+    assert np.allclose(back.pause_spectrum, anchor.pause_spectrum)
+
+
+def test_a_source_without_pause_frames_has_no_pause_spectrum():
+    """Steady hiss alone holds no true pause (its loud frames stand under 6 dB over its quiet ones): no pause spectrum."""
+    anchor = hiss_floor.source_anchor(np.asarray(hiss(20 * RATE), dtype=np.float32), RATE, PROG_BANDWIDTH_HZ, None)
+    assert anchor.pause_spectrum is None and anchor.how == hiss_floor.ALL_FRAMES
 
 
 def test_the_spl_offset_puts_the_loud_frames_at_the_critical_level():

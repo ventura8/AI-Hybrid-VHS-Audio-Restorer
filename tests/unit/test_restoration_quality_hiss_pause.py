@@ -6,18 +6,19 @@ import numpy as np
 import pytest
 import scipy.signal
 
-from scripts.restoration_quality import hiss_floor, hiss_pause
-from tests.unit.test_restoration_quality_hiss_floor import RATE, anchor_of, capture, context_for, hiss
+from scripts.restoration_quality import hiss_floor, hiss_pause, pause_metrics
+from tests.unit.test_restoration_quality_hiss_floor import PROG_BANDWIDTH_HZ, RATE, anchor_of, capture, context_for, hiss
+from tests.unit.test_restoration_quality_pause_partials import melody, under_the_vad
 
 WINDOW = slice(0, 15 * RATE)
 MARGIN = "hiss_pause_margin_db"
 
 
-def read(output, source=None):
-    """The pause readings of one window: the capture's first 15 s against `output`'s."""
+def read(output, source=None, anchor=None):
+    """The pause readings of one window: the capture's first 15 s against `output`'s (`anchor`: the capture's)."""
     source = capture()[2] if source is None else source
     src, out = source[WINDOW], np.asarray(output, dtype=np.float64)[WINDOW]
-    return hiss_pause.pause_readings(src, out, RATE, context_for(src, out))
+    return hiss_pause.pause_readings(src, out, RATE, context_for(src, out, anchor))
 
 
 def out_of(readings, name=MARGIN):
@@ -57,13 +58,18 @@ def test_an_empty_pause_reads_the_cap_never_none():
 
 
 def test_hum_leaves_both_sides_before_the_reading():
-    """Hum harmonics to 3 kHz on both sides move the margin under 0.5 dB; hum removed on the output reads the same."""
+    """Hum harmonics to 3 kHz on both sides move the margin under 0.5 dB; hum removed on the output reads the same.
+
+    The hummy source is read with its own anchor, as the runner reads it: the anchor's pause spectrum carries the comb,
+    which the sung-run test regresses out (`pause_partials`), so no hiss-only pause leaves the mask.
+    """
     programme, noise, source = capture()
     hum = _hum(len(source))
+    hummy = hiss_floor.source_anchor((source + hum).astype(np.float32), RATE, PROG_BANDWIDTH_HZ, None)
     output = programme + noise * 0.25
     plain = out_of(read(output))
-    assert out_of(read(output + hum, source=source + hum)) == pytest.approx(plain, abs=0.5)
-    assert out_of(read(output, source=source + hum)) == pytest.approx(plain, abs=0.5)
+    assert out_of(read(output + hum, source=source + hum, anchor=hummy)) == pytest.approx(plain, abs=0.5)
+    assert out_of(read(output, source=source + hum, anchor=hummy)) == pytest.approx(plain, abs=0.5)
 
 
 def test_a_quiet_room_floor_is_not_hiss_and_the_room_guard_sees_it():
@@ -282,3 +288,48 @@ def test_pauses_standing_far_over_the_anchor_everywhere_read_nothing():
     src = capture()[2][WINDOW]
     low = dataclasses.replace(anchor_of(), level=anchor_of().level * 1e-3)
     assert hiss_pause.pause_readings(src, src, RATE, context_for(src, src, low)) == hiss_floor.none_pairs(hiss_pause.PAUSE_NAMES)
+
+
+def _sung_capture(spans=None):
+    """The capture with a melody 3 dB under its hiss in every VAD band: over its first 15 s, or over `spans` (20 ms frames)."""
+    programme, noise, source = capture()
+    frame = int(hiss_pause.FRAME_S * RATE)
+    sung = source.copy()
+    for start, stop in spans or [(0, 15 * RATE // frame)]:
+        piece = slice(start * frame, stop * frame)
+        sung[piece] += under_the_vad(melody(stop * frame - start * frame, seed=start), noise[piece])
+    anchor = hiss_floor.source_anchor(sung.astype(np.float32), RATE, PROG_BANDWIDTH_HZ, None)
+    return programme, noise, sung, anchor
+
+
+def test_a_window_whose_pauses_are_sung_reads_nothing():
+    """Soft singing under the VAD through the window's pauses: R4's mask and the 3 dB test still read them (`hiss_read`),
+    the sung-run test leaves most runs out, and the window reads None."""
+    programme, noise, sung, anchor = _sung_capture()
+    src, out = sung[WINDOW], (programme + noise * 0.25)[WINDOW]
+    mask = pause_metrics.true_pause_mask(src, RATE)[0]
+    assert mask.sum() >= pause_metrics.MIN_PAUSE_FRAMES
+    assert hiss_pause.hiss_read(hiss_pause.pause_bands((src, out), RATE, mask, anchor))
+    assert not hiss_pause.unsung_mask(src, RATE, anchor).any()
+    assert out_of(read(out, source=sung, anchor=anchor)) is None
+
+
+def _longest_pause_run(source):
+    """The `(start, stop)` 20 ms span of the longest VAD run of `source` holding true-pause frames."""
+    mask, runs = pause_metrics.true_pause_mask(source, RATE)
+    spans = [span for span in pause_metrics.run_spans(runs) if mask[slice(*span)].any()]
+    return max(spans, key=lambda span: span[1] - span[0])
+
+
+def test_one_sung_pause_leaves_only_its_run():
+    """A melody in the longest pause run alone: that run's frames leave the mask, the others stay and are read."""
+    longest = _longest_pause_run(capture()[2][WINDOW])
+    _programme, _noise, sung, anchor = _sung_capture([longest])
+    sung_mask = pause_metrics.true_pause_mask(sung[WINDOW], RATE)[0]
+    kept = hiss_pause.unsung_mask(sung[WINDOW], RATE, anchor)
+    inside = np.zeros(len(kept), dtype=bool)
+    inside[slice(*longest)] = True
+    assert sung_mask[inside].any()
+    assert not kept[inside].any()
+    assert np.array_equal(kept[~inside], sung_mask[~inside])
+    assert out_of(read(sung, source=sung, anchor=anchor)) is not None

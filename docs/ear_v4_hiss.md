@@ -17,13 +17,209 @@ Contradicts the Evidence". Nothing here shipped a default: the blind block
 recorded) and the realistic-v2 plus IA confirmation come first. T, S, V and
 G are Tele7abc, SOTI, Vaccin and Gaudeamus5. The readings and the grids are
 described in the output-quality-harness skill, "Critical of hiss (ear v4,
-2026-10-12)". The continuous-programme round of 2026-10-17 (second
-section) added a second anchor for the programme reading and measured why it cannot
-reach dense singing; its follow-ups found that neither a band edge, nor a
-split in time, nor a reading of the within-band valleys tells revealed
-programme from residual hiss. The soft-programme guard of the same day
-(first section) reads what an SNR-dependent suppressor takes from programme
-standing only 6-18 dB over the hiss.
+2026-10-12)". The continuous-programme round of 2026-10-17 (third
+section) added a second anchor for the programme reading and measured why
+it cannot reach dense singing; its follow-ups found that neither a band
+edge, nor a split in time, nor a reading of the within-band valleys tells
+revealed programme from residual hiss. The soft-programme guard of the same
+day (second section) reads what an SNR-dependent suppressor takes from
+programme standing only 6-18 dB over the hiss. The sung-pause test of
+2026-10-18 (first section) leaves out of the pause reading the true pauses
+whose source holds partials held across the run: a choir's soft singing.
+
+## Sung Pauses (2026-10-18)
+
+The pause reading took R4's true pauses (the quiet frames inside DSP-VAD
+non-speech runs of 200 ms or more), restricted to 200 ms blocks within
+3 dB of the source's stationary hiss. On G many of those frames hold soft
+singing and choir reverb. In G's 261 mask frames of the 15 s windows (4096
+point frames) APL's render without the reference suppressor kept -1.3..-3
+dB of the source's power at 500-3000 Hz, and with it -3..-8.5 dB, where on
+the speech tapes the Mel-RoFormer empties hiss-only pauses 20-40 dB; the
+kept content's per-1/3-octave peak over median read 10-13 dB at 2-3 kHz
+(noise about 7). So the pause reading on G (APL frame fill 21.67 at the
+tail, with the reference suppressor 6.43) was largely kept soft programme,
+and it rewarded a render that deletes the singing. Two tests had failed
+before: one 200 ms block's whitened peaks (p95 over median 4.6 on the
+singing, speech's pauses 4.6-5.7) and the output's in-band valleys
+("Revealed Programme Is Not Told Apart by Its Valleys").
+
+### The Statistic
+
+Sung partials hold their pitch across a pause run and hiss does not
+(`pause_partials.py`; `hiss_pause.unsung_mask` applies it before the
+blocks). Per VAD non-speech run of the window that holds true-pause
+frames, on the source:
+
+1. the non-overlapping 2048-point Hann frames over the run (46 ms, 21.5 Hz
+   bins at 44.1 kHz);
+1. the mean power of the odd frames and of the even frames: disjoint
+   samples, so hiss draws independently in each half, while both halves
+   span the whole run, so a note change or a slow glide is the same in
+   both;
+1. each half in dB less its running median over 7 bins (150 Hz), 250-4000
+   Hz, the window's tonal bins on 20 ms frames out (`tonal_bins`, widened
+   25 Hz);
+1. the file's own fine structure regressed out of each half: the anchor
+   now carries the mean power of the file's pause frames on its 2048-point
+   grid (`Anchor.pause_spectrum`), whitened the same way and fitted to each
+   half by least squares;
+1. r, the Pearson correlation of the two residuals. A run of 4 frames or
+   more with r >= 0.3 leaves the mask; a window whose such runs held half
+   its true-pause frames or more keeps none and reads None.
+
+What each piece rests on (the probes and their JSON are in
+`D:\ai_restore_work\scratch_sing`):
+
+- The null. Synthetic tape hiss, 4-40 frames, 1,500 runs: r sd 0.094, p99.9
+  0.28, whatever the length; against a hummy file's control sd 0.094, p99.9
+  0.28; against a hiss file's 0.099 and 0.27. 0.3 sits at 3 sd.
+- The neural stage as an independent proxy. The Mel-RoFormer's dry output
+  over the source at 500-3000 Hz, per run: kept within 4 dB is programme,
+  emptied by 8 dB or more is hiss. On G the runs it kept hold 927 of the
+  2,369 true-pause frames (36.8-92.4 s), the runs it emptied 1,363.
+- The halves, not adjacent blocks. Adjacent 200 ms blocks on 20 ms frames
+  correlated on V's per-scene room colour: 52.6 % of its emptied frames
+  flagged even with the file's median block subtracted, and V's emptied
+  runs read 0.13 median against G's sung 0.40.
+- Resolution. DPSS tapers (NW 2, K 3, thresholds at their own null p99.9
+  0.33-0.35) lifted G's sung runs to 78-84 % but found V's weak lines in
+  67-80 % of its emptied frames. Rank correlation took G to 49 % and did not
+  help with hum; a 500 Hz low edge left the test's hum at r 0.65.
+- The regression. The hum of the hiss_pause unit tests (in-phase 50 Hz
+  harmonics falling 1 / k, 20-35 dB over the hiss in these bins, invisible
+  to `tonal_bins` on 20 ms frames, where the Hann leakage of its
+  neighbouring harmonics cancels) read r up to 0.77 on the capture's
+  hiss-only runs, 8 of 9 over 0.3. Excluding the file's tone bins (a 1 dB
+  bump over the 7-bin median, a running low percentile, or bins steadier
+  than noise) still left 6-7 flagged; the steadiness test also missed V's
+  lines, which are not steady (52.7 % of V's emptied frames). Subtracting the file's
+  pattern unfitted gave every hiss-only run of a choir tape the same
+  negative copy of its recurring pitches: 56.1 % of G's emptied frames
+  flagged. The fitted regression flags none of the hum's runs (r at most
+  0.25), keeps G's sung runs (65.4 %, against 65.8 % with the file's tone
+  bins excluded in its place) and takes V from 3.5 % to 0.8 %.
+- Short runs and the vote. r grows with the frames each half averages: on
+  G's sung runs 0.15-0.5 at 4-6 frames, 0.44-0.60 at 13-17, 0.72-0.84 at
+  33-37; synthetic notes 6 dB under the hiss over 250-4000 Hz read 0.55 at
+  0.5 s, 0.73 at 1 s and 0.85 at 2 s. After the run test three of G's sung
+  windows still read 17-31 dB on the frame-fill render from runs too short
+  to resolve. A window whose resolved runs are mostly sung is a sung
+  passage; a pooled test of a window's remaining runs instead put seven of
+  V's windows over 0.3.
+- Glides (notes 6 dB under the hiss, 12 draws). Both halves span the run:
+  a semitone's glide over 1 s holds (r 0.62-0.69 at the median and least),
+  vibrato of 1 % holds (0.50 at 0.5 s, 0.72 at 1 s), 3 % reads 0.34-0.56;
+  two semitones over 0.5 s read 0.26 and a fifth in 0.5 s smears into
+  noise (median -0.06).
+
+Against the proxy, the share of true-pause frames left out (the shipped
+test, runs and vote, 15 s windows, hop 7.5):
+
+| tape | kept runs (programme) | emptied runs (hiss) | windows emptied |
+|---|---|---|---|
+| G | 79.3 % of 927 (runs alone 65.4 %) | 2.5 % of 1,363 (0 %) | 8 of 30 |
+| T | 0 % of 40 | 0 % of 526 | 0 of 13 |
+| S | 0 % of 221 | 0 % of 841 | 0 of 25 |
+| V | 0 % of 44 | 0.8 % of 2,860 | 0 of 52 |
+
+G's 36-93 s: 735 of 773 true-pause frames left out. The 2.5 % are hiss
+runs inside the sung windows the vote empties. Through the runner's pair
+(`runner.Pair`, the anchor on the raw source): G 606 of 2,369 frames by the
+runs and 163 by the vote, T and S none, V 23 of 3,036, no window.
+
+### Must-Pass Rows
+
+Every replay scored through the runner's own pair, anchor, context and
+windows (`dsp.hiss_pause_excess_db`, output median / tail, windows read),
+the base code (4d6f8ea) against this one:
+
+| G render | base | sung runs out |
+|---|---|---|
+| APL shipped (v0) | 28.24 / 31.34, 30 | 28.58 / 31.31, 22 |
+| cathar shipped (c0) | 28.87 / 30.98, 30 | 29.48 / 31.02, 22 |
+| APL frame fill (v1) | 10.01 / 21.67, 30 | 7.24 / 13.14, 22 |
+| APL + reference suppressor (w_f) | 0.00 / 6.43, 30 | 0.00 / 0.00, 22 |
+| cathar frame fill (c1) | 23.09 / 24.95, 30 | 23.09 / 24.82, 22 |
+| cathar shelf + reference (c4) | 7.79 / 11.28, 30 | 7.08 / 10.17, 22 |
+| w_f + the tape's hiss at 0 dB | 33.83 / 36.18, 30 | 34.92 / 36.23, 22 |
+| w_f + the tape's hiss at -6 dB | 27.90 / 30.26, 30 | 29.00 / 30.32, 22 |
+| w_f + the tape's hiss at -12 dB | 22.04 / 24.40, 30 | 23.16 / 24.48, 22 |
+
+The renders are the stored replays in `D:\ai_restore_work\scratch_resid`
+(`v0_incumbent`, `c0_shipped`, `v1_frame_shelf`, `w_f_qfix`,
+`c1_frame_shelf`, `c4_frame_sh2k30_ref`). The hiss added back is the
+Mel-RoFormer's removed stem of G's APL work folder, brought to the replay's
+scale. The reading still reads it in the
+pauses that remain: the ladder is monotone at about 6 dB a step and its
+top sits at the source's own 36.5. The reference suppressor no longer wins
+the pause family on the singing it takes; the frame-fill render's 13.14
+tail is the hiss it leaves in G's true pauses (127.5-210 s: 4.8-14.2
+dB per window).
+
+1. G: the runs that carry soft singing leave (above); the statistic fires
+   nowhere else on G (every flagged run was one the RoFormer kept).
+   **Pass.**
+1. The speech tapes, the same nine renders each: T and S read byte for
+   byte the same; V's aggregates move at most 0.03 dB (median 17.04 ->
+   17.01 on w_f + hiss at -12 dB), its windows read stay 52, one window
+   moves at most 0.98 dB; 0, 0 and 0.8 % of their true-pause frames leave.
+   **Pass.**
+1. The hiss fixtures (`check_hiss_fixtures`, 40 per shape): the tape-hiss
+   and Tele7abc shapes read every pause value as before (0 of 352 each
+   move), and every same-percept row is unchanged. **Pass** on pauses of
+   hiss alone. The corpus shape (each fixture's own `vhs - clean`) moves:
+   13 of 40 fixtures, 229 of 1,280 pause values, 160 to None (5 identity
+   readings), the oracle ladders monotone 9 of 12 as before. Its recorded
+   noise is not hiss alone: per 0.5 s it holds narrow peaks 5-18 dB over
+   the 7-bin median that change every 0.5 s and repeat with the 4 s noise
+   sample (faint programme in the capture the noise was cut from), and the
+   noise alone reads r 0.31-0.56 in the flagged runs; the margin of
+   `prog_only` (the target alone) read +15.3 dB in es mid00_speech's pauses
+   before and -50.6 after.
+   Its same-percept rows: delay 0.002 -> 0.001, requantisation 0.005 ->
+   0.009 (max 0.007 -> 0.010), and the fresh draw 0.72 -> 1.11 (p95; max
+   0.78 -> 1.30): the fresh
+   draw replaces that programme with stationary noise over fewer blocks.
+1. Coverage. The 12 music clips (identity plus one APL and one cathar
+   candidate each): windows read 48 -> 34 of 81, clips with a read window
+   9 -> 9; gaudeamus1 5 -> 2, x_vid-20230606 2 -> 1, x_y2matecom's cathar
+   pair 2 -> 0 (its identity and APL pairs keep 2, moving at most 0.43 dB:
+   the vote sits at its boundary there). The stored v2 Tata pairs (15):
+   342 of 555 windows read against 375; T, S identical, V's aggregates
+   identical (one window 0.48), G 30 -> 22 (final2_apl 28.19 / 31.23 ->
+   28.50 / 31.20), gaudeamus1 5 -> 2.
+
+The jitter report (`reward_noise_floor --transforms hiss`, its eight pairs:
+v4_air `B_air_1dB` and v2 `final2_cathar` of T, S, V and G, the first 125 s),
+the base code against this one: T, S and V read as before, but G's first
+125 s now read one window (37.5 s, 0.76 s of pauses whose sung runs are too
+short to resolve) where the base read nine. Its fresh-floor scatter widens
+the tie floors: pause excess tail 0.478 -> 0.865 (max 0.518 -> 1.115),
+median 0.365 -> 0.544, the margin's delta tail 0.478 -> 0.630 and delta
+median 0.137 -> 0.544; gain, delay, soxr and requantisation stay at 0.002 or
+under. The grids' ties (0.35) already sit under this code's base report
+(0.48 / 0.37): re-derive them from the new report (0.90 / 0.55, the delta
+tail 0.65) before a loop ranks on this reading, or leave G's pause entries
+out of the tie pool. **Not passed** on the real pairs' fresh draws, for G's
+excerpt alone.
+
+### What Is Left Open
+
+- Short sung runs (under about 13 frames, 0.6 s) are resolved only by the
+  vote: a sung window under half resolved keeps them (x_y2matecom; G's
+  window at 37.5 s, the one its first 125 s still read).
+- A pitch the choir holds through most of the file's pauses is in the
+  file's pause spectrum and is regressed out like a drone; recurring
+  pitches weaken the test (G's runs flagged 75.9 % of its kept frames with
+  no control, 65.4 % with it, where V's emptied frames went 52.7 % -> 0.8 %).
+- Fast glides and wide vibrato (3 % and up, a fifth in 0.5 s) read as
+  noise.
+- The fresh draws move the pause reading more where few windows remain: the
+  corpus shape's fresh row (0.72 -> 1.11) and the jitter report's tie floors
+  (G's excerpt, above). The v4 grids' pause ties are re-derived from the new
+  report before a loop ranks on this reading; nothing here changed them.
+- Nothing here was heard: the blind block comes before any default moves.
 
 ## The Soft Programme Kept (2026-10-17)
 

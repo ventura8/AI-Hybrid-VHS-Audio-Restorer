@@ -1607,6 +1607,21 @@ block estimator, q 0.5, raw shape, no trim, Terhardt):
    20 ms mean-square frames; tones of either side out (an output bin under
    the 16-bit dither is empty, not a tone, or a pause emptied to digital
    silence would take the source's floor with it).
+1. Sung runs out (`pause_partials.unsung`, 2026-10-18): per VAD run holding
+   mask frames, the source's non-overlapping 2048-point frames, the odd
+   frames' mean spectrum against the even frames' (dB less a 7-bin running
+   median, 250-4000 Hz, the window's 20 ms tonal bins out), the anchor's
+   pause spectrum (`Anchor.pause_spectrum`, the file's pause frames) fitted
+   out of each by least squares; Pearson r >= 0.3 (hiss: sd 0.094, p99.9
+   0.28 at any length) and 4 frames or more leave the run; a window whose
+   such runs hold half its mask frames keeps none (a sung passage). On the
+   Mel-RoFormer's kept proxy it leaves 79.3 % of Gaudeamus5's sung pause
+   frames, 2.5 % of its hiss runs, 0 on Tele7abc and SOTI, 0.8 % on Vaccin;
+   APL's frame fill read 13.14 at the tail, not 21.67, the reference
+   suppressor 0.00, not 6.43 (docs/ear_v4_hiss.md, "Sung Pauses"). Its
+   cost: Gaudeamus5's first 125 s read one window, and the jitter report's
+   pause ties widened (tail 0.48 -> 0.87, median 0.37 -> 0.54); re-derive
+   the grids' ties before a loop ranks on it.
 1. 1-ERB bands from 50 Hz to min(16 kHz, Nyquist, brickwall); the
    stationary floor per band is the median over 200 ms blocks of each mask
    run (a tail of 5 frames kept), divided by the Wilson-Hilferty median/mean
@@ -1921,7 +1936,21 @@ Pitfalls:
   where the source is silent apart from it (blocks within 3 dB of the
   anchor; at 6 dB Gaudeamus5's soft singing, +4.1 dB, still passed), or
   every render ties at the source's singing and one that takes the singing
-  out wins.
+  out wins. The 3 dB test is not enough either: singing under 3 dB per
+  band passes it, and only its held partials tell it from hiss
+  (`pause_partials`, two halves of one run's frames agreeing).
+- A correlation test of persistent fine structure: subtracting a fixed
+  pattern from two independent noise halves gives both the same negative
+  copy of it (56 % of a choir tape's hiss runs flagged against its
+  recurring pitches); fit it per half instead. Pearson's r is carried by a
+  few strong bins: a stationary comb the 20 ms `tonal_bins` misses (the
+  unit tests' in-phase 1 / k hum cancels in its Hann leakage on 20 ms
+  frames) read r up to 0.77 on hiss-only runs until the file's pause
+  spectrum was regressed out.
+- `audio_io.extract_wav` writes the extracted WAV in place and serves any
+  file already there: two scorers started on the same video at once read a
+  half-written file (SOTI scored 24 windows of 58 and an anchor of 8.0 s of
+  pauses, not 15.7). Extract first, or start the second scorer after.
 - A guard read as a mean over pause frames is carried by the few frames
   that straddle a gate's edges: `hiss_pump_db` read 20-50 dB pause gates at
   +8.2..+11.5 until it took medians.

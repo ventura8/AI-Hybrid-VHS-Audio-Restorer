@@ -1,8 +1,14 @@
 """Ear v4, reading 2: the tape hiss left in the pauses, the hiss-weighted pause floor over the threshold in quiet.
 
 Per window, on R4's true pauses (`pause_metrics.true_pause_mask` on the source: its quiet
-frames inside DSP-VAD non-speech runs of 200 ms or more), so the decision rests on the source
-and is the same for every candidate:
+frames inside DSP-VAD non-speech runs of 200 ms or more) less the runs whose source holds
+partials held across the run (`pause_partials.unsung`: the odd and the even 2048-point frames
+of the run agree on their fine spectrum, r >= 0.3; a window whose such runs held half its
+true-pause frames keeps none), so the decision rests on the source and is the same for every
+candidate. On Gaudeamus5 the sung runs left 606 of 2,369 true-pause frames and the vote 163
+more, 8 windows of 30 reading None; the speech tapes left 0 (Tele7abc, SOTI) and 23 of 3,036
+(Vaccin, no window); APL's frame fill read 13.14 at the tail, not 21.67, and the reference
+suppressor 0.00, not 6.43 (docs/ear_v4_hiss.md, "Sung Pauses"):
 
 1. 20 ms mean-square frames of both sides (`hiss_floor.ms_frames`) on the mask; the bins a
    tone holds on either side leave both (`pause_metrics.tonal_bins`: hum, which both engines
@@ -68,7 +74,7 @@ weighs the floor's high bands at their audibility rather than its level.
 import numpy as np
 import scipy.ndimage
 
-from scripts.restoration_quality import auditory, hiss_floor, pause_metrics
+from scripts.restoration_quality import auditory, hiss_floor, pause_metrics, pause_partials
 
 FRAME_S = pause_metrics.FRAME_S
 SMOOTH_BANDS = 5
@@ -358,16 +364,22 @@ def paired(bands, context, pause_s):
 def pause_readings(src, out, rate, context):
     """`{name: (source, output)}` for `PAUSE_NAMES` on one aligned window; every name None with under 25 true-pause frames.
 
-    A window whose source pauses held programme in every band of 2 kHz and up (`hiss_read`) reads None too.
+    A window whose source pauses held programme in every band of 2 kHz and up (`hiss_read`) reads None too, and so does
+    one whose true pauses were sung (`unsung_mask`).
     """
     prepared = window_pair(src, out, rate)
-    mask = None if prepared is None else pause_metrics.true_pause_mask(prepared[0][0], rate)[0]
+    mask = None if prepared is None else unsung_mask(prepared[0][0], rate, context.anchor)
     if mask is None or mask.sum() < pause_metrics.MIN_PAUSE_FRAMES:
         return hiss_floor.none_pairs(PAUSE_NAMES)
     bands = pause_bands(prepared[0], rate, mask, context.anchor, context.top_hz)
     if not hiss_read(bands):
         return hiss_floor.none_pairs(PAUSE_NAMES)
     return paired(bands, context, float(mask.sum() * prepared[1] / rate))
+
+
+def unsung_mask(source, rate, anchor):
+    """R4's true-pause mask of the window's source without its sung runs (`pause_partials.unsung`, the anchor's pause spectrum)."""
+    return pause_partials.unsung(source, rate, pause_metrics.true_pause_mask(source, rate), getattr(anchor, "pause_spectrum", None))
 
 
 def window_pair(src, out, rate):
