@@ -465,9 +465,12 @@ user set, with their reasons:
   preference head take ties through `reward.tie_floors`, which refuses a
   benign-pair report. The transforms live in `scripts/same_percept.py`, which
   names the subset each consumer reads. The pauses are read where the source is
-  silent apart from its hiss (blocks within 3 dB of its stationary hiss): R4's
-  quiet frames on a choir tape are soft singing, and a render that took the
-  singing out would otherwise win the pause family. The two hiss flags'
+  silent apart from its hiss (blocks within 3 dB of its stationary hiss), and a
+  pause run whose two interleaved half-spectra share held partials is left out
+  (`pause_partials.py`, 2026-10-18): R4's quiet frames on a choir tape are soft
+  singing, and a render that took the singing out would otherwise win the pause
+  family (Gaudeamus5's APL pause tail read 21.7 with the singing in, 13.1
+  without). The two hiss flags'
   thresholds are the user's rule, which no calibration and no gates file moves
   (`gates.USER_RULE_FIXED`). Only a blind session at a recorded device and
   volume moves the 75 dB SPL level.

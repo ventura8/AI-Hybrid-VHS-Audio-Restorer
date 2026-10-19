@@ -41,7 +41,9 @@ This module holds what both readings share:
   unvalidated window abstains from the ranked hiss readings rather than guess. When it is not
   validated, `hiss_stationary` may add a second anchor for the programme reading alone
   (`Anchor.programme`, chosen by `Anchor.for_programme`): continuous programme whose hiss shows
-  through every band.
+  through every band. The anchor also carries the mean per-bin power of those pause frames
+  (`Anchor.pause_spectrum`): the file's own fine structure (hum, buzz), which the pause
+  reading's sung-run test (`pause_partials`) regresses out of every run.
 """
 
 from dataclasses import dataclass
@@ -89,7 +91,8 @@ class Anchor:
     """The source's stationary floor per band (per-bin mean power, NaN where unread), and how it was read.
 
     `programme` is the second anchor `hiss_stationary` reads for the programme reading when this one is not validated
-    (None when it was not tried); the pause reading always reads this one.
+    (None when it was not tried); the pause reading always reads this one. `pause_spectrum` is the mean per-bin power
+    of its pause frames on `stft_power`'s grid (None without a pause frame).
     """
 
     level: np.ndarray | None
@@ -98,6 +101,7 @@ class Anchor:
     how: str
     validated: bool
     programme: "Anchor | None" = None
+    pause_spectrum: np.ndarray | None = None
 
     def for_programme(self):
         """The anchor the programme reading caps with and validates on: this one, or the second path's when only it validated."""
@@ -120,6 +124,7 @@ class Anchor:
             "how": self.how,
             "validated": bool(self.validated),
             "programme": None if self.programme is None else self.programme.to_dict(),
+            "pause_spectrum": nan_to_none(self.pause_spectrum),
         }
 
     @classmethod
@@ -128,7 +133,8 @@ class Anchor:
         centres = np.asarray(data.get("centres", []), dtype=np.float64)
         second = data.get("programme")
         programme = None if second is None else cls.from_dict(second)
-        return cls(none_to_nan(data.get("level")), centres, float(data["pause_s"]), str(data["how"]), bool(data["validated"]), programme)
+        verdict = (float(data["pause_s"]), str(data["how"]), bool(data["validated"]))
+        return cls(none_to_nan(data.get("level")), centres, *verdict, programme, none_to_nan(data.get("pause_spectrum")))
 
 
 def nan_to_none(values):
@@ -353,7 +359,10 @@ def chunked_pause_mask(mono, rate):
 
 
 def _segment_rows(segment, rate, mask20, start, top_hz):
-    """`(pause rows, live rows, centres)` of one 15 s segment's valley levels, or None when it is too short."""
+    """`(pause rows, live rows, centres, pause power)` of one 15 s segment, or None when it is too short.
+
+    The rows are valley levels; the pause power is the per-bin power summed over the pause rows' frames.
+    """
     if len(segment) < 4 * FRAME:
         return None
     freqs, power = stft_power(segment, rate)
@@ -361,20 +370,26 @@ def _segment_rows(segment, rate, mask20, start, top_hz):
     valley = valley_levels(power, tonal_exclusion(power, index), len(centres), band_shape(power))
     level = power.sum(axis=1)
     live = level > level.max() * 10.0 ** (-LIVE_RANGE_DB / 10.0)
-    return valley[frame_map(rate, len(power), mask20, start) & live], valley[live], centres
+    pause = frame_map(rate, len(power), mask20, start) & live
+    return valley[pause], valley[live], centres, power[pause].sum(axis=0)
 
 
 def anchor_rows(mono, rate, mask20, top_hz):
-    """`(pause rows, live rows, centres)` over every 15 s segment; centres None when no segment was long enough."""
+    """`(pause rows, live rows, centres, pause spectrum)` over every 15 s segment.
+
+    Centres are None when no segment was long enough; the pause spectrum is the mean per-bin power of every pause frame
+    (None without one).
+    """
     size = int(ANCHOR_SEGMENT_S * rate)
-    pause, live, centres = [], [], None
+    pause, live, centres, total = [], [], None, 0.0
     for start in range(0, len(mono), size):
         found = _segment_rows(mono[start:][:size], rate, mask20, start, top_hz)
         if found is not None:
             pause.append(found[0])
             live.append(found[1])
-            centres = found[2]
-    return pause, live, centres
+            centres, total = found[2], total + found[3]
+    count = sum(len(rows) for rows in pause)
+    return pause, live, centres, (total / count if count else None)
 
 
 def _level_of(rows, calib):
@@ -410,16 +425,16 @@ def anchor_validated(how, prog_bandwidth_hz, reference_count):
 
 def source_anchor(mono, rate, prog_bandwidth_hz=None, brickwall_hz=None):
     """The source's `Anchor` (module docstring), read once per file on its raw mono."""
-    pause, live, centres = anchor_rows(mono, rate, chunked_pause_mask(mono, rate), brickwall_hz)
+    pause, live, centres, spectrum = anchor_rows(mono, rate, chunked_pause_mask(mono, rate), brickwall_hz)
     if centres is None:
         return Anchor(None, np.zeros(0), 0.0, NO_FLOOR, False)
     pause_s = sum(len(rows) for rows in pause) * HOP / rate
     top = layout_top(rate, brickwall_hz)
     level, how = _anchor_level(pause, live, white_calibration(rate, top), pause_s)
     if level is None:
-        return Anchor(None, centres, pause_s, how, False)
+        return Anchor(None, centres, pause_s, how, False, pause_spectrum=spectrum)
     validated = anchor_validated(how, prog_bandwidth_hz, int(reference_bands(level, centres, prog_bandwidth_hz, top).sum()))
-    return Anchor(hiss_cap(level, centres, prog_bandwidth_hz, top), centres, pause_s, how, validated)
+    return Anchor(hiss_cap(level, centres, prog_bandwidth_hz, top), centres, pause_s, how, validated, pause_spectrum=spectrum)
 
 
 def loud_db(mono):
