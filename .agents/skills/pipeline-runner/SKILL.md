@@ -102,6 +102,15 @@ The local pipeline executes the following stages sequentially:
     (`mklink /J <worktree>\.venv <repo>\.venv`); the gate creates its own
     `.poetry-venv` there (ignored) and its `poetry install` against the
     junction reports "No dependencies to install" when the lock is current.
+    Before removing such a worktree, delete the junction itself first
+    (PowerShell `[System.IO.Directory]::Delete('<worktree>\.venv', $false)`,
+    which removes the link and never its target), and only then remove the
+    worktree (`git worktree remove`): a recursive delete that follows the
+    junction empties the main venv. Junctions made for a run (an
+    `artifacts` link to the main checkout's fixtures) go the same way as
+    soon as the run ends.
+    `New-Item -ItemType Junction` makes one from PowerShell; Git Bash
+    mangles `mklink /J`'s switch.
   - A worktree has none of the ignored assets (`experiments/`, `models/`,
     `experiments/quality_calibration/gates.json`,
     `experiments/reward/noise_floor_benign.json`): tests pass there, but
