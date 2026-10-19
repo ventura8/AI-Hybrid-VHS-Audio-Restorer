@@ -96,6 +96,15 @@ every other one. Exclusions belong in the properties file with a reason.
   even inside a function only win32 reaches (2026-10-12, `modules/ui.py`).
   Import it by name there, `importlib.import_module("msvcrt")`; a test can
   still put a stand-in in `sys.modules`.
+- **No writes relative to the launch directory**: a folder of tapes is often
+  untrusted (an extracted zip, a USB tree, a clone), and the app runs with it
+  as the working directory. Every file the app writes for itself (the session
+  log, a batch's per-file `logs/`) lives under `APP_DIR` and is opened with
+  `utils.open_private_log` (O_NOFOLLOW, an explicit symlink refusal on
+  Windows); a file's name goes through `utils.one_line` before it names a file
+  or prints, since a child's stdout is a log (security reviews of 2026-10-17
+  and 2026-10-19: a planted `logs/<stem>.log` link to `~/.bashrc` or
+  `~/.ssh/authorized_keys` plus a video named with a line break and a payload).
 - **Tests Are Not Exempt**: Tests must pass the exact same linters (`black`,
   `isort`, `ruff`, `flake8`, `pylint`, `radon`) as production modules.
 - **Radon Grades**: Every single block must be Cyclomatic Complexity Grade A

@@ -6,10 +6,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from modules.config import BATCH_JOBS, PROCESS_MODE
+from modules.config import APP_DIR, BATCH_JOBS, PROCESS_MODE
 from modules.processing import process_hybrid_audio
 from modules.ui import _get_input_files, _show_banner, run_init_sequence, stdin_is_console
-from modules.utils import check_dependencies
+from modules.utils import check_dependencies, one_line, open_private_log
+
+# The batch's per-file logs sit beside the application, like session_log.txt, never in the launch directory: a
+# folder of tapes shipping logs/<stem>.log as a symlink to ~/.bashrc or ~/.ssh/authorized_keys would otherwise have
+# each child's stdout, which prints the file's name, written through it (security review, 2026-10-19).
+BATCH_LOG_DIR = APP_DIR / "logs"
 
 # Ensure local modules can be imported
 sys.path.append(str(Path(__file__).parent))
@@ -123,7 +128,7 @@ def _run_restoration():
 def _report_failures(failed, total):
     """Names the files that failed or were skipped; returns them."""
     if failed:
-        print(f"[System] {len(failed)} of {total} files failed: {', '.join(failed)}")
+        print(f"[System] {len(failed)} of {total} files failed: {', '.join(one_line(name) for name in failed)}")
     return failed
 
 
@@ -143,15 +148,37 @@ def _restore_in_this_process(files, gpu_name):
     return [path.name for path in files if not process_hybrid_audio(path, gpu_name, target_output_dir=path.parent)]
 
 
+def _batch_log_dir():
+    """The per-file log folder beside the application, created; raises OSError when it is a symlink."""
+    if BATCH_LOG_DIR.is_symlink():
+        raise OSError(f"refusing to follow a symlinked batch log folder: {BATCH_LOG_DIR}")
+    BATCH_LOG_DIR.mkdir(exist_ok=True)
+    return BATCH_LOG_DIR
+
+
+# Characters no Windows file name may hold; a stem from Linux or macOS may carry them.
+_UNSAFE_NAME = str.maketrans(dict.fromkeys('<>:"/\\|?*', "_"))
+
+
+def batch_log_path(log_dir, video_path):
+    """`<log_dir>/<stem>.log`, the stem on one line and valid on every platform: a line break in a file's name never
+    reaches a log's name, and no character in it can name a folder."""
+    return Path(log_dir) / f"{one_line(video_path.stem).translate(_UNSAFE_NAME)}.log"
+
+
 def _run_parallel_batch(files, jobs):
-    """Restores `files` `jobs` at a time, each in its own interpreter with its own log under logs/.
+    """Restores `files` `jobs` at a time, each in its own interpreter with its own log beside the application.
 
     A child is this same entry point on one file, so every file keeps the exact output of a
-    solo run (its own work directory, its own scanner profile); the parent only reports.
+    solo run (its own work directory, its own scanner profile); the parent only reports. A
+    symlinked log folder stops the batch before anything runs.
     """
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    print(f"[System] {len(files)} files, {jobs} at a time; per-file logs under {log_dir}/")
+    try:
+        log_dir = _batch_log_dir()
+    except OSError as exc:
+        print(f"[System] {exc}; nothing was restored.")
+        return _report_failures([path.name for path in files], len(files))
+    print(f"[System] {len(files)} files, {jobs} at a time; per-file logs under {log_dir}")
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         results = list(pool.map(lambda path: _restore_in_child(path, log_dir), files))
     failed = [path.name for path, code in zip(files, results) if code != 0]
@@ -159,11 +186,11 @@ def _run_parallel_batch(files, jobs):
 
 
 def _restore_in_child(video_path, log_dir):
-    """One file through a child interpreter; returns its exit code."""
-    log_path = log_dir / f"{video_path.stem}.log"
+    """One file through a child interpreter, its stdout in a log opened refusing a symlink; returns its exit code."""
+    log_path, name = batch_log_path(log_dir, video_path), one_line(video_path.name)
     started = time.time()
-    print(f"[Batch] start  {video_path.name}")
-    with open(log_path, "w", encoding="utf-8") as log:
+    print(f"[Batch] start  {name}")
+    with open_private_log(log_path, truncate=True) as log:
         completed = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), str(video_path)],
             stdin=subprocess.DEVNULL,
@@ -173,7 +200,7 @@ def _restore_in_child(video_path, log_dir):
             check=False,
         )
     state = "done  " if completed.returncode == 0 else f"FAILED ({completed.returncode})"
-    print(f"[Batch] {state} {video_path.name} in {time.time() - started:.0f} s (log: {log_path})")
+    print(f"[Batch] {state} {name} in {time.time() - started:.0f} s (log: {log_path})")
     return completed.returncode
 
 

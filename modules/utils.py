@@ -149,10 +149,20 @@ def _should_print_log(console, effective_level):
     return console
 
 
+def _console_text(message):
+    """The console form of a log message: its leading line breaks kept (spacing), every other line break or control
+    character a space. A batch child's stdout is that file's log, so a line break in a file's name must not print as a
+    line of its own (security review, 2026-10-19); the session log collapses the same way (`one_line`)."""
+    message = str(message)
+    body = message.lstrip("\n")
+    lead, body = "\n" * (len(message) - len(body)), one_line(body)
+    return lead + (body if body.startswith("   ") else f"   {body}")
+
+
 def _print_log_message(message):
     sys.stdout.write("\r\033[K")
     sys.stdout.flush()
-    text = f"   {message}" if not message.startswith("   ") else message
+    text = _console_text(message)
     try:
         print(text)
     except UnicodeEncodeError:
@@ -187,25 +197,32 @@ def _rotate_if_over(log_file, limit):
 _LOG_CONTROL = str.maketrans(dict.fromkeys([*range(0x00, 0x09), *range(0x0A, 0x20), 0x7F, 0x85, 0x2028, 0x2029], " "))
 
 
-def _one_line(message):
+def one_line(message):
     """`message` as a single log line: every line break and control character becomes a space."""
     return str(message).translate(_LOG_CONTROL)
 
 
-def _open_log_for_append(log_file):
-    """The session log opened for appending, refusing a symlink (O_NOFOLLOW where the platform has it)."""
+def open_private_log(log_file, truncate=False):
+    """A log opened for writing (appended to, or truncated), refusing a symlink: O_NOFOLLOW where the platform has it,
+    and an explicit check where it does not (Windows), so a planted link never redirects the write to another file."""
     log_file = Path(log_file)
     if log_file.is_symlink():
-        raise OSError(f"refusing to follow a symlinked session log: {log_file}")
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-    return os.fdopen(os.open(str(log_file), flags, 0o600), "a", encoding="utf-8")
+        raise OSError(f"refusing to follow a symlinked log: {log_file}")
+    mode = os.O_TRUNC if truncate else os.O_APPEND
+    flags = os.O_WRONLY | os.O_CREAT | mode | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    return os.fdopen(os.open(str(log_file), flags, 0o600), "w" if truncate else "a", encoding="utf-8")
+
+
+def _open_log_for_append(log_file):
+    """The session log opened for appending, refusing a symlink."""
+    return open_private_log(log_file)
 
 
 def _append_log_file(effective_level, clean_msg):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _rotate_log_file()
     with _open_log_for_append(LOG_FILE) as f:
-        f.write(f"[{timestamp}] [{effective_level:5}] {_one_line(clean_msg)}\n")
+        f.write(f"[{timestamp}] [{effective_level:5}] {one_line(clean_msg)}\n")
 
 
 def log_msg(message, is_error=False, console=True, level="INFO"):

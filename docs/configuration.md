@@ -1982,7 +1982,15 @@ them. See `docs/validation.md`, "Output validation harness".
 
 `batch_jobs` (default 1) is how many files restore at the same time when a
 folder or several files are given. Each file runs in a child interpreter on
-its own, with its own work directory and a log under `logs/<name>.log`, so
+its own, with its own work directory and a log under `logs/<name>.log` in the
+application's folder, beside `session_log.txt` and never in the launch
+directory. The log is opened refusing a symlink (`O_NOFOLLOW` where the
+platform has it), a symlinked `logs/` folder stops the batch before anything
+runs, and a file's name reaches the log's name and the console on one line,
+with the characters Windows forbids replaced: a folder of tapes that shipped
+`logs/<stem>.log` as a link to `~/.bashrc` or `~/.ssh/authorized_keys`, and a
+video named with a line break and a payload, had each child's output, which
+prints the name, written through the link (security review, 2026-10-19). So
 its output is bit-identical to a solo run and a failure in one file leaves the
 others alone; the parent prints start, finish and the failed files. cathar is
 single-threaded on every stage (measured on a 134 s tape: the SBR enhance
