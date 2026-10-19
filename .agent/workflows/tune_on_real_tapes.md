@@ -138,8 +138,11 @@ skill holds the readings, their status and the measured facts behind them.
    `--grid scripts/tune_grids/tata_v4.yaml` (speech) or `music_v4.yaml`.
    Before a v4 round, write the hiss jitter report on the shipped outputs
    (`python -m scripts.reward_noise_floor SOURCE=OUTPUT ...` with
-   `--transforms hiss`, `--repeats 2`, `--families dsp`, `--max-seconds 125`
-   and `--out experiments/reward/noise_floor_hiss.json`) and check each grid
+   `--transforms hiss`, `--repeats 2`, `--families dsp`, `--max-seconds 600`
+   so it reads whole tapes as the loop does (at 125 s the programme ties read
+   0.24 / 0.21 where whole tapes read 0.359 / 0.413, and a tape whose
+   excerpt keeps one pause window reads its pause scatter far too wide), and
+   `--out experiments/reward/noise_floor_hiss.json`) and check each grid
    `tie` against it (the report's `tie_floor` for that flat key, the widest
    transform's p95, rounded up to 0.05; the pooled `floor` dilutes the fresh
    draws). The loop bands each hiss entry with that tie (or the entry's

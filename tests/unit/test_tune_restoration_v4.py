@@ -21,8 +21,8 @@ PAUSE_HISS = "listener.hiss_pause"
 BASELINE, GATE_B = "r1_tele7abc/cathar__baseline", "gate_tele7abc/B"
 SHAPE = ("dsp.gap_slope_db_oct.output.median", "dsp.gap_spread_db.output.median", "dsp.gap_lsd_db.output.median")
 HISS_TATA = {
-    H1: (3.0, 0.3, "hiss_programme"),
-    ALL_BAND: (1.5, 0.25, "hiss_programme"),
+    H1: (3.0, 0.4, "hiss_programme"),
+    ALL_BAND: (1.5, 0.45, "hiss_programme"),
     H2: (3.0, 0.35, "hiss_pause"),
     PAUSE_MEDIAN: (1.5, 0.35, "hiss_pause"),
 }
@@ -33,7 +33,7 @@ NOISE_VETOES = {
     "mos.sigmos_noise.delta.median": {"worse": "down", "floor_multiple": 1},
 }
 TATA_CONSTRAINTS = {
-    H1: {"worse": "up", "max_move": 0.3},
+    H1: {"worse": "up", "max_move": 0.4},
     H2: {"worse": "up", "max_move": 0.35},
     "dsp.hiss_prog_margin_db.delta.median": {"worse": "up", "bound": 0.35},
     PAUSE_DELTA: {"worse": "up", "bound": 0.35},

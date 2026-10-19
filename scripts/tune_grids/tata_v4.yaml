@@ -300,8 +300,13 @@ ranking:
   # every one (gain and soxr 0.0001 at most, delay 0.005, requantisation 0.059 on the margin and excess keys). Round 1
   # took the pooled p95 over all eight transforms, which the five that move these readings by about 0 diluted (pause
   # tail 0.17 against a fresh-draw p95 of 0.50-0.80 then), so H1 refused a same-percept redraw.
-  dsp.hiss_prog_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.3, family: hiss_programme}
-  dsp.hiss_prog_excess_all_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.25, family: hiss_programme}
+  # Re-derived on whole tapes (2026-10-19, the same eight pairs and recipe with --max-seconds 600, on the code with the
+  # sung-pause step): the loop reads whole tapes, and there the programme readings scatter more than in the first 125 s
+  # (programme excess median 0.24 -> 0.359, all-band 0.21 -> 0.413), so their ties are 0.40 and 0.45 (H1's max_move
+  # 0.40 with them). The pause ties stay 0.35: whole tapes read 0.264 (tail) and 0.181 (median), where the 125 s
+  # report read 0.865 / 0.544 once the sung-pause step left Gaudeamus5's excerpt one window (docs/ear_v4_hiss.md).
+  dsp.hiss_prog_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.4, family: hiss_programme}
+  dsp.hiss_prog_excess_all_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.45, family: hiss_programme}
   # --- v4: hiss in the pauses (hiss_pause.py; family hiss_pause): the hissiest tenth of windows and the median.
   dsp.hiss_pause_excess_db.output.tail: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 3.0, tie: 0.35, family: hiss_pause}
   dsp.hiss_pause_excess_db.output.median: {target: 0.0, dead_zone: 0.0, scale: 1.0, weight: 1.5, tie: 0.35, family: hiss_pause}
@@ -361,7 +366,7 @@ constraints:
   # its pause tail at -0.39 against the baseline's -6.01, both excess 0; Vaccin's excess rises 0.14 (+0.85 against
   # +0.71), within the tie. Tele7abc's alpha 2.0 on cathar 0.7.3 and its beta 0.005 ("has hiss", round one) trip it
   # (1.34 / 0.98), the cleared renders do not (docs/ear_v4_hiss.md).
-  dsp.hiss_prog_excess_db.output.median: {worse: up, max_move: 0.3}
+  dsp.hiss_prog_excess_db.output.median: {worse: up, max_move: 0.4}
   dsp.hiss_pause_excess_db.output.tail: {worse: up, max_move: 0.35}
   # H2: never hissier than the raw tape; bound = the delta key's own tie floor rounded up to 0.05
   # (programme 0.327 -> 0.35, pause tail 0.319 -> 0.35).

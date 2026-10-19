@@ -1723,8 +1723,8 @@ default `--grid` of `autotune_restoration.py` and `tune_restoration.py`;
 the v3 grids stay for reproducibility.
 
 - `tata_v4`: v3's ranking without R4's slope, spread and LSD (display only),
-  plus `dsp.hiss_prog_excess_db.output.median` (weight 3.0, tie 0.30),
-  `dsp.hiss_prog_excess_all_db.output.median` (1.5, 0.25),
+  plus `dsp.hiss_prog_excess_db.output.median` (weight 3.0, tie 0.40),
+  `dsp.hiss_prog_excess_all_db.output.median` (1.5, 0.45),
   `dsp.hiss_pause_excess_db.output.tail` (3.0, 0.35) and `.median` (1.5, 0.35),
   each one-sided (target 0, dead zone 0, scale 1). The vetoes are v3's six plus
   DNSMOS BAK and SIGMOS NOISE (floor multiple 1): the guards line reads "8
@@ -1735,7 +1735,12 @@ the v3 grids stay for reproducibility.
   entries, nine relative constraints (accepted music finals sit outside
   music_v3's uncalibrated R1 dead zones).
 - `tie` is the jitter report's `tie_floor` for that flat key (the widest
-  same-percept transform's p95), rounded up to 0.05: programme excess median
+  same-percept transform's p95), rounded up to 0.05, read on whole tapes since
+  2026-10-19 (`--max-seconds 600`: the loop reads whole tapes, and there the
+  programme readings scatter more, excess median 0.359 -> 0.40 and all-band
+  0.413 -> 0.45 in `tata_v4`, H1's `max_move` 0.40 with them; the pause
+  entries keep 0.35, reading 0.264 and 0.181 whole; music_v4 keeps the 125 s
+  values below). The 125 s values: programme excess median
   0.294 -> 0.30, all-band 0.239 -> 0.25, pause excess tail 0.319 -> 0.35,
   median 0.331 -> 0.35 (`experiments/reward/noise_floor_hiss.json`'s recipe,
   re-run by the adversarial review of 2026-10-12 on the fixed pause reading
