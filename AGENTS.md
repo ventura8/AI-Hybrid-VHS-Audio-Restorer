@@ -147,9 +147,17 @@ The engine supports 10 execution modes configured in `config.yaml`:
     pauses below 8 kHz (an interview's quietest 4 s hold speech). On CPU
     replay with the per-frame fill shelved at 2 kHz by 30 dB, the hiss read
     inaudible under speech and in the pauses of Tele7abc, SOTI and Vaccin
-    (Gaudeamus5's pauses 21.7 to 6.4) with every v4 guard passing; not yet
-    rendered or heard (`docs/configuration.md`, "Reference-SNR
-    Suppressor").
+    (Gaudeamus5's pauses 21.7 to 6.4) with every v4 guard passing. The
+    APL v9 loop rendered it on the Tata tapes: round 2 accepted it with the
+    per-frame fill shelved at 2 kHz (fill 18 dB), the hiss under speech and
+    in the pauses reading 0 on Tele7abc, SOTI and Vaccin (Gaudeamus5's pause
+    tail 0.18), and round 3 plateaued there (2026-10-20); not yet heard
+    (`docs/configuration.md`, "Reference-SNR Suppressor"). Its programme
+    release (`apl_reference_release_db`, 2026-10-20, 0 = off) eases the
+    gain where the neural output stands over the source's print: the masks
+    multiply, and 5 of 63 IA clips past the depth line had tripped a guard;
+    at 3 dB the top band came back on the three that crossed -1 dB, the
+    hiss excess moving under 0.45 dB.
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing
@@ -266,7 +274,8 @@ The engine supports 10 execution modes configured in `config.yaml`:
     7.8 / 11.6 dB over its masked threshold to 0 on the four Tata tapes and
     the pause tail to 3.3 / 0 / 0 / 11.3, every v4 guard passing; not yet
     rendered by the loop or heard (`docs/configuration.md`, "Reference-SNR
-    Suppressor").
+    Suppressor"). `cathar_reference_release_db` (0, off) is the same
+    programme release on cathar's output.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

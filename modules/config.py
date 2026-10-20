@@ -441,6 +441,13 @@ _NUMERIC_CONFIG_FIELDS = (
     # A band acts only where the neural stage left its gaps at least this deep. Read only with
     # the ceiling on; not yet judged by ear.
     ("apl_burst_ceiling_depth_db", float, 30.0, 0.0, 120.0),
+    # The reference suppressor's programme release (modules/spectral_suppress.py, RELEASE_SPAN_DB): where the
+    # restored audio stands this many dB over the source's print the gain eases toward 1, fully 6 dB higher.
+    # CPU replay on 19 IA hunt clips (2026-10-20): at 3 dB the top band came back past -1 dB on the three clips
+    # the suppressor had pushed over it and the soft programme 1.5-2 dB, the hiss excess moving under 0.45 dB.
+    # 0 (off): the suppressor and its outputs keep their bytes.
+    ("apl_reference_release_db", float, 0.0, 0.0, 40.0),
+    ("cathar_reference_release_db", float, 0.0, 0.0, 40.0),
     # Plosive control: how far the low band must rise over its own running level, in dB,
     # to be read as a plosive burst. 0 switches detection off, like `apl_depop_threshold`.
     # Set by the measurement in `apl_enable_plosive_tamer`.
@@ -1313,6 +1320,7 @@ CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))
 CATHAR_DEPLOSIVE_STRENGTH = int(CONFIG.get("cathar_deplosive_strength", 4))
 CATHAR_ENABLE_DEESSER = bool(CONFIG.get("cathar_enable_deesser", True))
 CATHAR_REFERENCE_SUPPRESS = bool(CONFIG.get("cathar_reference_suppress", False))
+CATHAR_REFERENCE_RELEASE_DB = float(CONFIG.get("cathar_reference_release_db", 0.0))
 CATHAR_DEESSER_BANDS = int(CONFIG.get("cathar_deesser_bands", 3))
 CATHAR_DEESSER_FREQ = int(CONFIG.get("cathar_deesser_freq", 4000))
 CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", 12.0))
@@ -1420,6 +1428,7 @@ LINEAR_AIR_FREQ_HZ = float(CONFIG.get("linear_air_freq_hz", 7500.0))
 LINEAR_AIR_GATE = str(CONFIG.get("linear_air_gate", "none"))
 APL_POST_NEURAL_SUPPRESS = bool(CONFIG.get("apl_post_neural_suppress", False))
 APL_REFERENCE_SUPPRESS = bool(CONFIG.get("apl_reference_suppress", False))
+APL_REFERENCE_RELEASE_DB = float(CONFIG.get("apl_reference_release_db", 0.0))
 APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB = float(CONFIG.get("apl_post_neural_suppress_floor_gap_db", 3.0))
 APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB = float(CONFIG.get("apl_post_neural_suppress_min_residual_db", 6.0))
 APL_NEURAL_LEVEL_RESTORE = bool(CONFIG.get("apl_neural_level_restore", False))

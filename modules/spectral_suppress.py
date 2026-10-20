@@ -86,6 +86,16 @@ QUANTILE_BIAS_DB = 2.0
 DEPTH_BAND_HZ = (300.0, 3000.0)
 DEPTH_LOUD_PERCENTILE = 90.0
 MIN_DEPTH_DB = 23.0
+# The programme release (`release_db`, off at 0). The masks multiply, so a cell the neural stage kept
+# loses the source-SNR gain too: soft programme 0-10 dB over the source's hiss lost 2-9 dB, and on 5
+# of the 63 IA hunt clips past MIN_DEPTH_DB a v4 guard tripped (the top band past -1 dB, the loud HF
+# past -6 dB). Hiss the restoring stage left sits at or under the print (its mask is at most one), so
+# where the restored frame stands `release_db` over the print the gain eases toward 1 in dB, fully
+# released RELEASE_SPAN_DB higher; the frame's power is a three-bin mean, so a hiss cell's periodogram
+# seldom crosses. CPU replay (2026-10-20, 19 IA clips): at 3 dB the top band came back on the three
+# clips that crossed -1 dB, soft programme 1.5-2 dB, the hiss excess moved under 0.45 dB.
+RELEASE_SPAN_DB = 6.0
+RELEASE_SMOOTH = np.ones(3) / 3.0
 
 
 def _window():
@@ -278,16 +288,28 @@ class ReferenceSuppressor(Suppressor):
     and a cell where the programme stood over the hiss keeps its level.
     """
 
-    def __init__(self, noise, noise_bias, gain_floor_db, dd_alpha):
+    def __init__(self, noise, noise_bias, gain_floor_db, dd_alpha, release_db=0.0):
         super().__init__(noise, noise_bias, gain_floor_db, dd_alpha)
         self.tracker = HeldLevel()
+        self.release_db = release_db
 
     def apply_pair(self, reference, restored):
         """Gains every restored frame of a block by the gain its reference frame reads, in order."""
         out = np.empty_like(restored)
         for index, (ref_frame, frame) in enumerate(zip(reference, restored)):
-            out[index] = frame * self._gain(np.mean(np.abs(ref_frame) ** 2, axis=0))[None, :]
+            gain = self._gain(np.mean(np.abs(ref_frame) ** 2, axis=0))
+            out[index] = frame * self._released(gain, frame)[None, :]
         return out
+
+    def _released(self, gain, frame):
+        """The gain eased toward 1 in dB where the restored frame stands `release_db` to `release_db` +
+        RELEASE_SPAN_DB over the print (programme the restoring stage kept); the gain itself with the release off."""
+        if self.release_db <= 0.0:
+            return gain
+        power = np.convolve(np.mean(np.abs(frame) ** 2, axis=0), RELEASE_SMOOTH, mode="same")
+        over_db = 10.0 * np.log10(np.maximum(power, EPS) / self.noise)
+        weight = np.clip((over_db - self.release_db) / RELEASE_SPAN_DB, 0.0, 1.0)
+        return gain ** (1.0 - weight)
 
 
 def _resynthesise(spectrum):
@@ -347,10 +369,10 @@ def suppress_file(source_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, p
     return Path(target_wav)
 
 
-def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, gain_floor_db, dd_alpha):
-    """Writes the restored recording gained by the reference's SNR (`ReferenceSuppressor`); returns the target, or None
-    when the reference holds too few live windows to learn its noise from or its print holds programme (MIN_DEPTH_DB).
-    Raises when the two rates differ."""
+def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, release_db=0.0):
+    """Writes the restored recording gained by the reference's SNR (`ReferenceSuppressor`, its programme release at
+    `release_db`, 0 off); returns the target, or None when the reference holds too few live windows to learn its noise
+    from or its print holds programme (MIN_DEPTH_DB). Raises when the two rates differ."""
     noise, depth = reference_noise(reference_wav)
     if noise is None:
         log_msg("    [Reference Suppress] Too little live audio in the source to learn its noise from.")
@@ -370,7 +392,7 @@ def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, g
     ):
         if reference.samplerate != restored.samplerate:
             raise ValueError(f"reference {reference.samplerate} Hz and restored {restored.samplerate} Hz do not match")
-        suppressor = ReferenceSuppressor(noise, noise_bias, gain_floor_db, dd_alpha)
+        suppressor = ReferenceSuppressor(noise, noise_bias, gain_floor_db, dd_alpha, release_db)
 
         def gained(first, last):
             """The restored frames [first, last) gained by their reference frames."""

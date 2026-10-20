@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .. import reference_suppress
-from ..config import CATHAR_REFERENCE_SUPPRESS
+from ..config import CATHAR_REFERENCE_RELEASE_DB, CATHAR_REFERENCE_SUPPRESS
 from .base import BaseRestorationMode
 
 
@@ -12,7 +12,8 @@ def reference_suppressed(source_wav, restored_wav, audio_dir):
     """cathar's output gained by the source's SNR when `cathar_reference_suppress` is on; as it came otherwise."""
     if not CATHAR_REFERENCE_SUPPRESS:
         return restored_wav
-    return reference_suppress.suppress(source_wav, restored_wav, audio_dir, reference_suppress.CATHAR_SETTINGS)
+    settings = reference_suppress.with_release(reference_suppress.CATHAR_SETTINGS, CATHAR_REFERENCE_RELEASE_DB)
+    return reference_suppress.suppress(source_wav, restored_wav, audio_dir, settings)
 
 
 class CatharMode(BaseRestorationMode):

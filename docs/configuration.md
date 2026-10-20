@@ -1073,6 +1073,48 @@ So the line is 23 dB. Even past it the suppressor trips a guard on 8 % of
 these clips: it is a loop knob, not a default, until a per-file check or
 the user's ear says otherwise.
 
+The programme release (`apl_reference_release_db`,
+`cathar_reference_release_db`, 0 = off; 2026-10-20). Of the nine clips
+that tripped at the 18 dB line, four run no suppressor at 23 dB. Five
+remain past it: Audra McDonald (`balance_top_db` -0.97 to -1.71), F1 1980
+(-0.20 to -1.73, `lkr` 1.69 to 1.82), Steve Coogan (-0.85 to -1.04), the
+Yorkshire continuity (kept HF -3.23 to -7.12) and Captain Pugwash (`lkr`
+0.49 to 1.82). The masks multiply, so a cell the neural stage kept as
+programme loses the source-SNR gain too; the soft programme 6-18 dB over
+the hiss lost 2-9 dB on every clip the suppressor ran on. Hiss the stage
+left sits at or under the source's print (its mask is at most one), so
+where the restored frame's power (a three-bin mean) stands `release_db`
+over the print the gain eases toward 1 in dB, fully released
+`RELEASE_SPAN_DB` (6) higher. CPU replay on 19 clips (the nine, and the ten
+whose pause tail the suppressor cut most; nine of the 19 run it at 23 dB),
+the same replay as above:
+
+| clip | reading | none | shipped | 6 dB | 3 dB |
+|---|---|---|---|---|---|
+| Audra McDonald | top | -0.97 | -1.71 | -1.06 | -1.00 |
+| | soft | -2.06 | -8.72 | -7.99 | -6.96 |
+| F1 1980 | top | -0.20 | -1.73 | -0.63 | -0.37 |
+| Steve Coogan | top | -0.85 | -1.04 | -0.86 | -0.85 |
+| | soft | -1.68 | -4.44 | -3.45 | -2.80 |
+| Yorkshire | under programme | 14.27 | 1.80 | 1.82 | 2.14 |
+| | kept HF | -3.23 | -7.12 | -6.75 | -6.66 |
+| Das Chaos Duo | under programme | 18.37 | 4.13 | 4.12 | 4.30 |
+| | pause tail | 17.65 | 1.94 | 1.87 | 1.92 |
+| TV Comedy 1975-96 | pause tail | 22.37 | 6.82 | 6.99 | 7.25 |
+| | pump | 33.00 | 5.45 | 5.60 | 6.40 |
+| Get There Quick | soft | 0.27 | -5.72 | -4.95 | -3.91 |
+
+At 3 dB the top band comes back on the three clips that crossed -1 dB
+(Audra's at -1.00, on the bound) and the soft programme 1.5-2 dB; the hiss
+excess moves under 0.45 dB, inside or at the ties (0.40 under the
+programme, 0.35 in the pauses). Not cured: Yorkshire's kept HF, whose loss
+sits in cells the neural stage left under the print, where the release
+cannot tell programme from hiss, and Pugwash's `lkr` (1.82 at every
+release: its print sits 61 dB down, so what moved it is not the gain on the
+programme). The app's release reproduced the prototype's samples exactly
+on two of the clips. Both keys are loop knobs (0, 3, 6), read only with
+their engine's suppressor on; off, every output keeps its bytes.
+
 The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the
 neural stage. Off, every output keeps its bytes; the loop and a listening

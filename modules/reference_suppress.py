@@ -10,6 +10,10 @@ stage's mask and the source's SNR multiply, so it can only remove. Two keys reac
 - `cathar_reference_suppress`, on cathar's output before the polish (`modules/modes/cathar.py`),
   at the same estimator's shipped settings (`CATHAR_SETTINGS`).
 
+`apl_reference_release_db` and `cathar_reference_release_db` (0, off) ease the gain toward 1
+where the restored audio stands that far over the source's print, programme the restoring stage
+kept (`spectral_suppress.RELEASE_SPAN_DB`).
+
 On CPU replay on the four Tata tapes with the per-frame pause fill shelved at 2 kHz by 30 dB
 it took the hiss under speech to inaudible on both engines (`docs/configuration.md`,
 "Reference-SNR Suppressor"). The output's name carries the settings, so a changed setting is
@@ -27,6 +31,12 @@ from .utils import is_valid_audio, log_msg
 STAGE = "reference_suppress"
 # cathar's settings: the estimator's own (auto_pure_linear's apl_suppress_* defaults).
 CATHAR_SETTINGS = {"noise_bias": 1.0, "gain_floor_db": -20.0, "dd_alpha": 0.96}
+
+
+def with_release(settings, release_db):
+    """`settings` plus the programme release (`spectral_suppress.RELEASE_SPAN_DB`) when it is on; as they are at 0, so
+    an output made with the release off keeps its name and its bytes."""
+    return {**settings, "release_db": float(release_db)} if release_db > 0.0 else dict(settings)
 
 
 def target_for(restored_wav, audio_dir, settings):

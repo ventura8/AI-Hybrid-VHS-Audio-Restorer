@@ -867,6 +867,18 @@ cathar_dereverb_strength: 2.0
 #     31.0 to 3.3 / 0 / 0 / 11.3, every v4 guard passing.
 #     false (Default): cathar keeps its bytes.
 #
+# apl_reference_release_db / cathar_reference_release_db:
+#   - The reference suppressor's programme release. The two masks multiply, so a
+#     cell the restoring stage kept as programme loses the source-SNR gain as well:
+#     soft programme 0-10 dB over the source's hiss lost 2-9 dB, and on 5 of the 63
+#     IA hunt clips past the 23 dB depth line a v4 guard tripped. Hiss the stage
+#     left sits at or under the source's print, so where the restored audio stands
+#     this many dB over the print the gain eases toward 1, fully 6 dB higher. CPU
+#     replay on 19 IA clips: at 3 dB the top band came back past -1 dB on the
+#     three clips that had crossed it, the soft programme 1.5-2 dB, the hiss excess
+#     moving under 0.45 dB. Read only with the engine's reference suppressor on.
+#     0 (Default): off, every output keeps its bytes.
+#
 # apl_neural_level_restore (auto_pure_linear only):
 #   - The separator peak-normalises to 0.9, so a hot or declipped tape leaves the
 #     neural stage up to 10.7 dB quieter (fourstarrevue) and the expander's knee and
@@ -970,6 +982,8 @@ apl_post_neural_suppress_floor_gap_db: 3.0
 apl_post_neural_suppress_min_residual_db: 6.0
 apl_reference_suppress: false
 cathar_reference_suppress: false
+apl_reference_release_db: 0.0
+cathar_reference_release_db: 0.0
 apl_neural_level_restore: false
 apl_burst_ceiling: "none"
 apl_burst_ceiling_depth_db: 30.0

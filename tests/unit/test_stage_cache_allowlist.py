@@ -56,6 +56,7 @@ READ_SITES = {
     "apl_post_neural_suppress_floor_gap_db": ("APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB", {"post_neural_suppress.py:*"}),
     "apl_post_neural_suppress_min_residual_db": ("APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB", {"post_neural_suppress.py:*"}),
     "apl_reference_suppress": ("APL_REFERENCE_SUPPRESS", {"post_neural_suppress.py:*"}),
+    "apl_reference_release_db": ("APL_REFERENCE_RELEASE_DB", {"post_neural_suppress.py:*"}),
     "linear_air_gate": ("LINEAR_AIR_GATE", {"post_neural_suppress.py:*"}),
     "apl_neural_level_restore": ("APL_NEURAL_LEVEL_RESTORE", {"neural_level.py:*"}),
     # The burst ceiling after the polish.

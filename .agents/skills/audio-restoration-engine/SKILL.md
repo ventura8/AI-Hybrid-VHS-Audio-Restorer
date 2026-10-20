@@ -765,7 +765,27 @@ audio alignment, or FFmpeg multiplexing.
   -4.20 on Gaudeamus5. Replaying cathar needs the scan's strategy, which
   cathar never stores; the APL stage cache's `key.json` (`call.strategy`)
   for the same tape served, and the shipped replay matched cathar's own
-  output exactly.
+  output exactly. The APL v9 loop accepted the suppressor in round 2 (with
+  the per-frame fill shelved at 2 kHz, fill 18 dB) and plateaued there in
+  round 3 (2026-10-20).
+- **Reference suppressor's programme release (2026-10-20)**:
+  `apl_reference_release_db` / `cathar_reference_release_db` (0, off;
+  `ReferenceSuppressor._released`, `RELEASE_SPAN_DB` 6). Of the IA trips
+  past the 23 dB line, three were the top band crossing -1 dB (Audra
+  McDonald, F1 1980, Steve Coogan): the masks multiply, so programme the
+  neural stage kept lost the source-SNR gain too, and the soft programme
+  6-18 dB over the hiss lost 2-9 dB on every clip the suppressor ran on.
+  Residual hiss sits at or under the source's print (the stage's mask is at
+  most one), so the gain eases toward 1 in dB where the restored frame's
+  three-bin power stands `release_db` over the print. On 19 IA clips at
+  3 dB: those three back within the bound (Audra at -1.00), soft programme
+  1.5-2 dB back, hiss excess up 0.45 dB at most. The tripped clips were
+  not musical (tonal persistence median 0.013, as for the rest), so a music
+  gate would not have helped. Not cured: Yorkshire's kept HF (its loss sits
+  under the print) and Pugwash's `lkr` (print 61 dB down, unmoved by any
+  release). Prototype and stage in `D:/ai_restore_work/scratch_relguard`
+  (`replay_guard.py`, `run.sh`, `table.py`); the app's release reproduced
+  the prototype's samples exactly.
 - **APL burst ceiling (2026-10-12)**: `apl_burst_ceiling` (`none`, `gaps`,
   `edges`) and `apl_burst_ceiling_depth_db` (30), `modules/burst_ceiling.py`
   between the polish and the pause floor (`docs/configuration.md`,

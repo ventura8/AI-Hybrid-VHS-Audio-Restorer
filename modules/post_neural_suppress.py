@@ -61,6 +61,7 @@ from .config import (
     APL_POST_NEURAL_SUPPRESS,
     APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB,
     APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB,
+    APL_REFERENCE_RELEASE_DB,
     APL_REFERENCE_SUPPRESS,
     APL_SUPPRESS_DD_ALPHA,
     APL_SUPPRESS_GAIN_FLOOR_DB,
@@ -175,7 +176,7 @@ def _reference_settings():
     """The reference suppressor's settings: the mode's suppressor keys (it learns no probe)."""
     settings = _settings()
     del settings["probe_s"]
-    return settings
+    return reference_suppress.with_release(settings, APL_REFERENCE_RELEASE_DB)
 
 
 def suppress_by_reference(source_wav, restored_wav, audio_dir):

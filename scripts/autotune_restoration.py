@@ -274,6 +274,8 @@ KNOBS = {
         "cathar_noiseprint_method": ["window", "quantile"],
         # The reference-SNR suppressor on cathar's output (modules/reference_suppress.py), ungated.
         "cathar_reference_suppress": [False, True],
+        # Its programme release: the gain eased toward 1 where cathar's output stands this far over the print.
+        "cathar_reference_release_db": [0.0, 3.0, 6.0],
         **SHARED_KNOBS,
     },
     # On the Tata tapes the scanner reads a spectral flatness of 0.022 (< apl_tonal_flatness_max 0.035),
@@ -325,6 +327,8 @@ KNOBS = {
         "apl_post_neural_suppress_min_residual_db": [3.0, 6.0, 9.0],
         # The reference-SNR suppressor: the gain read on the source, applied after the neural stage (ungated).
         "apl_reference_suppress": [False, True],
+        # Its programme release: the gain eased toward 1 where the neural output stands this far over the print.
+        "apl_reference_release_db": [0.0, 3.0, 6.0],
         "apl_neural_level_restore": [False, True],
         "linear_air_gate": ["none", "hiss_dominated"],
         "apl_burst_ceiling": ["none", "gaps", "edges"],
@@ -475,6 +479,7 @@ INERT_WHEN = {
             ("apl_suppress_gain_floor_db",),
         ),
         ({"apl_post_neural_suppress": False}, ("apl_post_neural_suppress_min_residual_db",)),
+        ({"apl_reference_suppress": False}, ("apl_reference_release_db",)),
         ({"apl_burst_ceiling": "none"}, ("apl_burst_ceiling_depth_db",)),
         # apl_music_persistence_min is not here: it also picks the tapes that take apl_music_neural_model.
         ({"apl_music_stem_path": False}, ("apl_music_bg_floor_db",)),
@@ -515,6 +520,7 @@ INERT_WHEN = {
         ({"cathar_enable_noiseprint": False, "cathar_music_enable_noiseprint": False}, NOISEPRINT_KNOBS),
         # The depth guard's action is read only once the guard is on (cathar._learned_print).
         ({"cathar_noiseprint_min_depth_db": 0.0}, ("cathar_noiseprint_shallow_action",)),
+        ({"cathar_reference_suppress": False}, ("cathar_reference_release_db",)),
         ({"cathar_music_profile": False}, _CATHAR_MUSIC_KEYS),
         ({"enable_pause_floor": False}, PAUSE_FLOOR_KNOBS),
         # pause_floor.shaper_for: a flat fill reads neither the corner nor the cut, a low-pass not the cut.
@@ -553,6 +559,7 @@ SWITCH_DEFAULTS = {
     "pause_floor_shape": "flat",
     "apl_post_neural_suppress": False,
     "apl_reference_suppress": False,
+    "cathar_reference_suppress": False,
     "apl_burst_ceiling": "none",
     "cathar_noiseprint_min_depth_db": 0.0,
 }
