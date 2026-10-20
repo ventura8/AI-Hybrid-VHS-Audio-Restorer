@@ -35,6 +35,7 @@ from . import event_log
 from .config import APL_ENABLE_SIBILANT_GUARD, APL_SIBILANT_GUARD_HZ, APL_SIBILANT_HF_SHARE_MIN, APL_SIBILANT_MIX
 from .hygiene import atomic_target
 from .impulse_repair import _spans
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 HOP = 256
@@ -209,7 +210,7 @@ def _guarded(reference_wav, restored_wav, audio_dir):
         return restored_wav, 0
     output_dir = Path(audio_dir) / "sibilant_guard"
     output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / f"guarded_{Path(restored_wav).name}"
+    target = stage_output(output_dir, "guarded", restored_wav)
     if is_valid_audio(target):
         return target, len(events)
     return guard_file(reference_wav, restored_wav, target, events, APL_SIBILANT_MIX, APL_SIBILANT_GUARD_HZ), len(events)

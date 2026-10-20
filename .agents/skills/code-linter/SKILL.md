@@ -105,6 +105,13 @@ every other one. Exclusions belong in the properties file with a reason.
   or prints, since a child's stdout is a log (security reviews of 2026-10-17
   and 2026-10-19: a planted `logs/<stem>.log` link to `~/.bashrc` or
   `~/.ssh/authorized_keys` plus a video named with a line break and a payload).
+- **Stage outputs are named through `stage_names.stage_output`**: a stage
+  puts its tag in front of its input's name, so the name grows with the
+  chain. With the burst ceiling, the reference suppressor and a surgical
+  notch on, a Tata tape's sync output reached 261 characters (2026-10-20),
+  past the 255 NTFS allows in one name, and the render failed. The helper
+  keeps a name whole up to 120 characters and replaces the inherited part
+  with a digest past that; a new stage never builds `dir / f"tag_{x.name}"`.
 - **Tests Are Not Exempt**: Tests must pass the exact same linters (`black`,
   `isort`, `ruff`, `flake8`, `pylint`, `radon`) as production modules.
 - **Radon Grades**: Every single block must be Cyclomatic Complexity Grade A

@@ -59,6 +59,7 @@ from . import event_log, hiss_floor
 from .config import APL_BURST_CEILING, APL_BURST_CEILING_DEPTH_DB
 from .hygiene import atomic_target
 from .impulse_repair import _spans
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 STAGE = "burst_ceiling"
@@ -456,7 +457,7 @@ def _target_for(restored_wav, audio_dir):
     """Where the capped audio goes: the scope and depth in the name, so a render at other settings is never reused."""
     output_dir = Path(audio_dir) / STAGE
     output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir / f"capped_{APL_BURST_CEILING}{APL_BURST_CEILING_DEPTH_DB:g}_{Path(restored_wav).name}"
+    return stage_output(output_dir, f"capped_{APL_BURST_CEILING}{APL_BURST_CEILING_DEPTH_DB:g}", restored_wav)
 
 
 def _settings():

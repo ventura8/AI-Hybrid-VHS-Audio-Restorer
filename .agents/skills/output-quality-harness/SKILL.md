@@ -2384,6 +2384,19 @@ incumbent, or to a candidate proposed before it, on every tape is logged as
 Tests: `tests/unit/test_autotune_inert.py`, `test_autotune_knob_tables.py`
 and `test_autotune_restoration_driver.py`.
 
+A candidate whose render left a tape without usable output is set aside the
+same way (`scripts/autotune_renders.py`, 2026-10-20): `render failed` in its
+row, a `render failure:` line with each tape's first `[Error]` from its run
+log, and a plateau label ending "N render(s) failed, their moves untried",
+which is not a proven plateau. The tapes that did render are still
+collected, so nothing stays beside a tape. The incumbent failing, three
+failures in a row, or a drive the render writes on (the tapes', the loop's,
+the stage cache's) with under 40 GB free stops the run before the next
+render; a failure is retried on the next run. Before this, one candidate
+(`apl_burst_ceiling` `gaps`, a 261-character stage name) ended APL's round
+3 after two minutes and a full disk crashed cathar's. Tests:
+`test_autotune_renders.py`, `test_autotune_render_failures.py`.
+
 An ear v3 grid adds three guards (plan 1.5, `scripts/autotune_guards.py`); a
 v1 or v2 grid has none of these sections and its rounds are judged exactly
 as before:

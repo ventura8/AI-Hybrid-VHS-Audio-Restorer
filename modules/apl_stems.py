@@ -19,6 +19,7 @@ the single-track path.
 from pathlib import Path
 
 from .config import APL_MUSIC_BG_FLOOR_DB, APL_MUSIC_PERSISTENCE_MIN, APL_MUSIC_STEM_PATH, APL_NOISEPRINT_TONAL_S, APL_SUPPRESS_DD_ALPHA
+from .stage_names import stage_output
 from .tonal_persistence import material_is_music
 from .utils import log_msg
 
@@ -41,7 +42,7 @@ def _background_pass(background_wav, work_dir, total_duration, strategy):
     if APL_MUSIC_BG_FLOOR_DB >= 0.0:
         log_msg("    [Stem Path] Background passed through the notches only.")
         return notched
-    target = work_dir / f"suppressed_{Path(notched).name}"
+    target = stage_output(work_dir, "suppressed", notched)
     settings = {
         "noise_bias": 1.0,
         "gain_floor_db": APL_MUSIC_BG_FLOOR_DB,

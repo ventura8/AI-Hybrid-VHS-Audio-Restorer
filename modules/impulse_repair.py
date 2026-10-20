@@ -45,6 +45,7 @@ except ImportError:
     sf = None
 
 from .hygiene import atomic_target
+from .stage_names import stage_output
 from .utils import log_msg
 
 # Model order, detection block, and the span limits. A tape's pops are a few samples to a
@@ -243,7 +244,7 @@ def depop(input_wav, output_dir, threshold=DEFAULT_THRESHOLD, total_duration=Non
         return None
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / f"depopped_{Path(input_wav).name}"
+    target = stage_output(output_dir, "depopped", input_wav)
     with atomic_target(target) as partial:
         sf.write(str(partial), repaired, rate, subtype="FLOAT")
     log_msg(f"    [Repair] Refilled {total} pop spans{_guard_note(min_prominence_db)}.")

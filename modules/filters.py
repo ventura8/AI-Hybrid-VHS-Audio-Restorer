@@ -59,6 +59,7 @@ from .config import (
     SCANNER_MAINS_VOTE,
 )
 from .hardware import CPU_THREADS
+from .stage_names import stage_output
 from .utils import (
     FFMPEG_BIN,
     MODELS_DIR,
@@ -537,7 +538,7 @@ def _run_ffmpeg_filter_step(original_wav, output_wav, filter_str, step_label, ta
 
 def _filter_vhs_native_step(original_wav, filtered_audio_dir, total_duration=None):
     """Applies FFmpeg native VHS filter chain (highpass, adeclick, afftdn, notch)."""
-    output_wav = filtered_audio_dir / f"vhs_filtered_{original_wav.name}"
+    output_wav = stage_output(filtered_audio_dir, "vhs_filtered", original_wav)
     if is_valid_audio(output_wav):
         log_msg("  [Step 2/4] Skipping Native VHS Filtering (exists)")
         return output_wav
@@ -554,7 +555,7 @@ def _filter_vhs_native_step(original_wav, filtered_audio_dir, total_duration=Non
 
 def _filter_arnndn_step(original_wav, filtered_audio_dir, total_duration=None, model_name=None):
     """Applies FFmpeg Recurrent Neural Network (RNNoise) speech denoiser."""
-    output_wav = filtered_audio_dir / f"arnndn_filtered_{original_wav.name}"
+    output_wav = stage_output(filtered_audio_dir, "arnndn_filtered", original_wav)
     if is_valid_audio(output_wav):
         log_msg("  [Step 2/4] Skipping ARNNDN Speech Filtering (exists)")
         return output_wav
@@ -1038,7 +1039,7 @@ def _filter_auto_vhs_native_step(original_wav, filtered_audio_dir, total_duratio
     Returns:
         pathlib.Path: Path to filtered audio WAV file.
     """
-    output_wav = filtered_audio_dir / f"auto_vhs_filtered_{original_wav.name}"
+    output_wav = stage_output(filtered_audio_dir, "auto_vhs_filtered", original_wav)
     if is_valid_audio(output_wav):
         log_msg("  [Step 2/4] Skipping Auto VHS Filtering (exists)")
         return output_wav

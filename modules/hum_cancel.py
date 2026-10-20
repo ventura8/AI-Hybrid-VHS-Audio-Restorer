@@ -47,6 +47,7 @@ from .spectral_denoise import (
     harmonic_triples,
     quiet_psd,
 )
+from .stage_names import stage_output
 from .utils import log_msg
 
 # Analysis grid: a 4096-sample Hann window every 1024 samples gives a 43 Hz frame rate,
@@ -472,7 +473,7 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
     if not APL_ENABLE_HUM_CANCEL:
         return source_wav
     output_dir = Path(audio_dir) / "hum_cancel"
-    target = output_dir / f"humcancel_{Path(source_wav).name}"
+    target = stage_output(output_dir, "humcancel", source_wav)
     try:
         # Planning reads a long transform of the opening stretch, so it can fail the same
         # way the cancellation can, and is guarded the same way.

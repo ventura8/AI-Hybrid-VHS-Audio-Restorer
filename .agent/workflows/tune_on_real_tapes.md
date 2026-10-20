@@ -85,6 +85,23 @@ skill holds the readings, their status and the measured facts behind them.
    - The stage cache keys on every module's source, `config.py` included,
      so the first candidate of each pre-neural setting renders the neural
      stage again after any code change.
+1. A render can fail, and the day is lost if nothing notices (2026-10-20:
+   `apl_burst_ceiling` `gaps` made a stage name 261 characters long, the
+   app could not write it on three Tata tapes, and APL's round 3 ended
+   after two minutes while `both` went on to cathar; cathar then filled
+   drive D: and crashed on "No space left on device"). The loop
+   (`scripts/autotune_renders.py`) now sets a candidate whose render left
+   no usable output aside with a `render failure:` line naming each tape's
+   first `[Error]`, goes on, and ends such a round's plateau with "N
+   render(s) failed, their moves untried": that plateau is not proven, so
+   fix the cause and rerun before asking the user to listen. The
+   incumbent failing, or three failures in a row, still stops the run, and
+   so does a drive under the tapes, the loop's folder or the stage cache
+   with less than 40 GB free, before the render (`MIN_FREE_GB`); a failure
+   is retried on the next run. Watch the process, not a word in the log:
+   a watcher that waited for "failed" or "Traceback" missed both stops.
+   Free a drive by moving only folders with no junction in them: robocopy
+   follows junctions (pipeline-runner skill).
 1. Check the knob table against the code paths before a round: a knob is
    dead only when every path that reads it is (`apl_tonal_flatness_max`
    stays live with the subtraction off), and no list may hold both None

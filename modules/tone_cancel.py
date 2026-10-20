@@ -26,6 +26,7 @@ import scipy.signal
 from . import hum_cancel
 from .config import APL_ENABLE_TONE_CANCEL, APL_HUM_MAX_HARMONICS
 from .spectral_denoise import MAINS_DETECT_MIN_SAMPLES, _scannable_mono, detect_mains_hz
+from .stage_names import stage_output
 from .utils import log_msg
 
 WINDOW = 16384
@@ -168,7 +169,7 @@ def _cancelled(source_wav, audio_dir, lines):
     output_dir = Path(audio_dir) / "tone_cancel"
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
-        produced = cancel_tones(source_wav, output_dir / f"tonecancel_{Path(source_wav).name}", lines)
+        produced = cancel_tones(source_wav, stage_output(output_dir, "tonecancel", source_wav), lines)
     except STAGE_FAILURES as exc:
         log_msg(f"    [Tone Cancel] Skipped after failure: {exc}", level="WARNING")
         return None

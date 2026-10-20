@@ -26,6 +26,7 @@ import soundfile as sf
 from . import hiss_floor
 from .config import APL_NEURAL_LEVEL_RESTORE
 from .hygiene import atomic_target
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 # Under half a decibel the stage leaves the output alone. The separator rescales only an
@@ -65,7 +66,7 @@ def _scaled(source_wav, target_wav, gain):
 def _target_for(neural_output_wav, audio_dir, gain_db):
     output_dir = Path(audio_dir) / STAGE
     output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir / f"levelled_{gain_db:+.2f}db_{Path(neural_output_wav).name}"
+    return stage_output(output_dir, f"levelled_{gain_db:+.2f}db", neural_output_wav)
 
 
 def restore(neural_input_wav, neural_output_wav, audio_dir):

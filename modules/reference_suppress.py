@@ -21,6 +21,7 @@ import hashlib
 from pathlib import Path
 
 from . import spectral_suppress
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 STAGE = "reference_suppress"
@@ -32,7 +33,7 @@ def target_for(restored_wav, audio_dir, settings):
     """Where the suppressed audio goes: its settings in the name."""
     text = ",".join(f"{key}={value:g}" for key, value in sorted(settings.items()))
     fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-    return Path(audio_dir) / STAGE / f"referenced_{fingerprint}_{Path(restored_wav).name}"
+    return stage_output(Path(audio_dir) / STAGE, f"referenced_{fingerprint}", restored_wav)
 
 
 def suppress(source_wav, restored_wav, audio_dir, settings):

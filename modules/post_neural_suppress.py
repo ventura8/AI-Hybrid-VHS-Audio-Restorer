@@ -69,6 +69,7 @@ from .config import (
     LINEAR_AIR_GAIN_DB,
     LINEAR_AIR_GATE,
 )
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 STAGE = "post_neural_suppress"
@@ -153,7 +154,7 @@ def _target_for(restored_wav, audio_dir):
     fingerprint = hashlib.sha256(settings.encode("utf-8")).hexdigest()[:12]
     output_dir = Path(audio_dir) / STAGE
     output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir / f"suppressed_{fingerprint}_{Path(restored_wav).name}"
+    return stage_output(output_dir, f"suppressed_{fingerprint}", restored_wav)
 
 
 def suppress(restored_wav, audio_dir):

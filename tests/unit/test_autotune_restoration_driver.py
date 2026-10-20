@@ -13,6 +13,12 @@ from scripts import autotune_restoration as at
 APL_SUFFIX = "_PureLinear_Cleaned"
 
 
+@pytest.fixture(autouse=True)
+def _any_free_space(monkeypatch):
+    """The render's free-space floor is off: a CI runner has less than the 40 GB a Tata render needs."""
+    monkeypatch.setattr(at.renders, "MIN_FREE_GB", 0.0)
+
+
 def _tape(tmp_path):
     tape = tmp_path / "tapes" / "t1.mov"
     tape.parent.mkdir(parents=True, exist_ok=True)

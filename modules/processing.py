@@ -71,6 +71,7 @@ from .filters import (
 )
 from .hardware import CPU_THREADS, CUDA_ENV, CUDA_VISIBLE_DEVICE, GPU_BATCH_SIZE
 from .hygiene import atomic_target, partial_path, publish, remove_tree, scoped_temp_dir, sweep_partials
+from .stage_names import stage_output
 from .sync import _align_stems
 from .utils import (
     FFMPEG_BIN,
@@ -1002,7 +1003,7 @@ def _process_single_track_pipeline(
     filtered_audio_wav = step_func(original_wav, audio_dir, total_duration=video_dur)
 
     log_msg(f"  [Step 3/4] Smart Audio Sync ({sync_label})...")
-    aligned_audio = work_dir / f"aligned_{filtered_audio_wav.name}"
+    aligned_audio = stage_output(work_dir, "aligned", filtered_audio_wav)
     sync_reference = ref_wav or original_wav
     # Every single-track chain keeps the source's length and time base (sync.py, sync_dtw_enable).
     _align_stems(sync_reference, filtered_audio_wav, aligned_audio, sync_method=sync_method, length_preserving=True)
@@ -1149,7 +1150,7 @@ def _deess_vocals_step(vocals_wav, enhanced_vocals_dir, total_duration=None):
     """
     if not ENABLE_DEESSER or not is_valid_audio(vocals_wav):
         return vocals_wav
-    output_wav = enhanced_vocals_dir / f"deessed_{vocals_wav.name}"
+    output_wav = stage_output(enhanced_vocals_dir, "deessed", vocals_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [AI Vocal Polish] Applying Dynamic Sibilance De-Esser...")
@@ -1169,7 +1170,7 @@ def _expand_background_step(background_wav, denoised_bg_dir, total_duration=None
     """
     if not ENABLE_DYNAMIC_EXPANDER or not is_valid_audio(background_wav):
         return background_wav
-    output_wav = denoised_bg_dir / f"expanded_{background_wav.name}"
+    output_wav = stage_output(denoised_bg_dir, "expanded", background_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [AI Background Polish] Applying Downward Dynamic Noise Expander...")
@@ -1188,7 +1189,7 @@ def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strat
     if not polish_filter:
         return denoised_wav
     fingerprint = hashlib.sha256(polish_filter.encode("utf-8")).hexdigest()[:12]
-    output_wav = polish_dir / f"polished_{fingerprint}_{denoised_wav.name}"
+    output_wav = stage_output(polish_dir, f"polished_{fingerprint}", denoised_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [AI Full-Audio Polish] Applying Air Polish and Downward Dynamic Expander...")
@@ -1204,7 +1205,7 @@ def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, stra
     if not surgical_filter:
         return precond_wav
     fingerprint = hashlib.sha256(surgical_filter.encode("utf-8")).hexdigest()[:12]
-    output_wav = audio_dir / f"surgical_{fingerprint}_{precond_wav.name}"
+    output_wav = stage_output(audio_dir, f"surgical_{fingerprint}", precond_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [Surgical Pre-Denoise DSP] Applying Pre-Denoising Tonal Notches & Rumble Filter...")
@@ -1219,7 +1220,7 @@ def _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=None, str
     if not cleanup_filter:
         return denoised_wav
     fingerprint = hashlib.sha256(cleanup_filter.encode("utf-8")).hexdigest()[:12]
-    output_wav = audio_dir / f"cleaned_{fingerprint}_{denoised_wav.name}"
+    output_wav = stage_output(audio_dir, f"cleaned_{fingerprint}", denoised_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [Surgical Post-Denoise DSP] Notching Residual Tones Post-Denoise...")
@@ -1423,10 +1424,10 @@ def _align_and_mix_stems(
     """
     sync_method = _strategy_value(strategy, "sync_method", None)
 
-    aligned_vocals = work_dir / f"aligned_{vocals_wav.name}"
+    aligned_vocals = stage_output(work_dir, "aligned", vocals_wav)
     _align_stems(original_wav, vocals_wav, aligned_vocals, sync_method=sync_method, length_preserving=length_preserving)
 
-    aligned_background = work_dir / f"aligned_{background_wav.name}"
+    aligned_background = stage_output(work_dir, "aligned", background_wav)
     _align_stems(original_wav, background_wav, aligned_background, sync_method=sync_method, length_preserving=length_preserving)
 
     _final_mix_step(

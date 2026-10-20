@@ -66,6 +66,7 @@ from .config import (
 )
 from .hygiene import atomic_target
 from .impulse_repair import _spans
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 FRAME_S = 0.02
@@ -399,7 +400,7 @@ def _target_for(restored_wav, audio_dir):
     output_dir = Path(audio_dir) / "pause_floor"
     output_dir.mkdir(parents=True, exist_ok=True)
     tag = f"{PAUSE_FLOOR_FILL_DB:g}db_p{PAUSE_FLOOR_QUIET_PERCENTILE:g}{_variant_tag()}"
-    return output_dir / f"paused_{tag}_{Path(restored_wav).name}"
+    return stage_output(output_dir, f"paused_{tag}", restored_wav)
 
 
 def _variant_tag():

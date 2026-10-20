@@ -35,6 +35,7 @@ from .config import APL_ENABLE_PLOSIVE_TAMER, APL_PLOSIVE_EXCESS_DB, APL_TONAL_F
 from .hygiene import atomic_target
 from .impulse_repair import _spans
 from .spectral_denoise import estimate_tonality
+from .stage_names import stage_output
 from .utils import log_msg
 
 HOP = 256
@@ -263,7 +264,7 @@ def apply_when_needed(source_wav, audio_dir, strategy=None):
             return source_wav
         output_dir = Path(audio_dir) / "plosive_tamer"
         output_dir.mkdir(parents=True, exist_ok=True)
-        produced = tame_file(source_wav, output_dir / f"tamed_{Path(source_wav).name}", events, low_db, baseline)
+        produced = tame_file(source_wav, stage_output(output_dir, "tamed", source_wav), events, low_db, baseline)
     except STAGE_FAILURES as exc:
         log_msg(f"    [Plosive Tamer] Skipped after failure: {exc}", level="WARNING")
         event_log.write_skip(STAGE, source_wav, f"failed: {exc}", excess_db=APL_PLOSIVE_EXCESS_DB)

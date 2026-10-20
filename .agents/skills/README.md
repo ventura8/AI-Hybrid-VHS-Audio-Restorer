@@ -86,6 +86,10 @@ the Antigravity agent system.
   - `scripts/autotune_scoring.py` (a module of the self-driving loop, not a
     script): the families a grid reads (`--families auto`), the scorer
     processes, and the two-stage scoring (learned vetoes on contenders only);
+  - `scripts/autotune_renders.py` (a module of the self-driving loop): a
+    failed render set aside with each tape's first `[Error]`, three in a row
+    or the incumbent failing stop the run, and the 40 GB free-space floor
+    checked before every render;
   - `scripts/autotune_material.py` (a module of the self-driving loop): the
     music-only knobs left out when the incumbent's render log reads every
     tape as speech (held partials under the music floor);

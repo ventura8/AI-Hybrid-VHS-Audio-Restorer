@@ -13,8 +13,6 @@ nothing and the final loudness normalisation then amplified the untouched hiss.
 This module supplies the missing stage, and applies it only where it is the better tool.
 """
 
-from pathlib import Path
-
 import numpy as np
 import scipy.signal
 
@@ -39,6 +37,7 @@ from .config import (
     APL_USE_NATIVE_SUPPRESS,
 )
 from .filters import _read_audio_for_analysis, estimate_snr_margin_db
+from .stage_names import stage_output
 from .utils import log_msg
 
 # When subtraction has run, the deep separator is the better partner for it. The light
@@ -277,7 +276,7 @@ def _native_suppress(source_wav, output_dir, alpha, probe_s):
 
     return spectral_suppress.suppress_or_none(
         source_wav,
-        output_dir / f"suppressed_{Path(source_wav).name}",
+        stage_output(output_dir, "suppressed", source_wav),
         noise_bias=APL_SUPPRESS_NOISE_BIAS * (alpha / APL_SPECTRAL_ALPHA if APL_SPECTRAL_ALPHA > 0.0 else 1.0),
         gain_floor_db=APL_SUPPRESS_GAIN_FLOOR_DB,
         dd_alpha=APL_SUPPRESS_DD_ALPHA,
@@ -352,7 +351,7 @@ def _repair_over_subtraction(source_wav, subtracted, output_dir):
     """
     if not APL_ENABLE_LEARNED_BLEND or subtracted is None or subtracted == source_wav:
         return subtracted
-    blended = apply_blend(source_wav, subtracted, output_dir / f"blended_{Path(subtracted).name}")
+    blended = apply_blend(source_wav, subtracted, stage_output(output_dir, "blended", subtracted))
     if blended != subtracted:
         log_msg("    [Spectral Denoise] Repaired over-subtraction with the fitted per-bin blend.")
     return blended

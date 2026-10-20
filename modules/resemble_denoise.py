@@ -15,6 +15,7 @@ from pathlib import Path
 
 from . import enhance_chunking as _chunking
 from .hardware import CUDA_ENV, CUDA_VISIBLE_DEVICE
+from .stage_names import stage_output
 from .utils import _resolve_binary, is_valid_audio, log_msg, run_command_with_progress, scripts_dirs
 
 STAGE_FAILURES = (OSError, RuntimeError, ValueError, subprocess.SubprocessError)
@@ -43,7 +44,7 @@ def denoise(input_wav, output_dir, total_duration=None):
     hybrid mode uses.
     """
     input_wav = Path(input_wav)
-    target = Path(output_dir) / f"resemble_{input_wav.name}"
+    target = stage_output(Path(output_dir), "resemble", input_wav)
     if is_valid_audio(target):
         log_msg("    [Resemble Denoise] Reusing the existing output.")
         return target

@@ -51,6 +51,7 @@ except ImportError:
 
 from .config import APL_SURGICAL_RING_GUARD
 from .hygiene import atomic_target
+from .stage_names import stage_output
 from .utils import is_valid_audio, log_msg
 
 # Energy is read on 256-sample sub-frames; a frame is two of them (512 samples, 11.6 ms at
@@ -127,7 +128,7 @@ def guard(source_wav, filtered_wav, target_wav):
 def _target_for(filtered_wav):
     """The guarded file beside the notch's output, named after it."""
     filtered_wav = Path(filtered_wav)
-    return filtered_wav.with_name(f"{PREFIX}{filtered_wav.name}")
+    return stage_output(filtered_wav.parent, PREFIX.removesuffix("_"), filtered_wav)
 
 
 def _wanted(source_wav, filtered_wav, enabled):

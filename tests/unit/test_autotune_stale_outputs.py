@@ -1,8 +1,16 @@
 """The loop never collects an output it did not just render: one already beside a tape is moved aside first."""
 
+import pytest
+
 from scripts import autotune_restoration as at
 
 SUFFIX = "_PureLinear_Cleaned"
+
+
+@pytest.fixture(autouse=True)
+def _any_free_space(monkeypatch):
+    """The render's free-space floor is off: a CI runner has less than the 40 GB a Tata render needs."""
+    monkeypatch.setattr(at.renders, "MIN_FREE_GB", 0.0)
 
 
 def _tapes(tmp_path):

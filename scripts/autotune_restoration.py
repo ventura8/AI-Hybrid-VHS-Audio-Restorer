@@ -167,6 +167,7 @@ stage_cache = import_module("modules.stage_cache")
 scoring = import_module("scripts.autotune_scoring")
 material = import_module("scripts.autotune_material")
 judging = import_module("scripts.autotune_judging")
+renders = import_module("scripts.autotune_renders")
 # Called through this module, so a test can stand in for the scorer.
 score_round = scoring.score_round
 SCORER_PARALLEL = scoring.SCORER_PARALLEL
@@ -689,6 +690,7 @@ def run_candidate(engine, overrides, tapes, out_dir):
     wavs = {slug: cand_dir / f"{slug}.wav" for slug in tapes}
     if all(w.exists() for w in wavs.values()):
         return wavs
+    renders.check_free_space(cid, render_paths(tapes, out_dir))
     spec = {**ENGINES[engine], "env": split_overrides(overrides)[1]}
     extra_env = _prepare_candidate(cid, cand_dir, spec, overrides)
     started = time.time()
@@ -698,6 +700,15 @@ def run_candidate(engine, overrides, tapes, out_dir):
     timing = {"wall_s": time.time() - started, "stage_cache": stage_cache_counts(cand_dir / RUN_LOG)}
     (cand_dir / "timing.json").write_text(json.dumps(timing), encoding="utf-8")
     return wavs
+
+
+def render_paths(tapes, out_dir):
+    """The folders a render writes in: each tape's (its restored video), the loop's and the stage cache's when it is on."""
+    folders = {str(Path(tape).parent) for tape in tapes.values()} | {str(out_dir)}
+    cache = os.environ.get(stage_cache.ENV_VAR)
+    if cache:
+        folders.add(cache)
+    return sorted(folders)
 
 
 def stage_cache_counts(run_log):
@@ -778,13 +789,25 @@ def _move_stale_outputs(cid, tapes, suffix, out_dir):
 
 
 def _collect_outputs(cid, tapes, suffix, wavs):
-    """Moves each restored tape's audio into the candidate's WAV and deletes the restored video beside the tape."""
+    """Moves each restored tape's audio into the candidate's WAV and deletes the restored video beside the tape.
+
+    A tape without an output, or whose audio cannot be extracted, gets its reason from the run log;
+    the others are still collected, so nothing is left beside a tape, and then
+    `autotune_renders.RenderFailed` names every tape that failed.
+    """
+    reasons = {}
     for slug, tape in tapes.items():
         produced = _produced(tape, suffix)
         if not produced.exists():
-            raise SystemExit(f"{cid}: no output for {slug} ({produced.name})")
-        shutil.move(str(audio_io.extract_wav(produced, wavs[slug].parent)), str(wavs[slug]))
+            reasons[slug] = renders.failure_reason(wavs[slug].parent / RUN_LOG, tape)
+            continue
+        try:
+            shutil.move(str(audio_io.extract_wav(produced, wavs[slug].parent)), str(wavs[slug]))
+        except (OSError, subprocess.SubprocessError) as exc:
+            reasons[slug] = f"its audio could not be extracted: {exc}"[: renders.REASON_CHARS]
         produced.unlink()
+    if reasons:
+        raise renders.RenderFailed(cid, reasons)
 
 
 # ----------------------------------------------------------------------------- inert detection
@@ -866,6 +889,17 @@ def _with_set_aside(verdicts, inert, ties, refused):
     verdicts.update({cid: _aside_verdict(tie=True) for cid in ties})
     verdicts.update({cid: _aside_verdict(refused=why) for cid, why in refused.items()})
     return verdicts
+
+
+def _with_failed(verdicts, failed):
+    """The verdicts plus one for every candidate whose render failed (`failed` is `{cid: {slug: why}}`)."""
+    verdicts.update({cid: _failed_verdict(reasons) for cid, reasons in failed.items()})
+    return verdicts
+
+
+def _failed_verdict(reasons):
+    """The verdict of a candidate whose render failed: `failed` lists `<slug>: <why>` per tape."""
+    return _aside_verdict(failed=[f"{slug}: {why}" for slug, why in reasons.items()])
 
 
 # ----------------------------------------------------------------------------- judging
@@ -1020,9 +1054,25 @@ def _settle(state, number, incumbent, everything, verdicts):
 
 
 def _render(engine, candidates, tapes, out_dir, incumbent):
+    """Renders every candidate; returns `{cid: {slug: why}}` for the ones whose render failed.
+
+    The incumbent failing stops the run (nothing can be judged without it), and so do
+    `autotune_renders.MAX_FAILURES_IN_A_ROW` failures in a row.
+    """
+    failed, streak = {}, renders.FailureStreak()
     for cid, overrides in candidates.items():
         print(f"  running {cid} {describe(overrides, incumbent)}", flush=True)
-        run_candidate(engine, overrides, tapes, out_dir)
+        try:
+            run_candidate(engine, overrides, tapes, out_dir)
+        except renders.RenderFailed as exc:
+            print(f"  render failed: {exc}", flush=True)
+            if cid == candidate_id(incumbent):
+                raise
+            failed[cid] = exc.reasons
+            streak.failed(exc)
+        else:
+            streak.passed()
+    return failed
 
 
 def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, incumbent):
@@ -1035,13 +1085,15 @@ def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, inc
     state["candidates"].update(everything)
     save_state(out_dir, state)
     refused = guards_mod.refusals(everything, incumbent, guards.reversals)
-    rendered = _without(everything, refused)
-    _render(engine, rendered, tapes, out_dir, incumbent)
+    # A render that failed earlier in this run is not tried again in it (the round's second pass renders the combination).
+    failed = state.setdefault("failed", {})
+    failed.update(_render(engine, _without(everything, {**refused, **failed}), tapes, out_dir, incumbent))
+    rendered = _without(everything, {**refused, **failed})
     incumbent_id = candidate_id(incumbent)
     live, inert = _split_inert(rendered, incumbent_id, tapes, out_dir)
     ties = guards_mod.find_ties(live, incumbent_id, tapes, out_dir, guards.audibility_offset_db)
     verdicts = score_and_judge(args, _without(live, ties), (tapes, out_dir), ranking, incumbent_id, guards)
-    return _with_set_aside(verdicts, inert, ties, refused)
+    return _with_failed(_with_set_aside(verdicts, inert, ties, refused), _only(failed, set(everything) & set(failed)))
 
 
 def score_and_judge(args, scorable, where, ranking, incumbent_id, guards):
@@ -1084,8 +1136,14 @@ def _outcome(record, everything, incumbent, floors):
     """The round's last word: what was accepted, or why nothing was (`autotune_judging.plateau_label`)."""
     accepted = record["accepted"]
     if accepted is None:
-        return judging.plateau_label(record["verdicts"], record["incumbent"], floors)
+        return judging.plateau_label(record["verdicts"], record["incumbent"], floors) + _untried(record["verdicts"])
     return f"accepted `{accepted}` -> {describe(everything[accepted], incumbent)}"
+
+
+def _untried(verdicts):
+    """A plateau's caveat when renders failed: those moves were never heard, so the plateau is not proven."""
+    failed = sum(1 for verdict in verdicts.values() if verdict.get("failed"))
+    return f"; {failed} render(s) failed, their moves untried (render failure lines below)" if failed else ""
 
 
 def _inert_findings(ordered, everything, incumbent):
@@ -1172,6 +1230,8 @@ def _resume(args, out_dir):
     state = load_state(out_dir, seed_defaults(args.engine, start, out_dir))
     # A knob added to the table after the run began is seeded too, so its first moves are neighbours of the real value.
     state["incumbent"] = seed_defaults(args.engine, state["incumbent"], out_dir)
+    # A render that failed in an earlier run is tried again: its cause (a bug, a full disk) may be fixed since.
+    state.pop("failed", None)
     return state
 
 

@@ -111,6 +111,13 @@ The local pipeline executes the following stages sequentially:
     soon as the run ends.
     `New-Item -ItemType Junction` makes one from PowerShell; Git Bash
     mangles `mklink /J`'s switch.
+  - robocopy follows junctions too: `/MOVE` (or `/E` without `/XJ`)
+    copies a junction's target and then deletes it at the source. On
+    2026-10-20 moving an old validation folder off a full drive emptied the
+    main `.venv` and `.poetry-venv` through two worktree junctions inside
+    it. Before moving or deleting a work folder, list its junctions
+    (`Get-ChildItem -Recurse -Force -Attributes ReparsePoint`), delete each
+    link itself as above, and pass `/XJ` to robocopy.
   - A worktree has none of the ignored assets (`experiments/`, `models/`,
     `experiments/quality_calibration/gates.json`,
     `experiments/reward/noise_floor_benign.json`): tests pass there, but

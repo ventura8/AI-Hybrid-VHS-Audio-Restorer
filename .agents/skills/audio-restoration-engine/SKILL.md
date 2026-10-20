@@ -472,6 +472,17 @@ audio alignment, or FFmpeg multiplexing.
   destination upon success.
 - **Resume Protection**: Check for pre-existing valid stage outputs before
   launching compute-heavy inference steps.
+- **Bounded stage names**: every stage names its output
+  `stage_names.stage_output(dir, tag, input)`: `<tag>_<input name>` up to
+  120 characters, `<tag>_<16-hex digest><suffix>` past that (the same chain
+  always gets the same name, two chains never share one). The chain of tags
+  only grows; the APL post-neural stages pushed a Tata sync output to 261
+  characters on 2026-10-20 and the write failed on three tapes ("System
+  error", NTFS's 255 per name). A chain up to 120 characters keeps its old
+  name. On today's defaults APL's names change from the post-denoise
+  `cleaned_` stage on and cathar's from `repaired_`, both after the input
+  the stage cache keys on (about 80 characters), so the cache still hits
+  and the audio is identical.
 - **Denoised stem and long tapes**: pick a separator output only through
   `denoise_model.clean_stem`, never by `models-scores.json`'s `target_stem`
   (it names `noise` for UVR-DeNoise and UVR-DeNoise-Lite) and never by a

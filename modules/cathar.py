@@ -90,6 +90,7 @@ from .config import (
     CATHAR_SPLIT_BAND_HZ,
     NOTCH_FREQ,
 )
+from .stage_names import stage_output
 from .tonal_persistence import material_is_music
 from .utils import CATHAR_BIN, FFMPEG_BIN, is_valid_audio, log_msg, run_command_with_progress
 
@@ -155,7 +156,7 @@ def _cathar_cache_matches(cache_path, cache_key):
 
 
 def _cathar_dewind_step(input_wav, output_dir, cutoff=CATHAR_DEWIND_CUTOFF, total_duration=None):
-    output_wav = output_dir / f"dewinded_{input_wav.name}"
+    output_wav = stage_output(output_dir, "dewinded", input_wav)
     cmd = ["dewind", "--cutoff", str(cutoff)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Low-Frequency Motor Dewind", "Cathar Dewind", total_duration)
 
@@ -167,7 +168,7 @@ def _cathar_azimuth_step(
     method=CATHAR_AZIMUTH_METHOD,
     total_duration=None,
 ):
-    output_wav = output_dir / f"azimuth_{input_wav.name}"
+    output_wav = stage_output(output_dir, "azimuth", input_wav)
     cmd = ["azimuth", "--max-ms", str(max_ms), "--method", str(method)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Stereo Azimuth Phase Alignment", "Cathar Azimuth", total_duration)
 
@@ -187,19 +188,19 @@ def _cathar_mono_below_step(input_wav, output_dir, cutoff_hz=CATHAR_MONO_BELOW_H
     if not _is_stereo_audio(input_wav):
         log_msg("    [Cathar] Skipping Sub-Bass Mono Collapse (mono audio input)")
         return input_wav
-    output_wav = output_dir / f"monobelow_{input_wav.name}"
+    output_wav = stage_output(output_dir, "monobelow", input_wav)
     cmd = ["stereo", "--mono-below", str(cutoff_hz)]
     return _run_cathar_step(cmd, input_wav, output_wav, f"Sub-Bass Mono Collapse ({cutoff_hz} Hz)", "Cathar Mono Below", total_duration)
 
 
 def _cathar_declick_step(input_wav, output_dir, threshold=CATHAR_DECLICK_THRESHOLD, total_duration=None):
-    output_wav = output_dir / f"declicked_{input_wav.name}"
+    output_wav = stage_output(output_dir, "declicked", input_wav)
     cmd = ["declick", "--method", "ar", "--threshold", str(threshold)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Impulse Pop/Click Declick", "Cathar Declick", total_duration)
 
 
 def _cathar_decrackle_step(input_wav, output_dir, sensitivity=CATHAR_DECRACKLE_SENSITIVITY, total_duration=None):
-    output_wav = output_dir / f"decrackled_{input_wav.name}"
+    output_wav = stage_output(output_dir, "decrackled", input_wav)
     cmd = ["decrackle", "--sensitivity", str(sensitivity)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Surface Noise Decrackle", "Cathar Decrackle", total_duration)
 
@@ -211,13 +212,13 @@ def _cathar_inpaint_step(
     iterations=CATHAR_INPAINT_ITERATIONS,
     total_duration=None,
 ):
-    output_wav = output_dir / f"inpainted_{input_wav.name}"
+    output_wav = stage_output(output_dir, "inpainted", input_wav)
     cmd = ["inpaint", "--max-gap-ms", str(max_gap_ms), "--iterations", str(iterations)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Dropout AR Inpainting", "Cathar Inpaint", total_duration)
 
 
 def _cathar_deplosive_step(input_wav, output_dir, strength=CATHAR_DEPLOSIVE_STRENGTH, total_duration=None):
-    output_wav = output_dir / f"deplosived_{input_wav.name}"
+    output_wav = stage_output(output_dir, "deplosived", input_wav)
     cmd = ["deplosive", "-s", str(strength)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Speech Plosive/Pop Taming", "Cathar Deplosive", total_duration)
 
@@ -229,13 +230,13 @@ def _cathar_enhance_step(
     rate=48000,
     total_duration=None,
 ):
-    output_wav = output_dir / f"enhanced_{input_wav.name}"
+    output_wav = stage_output(output_dir, "enhanced", input_wav)
     cmd = ["enhance", "--method", str(method), "-r", str(rate)]
     return _run_cathar_step(cmd, input_wav, output_wav, "High-Frequency Harmonic SBR", "Cathar Enhance", total_duration)
 
 
 def _cathar_declip_step(input_wav, output_dir, threshold=CATHAR_DECLIP_THRESHOLD, total_duration=None):
-    output_wav = output_dir / f"declipped_{input_wav.name}"
+    output_wav = stage_output(output_dir, "declipped", input_wav)
     cmd = ["declip", "--method", "spade", "--threshold", str(threshold)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Peak Saturation Declip", "Cathar Declip", total_duration)
 
@@ -276,7 +277,7 @@ def _cathar_dehum_step(
     freq_arg = _dehum_freq_arg(freq, autodetect)
     if freq_arg is None:
         return input_wav
-    output_wav = output_dir / f"dehummed_{input_wav.name}"
+    output_wav = stage_output(output_dir, "dehummed", input_wav)
     cmd = ["dehum", "--freq", freq_arg, "--harmonics", str(harmonics)]
     if adaptive:
         cmd.append("--adaptive")
@@ -284,7 +285,7 @@ def _cathar_dehum_step(
 
 
 def _cathar_repair_step(input_wav, output_dir, strength=CATHAR_REPAIR_STRENGTH, total_duration=None):
-    output_wav = output_dir / f"repaired_{input_wav.name}"
+    output_wav = stage_output(output_dir, "repaired", input_wav)
     cmd = ["repair", "-s", str(strength)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Transient Spectral Spike Repair", "Cathar Repair", total_duration)
 
@@ -296,7 +297,7 @@ def _cathar_dereverb_step(
     strength=CATHAR_DEREVERB_STRENGTH,
     total_duration=None,
 ):
-    output_wav = output_dir / f"dereverbed_{input_wav.name}"
+    output_wav = stage_output(output_dir, "dereverbed", input_wav)
     cmd = ["dereverb", "--wpe"] if wpe else ["dereverb", "-s", str(strength)]
     return _run_cathar_step(cmd, input_wav, output_wav, "Acoustic Reflection Dereverb", "Cathar Dereverb", total_duration)
 
@@ -309,7 +310,7 @@ def _cathar_deesser_step(
     threshold=CATHAR_DEESSER_THRESHOLD,
     total_duration=None,
 ):
-    output_wav = output_dir / f"deessed_{input_wav.name}"
+    output_wav = stage_output(output_dir, "deessed", input_wav)
     if int(bands) > 1 and float(threshold) <= 0:
         # Multiband threshold is dB above each band's running average; a non-positive
         # value engages the de-esser on every frame and strips everything above `freq`.
@@ -324,7 +325,7 @@ def _cathar_deesser_step(
 
 
 def _cathar_dewow_step(input_wav, output_dir, total_duration=None):
-    output_wav = output_dir / f"dewowed_{input_wav.name}"
+    output_wav = stage_output(output_dir, "dewowed", input_wav)
     cmd = ["dewow"]
     try:
         return _run_cathar_step(cmd, input_wav, output_wav, "Analog Transport Dewow", "Cathar Dewow", total_duration)
@@ -603,7 +604,7 @@ def _cathar_denoise_step(
     noiseprint_path=None,
     total_duration=None,
 ):
-    output_wav = output_dir / f"denoised_{input_wav.name}"
+    output_wav = stage_output(output_dir, "denoised", input_wav)
     cmd = _build_cathar_denoise_cmd(method, alpha, beta, coherent, noiseprint_path=noiseprint_path)
     return _run_cathar_step(cmd, input_wav, output_wav, f"Phase-Coherent Denoise ({method})", "Cathar Denoise", total_duration)
 
@@ -929,7 +930,7 @@ def _cathar_denoise_split(current, work_dir, settings, np_path, total_duration):
         total_duration=total_duration,
     )
     log_msg(f"    [Cathar] Split band at {CATHAR_SPLIT_BAND_HZ} Hz: alpha {settings['alpha']:g} below, {settings['alpha_high']:g} above.")
-    return split_band.recombine(low, high, work_dir / f"splitband_{CATHAR_SPLIT_BAND_HZ}_{current.name}", CATHAR_SPLIT_BAND_HZ)
+    return split_band.recombine(low, high, stage_output(work_dir, f"splitband_{CATHAR_SPLIT_BAND_HZ}", current), CATHAR_SPLIT_BAND_HZ)
 
 
 def filter_cathar_vhs_pipeline(original_wav, work_dir, total_duration=None, strategy=None):

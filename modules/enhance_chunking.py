@@ -11,6 +11,7 @@ import shutil
 import numpy as np
 import soundfile as sf
 
+from .stage_names import stage_output
 from .utils import log_msg
 
 # Long enough to cover a spoken word either side of a seam, short enough to stay negligible
@@ -42,7 +43,7 @@ def split_for_enhance(source_wav, target_dir, chunk_seconds, overlap_seconds=CHU
         block = samples[start:end]
         if len(block) == 0:
             break
-        path = target_dir / f"chunk_{index:04d}_{source_wav.name}"
+        path = stage_output(target_dir, f"chunk_{index:04d}", source_wav)
         # subtype is explicit: soundfile defaults .wav to PCM_16, so chunking silently
         # quantised a 32-bit float pipeline down to 16-bit -- and only on the machines small
         # enough to need chunking, which is exactly where it would go unnoticed.
@@ -85,7 +86,7 @@ def handle_enhance_output(enhanced_vocals_dir, vocals_wav):
     candidates_enhanced = list(enhanced_vocals_dir.glob("*.wav"))
     if not candidates_enhanced:
         log_msg("    [Warning] Resemble-Enhance did not produce output. Using raw vocals.", is_error=True)
-        fb_path = enhanced_vocals_dir / f"fallback_{vocals_wav.name}"
+        fb_path = stage_output(enhanced_vocals_dir, "fallback", vocals_wav)
         shutil.copy(vocals_wav, fb_path)
         return fb_path
 
@@ -124,8 +125,8 @@ def collect_enhance_result(enhanced_vocals_tmp_dir, vocals_wav, chunk_paths):
         # The raw vocals, explicitly. handle_enhance_output() returns the first *.wav it finds,
         # which here is chunk_0000 -- a single 15-second fragment standing in for the whole
         # take, while the log claims the raw vocals were used.
-        fallback = enhanced_vocals_tmp_dir / f"fallback_{vocals_wav.name}"
+        fallback = stage_output(enhanced_vocals_tmp_dir, "fallback", vocals_wav)
         shutil.copy(vocals_wav, fallback)
         return fallback
-    destination = enhanced_vocals_tmp_dir / f"joined_{vocals_wav.name}"
+    destination = stage_output(enhanced_vocals_tmp_dir, "joined", vocals_wav)
     return join_enhanced_chunks(enhanced_chunks, destination)

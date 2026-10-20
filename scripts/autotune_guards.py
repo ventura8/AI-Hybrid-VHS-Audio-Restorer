@@ -106,13 +106,16 @@ ASIDE_CELLS = (
     ("inert", "inert (= `{}`)"),
     ("tie", "tie (inaudible on every tape)"),
     ("refused", "refused (verdict reversal)"),
+    ("failed", "render failed"),
 )
-# One log line per candidate a guard set aside or vetoed, by the key its verdict carries.
+# One log line per candidate a guard set aside or vetoed, or whose render failed (`autotune_renders`), by the key its
+# verdict carries.
 GUARD_FINDINGS = (
     ("tie", "audibility tie: `{cid}` {move} is inaudible from the incumbent on every tape; not scored"),
     ("refused", "verdict reversal: `{cid}` {move} refused, not rendered: {why}"),
     ("vetoed", "learned veto: `{cid}` {move} cannot win: {why}"),
     ("constrained", "guard: `{cid}` {move} cannot win: {why}"),
+    ("failed", "render failure: `{cid}` {move} left no usable output, not scored: {why}"),
 )
 # The sides a constraint may read (`runner.aggregates_for_tuning` flattens these two).
 CONSTRAINT_SIDES = ("output", "delta")
@@ -411,7 +414,8 @@ def _why(reasons):
 
 
 def guard_findings(ordered, described):
-    """One line per candidate the audibility tie, a verdict reversal or a learned veto kept from winning, with the reason.
+    """One line per candidate the audibility tie, a verdict reversal or a learned veto kept from winning, or whose render
+    failed, with the reason.
 
     `ordered` is `[(cid, verdict)]`; `described(cid)` is the candidate's move as the log shows it.
     """
