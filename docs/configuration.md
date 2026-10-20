@@ -1115,6 +1115,14 @@ programme). The app's release reproduced the prototype's samples exactly
 on two of the clips. Both keys are loop knobs (0, 3, 6), read only with
 their engine's suppressor on; off, every output keeps its bytes.
 
+On the Tata tapes the ear refused it (APL v9 round 4, 2026-10-21, real
+renders of the round-3 plateau with the release at 3 dB): the hiss under
+Vaccin's speech rose 2.18 dB over its masked threshold (the tie is 0.40)
+and Tele7abc's pause tail 0.62. There the hiss rides with the speech, so
+during speech it stands over the whole-file print and the release takes it
+for programme; on the IA clips it did not. Off it stays; a release would
+need a print that follows the hiss's level through the programme.
+
 The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the
 neural stage. Off, every output keeps its bytes; the loop and a listening

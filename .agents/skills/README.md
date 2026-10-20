@@ -90,6 +90,10 @@ the Antigravity agent system.
     failed render set aside with each tape's first `[Error]`, three in a row
     or the incumbent failing stop the run, and the 40 GB free-space floor
     checked before every render;
+  - `scripts/autotune_joint_moves.py` (a module of the self-driving loop):
+    the pairs a one-knob neighbourhood cannot reach, proposed whole while the
+    incumbent lacks them (cathar's reference suppressor with the per-frame
+    shelved fill);
   - `scripts/autotune_material.py` (a module of the self-driving loop): the
     music-only knobs left out when the incumbent's render log reads every
     tape as speech (held partials under the music floor);

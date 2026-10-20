@@ -2397,6 +2397,18 @@ render; a failure is retried on the next run. Before this, one candidate
 3 after two minutes and a full disk crashed cathar's. Tests:
 `test_autotune_renders.py`, `test_autotune_render_failures.py`.
 
+Joint moves (`scripts/autotune_joint_moves.py`, 2026-10-21): the
+neighbourhood is one knob per candidate, so a pair whose halves each lose
+alone, or whose second half is inert until the first is on, is never
+proposed. cathar's round 3 hit one: its reference suppressor emptied the
+pauses (the room band 16-19 dB down, a v4 guard) because its round 1 had
+switched the pause fill off, and with the fill off the per-frame target and
+the shelf are inert. `JOINT_MOVES` lists such pairs per engine (the first:
+cathar's suppressor with the per-frame fill shelved at 2 kHz, APL's round-2
+winner); each is proposed on top of the incumbent while the incumbent lacks
+it, judged like any candidate, and joins the combination of winners. Add a
+pair only with the measurement that shows neither half can win alone.
+
 An ear v3 grid adds three guards (plan 1.5, `scripts/autotune_guards.py`); a
 v1 or v2 grid has none of these sections and its rounds are judged exactly
 as before:

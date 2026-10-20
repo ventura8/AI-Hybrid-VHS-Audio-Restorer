@@ -168,6 +168,7 @@ scoring = import_module("scripts.autotune_scoring")
 material = import_module("scripts.autotune_material")
 judging = import_module("scripts.autotune_judging")
 renders = import_module("scripts.autotune_renders")
+joint = import_module("scripts.autotune_joint_moves")
 # Called through this module, so a test can stand in for the scorer.
 score_round = scoring.score_round
 SCORER_PARALLEL = scoring.SCORER_PARALLEL
@@ -662,11 +663,13 @@ def _live(engine, knob, value, incumbent, tapes):
 
 
 def propose(engine, incumbent, durations=None, readings=None):
-    """`{id: overrides}` for every single-knob neighbour of the incumbent that can change the audio on these tapes."""
+    """`{id: overrides}` for every single-knob neighbour of the incumbent that can change the audio on these tapes, and
+    every joint move the incumbent lacks (`autotune_joint_moves`)."""
     proposals = {}
     for knob, value in neighbour_moves(engine, incumbent, durations, readings):
         overrides = {**incumbent, knob: value}
         proposals[candidate_id(overrides)] = overrides
+    proposals.update(joint.joint_moves(engine, incumbent, candidate_id))
     proposals.pop(candidate_id(incumbent), None)
     return proposals
 

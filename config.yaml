@@ -877,6 +877,9 @@ cathar_dereverb_strength: 2.0
 #     replay on 19 IA clips: at 3 dB the top band came back past -1 dB on the
 #     three clips that had crossed it, the soft programme 1.5-2 dB, the hiss excess
 #     moving under 0.45 dB. Read only with the engine's reference suppressor on.
+#     On the Tata tapes (APL v9 round 4) 3 dB let the hiss back under Vaccin's
+#     speech (+2.18 dB over its masked threshold): that hiss rides with the
+#     speech, over the whole-file print, and the release took it for programme.
 #     0 (Default): off, every output keeps its bytes.
 #
 # apl_neural_level_restore (auto_pure_linear only):

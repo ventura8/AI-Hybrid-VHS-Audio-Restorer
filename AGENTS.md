@@ -157,7 +157,10 @@ The engine supports 10 execution modes configured in `config.yaml`:
     gain where the neural output stands over the source's print: the masks
     multiply, and 5 of 63 IA clips past the depth line had tripped a guard;
     at 3 dB the top band came back on the three that crossed -1 dB, the
-    hiss excess moving under 0.45 dB.
+    hiss excess moving under 0.45 dB. On the Tata tapes the loop refused it
+    (round 4): the hiss under Vaccin's speech rose 2.18 dB over its masked
+    threshold, since that hiss rides with the speech over the whole-file
+    print. Off.
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing

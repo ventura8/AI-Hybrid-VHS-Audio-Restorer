@@ -102,6 +102,15 @@ skill holds the readings, their status and the measured facts behind them.
    a watcher that waited for "failed" or "Traceback" missed both stops.
    Free a drive by moving only folders with no junction in them: robocopy
    follows junctions (pipeline-runner skill).
+1. Read the guard lines of a move that should have helped. A guard that
+   names a dependency (cathar's reference suppressor emptying the room band
+   while its pause fill was off, 2026-10-20) means the loop cannot get there
+   one knob at a time: add the pair to `scripts/autotune_joint_moves.py`
+   with the measurement, rather than hand-editing the incumbent.
+1. Adding a knob mid-run seeds it into the incumbent and changes every
+   candidate id; carry the old folders to their new ids with the key at its
+   off value (hardlink the WAVs) instead of rendering the round again, then
+   restart at a round boundary.
 1. Check the knob table against the code paths before a round: a knob is
    dead only when every path that reads it is (`apl_tonal_flatness_max`
    stays live with the subtraction off), and no list may hold both None
