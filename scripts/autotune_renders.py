@@ -6,8 +6,8 @@ not write it on three Tata tapes, and APL's round 3 ended after two minutes whil
 launcher went on to cathar). Now `RenderFailed` carries each missing tape's reason, read from
 the candidate's run log, and the loop sets the candidate aside like an inert one, says why in
 `log.md`, and goes on. The incumbent failing still stops the run: nothing can be judged
-without it. So do `MAX_FAILURES_IN_A_ROW` failures in a row, which point at the machine, not
-at a setting.
+without it (`incumbent_failed`, a SystemExit). So do `MAX_FAILURES_IN_A_ROW` failures in a
+row, which point at the machine, not at a setting.
 
 A full disk also failed every render after it (the same day, cathar's round 3 at the third
 tape of one candidate: "No space left on device"). `check_free_space` stops the loop before a
@@ -32,7 +32,7 @@ TASK_MARK = "Processing Task: "
 ERROR_MARK = "[Error]"
 
 
-class RenderFailed(SystemExit):
+class RenderFailed(Exception):
     """A candidate's render left no usable output for some tapes; `reasons` is `{slug: why}`."""
 
     def __init__(self, cid, reasons):
@@ -40,6 +40,12 @@ class RenderFailed(SystemExit):
         self.reasons = dict(reasons)
         listed = "; ".join(f"{slug}: {why}" for slug, why in self.reasons.items())
         super().__init__(f"{cid}: no output for {listed}")
+
+
+def incumbent_failed(error):
+    """The SystemExit that stops the run when the incumbent's render fails (`error`, a RenderFailed): nothing can be
+    judged without it."""
+    return SystemExit(f"the incumbent's render failed, so nothing can be judged: {error}")
 
 
 def free_gb(path):

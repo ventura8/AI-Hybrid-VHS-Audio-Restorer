@@ -2707,7 +2707,10 @@ in-process from the neural output, `REPLAY_REPO` points it at a worktree,
 `python -m scripts.confirm_trips --grid scripts/tune_grids/tata_v4.yaml`
 `--incumbent S --candidate W=REPORTS_DIR --states GROUPS.tsv --verbose`:
 strict trips as the loop judges, material ones past `max_move`, split by
-group (lines of `group<TAB>clip`). What the APL v9 confirmation taught:
+group (lines of `group<TAB>clip`). The grid, the groups file and every
+reports folder go through `cli_paths.confined_path`, so a folder outside
+the repository needs its root in `AI_RESTORE_DATA_ROOTS`. What the APL v9
+confirmation taught:
 
 - Split the clips by what the plateau does to them (here, whether the
   reference suppressor's depth line lets it run) and attribute each trip by

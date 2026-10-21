@@ -79,20 +79,20 @@ def test_a_candidate_records_the_stage_cache_hits_and_misses_its_run_log_reports
 
 
 REFUSED_CANDIDATES = [
-    ({"no_such_setting": 1}, _echo_config, _fake_restore, "not a setting"),
-    ({"linear_air_gain_db": 2.0}, lambda *_args: {}, _fake_restore, "did not honour"),
-    ({"linear_air_gain_db": 2.0}, _echo_config, lambda *_args, **_kwargs: None, "no output"),
+    ({"no_such_setting": 1}, _echo_config, _fake_restore, SystemExit, "not a setting"),
+    ({"linear_air_gain_db": 2.0}, lambda *_args: {}, _fake_restore, SystemExit, "did not honour"),
+    ({"linear_air_gain_db": 2.0}, _echo_config, lambda *_args, **_kwargs: None, at.renders.RenderFailed, "no output"),
 ]
 
 
 @pytest.mark.parametrize("case", REFUSED_CANDIDATES)
 def test_a_candidate_the_app_would_not_run_as_asked_stops_the_loop(tmp_path, monkeypatch, case):
-    """An unknown setting, a setting the app reverts and a run that left no output each raise."""
-    overrides, resolved, restore, message = case
+    """An unknown setting and a setting the app reverts stop the loop; a run that left no output fails the candidate."""
+    overrides, resolved, restore, error, message = case
     _app(monkeypatch, restore, resolved)
     tapes = {"t1": str(_tape(tmp_path))}
     out = tmp_path / "out"
-    with pytest.raises(SystemExit, match=message):
+    with pytest.raises(error, match=message):
         at.run_candidate("apl", overrides, tapes, out)
 
 

@@ -21,7 +21,7 @@ RUN_LOG = """\
 
 def test_render_failed_names_every_tape_and_its_reason():
     error = renders.RenderFailed("abc123", {"t1": "disk full", "t2": "no output"})
-    assert (isinstance(error, SystemExit), error.reasons) == (True, {"t1": "disk full", "t2": "no output"})
+    assert (isinstance(error, SystemExit), error.reasons) == (False, {"t1": "disk full", "t2": "no output"})
     assert str(error) == "abc123: no output for t1: disk full; t2: no output"
 
 
@@ -29,7 +29,7 @@ def test_the_reason_is_the_first_error_logged_for_that_tape(tmp_path):
     log = tmp_path / "run.log"
     log.write_text(RUN_LOG, encoding="utf-8")
     reason = renders.failure_reason(log, tmp_path / "tapes" / "alpha.mov")
-    assert reason.startswith("[Error] Failed to save audio") and "System error" in reason
+    assert (reason.startswith("[Error] Failed to save audio"), "System error" in reason) == (True, True)
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts import confirm_trips
+from scripts import cli_paths, confirm_trips
 from scripts.restoration_quality import reward
 
 GRID = """constraints:
@@ -90,10 +90,10 @@ def test_the_command_prints_the_table_and_with_verbose_every_tripped_clip(setup,
     argv = ["--grid", str(grid), "--incumbent", "S", "--candidate", f"W={reports}", "--states", str(states)]
     assert confirm_trips.main(argv) == 0
     plain = capsys.readouterr().out
-    assert "clips held by every report: 3" in plain and "W      refused    trips   2 material   1 /   2" in plain
+    assert ("clips held by every report: 3" in plain, "W      refused    trips   2 material   1 /   2" in plain) == (True, True)
     confirm_trips.main([*argv, "--verbose"])
     verbose = capsys.readouterr().out
-    assert "*hiss_pump_db -2.00 -> 20.00" in verbose and "hiss_prog_kept_hf_db -11.71 -> -11.72" in verbose
+    assert ("*hiss_pump_db -2.00 -> 20.00" in verbose, "hiss_prog_kept_hf_db -11.71 -> -11.72" in verbose) == (True, True)
 
 
 @pytest.mark.parametrize("text", ["W", "=dir", "W="])
@@ -104,3 +104,12 @@ def test_a_candidate_names_its_label_and_its_folder(text):
 
 def test_without_a_states_file_every_clip_is_unmapped():
     assert confirm_trips.load_states(None) == {}
+
+
+def test_a_path_outside_the_allowed_roots_is_refused(tmp_path, monkeypatch):
+    states = tmp_path / "states.tsv"
+    states.write_text("runs\tclean\n", encoding="utf-8")
+    monkeypatch.delenv(cli_paths.DATA_ROOTS_ENV, raising=False)
+    monkeypatch.setattr(cli_paths.tempfile, "gettempdir", lambda: str(cli_paths.REPO_ROOT))
+    with pytest.raises(SystemExit, match="--states must lie inside"):
+        confirm_trips.load_states(states)

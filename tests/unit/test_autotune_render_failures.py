@@ -73,8 +73,9 @@ def test_a_full_drive_stops_the_loop_before_the_candidate_is_prepared(tmp_path, 
     prepare = Mock()
     monkeypatch.setattr(at, "_prepare_candidate", prepare)
     monkeypatch.setattr(at.renders.shutil, "disk_usage", lambda _path: Usage(0, 0, 5 * at.renders.GB))
+    tapes, out = _tapes(tmp_path), tmp_path / "out"
     with pytest.raises(SystemExit, match="5.0 GB free"):
-        at.run_candidate("apl", {"linear_air_gain_db": 0.5}, _tapes(tmp_path), tmp_path / "out")
+        at.run_candidate("apl", {"linear_air_gain_db": 0.5}, tapes, out)
     assert not prepare.called
 
 
@@ -121,8 +122,15 @@ def test_a_failed_candidate_is_set_aside_and_the_round_goes_on(tmp_path, monkeyp
 
 def test_the_incumbent_failing_stops_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr(at, "run_candidate", Mock(side_effect=_failing_for({0})))
-    with pytest.raises(at.renders.RenderFailed):
-        at._render("apl", {at.candidate_id({"k": 0}): {"k": 0}}, {"t1": "t1.mov"}, tmp_path, {"k": 0})
+    candidates = {at.candidate_id({"k": 0}): {"k": 0}}
+    with pytest.raises(SystemExit, match="the incumbent's render failed, so nothing can be judged: .*no output for k=0"):
+        at._render("apl", candidates, {"t1": "t1.mov"}, tmp_path, {"k": 0})
+
+
+def test_the_incumbent_failing_its_first_render_stops_the_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(at, "run_candidate", Mock(side_effect=_failing_for({0})))
+    with pytest.raises(SystemExit, match="the incumbent's render failed"):
+        at._incumbent_readings("apl", {"t1": "t1.mov"}, tmp_path, {"k": 0})
 
 
 def test_three_failures_in_a_row_stop_the_run(tmp_path, monkeypatch):

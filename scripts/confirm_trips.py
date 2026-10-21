@@ -7,7 +7,8 @@ Each DIR holds one `scripts/validate_restoration.py` report per clip (the file s
 scoring the incumbent and the candidate against the clip's source. Only clips every DIR holds are
 counted, so the columns compare like with like. `--states` maps a clip to a group (lines of
 `group<TAB>clip`), so the trips split by what the candidate does to each clip; unmapped clips form
-the group '?'.
+the group '?'. The grid, the groups file and each DIR must lie inside the repository, the temp
+directory or a root listed in AI_RESTORE_DATA_ROOTS (`cli_paths.confined_path`).
 
 Two counts per group. Strict trips are the loop's own rule (`reward.constrained_readings`).
 Material trips keep only the constraints whose move exceeds their `max_move` (MATERIAL_FLOOR_DB
@@ -25,6 +26,7 @@ from pathlib import Path
 
 import yaml
 
+from scripts.cli_paths import confined_path
 from scripts.restoration_quality import reward, runner
 
 # A bound-only constraint's move counts as material over this many dB (the hiss readings' jitter is 0.3-0.4).
@@ -44,13 +46,13 @@ def load_states(path):
     """`{clip: group}` from lines of `group<TAB>clip`; empty without a file."""
     if path is None:
         return {}
-    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    lines = confined_path(path, "--states", must_exist=True).read_text(encoding="utf-8").splitlines()
     return {clip: group for group, clip, *_rest in (line.split("\t") for line in lines if "\t" in line)}
 
 
 def load_constraints(grid_path):
     """The grid's `constraints:` section, parsed as the loop parses it."""
-    grid = yaml.safe_load(Path(grid_path).read_text(encoding="utf-8"))
+    grid = yaml.safe_load(confined_path(grid_path, "--grid", must_exist=True).read_text(encoding="utf-8"))
     return reward.parse_constraints(grid.get("constraints") or {})
 
 
@@ -69,6 +71,11 @@ def clip_trips(result, incumbent, label, constraints):
         material = before is not None and after is not None and is_material(constraints[key], before, after)
         rows.append((key, before, after, material))
     return rows
+
+
+def confined_candidates(candidates):
+    """`[(label, folder)]` with each folder confined where it is read (`cli_paths.confined_path`)."""
+    return [(label, confined_path(folder, f"--candidate {label}", must_exist=True)) for label, folder in candidates]
 
 
 def common_clips(candidates):
@@ -143,9 +150,10 @@ def parse_args(argv):
 
 def main(argv=None):
     args = parse_args(argv)
-    counts, listed = tabulate(args.candidate, args.incumbent, load_constraints(args.grid), load_states(args.states))
-    labels = [label for label, _folder in args.candidate]
-    print(f"clips held by every report: {len(common_clips(args.candidate))}")
+    candidates = confined_candidates(args.candidate)
+    counts, listed = tabulate(candidates, args.incumbent, load_constraints(args.grid), load_states(args.states))
+    labels = [label for label, _folder in candidates]
+    print(f"clips held by every report: {len(common_clips(candidates))}")
     print("\n".join(summary_lines(counts, labels)))
     if args.verbose:
         print("\n".join(clip_lines(listed)))

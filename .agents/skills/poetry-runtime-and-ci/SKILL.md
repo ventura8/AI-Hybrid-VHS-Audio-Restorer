@@ -117,6 +117,14 @@ poetry install --with dev --verbose
 poetry run pip-audit
 ```
 
+pip-audit audits every package installed in `.venv`, not only the lock. The
+Poetry 2.5.1 installed there for `python -m poetry lock` brings its own
+dependencies, which the lock does not list and CI never installs: on
+2026-10-21 the local gate failed on four `virtualenv` 21.10.0 CVEs (fixed in
+21.14.7) while CI's audit passed. Upgrade such a package with
+`.venv\Scripts\python -m pip install virtualenv==<fixed>` within Poetry's
+range (`virtualenv>=20.26.6`); the lock is unchanged.
+
 ### 6. Check TOML Configuration Syntax
 
 ```powershell

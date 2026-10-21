@@ -1055,7 +1055,10 @@ def run_round(args, engine, tapes, out_dir, state, ranking, number):
 def _incumbent_readings(engine, tapes, out_dir, incumbent):
     """The tapes' held partials from the incumbent's render log, rendering the incumbent first when it is new; logs when
     they make the music knobs dead."""
-    run_candidate(engine, incumbent, tapes, out_dir)
+    try:
+        run_candidate(engine, incumbent, tapes, out_dir)
+    except renders.RenderFailed as exc:
+        raise renders.incumbent_failed(exc) from exc
     readings = material.held_partials(out_dir / "cands" / candidate_id(incumbent) / RUN_LOG, len(tapes))
     note = material.speech_note(engine, incumbent, readings)
     if note:
@@ -1091,7 +1094,7 @@ def _render(engine, candidates, tapes, out_dir, incumbent):
         except renders.RenderFailed as exc:
             print(f"  render failed: {exc}", flush=True)
             if cid == candidate_id(incumbent):
-                raise
+                raise renders.incumbent_failed(exc) from exc
             failed[cid] = exc.reasons
             streak.failed(exc)
         else:
