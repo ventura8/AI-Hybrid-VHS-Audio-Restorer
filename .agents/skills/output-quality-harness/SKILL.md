@@ -2408,6 +2408,11 @@ cathar's suppressor with the per-frame fill shelved at 2 kHz, APL's round-2
 winner); each is proposed on top of the incumbent while the incumbent lacks
 it, judged like any candidate, and joins the combination of winners. Add a
 pair only with the measurement that shows neither half can win alone.
+cathar's round 4 rendered the first: the hiss read 0 under the programme
+and in the pauses on every Tata tape, but Gaudeamus5's loud highs fell 2.35
+dB, past their 1.0 move, so the guard held it back. The second move adds
+the programme release at 6 dB against the pause print, which brought the
+loud highs back on all four tapes on CPU replay of APL's plateau.
 
 An ear v3 grid adds three guards (plan 1.5, `scripts/autotune_guards.py`); a
 v1 or v2 grid has none of these sections and its rounds are judged exactly
