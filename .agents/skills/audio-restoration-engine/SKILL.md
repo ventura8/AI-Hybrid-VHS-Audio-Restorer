@@ -805,7 +805,11 @@ audio alignment, or FFmpeg multiplexing.
   frames clear a 3 dB margin over a 5th-percentile print by chance, in the
   source too, so a source condition did not help); at 6 dB every guard
   passes and the loud highs return on all four. The replay reproduced round
-  4's refusal, so it predicts the loop here.
+  4's refusal, but not round 7's: on the loop's real renders 6 dB lifted
+  Tele7abc's pause tail 0.616 (the replay's plateau read it at 0.34, the
+  loop's at 0), the highs of its soft frames 1-2.7 dB, so APL keeps it off.
+  On cathar the loop accepted it (round 5, with the suppressor and the
+  per-frame shelved fill as a joint move): hiss 0 on all four tapes.
 - The IA confirmation of the APL v9 plateau (2026-10-21) failed: 31 of 202
   hunt clips tripped a v4 guard. Every trip on the 135 clips the suppressor
   refuses was the per-frame fill's: the shipped chain takes only 1-11 dB of

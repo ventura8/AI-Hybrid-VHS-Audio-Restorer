@@ -1282,6 +1282,25 @@ does not exclude either; whether the soft programme it takes is heard is the
 listening session's question (`docs/ear_v4_hiss.md`, "The Soft Programme
 Kept").
 
+The cathar v9 loop rendered it (2026-10-21). Round 4 proposed it with the
+per-frame fill shelved at 2 kHz (fill 18 dB; a joint move,
+`scripts/autotune_joint_moves.py`): the hiss under the programme and in the
+pauses read 0 on every Tata tape, but Gaudeamus5's loud highs fell 2.35 dB,
+past their 1.0 move, and the guard held it back. Round 5 accepted the same
+pair with `cathar_reference_release_db` at 6 dB against the pause print
+(candidate 2631b37e4e): the hiss 0 under the programme and in the pauses on
+all four tapes, every guard passing. Not yet heard.
+
+The APL loop refused `apl_reference_release_db` at 6 dB on its real renders
+(round 7, 2026-10-21; the steps became 0, 6, 9 for it). Vaccin's hiss under
+speech read 0 (the pause print holds on a GPU render), but Tele7abc's pause
+tail rose 0.616, past its 0.35 tie, as at 3 dB. The release lifts the highs
+1-2.7 dB in about 30 % of Tele7abc's frames between the 10th and the 75th
+level percentile (soft speech, breaths, word tails), none in the quietest
+tenth, and the pause reading counts some of that lift. The CPU replay had
+read Tele7abc's pause tail at 0.34 under the plateau, the loop's render at
+0, and missed it.
+
 ## auto_pure_linear Burst Ceiling
 
 Two `auto_pure_linear` keys added on 2026-10-12 for the hiss the

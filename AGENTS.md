@@ -163,8 +163,10 @@ The engine supports 10 execution modes configured in `config.yaml`:
     print's 5th percentile sits 11.7 dB under the hiss in its pauses and
     the residual hiss reads as programme. It now reads against the pause
     print (the median over the source's pause frames, never under the
-    print): on CPU replay of the Tata tapes 6 dB passes every v4 guard and
-    brings back the loud highs on all four. Off. Its IA confirmation
+    print): on CPU replay of the Tata tapes 6 dB passed every v4 guard,
+    but the loop's real renders (round 7) lifted Tele7abc's pause tail
+    0.616 (the highs of its soft frames), so APL keeps it off. Its IA
+    confirmation
     (2026-10-21, 202 hunt clips against the shipped settings) failed: 31
     clips tripped a v4 guard. On the 135 the suppressor refuses every trip
     was the per-frame fill's (gated pauses under a programme that keeps its
@@ -290,11 +292,14 @@ The engine supports 10 execution modes configured in `config.yaml`:
     `apl_reference_suppress`). On CPU replay with the per-frame fill
     shelved at 2 kHz by 30 dB the hiss under speech went from 14.5 / 9.0 /
     7.8 / 11.6 dB over its masked threshold to 0 on the four Tata tapes and
-    the pause tail to 3.3 / 0 / 0 / 11.3, every v4 guard passing; not yet
-    rendered by the loop or heard (`docs/configuration.md`, "Reference-SNR
-    Suppressor"). `cathar_reference_release_db` (0, off) is the same
-    programme release on cathar's output, and `pause_floor_suppressed_only`
-    reaches cathar's pause floor too.
+    the pause tail to 3.3 / 0 / 0 / 11.3, every v4 guard passing. The
+    cathar v9 loop accepted it in round 5 (2026-10-21, a joint move) with
+    the per-frame fill shelved at 2 kHz (fill 18 dB) and
+    `cathar_reference_release_db` (0, off; the same programme release) at
+    6 dB: the hiss 0 under the programme and in the pauses on all four
+    Tata tapes; without the release Gaudeamus5's loud highs fell 2.35 dB.
+    Not yet heard (`docs/configuration.md`, "Reference-SNR Suppressor").
+    `pause_floor_suppressed_only` reaches cathar's pause floor too.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the
