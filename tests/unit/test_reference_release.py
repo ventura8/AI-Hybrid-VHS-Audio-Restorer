@@ -28,7 +28,7 @@ def _suppressor(release_db=None):
     noise = np.ones(BINS)
     if release_db is None:
         return spectral_suppress.ReferenceSuppressor(noise, 1.0, -20.0, 0.96)
-    return spectral_suppress.ReferenceSuppressor(noise, 1.0, -20.0, 0.96, release_db)
+    return spectral_suppress.ReferenceSuppressor(noise, 1.0, -20.0, 0.96, (release_db, None))
 
 
 def _frames(level, count=4):

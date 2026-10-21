@@ -161,7 +161,10 @@ The engine supports 10 execution modes configured in `config.yaml`:
     (round 4): the hiss under Vaccin's speech rose 2.18 dB over its masked
     threshold. Vaccin's MP3 coder drops 10-16 kHz in speech frames, so the
     print's 5th percentile sits 11.7 dB under the hiss in its pauses and
-    the residual hiss reads as programme. Off. Its IA confirmation
+    the residual hiss reads as programme. It now reads against the pause
+    print (the median over the source's pause frames, never under the
+    print): on CPU replay of the Tata tapes 6 dB passes every v4 guard and
+    brings back the loud highs on all four. Off. Its IA confirmation
     (2026-10-21, 202 hunt clips against the shipped settings) failed: 31
     clips tripped a v4 guard. On the 135 the suppressor refuses every trip
     was the per-frame fill's (gated pauses under a programme that keeps its
@@ -169,7 +172,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     (off) gives a file the suppressor did not run on the release fill: 16
     trip, all on files it ran on (the pump on five, the suppressor's loss of
     highs on ten). `pause_floor_shape: hiss_shelf` (off) cuts the shelf only
-    from the source's hiss, keeping soft programme the neural stage emptied
+    from the source's hiss, keeping soft programme the neural stage emptied.
+    With the shelf cut at 12 dB (an audibility tie with 18 on every Tata
+    tape) and the release at 6 dB, 13 of the 202 clips trip a guard
     (`docs/configuration.md`).
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740

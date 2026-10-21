@@ -96,6 +96,17 @@ MIN_DEPTH_DB = 23.0
 # clips that crossed -1 dB, soft programme 1.5-2 dB, the hiss excess moved under 0.45 dB.
 RELEASE_SPAN_DB = 6.0
 RELEASE_SMOOTH = np.ones(3) / 3.0
+# The release's reference, the pause print (2026-10-21): per bin, the median of the PAUSE_SMOOTH_FRAMES-frame moving
+# mean over the source's pause frames (frame power at or under its PAUSE_PERCENTILE frame plus PAUSE_MARGIN_DB), never
+# under the print. Vaccin's MP3 coder drops 10-16 kHz in its speech frames, so the whole-file print's 5th percentile
+# sat 11.7 dB under the hiss its pauses hold, the residual hiss stood over it and the release gave it back (the APL
+# v9 loop's round 4: hiss under Vaccin's speech +2.18 dB over its masked threshold). The coder keeps the hiss in the
+# pauses. Under PAUSE_MIN_WINDOWS pause windows the release reads against the print.
+PAUSE_PERCENTILE = 15.0
+PAUSE_MARGIN_DB = 3.0
+PAUSE_SMOOTH_FRAMES = 4
+PAUSE_QUANTILE = 0.5
+PAUSE_MIN_WINDOWS = 20
 
 
 def _window():
@@ -188,6 +199,36 @@ def reference_noise(source_wav):
     noise = acc.quantile(QUANTILE) * 10.0 ** (QUANTILE_BIAS_DB / 10.0) + EPS
     loud = np.percentile(np.concatenate(levels), DEPTH_LOUD_PERCENTILE)
     return noise, float(10.0 * np.log10(loud / np.mean(noise[band])))
+
+
+def _frame_level_pass(source_wav):
+    """`(channel-mean power summed over the bins per frame, live mask)` over the whole recording, on the suppressor's grid."""
+    levels, lives = [], []
+    with sf.SoundFile(str(source_wav)) as source:
+        count = _frame_count(source.frames)
+        for first in range(0, count, BLOCK_FRAMES):
+            power, live = frame_powers(_read_frames(source, first, min(first + BLOCK_FRAMES, count), source.frames))
+            levels.append(power.sum(axis=1))
+            lives.append(live)
+    return np.concatenate(levels), np.concatenate(lives)
+
+
+def pause_print(source_wav, noise):
+    """The programme release's reference: per bin the larger of the print and the pause frames' moving-mean median
+    (PAUSE_* above); the print itself under PAUSE_MIN_WINDOWS windows of pause."""
+    levels, live = _frame_level_pass(source_wav)
+    if not live.any():
+        return noise
+    pause = live & (levels <= np.percentile(levels[live], PAUSE_PERCENTILE) * 10.0 ** (PAUSE_MARGIN_DB / 10.0))
+    acc = noiseprint_quantile.MovingQuantile(bins=FRAME // 2 + 1, smooth=PAUSE_SMOOTH_FRAMES, scale=10.0)
+    with sf.SoundFile(str(source_wav)) as source:
+        count = _frame_count(source.frames)
+        for first in range(0, count, BLOCK_FRAMES):
+            last = min(first + BLOCK_FRAMES, count)
+            acc.add(frame_powers(_read_frames(source, first, last, source.frames))[0], pause[first:last])
+    if acc.windows < PAUSE_MIN_WINDOWS:
+        return noise
+    return np.maximum(noise, acc.quantile(PAUSE_QUANTILE))
 
 
 # Abramowitz and Stegun 5.1.53 and 5.1.56: the exponential integral E1 to better than 2e-7
@@ -288,10 +329,11 @@ class ReferenceSuppressor(Suppressor):
     and a cell where the programme stood over the hiss keeps its level.
     """
 
-    def __init__(self, noise, noise_bias, gain_floor_db, dd_alpha, release_db=0.0):
+    def __init__(self, noise, noise_bias, gain_floor_db, dd_alpha, release=(0.0, None)):
         super().__init__(noise, noise_bias, gain_floor_db, dd_alpha)
         self.tracker = HeldLevel()
-        self.release_db = release_db
+        self.release_db, release_noise = release
+        self.release_noise = noise if release_noise is None else release_noise
 
     def apply_pair(self, reference, restored):
         """Gains every restored frame of a block by the gain its reference frame reads, in order."""
@@ -303,11 +345,12 @@ class ReferenceSuppressor(Suppressor):
 
     def _released(self, gain, frame):
         """The gain eased toward 1 in dB where the restored frame stands `release_db` to `release_db` +
-        RELEASE_SPAN_DB over the print (programme the restoring stage kept); the gain itself with the release off."""
+        RELEASE_SPAN_DB over the release's reference, the pause print (programme the restoring stage kept); the gain
+        itself with the release off."""
         if self.release_db <= 0.0:
             return gain
         power = np.convolve(np.mean(np.abs(frame) ** 2, axis=0), RELEASE_SMOOTH, mode="same")
-        over_db = 10.0 * np.log10(np.maximum(power, EPS) / self.noise)
+        over_db = 10.0 * np.log10(np.maximum(power, EPS) / self.release_noise)
         weight = np.clip((over_db - self.release_db) / RELEASE_SPAN_DB, 0.0, 1.0)
         return gain ** (1.0 - weight)
 
@@ -371,8 +414,8 @@ def suppress_file(source_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, p
 
 def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, gain_floor_db, dd_alpha, release_db=0.0):
     """Writes the restored recording gained by the reference's SNR (`ReferenceSuppressor`, its programme release at
-    `release_db`, 0 off); returns the target, or None when the reference holds too few live windows to learn its noise
-    from or its print holds programme (MIN_DEPTH_DB). Raises when the two rates differ."""
+    `release_db` against the pause print, 0 off); returns the target, or None when the reference holds too few live
+    windows to learn its noise from or its print holds programme (MIN_DEPTH_DB). Raises when the two rates differ."""
     noise, depth = reference_noise(reference_wav)
     if noise is None:
         log_msg("    [Reference Suppress] Too little live audio in the source to learn its noise from.")
@@ -384,6 +427,7 @@ def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, g
         )
         return None
     log_msg(f"    [Reference Suppress] The source's noise print sits {depth:.1f} dB under its loud frames.")
+    release = (release_db, pause_print(reference_wav, noise) if release_db > 0.0 else None)
     with (
         atomic_target(target_wav) as partial,
         sf.SoundFile(str(reference_wav)) as reference,
@@ -392,7 +436,7 @@ def suppress_by_reference(reference_wav, restored_wav, target_wav, noise_bias, g
     ):
         if reference.samplerate != restored.samplerate:
             raise ValueError(f"reference {reference.samplerate} Hz and restored {restored.samplerate} Hz do not match")
-        suppressor = ReferenceSuppressor(noise, noise_bias, gain_floor_db, dd_alpha, release_db)
+        suppressor = ReferenceSuppressor(noise, noise_bias, gain_floor_db, dd_alpha, release)
 
         def gained(first, last):
             """The restored frames [first, last) gained by their reference frames."""

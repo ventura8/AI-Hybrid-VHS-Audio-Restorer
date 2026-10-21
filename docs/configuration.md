@@ -1188,8 +1188,55 @@ quiet frames (Tele7abc, SOTI and Gaudeamus5 hold within 0.3 dB, their hiss
 stationary). The print's 5th percentile reads those dropouts, so it sits
 11.7 dB under the hiss in Vaccin's pauses, the residual hiss stands over it
 and the release takes that hiss for programme
-(`D:/ai_restore_work/scratch_relguard/hiss_ride.py`). Off it stays; a
-release would need a print that a coder's dropouts cannot pull down.
+(`D:/ai_restore_work/scratch_relguard/hiss_ride.py`).
+
+So the release reads against the pause print (2026-10-21,
+`spectral_suppress.pause_print`): per bin, the median of the 4-frame moving
+mean over the source's pause frames (frame power at or under its 15th
+percentile plus 3 dB), never under the print, and the print itself under 20
+windows of pause. The coder keeps the hiss in the pauses. CPU replay of the
+plateau's post-neural stages on the four Tata tapes' kept work folders
+(scored against each tape, the plateau as the incumbent), with the release
+at 3 dB against the print and against the pause print, and at 6 dB against
+the pause print:
+
+| tape | reading | plateau | 3, print | 3, pause | 6, pause |
+|---|---|---|---|---|---|
+| Tele7abc | pause tail | 0.34 | 0.91 | 0.91 | 0.36 |
+| | kept HF | -0.39 | 0.17 | 0.17 | 0.16 |
+| | kept soft | -6.06 | -3.11 | -3.11 | -4.32 |
+| SOTI | kept HF | -2.17 | -1.83 | -1.83 | -1.85 |
+| | kept soft | -7.55 | -4.98 | -4.99 | -6.22 |
+| Vaccin | under speech | 0.00 | 1.54 | 0.00 | 0.00 |
+| | kept HF | -0.79 | -0.34 | -0.37 | -0.41 |
+| | kept soft | -8.09 | -6.37 | -6.38 | -7.29 |
+| Gaudeamus5 | kept HF | -4.05 | -3.36 | -3.36 | -3.49 |
+| | kept soft | -16.51 | -14.98 | -15.00 | -15.90 |
+
+The replay reproduces round 4's refusal (Vaccin under speech, Tele7abc's
+pause tail). The pause print cures Vaccin. At 3 dB Tele7abc's pause tail
+still rises 0.57, past its 0.35 tie, with either reference: single frames of
+hiss stand 3 dB over a 5th-percentile print by chance, in the source too (a
+release only where the source also stands over the reference left it at
+0.91). At 6 dB every v4 guard passes on every tape and the loud highs come
+back on all four. On the IA hunt's 64 clips the suppressor runs on, the
+pause print changes nothing measurable against the print (the median kept
+HF -0.51 to -0.03 at 3 dB either way), and 6 dB leaves 13 clips past a
+guard's move allowance against the plateau's 15 (the top band's trips from
+4 to 2).
+
+The pause fill's shelf cut at 12 dB is an audibility tie with 18 dB on
+every Tata tape (APL v9 rounds 4 and 5), so the Tata tapes cannot choose it;
+the IA clips can. On the same 64 clips, the plateau with the cut at 12 dB
+and the release at 6 dB against the pause print left 11 past a move
+allowance (the pump's trips 6 to 3, its median 11.0 to 7.0, the pauses' hiss
+unchanged at a median 15.8 dB under the shipped output's): the suppressor's
+loss of loud highs on six clips the shipped chain already leaves past -6
+(and Yorkshire's -3.2 to -6.8), the pump on two (and a digital-silence clip
+the shipped output already breaks), the soft programme on two and the pause
+modulation on one. With `pause_floor_suppressed_only` on, the 135 refused
+clips read the shipped output, so 13 of 202 clips trip a guard, against the
+plateau's 31.
 
 The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the

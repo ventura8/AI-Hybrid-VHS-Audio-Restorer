@@ -11,8 +11,8 @@ stage's mask and the source's SNR multiply, so it can only remove. Two keys reac
   at the same estimator's shipped settings (`CATHAR_SETTINGS`).
 
 `apl_reference_release_db` and `cathar_reference_release_db` (0, off) ease the gain toward 1
-where the restored audio stands that far over the source's print, programme the restoring stage
-kept (`spectral_suppress.RELEASE_SPAN_DB`).
+where the restored audio stands that far over the source's pause print, programme the restoring
+stage kept (`spectral_suppress.RELEASE_SPAN_DB`, `spectral_suppress.pause_print`).
 
 On CPU replay on the four Tata tapes with the per-frame pause fill shelved at 2 kHz by 30 dB
 it took the hiss under speech to inaudible on both engines (`docs/configuration.md`,

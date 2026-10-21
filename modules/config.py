@@ -447,6 +447,8 @@ _NUMERIC_CONFIG_FIELDS = (
     # the suppressor had pushed over it and the soft programme 1.5-2 dB, the hiss excess moving under 0.45 dB.
     # On the Tata tapes (APL v9 round 4) 3 dB let the hiss back under Vaccin's speech (+2.18 dB over its masked
     # threshold): its MP3 coder drops 10-16 kHz in speech frames, so the print reads 11.7 dB under the pauses' hiss.
+    # The release now reads against the pause print (spectral_suppress.pause_print, 2026-10-21): on CPU replay of the
+    # Tata tapes 6 dB passes every v4 guard (Vaccin under speech 0.00), 3 dB still lifts Tele7abc's pause tail 0.57.
     # 0 (off): every output keeps its bytes.
     ("apl_reference_release_db", float, 0.0, 0.0, 40.0),
     ("cathar_reference_release_db", float, 0.0, 0.0, 40.0),

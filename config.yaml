@@ -898,7 +898,11 @@ cathar_dereverb_strength: 2.0
 #     speech (+2.18 dB over its masked threshold): its MP3 coder drops the
 #     10-16 kHz band in speech frames, the print's 5th percentile reads those
 #     dropouts and sits 11.7 dB under the pauses' hiss, so the residual hiss
-#     stood over the print and the release took it for programme.
+#     stood over the print and the release took it for programme. It now reads
+#     against the pause print (the median over the source's pause frames, never
+#     under the print, 2026-10-21): on CPU replay of the Tata tapes 6 dB passes
+#     every v4 guard and brings back the loud highs on all four (Vaccin's hiss
+#     under speech 0.00; 3 dB still lifts Tele7abc's pause tail 0.57).
 #     0 (Default): off, every output keeps its bytes.
 #
 # apl_neural_level_restore (auto_pure_linear only):

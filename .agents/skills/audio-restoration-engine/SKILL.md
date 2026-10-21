@@ -795,7 +795,17 @@ audio alignment, or FFmpeg multiplexing.
   11.7 dB under the hiss in Vaccin's pauses, so residual hiss stands over the
   print, which the release assumes it stays under. A first guess, hiss riding
   with the speech, was wrong. A release needs a print the coder's dropouts
-  cannot pull down (a higher quantile on bands a coder gates, say).
+  cannot pull down (a higher quantile on bands a coder gates, say). Built
+  (2026-10-21): the release reads against `spectral_suppress.pause_print`,
+  the median of the 4-frame moving mean over the source's pause frames
+  (frame power at or under p15 + 3 dB), never under the print. CPU replay on
+  the Tata tapes (`D:/ai_restore_work/scratch_confirm/tata`, the plateau as
+  incumbent): Vaccin's hiss under speech 1.54 with the print, 0.00 with the
+  pause print; at 3 dB Tele7abc's pause tail still rises 0.57 (single hiss
+  frames clear a 3 dB margin over a 5th-percentile print by chance, in the
+  source too, so a source condition did not help); at 6 dB every guard
+  passes and the loud highs return on all four. The replay reproduced round
+  4's refusal, so it predicts the loop here.
 - The IA confirmation of the APL v9 plateau (2026-10-21) failed: 31 of 202
   hunt clips tripped a v4 guard. Every trip on the 135 clips the suppressor
   refuses was the per-frame fill's: the shipped chain takes only 1-11 dB of
