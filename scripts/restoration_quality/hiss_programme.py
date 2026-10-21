@@ -74,7 +74,9 @@ one timeline:
    over the pause frames, `paused_ratio`), `hiss_prog_kept_hf_db` (per band of 3 kHz and up, the median
    output over source on active cells standing 18 dB over the floor, both held at the 16-bit
    dither, averaged over the bands holding 20 such cells: dulling inside the bands the margin
-   rewards, a cut of a few bands as visible as a low pass), `hiss_prog_kept_soft_db` (its twin
+   rewards, a cut of a few bands as visible as a low pass; the floor held no lower than each band's
+   quiet level 3 dB down, and a band whose bins do not spread like noise in the source's quiet
+   frames left out: `loud_floor`), `hiss_prog_kept_soft_db` (its twin
    for the soft programme: per band of 1 kHz and up, the same median on active cells standing
    6-18 dB over the floor spread over the band's bins by the source's shape, whose 3 x 3
    neighbourhood stands 6 dB over it too, averaged over the bands holding 20 such cells: what an
@@ -93,6 +95,8 @@ acceptance record for the perfect output, the oracle ladder and the same-percept
 full-band programme (not low-passed) reveals programme in every band, which the cap cannot tell
 from hiss: there a perfect output still reads above 0.
 """
+
+from functools import lru_cache
 
 import numpy as np
 import scipy.ndimage
@@ -129,6 +133,21 @@ ISLAND_MIN_MARGIN_DB = -10.0
 AUDIBLE_DB = 0.0
 BOUND_FRAMES = 5
 MIN_KEPT_BAND_CELLS = 20
+# A coded band (2026-10-21): in the source's quiet frames (each band's lowest 30 % of active frames by band mean) its
+# valley over its mean sits more than CODED_MARGIN_DB under white noise's. A perceptual coder's HF bins spread wider
+# than noise (Vaccin's MP3 dropouts at 10-12 kHz read the valley 35-40 dB under the band mean; the IA promo breaks
+# 1.5-13 dB under white's ratio, growing toward the codec's cutoff), so the floor there sits under the hiss and hiss
+# peaks cleared the 18 dB programme test: the shipped APL output read kept HF -10..-21 on six IA clips for hiss it
+# removed. Tele7abc and SOTI below 14 kHz read within 0.4 dB of white.
+CODED_MARGIN_DB = 2.0
+CODED_QUIET_PCT = 30.0
+CODED_MIN_FRAMES = 10
+# The loud floor is also held no lower than each band's quiet level (P10 over the active frames of its band mean, which
+# a band's hiss never exceeds) QUIET_FLOOR_MARGIN_DB down: the anchor that caps the floor can read the hiss low (up to
+# 17.6 dB on the realistic-v2 fixtures, 4-13 dB on IA promo breaks above 7 kHz), and alone the coded test left four of
+# the six IA clips past the bound for hiss the shipped output removed. 3 dB keeps it off a clean tape's floor.
+QUIET_FLOOR_PCT = 10.0
+QUIET_FLOOR_MARGIN_DB = 3.0
 ISLAND_MIN_FRAMES = 25
 ISLAND_MIN_BINS = 16
 ISLAND_TOP_FACTOR = 1.06
@@ -591,9 +610,70 @@ def kept_db(level, cells, layout):
     return float(np.mean(medians)) if medians else None
 
 
+def valley_ratio(rows):
+    """Per frame, the rows' valley (their 25th percentile over -ln 0.75, `hiss_floor`) over their mean."""
+    valley = hiss_floor.low_quantile(rows, hiss_floor.VALLEY_Q) / hiss_floor.VALLEY_NORM
+    return valley / np.maximum(rows.mean(axis=1), EPS)
+
+
+def quiet_frames(means, active):
+    """The active frames whose band mean is at or under its 30th percentile over them (every frame under 10 active)."""
+    pool = active if int(active.sum()) >= CODED_MIN_FRAMES else np.ones(len(means), dtype=bool)
+    return pool & (means <= np.percentile(means[pool], CODED_QUIET_PCT))
+
+
+def band_valley_ratios(power, kindex, nb, shape, active):
+    """Per band of at least 8 kept bins, the median valley ratio of the bins whitened by `shape` over its quiet frames."""
+    out = np.full(nb, np.nan)
+    for band in range(nb):
+        sel = kindex == band
+        if int(sel.sum()) >= hiss_floor.MIN_VALLEY_BINS:
+            rows = power[:, sel] / shape[sel]
+            out[band] = float(np.median(valley_ratio(rows[quiet_frames(rows.mean(axis=1), active)])))
+    return out
+
+
+@lru_cache(maxsize=4)
+def _white_power(rate):
+    """The STFT power of `hiss_floor`'s seeded white noise at `rate`."""
+    rng = np.random.default_rng(hiss_floor.WHITE_SEED)
+    return hiss_floor.stft_power(rng.standard_normal(int(hiss_floor.WHITE_SECONDS * rate)) * hiss_floor.WHITE_LEVEL, rate)[1]
+
+
+def coded_bands(src_power, layout, active):
+    """Per band, whether its bins spread wider than noise in the source's quiet frames (`CODED_MARGIN_DB` past white's)."""
+    white = _white_power(layout.rate)
+    reference = band_valley_ratios(white, layout.kindex, layout.nb, np.ones(white.shape[1]), np.ones(len(white), dtype=bool))
+    measured = band_valley_ratios(src_power, layout.kindex, layout.nb, layout.shape, active)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        deviation = 10.0 * np.log10(measured / reference)
+    return deviation < -CODED_MARGIN_DB
+
+
+def quiet_bound(src_power, floor, layout, active):
+    """`floor` held no lower than each band's quiet level (`QUIET_FLOOR_PCT` over the active frames, every frame under
+    `CODED_MIN_FRAMES`, of the band's mean bin power) `QUIET_FLOOR_MARGIN_DB` down."""
+    pool = active if int(active.sum()) >= CODED_MIN_FRAMES else np.ones(len(src_power), dtype=bool)
+    means = (src_power @ layout.onehot) / np.maximum(layout.nbins, 1.0)
+    quiet = np.percentile(means[pool], QUIET_FLOOR_PCT, axis=0) * 10.0 ** (-QUIET_FLOOR_MARGIN_DB / 10.0)
+    return np.fmax(floor, np.where(layout.nbins > 0, quiet, np.nan)[np.newaxis, :])
+
+
+def loud_floor(src_power, floor, layout, active):
+    """The floor the loud programme cells stand on: `quiet_bound`, the coded bands NaN (`coded_bands`)."""
+    return np.where(coded_bands(src_power, layout, active)[np.newaxis, :], np.nan, quiet_bound(src_power, floor, layout, active))
+
+
 def kept_readings(powers, floor, layout, active):
     """`{kept_hf_db, kept_soft_db}`: per band, the median output over source dB on its loud programme cells of 3 kHz and
-    up (`programme_cells`) and on its soft programme cells of 1 kHz and up (`soft_cells`), each the mean over the bands.
+    up (`programme_cells` on `loud_floor`) and on its soft programme cells of 1 kHz and up (`soft_cells`), each the mean
+    over the bands.
+
+    Only the loud reading takes `loud_floor`. Leaving the coded bands out of the soft one moved Vaccin's soft readings
+    4.9-5.7 dB down (its single4s render, which the user ranked first, from -26.51 to -32.10), past the bound the
+    judged files set, and the quiet bound moved Vaccin's de-esser bug from -30.0 to -24.6, inside it; the loud reading
+    keeps every judged file on its side of its bound (T single4s -7.13, V single4s -5.83, the de-esser bugs -29.9 and
+    under).
 
     The soft reading takes the mean over bands as kept HF does: of the forms measured (docs/ear_v4_hiss.md, "The Soft
     Programme Kept") it alone keeps the judged files apart at an edge and reads a 4 kHz low pass. The median over bands
@@ -605,7 +685,7 @@ def kept_readings(powers, floor, layout, active):
     """
     level = held_level_db(powers)
     return {
-        "kept_hf_db": kept_db(level, programme_cells(powers[0], floor, layout, active), layout),
+        "kept_hf_db": kept_db(level, programme_cells(powers[0], loud_floor(powers[0], floor, layout, active), layout, active), layout),
         "kept_soft_db": kept_db(level, soft_cells(powers[0], floor, layout, active), layout),
     }
 

@@ -24,8 +24,71 @@ edge, nor a split in time, nor a reading of the within-band valleys tells
 revealed programme from residual hiss. The soft-programme guard of the same
 day (second section) reads what an SNR-dependent suppressor takes from
 programme standing only 6-18 dB over the hiss. The sung-pause test of
-2026-10-18 (first section) leaves out of the pause reading the true pauses
+2026-10-18 (second section) leaves out of the pause reading the true pauses
 whose source holds partials held across the run: a choir's soft singing.
+The dulling guard of 2026-10-21 (first section) stopped reading a coded
+source's hiss as loud programme.
+
+## The Dulling Guard on Coded Sources (2026-10-21)
+
+`dsp.hiss_prog_kept_hf_db` reads the loud programme (cells of 3 kHz and up
+standing 18 dB over the floor) and how much of it the output keeps. On a
+perceptually coded source it read hiss as programme. The APL v9 plateau's IA
+confirmation tripped it on eight of the 64 clips the reference suppressor
+runs on; the shipped output already read -10 to -21 dB on six of them, for
+hiss it had removed.
+
+Two ways the floor sits under the hiss there:
+
+- The valley statistic. The floor is the whitened bins' 25th percentile over
+  -ln(0.75), calibrated on white noise. A coder's HF bins spread wider than
+  noise: in the quiet frames, the valley over the band mean sat 1.5-13 dB
+  under white's -5.2 dB on IA promo breaks (growing toward the codec's
+  cutoff) and 35-40 dB under it at 10-12 kHz on Vaccin, where its MP3 coder
+  drops the band in speech frames. Tele7abc and SOTI sit within 0.4 dB of
+  white below 14 kHz, Gaudeamus5 except at 14 kHz. These are not holes:
+  fewer than 1 % of the bins sit 20 dB under the band median.
+- The anchor that caps the floor. On the realistic-v2 fixtures it reads the
+  hiss up to 17.6 dB low; on IA promo breaks the floor sat 4-13 dB under each
+  band's quiet level above 7 kHz.
+
+The loud reading now stands on its own floor (`hiss_programme.loud_floor`):
+the floor held no lower than each band's quiet level (P10 over the active
+frames of the band's mean bin power, which its hiss never exceeds) 3 dB
+down, with the coded bands left out (their quiet frames' valley over the
+mean more than 2 dB under white noise's, `coded_bands`). Neither half alone
+was enough: the bound left Yorkshire and tv-1 tripping (their coder thins
+the quiet frames too, so the quiet level reads low), the coded test fox and
+SAS. The soft reading keeps today's floor: leaving the coded bands out moved
+Vaccin's soft readings 4.9-5.7 dB down (V single4s, which the user ranked
+first, from -26.51 to -32.10), past its bound, and the quiet bound moved
+Vaccin's de-esser bug from -30.0 to -24.6, inside it.
+
+| check | before | after |
+|---|---|---|
+| judged files, kept HF: T single4s ("underwater again") | -7.13 | -7.13 |
+| lowest not called dull | S single4s -5.66 | V single4s -5.83 |
+| de-esser bugs | -24.3..-35.8 | -29.9..-37.0 |
+| fixtures: 4 kHz low pass at or under -1 dB | 35 of 35 | 35 of 35 |
+| fixtures: perfect removal (`prog_only`), median | -27.4 | -19.6 |
+| fixtures: soft, programme and pause hiss readings | | unchanged |
+| IA, 64 suppressed clips: C12 material trips | 14 | 9 |
+| of which kept HF | 8 | 2 |
+
+Every judged file keeps its side of the bound (-6.0, the hold at -7.0), so
+the bound stands. The two kept-HF trips left (f1-1950, Thomas) are clips the
+shipped output already dulls past the bound, where the suppressor takes
+2.3-2.8 dB more. On the Tata renders no reading crosses the bound before or
+after: shipped and accepted cathar read Gaudeamus5 at -1.02 / -2.39 (-1.80 /
+-5.03 before), the APL plateau SOTI at -0.54 (-2.17). Vaccin, which read
+nothing, now reads (-0.46 to +0.13 for the shipped renders).
+
+Not fixed: the fixtures' perfect hiss removal still reads -19.6 dB median.
+Their noise is the recorded tape difference, whose bursts and crackle stand
+18 dB over the steady hiss and count as loud programme; any noise removal
+reads there as dulling. Scratch: `D:/ai_restore_work/scratch_confirm`
+(`kept_bands.py`, `floor_cap.py`, `valley_stats.py`, `holes.py`,
+`kept_variant.py`, `run_kept_check.sh`).
 
 ## Sung Pauses (2026-10-18)
 

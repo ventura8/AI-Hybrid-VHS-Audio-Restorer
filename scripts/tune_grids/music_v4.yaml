@@ -190,6 +190,7 @@ constraints:
   dsp.hiss_pause_excess_db.output.tail: {worse: up, max_move: 0.35}
   dsp.hiss_prog_margin_all_db.delta.median: {worse: up, bound: 0.55}
   dsp.hiss_pump_db.output.median: {worse: up, max_move: 3.0, bound: 12.0}
+  # kept HF: tata_v4's bound and its loud floor of 2026-10-21 (the coded bands out, the quiet bound).
   dsp.hiss_prog_kept_hf_db.output.median: {worse: down, max_move: 1.0, bound: -6.0}
   # The soft programme kept (tata_v4's evidence): no music verdict names dulling; the bound is the next whole decibel
   # under the lowest accepted music final, the captain-pu APL final (-27.32, one window, "music fine on both").

@@ -1239,6 +1239,15 @@ modulation on one. With `pause_floor_suppressed_only` on, the 135 refused
 clips read the shipped output, so 13 of 202 clips trip a guard, against the
 plateau's 31.
 
+Six of the cut-12 candidate's eight dulling trips (no release) were the
+ear's: on coded sources the kept-HF reading counted the hiss the shipped
+output removed as loud programme. On the corrected reading (2026-10-21,
+`docs/ear_v4_hiss.md`, "The Dulling Guard on Coded Sources") that candidate
+trips 9 of the 64 clips the suppressor runs on (from 14), so 9 of 202 with
+`pause_floor_suppressed_only`: the loud highs of f1-1950 and Thomas (which
+the shipped output already dulls past the bound), the top band on four, the
+pump on three, the soft programme on two.
+
 The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the
 neural stage. Off, every output keeps its bytes; the loop and a listening

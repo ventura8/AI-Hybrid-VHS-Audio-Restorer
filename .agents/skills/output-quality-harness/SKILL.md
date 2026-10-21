@@ -1591,7 +1591,11 @@ prototype's estimator, rebuilt after validation round 1):
    standing 18 dB over the floor, both held at the 16-bit dither, averaged
    over the bands with 20 such cells: dulling; round 1's median over all
    cells hid a cut of the band edge behind the 3-4 kHz cells and missed the
-   4 kHz low pass on 9 of 23 fixtures), `hiss_prog_kept_soft_db` (its twin
+   4 kHz low pass on 9 of 23 fixtures; since 2026-10-21 on `loud_floor`,
+   the floor held no lower than each band's quiet level 3 dB down with the
+   bands a perceptual coder thinned left out, because a coded source's
+   hiss peaks read as programme: `docs/ear_v4_hiss.md`, "The Dulling Guard
+   on Coded Sources"), `hiss_prog_kept_soft_db` (its twin
    for the soft programme, 2026-10-17: per band of 1 kHz and up, the same
    median on active cells standing 6-18 dB over the floor spread over the
    band's bins by the source's shape, whose 3 x 3 neighbourhood mean stands
@@ -1769,7 +1773,9 @@ the v3 grids stay for reproducibility.
   +6.49, and the dead APL, +18.09 and up; a 30 dB gate of the true pauses
   reads +21.8 on Tele7abc and is excluded, a 20 dB one +11.8 and passes),
   kept HF (`max_move` 1.0, `bound` -6.0: the floor holds at -7.0, over T
-  single4s' -7.04, "underwater again"), the soft programme kept (`max_move`
+  single4s' -7.04, "underwater again"; on the loud floor of 2026-10-21 T
+  single4s reads -7.13 and the lowest file not called dull V single4s
+  -5.83), the soft programme kept (`max_move`
   0.05, the jitter report's tie floor 0.045; `bound` -27.0, the next whole
   decibel under the lowest file the user did not call dull, V single4s
   -26.51, over T single4s' -27.46; music_v4 -28.0 under the captain-pu APL
@@ -2720,6 +2726,15 @@ confirmation taught:
   however small, past a bound the incumbent already broke (kept HF -11.71
   to -11.71 trips), which is right for a loop and noise for a confirmation:
   report the trips whose move exceeds `max_move` (0.1 dB for a bound alone).
+- Check that a trip is the engine's and not the reading's before chasing
+  it. Six of the cut-12 candidate's eight kept-HF trips were hiss the
+  shipped output had removed, read as programme on coded sources (the
+  shipped output read -10 to -21 there). Per band, log the reading's cells
+  from inside the harness, then compare the source's band level, its spread
+  over time and its bins' valley over mean with white noise's
+  (`scratch_confirm/kept_bands.py`, `floor_cap.py`, `valley_stats.py`). On
+  the corrected reading the candidate's material trips fell from 14 to 9 of
+  64; the two kept-HF trips left are clips the shipped output already dulls.
 - An engine-side estimate of a v4 reading is not the reading: a kept-hiss
   estimate tracked `hiss_prog_removed_db` at Spearman 0.83-0.88, yet the
   pump built on it did not track `hiss_pump_db` at all (0.0). Calibrate an

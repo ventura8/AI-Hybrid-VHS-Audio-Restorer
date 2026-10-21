@@ -391,6 +391,9 @@ constraints:
   # Bound -6.0 (adversarial review: with max_move alone the loop could dull 1 dB more on every accepted round): it
   # admits every judged file the user did not call dull (lowest S single4s -5.60, ranked first; S stitched -5.51) and,
   # with the max_move allowance past it, holds the floor at -7.0, over T single4s (-7.04, "underwater again").
+  # Since 2026-10-21 the loud cells stand on their own floor (held no lower than each band's quiet level 3 dB down, the
+  # bands a coder thinned left out; docs/ear_v4_hiss.md, "The Dulling Guard on Coded Sources"): the judged files read
+  # T single4s -7.13, the lowest not called dull V single4s -5.83, the de-esser bugs -29.9 and under; the bound stands.
   dsp.hiss_prog_kept_hf_db.output.median: {worse: down, max_move: 1.0, bound: -6.0}
   # The soft programme kept (2026-10-17, kept HF's twin): the mean over bands of 1 kHz and up of each band's median on
   # the cells 6-18 dB over the floor (shaped; their 3 x 3 neighbourhood 6 dB over it too), where an SNR-dependent

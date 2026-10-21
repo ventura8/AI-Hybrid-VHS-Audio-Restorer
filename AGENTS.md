@@ -176,8 +176,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     highs on ten). `pause_floor_shape: hiss_shelf` (off) cuts the shelf only
     from the source's hiss, keeping soft programme the neural stage emptied.
     With the shelf cut at 12 dB (an audibility tie with 18 on every Tata
-    tape) and the release at 6 dB, 13 of the 202 clips trip a guard
-    (`docs/configuration.md`).
+    tape) and the release at 6 dB, 13 of the 202 clips trip a guard; with
+    the cut at 12 dB, no release and the dulling guard corrected for coded
+    sources, 9 (`docs/configuration.md`).
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing
@@ -474,7 +475,10 @@ user set, with their reasons:
   - no dulling (`dsp.hiss_prog_kept_hf_db`, R1, R2), loud or soft: the
     soft programme 6-18 dB over the hiss (`dsp.hiss_prog_kept_soft_db`,
     bound -27 dB, the edge of the judged files the user did not call
-    dull) is read too, where an SNR-dependent suppressor takes it;
+    dull) is read too, where an SNR-dependent suppressor takes it; the
+    loud reading stands on a floor held no lower than each band's quiet
+    level 3 dB down and leaves out the bands a perceptual coder thinned
+    (2026-10-21), or a coded source's hiss peaks read as lost highs;
   - the learned vetoes, where DNSMOS BAK and SIGMOS NOISE only veto.
 - A bounded guard does not follow the incumbent past its bound: a candidate
   worse than its incumbent and more than `max_move` past the bound is
