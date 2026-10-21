@@ -40,6 +40,7 @@ from . import mux_format as _mux_format
 from . import neural_level as _neural_level
 from . import notch_ring_guard as _notch_ring_guard
 from . import post_neural_suppress as _post_neural_suppress
+from . import reference_suppress as _reference_suppress
 from . import resemble_denoise as _resemble
 from . import source_checks as _source_checks
 from . import spectral_denoise as _spectral_denoise
@@ -1401,7 +1402,8 @@ def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, tota
     if stages.get("pause_floor"):
         from . import pause_floor as _pause_floor
 
-        polished = _pause_floor.apply_when_needed(original_wav, polished, audio_dir, strategy=strategy)
+        suppressed = _reference_suppress.is_output(cleaned_wav)
+        polished = _pause_floor.apply_when_needed(original_wav, polished, audio_dir, strategy=strategy, suppressed=suppressed)
     return polished
 
 

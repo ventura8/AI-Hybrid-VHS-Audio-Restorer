@@ -51,6 +51,7 @@ READ_SITES = {
     "pause_floor_shape": ("PAUSE_FLOOR_SHAPE", {"pause_floor.py:*"}),
     "pause_floor_shelf_hz": ("PAUSE_FLOOR_SHELF_HZ", {"pause_floor.py:*"}),
     "pause_floor_hf_cut_db": ("PAUSE_FLOOR_HF_CUT_DB", {"pause_floor.py:*"}),
+    "pause_floor_suppressed_only": ("PAUSE_FLOOR_SUPPRESSED_ONLY", {"pause_floor.py:*"}),
     # The post-neural hiss stages: the suppressor's gate and the air shelf's gate, and the level restore.
     "apl_post_neural_suppress": ("APL_POST_NEURAL_SUPPRESS", {"post_neural_suppress.py:*"}),
     "apl_post_neural_suppress_floor_gap_db": ("APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB", {"post_neural_suppress.py:*"}),
@@ -85,6 +86,7 @@ READ_SITES = {
 POST_CACHE_IMPORTERS = {
     "processing.py",
     "modes/cathar.py",
+    "pause_floor.py",
     "post_neural_suppress.py",
     "neural_level.py",
     "mux_format.py",

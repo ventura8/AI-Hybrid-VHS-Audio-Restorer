@@ -705,6 +705,9 @@ _BOOL_CONFIG_FIELDS = (
     # The listener-round stages: the pause floor and the sibilant guard were accepted by the
     # loops (see the numeric keys); the stem path was not and stays off.
     ("enable_pause_floor", True),
+    # The pause floor's configured fill only where the reference suppressor ran (modules/pause_floor.py,
+    # PAUSE_FLOOR_SUPPRESSED_ONLY below); every other file takes the release fill. Off: every file the configured one.
+    ("pause_floor_suppressed_only", False),
     # A pair correlating at r <= -0.3 is one channel polarity-inverted; the |r| azimuth gate
     # passes it and reads a false skew (L/-L: 1 kHz tone -0.50 ms, 2 kHz -0.25 ms; see
     # modules/filters.py). The scan always logs such a pair; on, it reads no skew from it.
@@ -822,9 +825,11 @@ CATHAR_DEHUM_FREQ_SCANNER = "scanner"
 # quiet frame at pause_floor_fill_db under the source frame, scaled by the restored programme's gain
 # on the loud frames, and fills no frame already at its target. 'flat' fills with the source as it
 # is, hiss included; 'shelf' cuts it pause_floor_hf_cut_db above pause_floor_shelf_hz, 'lowpass'
-# low-passes it there. 'cluster' and 'flat' are what every release has run.
+# low-passes it there; 'hiss_shelf' cuts the shelf only from the cells the source holds as hiss, so
+# the programme above the corner is filled whole (modules/pause_fill_shape.py). 'cluster' and
+# 'flat' are what every release has run.
 VALID_PAUSE_FLOOR_TARGETS = {"cluster", "frame"}
-VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass"}
+VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass", "hiss_shelf"}
 
 # linear_air_gate: 'none' keeps auto_pure_linear's air shelf on every tape, as every release has;
 # 'hiss_dominated' skips it on a tape the post-neural hiss gate opens on (a hiss-dominated source
@@ -1373,6 +1378,14 @@ PAUSE_FLOOR_TARGET = str(CONFIG.get("pause_floor_target", "cluster"))
 PAUSE_FLOOR_SHAPE = str(CONFIG.get("pause_floor_shape", "flat"))
 PAUSE_FLOOR_SHELF_HZ = float(CONFIG.get("pause_floor_shelf_hz", 3000.0))
 PAUSE_FLOOR_HF_CUT_DB = float(CONFIG.get("pause_floor_hf_cut_db", 18.0))
+# The per-frame shelved fill is the reference suppressor's pause half (2026-10-21): on the 135 IA hunt clips whose print
+# the suppressor refuses (it holds programme), the programme keeps its hiss, and every guard ear v4's constraints
+# tripped against the shipped settings (15 clips) was the fill's: pauses emptied under a hissing programme (pump),
+# a per-frame target that follows soft programme switching on and off (gap modulation), and the highs of soft
+# programme the shipped flat fill had put back. With this on, such a file takes the release fill (cluster, flat,
+# 12 dB), the 135 clips read the shipped output exactly, and the four Tata tapes, all past the suppressor's depth
+# line (31.9 / 30.3 / 24.7 / 27.5 dB), keep the configured fill.
+PAUSE_FLOOR_SUPPRESSED_ONLY = bool(CONFIG.get("pause_floor_suppressed_only", False))
 CATHAR_SPLIT_BAND_HZ = int(CONFIG.get("cathar_split_band_hz", 0))
 CATHAR_ALPHA_HIGH = float(CONFIG.get("cathar_alpha_high", 2.0))
 CATHAR_MUSIC_ALPHA_HIGH = float(CONFIG.get("cathar_music_alpha_high", 0.5))

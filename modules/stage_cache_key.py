@@ -95,6 +95,7 @@ POST_NEURAL_CONFIG_KEYS = frozenset(
         "pause_floor_shape",
         "pause_floor_shelf_hz",
         "pause_floor_hf_cut_db",
+        "pause_floor_suppressed_only",
         # The post-neural hiss stages (modules/post_neural_suppress.py, modules/neural_level.py):
         # the suppressor's gate, the air shelf's gate and the level restore after the model.
         "apl_post_neural_suppress",
@@ -132,6 +133,7 @@ POST_CACHE_MODULES = frozenset(
     {
         "modules/sibilant_guard.py",
         "modules/pause_floor.py",
+        "modules/pause_fill_shape.py",
         "modules/mastering.py",
         "modules/sync.py",
         "modules/hiss_floor.py",

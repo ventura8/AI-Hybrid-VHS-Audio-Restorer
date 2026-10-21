@@ -2689,6 +2689,30 @@ before feeding a knob back and leave the inert ones at their shipped value.
 Before a default ships, it also gets one `artifacts/realistic-v2` and
 IA-corpus confirmation (AGENTS.md section 3) and a listening session.
 
+## Confirming a plateau on the IA corpus (2026-10-21)
+
+Before a plateau's settings ship, replay them against the shipped ones on
+the IA hunt's kept work folders and judge each clip with the grid's own
+constraints, the shipped output as the incumbent
+(`D:/ai_restore_work/scratch_confirm`:
+`replay_variant.py VARIANT OVERRIDES_JSON` runs the post-neural stages
+in-process from the neural output, `REPLAY_REPO` points it at a worktree,
+`REPLAY_CLIPS` narrows it; `table_v2.py DIR:LABEL ...` tabulates). What the
+APL v9 confirmation taught:
+
+- Split the clips by what the plateau does to them (here, whether the
+  reference suppressor's depth line lets it run) and attribute each trip by
+  replaying every component alone. The plateau's 31 trips were the fill's
+  on refused clips and both halves' on the others; one table hid that.
+- Count material trips beside the loop's. The loop's rule trips any move,
+  however small, past a bound the incumbent already broke (kept HF -11.71
+  to -11.71 trips), which is right for a loop and noise for a confirmation:
+  report the trips whose move exceeds `max_move` (0.1 dB for a bound alone).
+- An engine-side estimate of a v4 reading is not the reading: a kept-hiss
+  estimate tracked `hiss_prog_removed_db` at Spearman 0.83-0.88, yet the
+  pump built on it did not track `hiss_pump_db` at all (0.0). Calibrate an
+  engine copy of a reading against the reading before steering with it.
+
 ## Working on the harness code
 
 - `tests/conftest.py`'s session hook rebuilds `assets/coverage.svg` and runs the

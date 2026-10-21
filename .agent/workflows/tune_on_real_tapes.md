@@ -221,6 +221,11 @@ skill holds the readings, their status and the measured facts behind them.
    carries but an accepted switch made inert stays at its shipped value.
    No default ships without a listening session and one
    `artifacts/realistic-v2` plus IA-corpus confirmation (AGENTS.md
-   section 3).
+   section 3). For the IA half, replay the plateau against the shipped
+   settings on the hunt's kept work folders, split the clips by what the
+   plateau does to them, attribute each trip by replaying every component
+   alone, and count material trips beside the loop's (the harness skill,
+   "Confirming a plateau on the IA corpus"): the APL v9 plateau's 31 trips
+   were the fill's on the clips the suppressor refuses.
 
 1. Run the full local quality gate before pushing.

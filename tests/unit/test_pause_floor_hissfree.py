@@ -204,9 +204,9 @@ def test_the_frame_target_fills_one_frame_short_and_the_cluster_keeps_its_share_
     """'frame' fills as soon as one quiet frame is 0.5 dB short of its target; 'cluster' at a 5 % share, as it always has."""
     met, one = np.r_[np.full(10, 0.4), np.zeros(990)], np.r_[3.0, np.zeros(999)]
     share, over = np.r_[np.full(50, 3.0), np.zeros(950)], np.r_[np.full(51, 3.0), np.zeros(949)]
-    with _settings(target="frame")[0]:
-        assert (pause_floor._targets_met(met), pause_floor._targets_met(one)) == (True, False)
-    assert (pause_floor._targets_met(one), pause_floor._targets_met(share), pause_floor._targets_met(over)) == (True, True, False)
+    assert (pause_floor._targets_met(met, "frame"), pause_floor._targets_met(one, "frame")) == (True, False)
+    cluster = [pause_floor._targets_met(deficit, "cluster") for deficit in (one, share, over)]
+    assert cluster == [True, True, False]
 
 
 def test_flat_and_unknown_shapes_have_no_filter_and_a_short_block_still_shapes():
@@ -260,7 +260,7 @@ def test_the_output_names_a_non_default_fill(tmp_path, settings, name):
     with ExitStack() as stack:
         for context in _settings(**settings):
             stack.enter_context(context)
-        assert pause_floor._target_for(tmp_path / "res.wav", tmp_path).name == name
+        assert pause_floor._target_for(tmp_path / "res.wav", tmp_path, pause_floor.configured()).name == name
 
 
 def _record(tmp_path, monkeypatch, **settings):

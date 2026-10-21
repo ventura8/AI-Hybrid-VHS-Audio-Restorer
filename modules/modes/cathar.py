@@ -53,7 +53,8 @@ class CatharMode(BaseRestorationMode):
                 depth_db=music_expander_depth_db(strategy),
             )
             # After the expander, so it cannot take the fill back out (enable_pause_floor).
-            return pause_floor.apply_when_needed(in_wav, polished, out_dir, strategy=strategy)
+            suppressed = reference_suppress.is_output(raw_restored)
+            return pause_floor.apply_when_needed(in_wav, polished, out_dir, strategy=strategy, suppressed=suppressed)
 
         processing._process_single_track_pipeline(
             work_dir,

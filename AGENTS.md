@@ -161,7 +161,16 @@ The engine supports 10 execution modes configured in `config.yaml`:
     (round 4): the hiss under Vaccin's speech rose 2.18 dB over its masked
     threshold. Vaccin's MP3 coder drops 10-16 kHz in speech frames, so the
     print's 5th percentile sits 11.7 dB under the hiss in its pauses and
-    the residual hiss reads as programme. Off.
+    the residual hiss reads as programme. Off. Its IA confirmation
+    (2026-10-21, 202 hunt clips against the shipped settings) failed: 31
+    clips tripped a v4 guard. On the 135 the suppressor refuses every trip
+    was the per-frame fill's (gated pauses under a programme that keeps its
+    hiss, pause modulation, dulling), so `pause_floor_suppressed_only`
+    (off) gives a file the suppressor did not run on the release fill: 16
+    trip, all on files it ran on (the pump on five, the suppressor's loss of
+    highs on ten). `pause_floor_shape: hiss_shelf` (off) cuts the shelf only
+    from the source's hiss, keeping soft programme the neural stage emptied
+    (`docs/configuration.md`).
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing
@@ -279,7 +288,8 @@ The engine supports 10 execution modes configured in `config.yaml`:
     the pause tail to 3.3 / 0 / 0 / 11.3, every v4 guard passing; not yet
     rendered by the loop or heard (`docs/configuration.md`, "Reference-SNR
     Suppressor"). `cathar_reference_release_db` (0, off) is the same
-    programme release on cathar's output.
+    programme release on cathar's output, and `pause_floor_suppressed_only`
+    reaches cathar's pause floor too.
   - Listener-round stages: split-band subtraction (`cathar_split_band_hz`,
     a second denoise pass at `cathar_alpha_high` above the crossover,
     recombined through `modules/split_band.py`; not accepted, off) and the

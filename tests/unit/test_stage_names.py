@@ -44,7 +44,7 @@ def test_stage_output_joins_the_folder_and_takes_a_string_path(tmp_path):
 
 TARGETS = [
     lambda src, folder: burst_ceiling._target_for(src, folder),
-    lambda src, folder: pause_floor._target_for(src, folder),
+    lambda src, folder: pause_floor._target_for(src, folder, pause_floor.configured()),
     lambda src, folder: post_neural_suppress._target_for(src, folder),
     lambda src, folder: reference_suppress.target_for(src, folder, reference_suppress.CATHAR_SETTINGS),
 ]

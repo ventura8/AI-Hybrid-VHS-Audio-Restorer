@@ -796,6 +796,22 @@ audio alignment, or FFmpeg multiplexing.
   print, which the release assumes it stays under. A first guess, hiss riding
   with the speech, was wrong. A release needs a print the coder's dropouts
   cannot pull down (a higher quantile on bands a coder gates, say).
+- The IA confirmation of the APL v9 plateau (2026-10-21) failed: 31 of 202
+  hunt clips tripped a v4 guard. Every trip on the 135 clips the suppressor
+  refuses was the per-frame fill's: the shipped chain takes only 1-11 dB of
+  hiss from under those programmes, so an 18 dB per-frame fill gates the
+  pauses (pump up to 36); its target follows soft programme through the
+  non-speech runs and switches on and off (pause modulation); and the shelf
+  takes the highs of soft programme the flat fill had put back. The pause
+  floor's quiet frames are 57-99 % of the frames on dense programme, so the
+  fill is a programme keeper there, not a pause fill.
+  `pause_floor_suppressed_only` (`modules/pause_floor.py`, `profile_for`)
+  gives a file the reference suppressor did not run on the release fill;
+  both callers pass `suppressed=reference_suppress.is_output(...)`. The
+  `hiss_shelf` shape (`modules/pause_fill_shape.py`) floors the source's own
+  MMSE-LSA gain by the shelf's response, so only hiss cells take the cut.
+  An engine-side pump match was tried and dropped: its kept-hiss estimate
+  tracked ear v4's removal (Spearman 0.83-0.88) but not its pump (0.0).
 - **APL burst ceiling (2026-10-12)**: `apl_burst_ceiling` (`none`, `gaps`,
   `edges`) and `apl_burst_ceiling_depth_db` (30), `modules/burst_ceiling.py`
   between the polish and the pause floor (`docs/configuration.md`,

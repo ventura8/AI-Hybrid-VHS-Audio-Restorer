@@ -54,7 +54,7 @@ import numpy as np
 import scipy.signal
 import soundfile as sf
 
-from . import event_log
+from . import event_log, pause_fill_shape
 from .config import (
     ENABLE_PAUSE_FLOOR,
     PAUSE_FLOOR_FILL_DB,
@@ -62,6 +62,7 @@ from .config import (
     PAUSE_FLOOR_QUIET_PERCENTILE,
     PAUSE_FLOOR_SHAPE,
     PAUSE_FLOOR_SHELF_HZ,
+    PAUSE_FLOOR_SUPPRESSED_ONLY,
     PAUSE_FLOOR_TARGET,
 )
 from .hygiene import atomic_target
@@ -89,7 +90,10 @@ FRAME_TARGET = "frame"
 # low-pass's 2nd order a Linkwitz-Riley 4th order (24 dB/octave), as prototyped (P1b, P1c).
 SHELF_ORDER = 4
 LOWPASS_ORDER = 2
-SHAPED = ("shelf", "lowpass")
+HISS_SHELF = "hiss_shelf"
+SHAPED = ("shelf", "lowpass", HISS_SHELF)
+# The shapes that cut above the corner rather than drop it.
+SHELVES = ("shelf", HISS_SHELF)
 # The corner never reaches the Nyquist frequency, where a Butterworth design is undefined.
 MAX_CORNER_SHARE = 0.45
 # Samples of real audio read either side of a shaped block: the forward-backward filter's
@@ -97,8 +101,41 @@ MAX_CORNER_SHARE = 0.45
 # block after block matches the whole file shaped at once to rounding.
 SHAPE_CONTEXT_SAMPLES = 1 << 14
 # The output's name carries a non-default fill, so a render at other settings is never reused.
-SHAPE_TAGS = {"shelf": "_shelf{hz:g}c{cut:g}", "lowpass": "_lowpass{hz:g}"}
-SHAPE_NOTES = {"shelf": ", the hiss cut {cut:g} dB above {hz:g} Hz", "lowpass": ", low-passed at {hz:g} Hz"}
+SHAPE_TAGS = {"shelf": "_shelf{hz:g}c{cut:g}", "lowpass": "_lowpass{hz:g}", HISS_SHELF: "_hshelf{hz:g}c{cut:g}"}
+SHAPE_NOTES = {
+    "shelf": ", the hiss cut {cut:g} dB above {hz:g} Hz",
+    "lowpass": ", low-passed at {hz:g} Hz",
+    HISS_SHELF: ", the hiss (not the programme) cut {cut:g} dB above {hz:g} Hz",
+}
+
+
+class Profile(NamedTuple):
+    """The fill's settings for one file (`profile_for`): `target` and `shape` as `pause_floor_target` and
+    `pause_floor_shape`; `fill_db`, `shelf_hz` and `cut_db` as `pause_floor_fill_db`, `pause_floor_shelf_hz` and
+    `pause_floor_hf_cut_db`."""
+
+    target: str
+    shape: str
+    fill_db: float
+    shelf_hz: float
+    cut_db: float
+
+
+def release_profile():
+    """The fill every release has run, the keys' defaults: what a file the reference suppressor did not run on takes
+    while `pause_floor_suppressed_only` is on. A function, so importing this post-cache module calls nothing."""
+    return Profile("cluster", "flat", 12.0, 3000.0, 18.0)
+
+
+def configured():
+    """The configured fill (`Profile`)."""
+    return Profile(PAUSE_FLOOR_TARGET, PAUSE_FLOOR_SHAPE, PAUSE_FLOOR_FILL_DB, PAUSE_FLOOR_SHELF_HZ, PAUSE_FLOOR_HF_CUT_DB)
+
+
+def profile_for(suppressed):
+    """The fill for one file: the configured one, or the release fill while `pause_floor_suppressed_only` is on and the
+    reference suppressor did not run on the file (`suppressed` False)."""
+    return release_profile() if PAUSE_FLOOR_SUPPRESSED_ONLY and not suppressed else configured()
 
 
 class Shaper(NamedTuple):
@@ -122,6 +159,19 @@ class Envelopes(NamedTuple):
     band: np.ndarray
     weight: np.ndarray
     lag: int
+
+
+class Shaping(NamedTuple):
+    """What the fill is taken from and how it and the deficit are shaped.
+
+    `source` is the file the fill copies (the source, or its hiss shelved on 'hiss_shelf');
+    `fill` the shaper it goes through on the way (None when flat or already shaped); `band` the
+    shaper the restored audio's deficit is read through (None when flat).
+    """
+
+    source: Path
+    fill: Optional[Shaper]
+    band: Optional[Shaper]
 
 
 class Fill(NamedTuple):
@@ -162,12 +212,13 @@ def shaper_for(shape, rate, corner_hz, cut_db):
 
     'shelf' is a 4th-order Butterworth low-pass at `corner_hz`, run forward and backward, plus
     the rest of the signal `cut_db` down: the low band whole, everything above the corner
-    `cut_db` under it. 'lowpass' is a 2nd-order one run the same way with nothing above it
-    (`cut_db` unused). The corner stays under 45 % of the rate.
+    `cut_db` under it ('hiss_shelf' reads the restored deficit through the same filter).
+    'lowpass' is a 2nd-order one run the same way with nothing above it (`cut_db` unused). The
+    corner stays under 45 % of the rate.
     """
     if shape not in SHAPED:
         return None
-    order, dry = (SHELF_ORDER, 10.0 ** (-cut_db / 20.0)) if shape == "shelf" else (LOWPASS_ORDER, 0.0)
+    order, dry = (SHELF_ORDER, 10.0 ** (-cut_db / 20.0)) if shape in SHELVES else (LOWPASS_ORDER, 0.0)
     corner = min(float(corner_hz), MAX_CORNER_SHARE * rate)
     return Shaper(scipy.signal.butter(order, corner, btype="low", fs=rate, output="sos"), dry)
 
@@ -333,17 +384,17 @@ def _shape_mismatch(reference_meta, restored_meta):
     return None
 
 
-def _nothing_to_fill(env, target):
-    """Why the envelopes give the stage nothing to do, or None."""
+def _nothing_to_fill(env, target, kind):
+    """Why the envelopes give the stage nothing to do, or None; `kind` is the target's ('cluster' or 'frame')."""
     if int((env.weight > 0.5).sum()) < MIN_QUIET_FRAMES:
         return "too few quiet frames"
-    if _targets_met(_deficit_db(target, env.band, env.weight)):
+    if _targets_met(_deficit_db(target, env.band, env.weight), kind):
         return "nothing to fill"
     return None
 
 
-def _targets_met(deficit):
-    """Whether the quiet frames' deficits (dB) leave nothing worth filling.
+def _targets_met(deficit, kind):
+    """Whether the quiet frames' deficits (dB) leave nothing worth filling on a `kind` target.
 
     On 'cluster', 95 % of the quiet frames within MIN_DEFICIT_DB of the one level. On 'frame',
     no quiet frame MIN_DEFICIT_DB or more short of its own target: most quiet frames of a tape
@@ -351,7 +402,7 @@ def _targets_met(deficit):
     emptied pauses dead (abc-primetime-1991: 0.5 s of true pause at -77.6 dB under the source,
     skipped at the 95 % share; five hunt clips kept a 0.1-0.2 s hole under a 10-frame minimum).
     """
-    if PAUSE_FLOOR_TARGET == FRAME_TARGET:
+    if kind == FRAME_TARGET:
         return not bool((deficit >= MIN_DEFICIT_DB).any())
     return float(np.mean(deficit < MIN_DEFICIT_DB)) >= DEFICIT_SHARE
 
@@ -375,43 +426,43 @@ def _envelopes(levels):
     return Envelopes(reference[ref_cut], restored[res_cut], fill[ref_cut], band[res_cut], weight, lag)
 
 
-def _paired_levels(reference, restored, frame, shaper):
+def _paired_levels(reference, restored, frame, shaping):
     """The (reference, restored, fill, band) frame levels; `reference` and `restored` are (path, broadband levels).
 
-    Flat, the fill and the band are the broadband pair itself; shaped, both files are read
-    again through the shaper.
+    Flat, the fill and the band are the broadband pair itself; shaped, the fill's file and the
+    restored file are read again through their shapers (`Shaping`).
     """
-    (reference_wav, reference_levels), (restored_wav, restored_levels) = reference, restored
-    if shaper is None:
+    (_, reference_levels), (restored_wav, restored_levels) = reference, restored
+    if shaping.band is None:
         return reference_levels, restored_levels, reference_levels, restored_levels
-    fill, band = shaped_frame_levels(reference_wav, frame, shaper), shaped_frame_levels(restored_wav, frame, shaper)
-    return reference_levels, restored_levels, fill, band
+    fill = frame_levels(shaping.source, frame)[0] if shaping.fill is None else shaped_frame_levels(shaping.source, frame, shaping.fill)
+    return reference_levels, restored_levels, fill, shaped_frame_levels(restored_wav, frame, shaping.band)
 
 
-def _target(env):
+def _target(env, profile):
     """The fill's target and the programme gain in dB: per frame on 'frame', one level for every pause (no gain) on 'cluster'."""
-    if PAUSE_FLOOR_TARGET != FRAME_TARGET:
-        return cluster_target(env.fill, env.weight, PAUSE_FLOOR_FILL_DB), None
+    if profile.target != FRAME_TARGET:
+        return cluster_target(env.fill, env.weight, profile.fill_db), None
     gain = programme_gain(env.reference, env.restored)
-    return frame_target(env.fill, gain, PAUSE_FLOOR_FILL_DB), float(20.0 * np.log10(gain + 1e-12))
+    return frame_target(env.fill, gain, profile.fill_db), float(20.0 * np.log10(gain + 1e-12))
 
 
-def _target_for(restored_wav, audio_dir):
+def _target_for(restored_wav, audio_dir, profile):
     output_dir = Path(audio_dir) / "pause_floor"
     output_dir.mkdir(parents=True, exist_ok=True)
-    tag = f"{PAUSE_FLOOR_FILL_DB:g}db_p{PAUSE_FLOOR_QUIET_PERCENTILE:g}{_variant_tag()}"
+    tag = f"{profile.fill_db:g}db_p{PAUSE_FLOOR_QUIET_PERCENTILE:g}{_variant_tag(profile)}"
     return stage_output(output_dir, f"paused_{tag}", restored_wav)
 
 
-def _variant_tag():
+def _variant_tag(profile):
     """'' for the default fill (the cluster target, flat); else the target and the shape with its settings."""
-    target = "" if PAUSE_FLOOR_TARGET != FRAME_TARGET else f"_{FRAME_TARGET}"
-    return target + SHAPE_TAGS.get(PAUSE_FLOOR_SHAPE, "").format(hz=PAUSE_FLOOR_SHELF_HZ, cut=PAUSE_FLOOR_HF_CUT_DB)
+    target = "" if profile.target != FRAME_TARGET else f"_{FRAME_TARGET}"
+    return target + SHAPE_TAGS.get(profile.shape, "").format(hz=profile.shelf_hz, cut=profile.cut_db)
 
 
-def _note(programme_gain_db):
+def _note(programme_gain_db, profile):
     """What the log line says the fill aims at."""
-    shape = SHAPE_NOTES.get(PAUSE_FLOOR_SHAPE, "").format(hz=PAUSE_FLOOR_SHELF_HZ, cut=PAUSE_FLOOR_HF_CUT_DB)
+    shape = SHAPE_NOTES.get(profile.shape, "").format(hz=profile.shelf_hz, cut=profile.cut_db)
     if programme_gain_db is None:
         return f"the source's pauses{shape}"
     return f"each source frame at the restored programme's level ({programme_gain_db:+.1f} dB){shape}"
@@ -431,16 +482,17 @@ def _found(weight, gains, lag):
     return pause_spans(weight > 0.5, lag), filled
 
 
-def _restored_gain(levels, frame, rate, frames):
+def _restored_gain(levels, timeline, profile):
     """The fill for the restored file's timeline, from the (reference, restored, fill, band) frame levels.
 
     Without a gain the outcome is why there is none. The spans are the pauses found and the
     frames filled, as frame spans on the restored timeline, read only while the event log is
-    on.
+    on. `timeline` is the restored file's (frame, rate, length).
     """
+    frame, rate, frames = timeline
     env = _envelopes(levels)
-    target, programme_gain_db = _target(env)
-    reason = _nothing_to_fill(env, target)
+    target, programme_gain_db = _target(env, profile)
+    reason = _nothing_to_fill(env, target, profile.target)
     if reason is not None:
         return Fill(None, reason, _found(env.weight, None, env.lag), programme_gain_db)
     gains = deficit_gains(env.fill, env.band, env.weight, target)
@@ -449,22 +501,26 @@ def _restored_gain(levels, frame, rate, frames):
     return Fill(curve, int((gains > 0).sum()), _found(env.weight, gains, env.lag), programme_gain_db)
 
 
-def _thresholds():
-    """The settings every record of the stage carries; the shape's corner and cut only when the fill is shaped."""
-    shape = {"shelf_hz": PAUSE_FLOOR_SHELF_HZ, "hf_cut_db": PAUSE_FLOOR_HF_CUT_DB} if PAUSE_FLOOR_SHAPE in SHAPED else {}
-    target = {"target": PAUSE_FLOOR_TARGET, "shape": PAUSE_FLOOR_SHAPE}
-    return {"fill_db": PAUSE_FLOOR_FILL_DB, "quiet_percentile": PAUSE_FLOOR_QUIET_PERCENTILE, **target, **shape}
+def _thresholds(profile):
+    """The settings every record of the stage carries; the shape's corner and cut only when the fill is shaped, the
+    release fill named when `pause_floor_suppressed_only` gave it to a file the suppressor did not run on."""
+    shape = {"shelf_hz": profile.shelf_hz, "hf_cut_db": profile.cut_db} if profile.shape in SHAPED else {}
+    if PAUSE_FLOOR_SUPPRESSED_ONLY:
+        shape["release_fill"] = profile == release_profile() != configured()
+    target = {"target": profile.target, "shape": profile.shape}
+    return {"fill_db": profile.fill_db, "quiet_percentile": PAUSE_FLOOR_QUIET_PERCENTILE, **target, **shape}
 
 
-def _log_pauses(restored_wav, fill, frame, rate):
+def _log_pauses(restored_wav, fill, timeline, profile):
     """Writes the pauses found and the frames filled, in seconds, into the event log when it is on.
 
     The record's `outcome` is what the stage did: the number of frames filled, or the reason
     it filled none; `programme_gain_db` is the restored programme's gain the 'frame' target
-    read (null on 'cluster').
+    read (null on 'cluster'). `timeline` is the restored file's (frame, rate).
     """
+    frame, rate = timeline
     pauses, filled = fill.found
-    details = {**_thresholds(), "outcome": fill.outcome, "programme_gain_db": fill.programme_gain_db}
+    details = {**_thresholds(profile), "outcome": fill.outcome, "programme_gain_db": fill.programme_gain_db}
     details["filled_s"] = event_log.seconds(_in_samples(filled, frame), rate)
     event_log.write_spans(STAGE, restored_wav, _in_samples(pauses, frame), rate, **details)
 
@@ -474,50 +530,81 @@ def _in_samples(spans, frame):
     return [(start * frame, stop * frame) for start, stop in spans]
 
 
-def keep_floor(reference_wav, restored_wav, audio_dir):
-    """Runs the stage; returns the new path, or `restored_wav` with the reason logged."""
+def keep_floor(reference_wav, restored_wav, audio_dir, profile):
+    """Runs the stage at `profile`; returns the new path, or `restored_wav` with the reason logged."""
     frame = max(1, int(FRAME_S * sf.info(str(restored_wav)).samplerate))
-    reference, *reference_meta = frame_levels(reference_wav, frame)
-    restored, rate, channels, frames = frame_levels(restored_wav, frame)
-    reason = _shape_mismatch(tuple(reference_meta), (rate, channels, frames))
-    shaper = None if reason else shaper_for(PAUSE_FLOOR_SHAPE, rate, PAUSE_FLOOR_SHELF_HZ, PAUSE_FLOOR_HF_CUT_DB)
-    pair = ((reference_wav, reference), (restored_wav, restored))
-    fill = Fill(None, reason, ([], []), None) if reason else _fill_for(pair, shaper, (frame, rate, frames))
-    _log_pauses(restored_wav, fill, frame, rate)
+    pair, reason, (rate, frames) = _levels_pair(reference_wav, restored_wav, frame)
+    shaping = None if reason else _shaping(pair, (frame, rate), audio_dir, profile)
+    fill = Fill(None, reason, ([], []), None) if reason else _fill_for(pair, (shaping, profile), (frame, rate, frames))
+    _log_pauses(restored_wav, fill, (frame, rate), profile)
     if fill.gain is None:
         log_msg(f"    [Pause Floor] Skipped: {fill.outcome}.")
         return restored_wav
-    target = _target_for(restored_wav, audio_dir)
+    target = _target_for(restored_wav, audio_dir, profile)
     if is_valid_audio(target):
         log_msg(f"    [Pause Floor] Reusing {target.name}.")
         return target
-    log_msg(f"    [Pause Floor] Filling {fill.outcome} quiet frames to {PAUSE_FLOOR_FILL_DB:g} dB under {_note(fill.programme_gain_db)}.")
-    return fill_file(reference_wav, restored_wav, target, fill.gain, shaper)
+    log_msg(
+        f"    [Pause Floor] Filling {fill.outcome} quiet frames to {profile.fill_db:g} dB under {_note(fill.programme_gain_db, profile)}."
+    )
+    return fill_file(shaping.source, restored_wav, target, fill.gain, shaping.fill)
 
 
-def _fill_for(pair, shaper, timeline):
+def _levels_pair(reference_wav, restored_wav, frame):
+    """`((path, broadband frame levels) of the reference and the restored file, why they cannot be paired or None,
+    (the restored file's rate, length))`."""
+    reference, *reference_meta = frame_levels(reference_wav, frame)
+    restored, rate, channels, frames = frame_levels(restored_wav, frame)
+    reason = _shape_mismatch(tuple(reference_meta), (rate, channels, frames))
+    return ((reference_wav, reference), (restored_wav, restored)), reason, (rate, frames)
+
+
+def _fill_for(pair, plan, timeline):
     """The `Fill` for a matched pair.
 
     `pair` is the reference's and the restored file's (path, broadband frame levels); their
-    shaped levels are read here when the fill is shaped. `timeline` is the restored file's
-    (frame, rate, length).
+    shaped levels are read here when the fill is shaped. `plan` is (`Shaping`, `Profile`);
+    `timeline` is the restored file's (frame, rate, length).
     """
-    frame, rate, frames = timeline
-    return _restored_gain(_paired_levels(*pair, frame, shaper), frame, rate, frames)
+    shaping, profile = plan
+    return _restored_gain(_paired_levels(*pair, timeline[0], shaping), timeline, profile)
 
 
-def apply_when_needed(reference_wav, restored_wav, audio_dir, strategy=None):
+def _shaping(pair, timeline, audio_dir, profile):
+    """The `Shaping` of the fill at `profile`; `timeline` is the restored file's (frame, rate).
+
+    'hiss_shelf' takes its fill from the source with its hiss shelved
+    (`pause_fill_shape.hiss_shelved`), and falls back to the plain shelf when the source holds
+    too little live audio to learn its print from.
+    """
+    reference_wav = Path(pair[0][0])
+    shaper = shaper_for(profile.shape, timeline[1], profile.shelf_hz, profile.cut_db)
+    if profile.shape != HISS_SHELF:
+        return Shaping(reference_wav, shaper, shaper)
+    noise = pause_fill_shape.source_print(reference_wav)
+    if noise is None:
+        log_msg("    [Pause Floor] No print to shelve the hiss by: the plain shelf fills.")
+        return Shaping(reference_wav, shaper, shaper)
+    shelved = pause_fill_shape.hiss_shelved(reference_wav, audio_dir, shaper, noise, (profile.shelf_hz, profile.cut_db))
+    return Shaping(shelved, None, shaper)
+
+
+def apply_when_needed(reference_wav, restored_wav, audio_dir, strategy=None, suppressed=False):
     """Keeps a floor under the restored pauses; returns the new path, or the restored audio untouched.
 
-    `strategy` is accepted for the chain's uniform stage signature and unused.
+    `strategy` is accepted for the chain's uniform stage signature and unused. `suppressed` says
+    whether the reference suppressor ran on this file (`reference_suppress.is_output`): with
+    `pause_floor_suppressed_only` on, a file it did not run on takes the release fill
+    (`profile_for`).
     """
     del strategy
-    if not ENABLE_PAUSE_FLOOR or PAUSE_FLOOR_FILL_DB <= 0.0:
-        event_log.write_skip(STAGE, restored_wav, "switched off", **_thresholds())
+    profile = profile_for(suppressed)
+    if not ENABLE_PAUSE_FLOOR or profile.fill_db <= 0.0:
+        event_log.write_skip(STAGE, restored_wav, "switched off", **_thresholds(profile))
         return restored_wav
     try:
-        return keep_floor(reference_wav, restored_wav, audio_dir)
+        return keep_floor(reference_wav, restored_wav, audio_dir, profile)
     except STAGE_FAILURES as exc:
         log_msg(f"    [Pause Floor] Skipped after failure: {exc}")
-        event_log.write_skip(STAGE, restored_wav, f"failed: {exc}", **_thresholds())
+        event_log.write_skip(STAGE, restored_wav, f"failed: {exc}", **_thresholds(profile))
         return restored_wav

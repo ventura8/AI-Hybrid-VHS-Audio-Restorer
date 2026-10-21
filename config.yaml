@@ -787,6 +787,23 @@ cathar_dereverb_strength: 2.0
 #     dead-air flag trips on 16 of 234 hunt clips with 'shelf', 11 today, 24 with
 #     no fill. 3000 Hz / 18 dB are the prototype's guesses; a GPU render and a
 #     blind A/B decide every non-default value here.
+#   - 'hiss_shelf' (2026-10-21): the shelf's cut taken only from the cells the
+#     source holds as hiss (the MMSE-LSA gain on the source's SNR against its
+#     whole-file quantile print, floored by the shelf), so soft programme above the
+#     corner that the neural stage emptied is filled whole. On the IA hunt it
+#     cleared capture-a-6398 (kept HF 0.1 -> -8.5 with 'shelf') and took a wedding
+#     broadcast from -32.7 to -19.3 dB; a partial held through the whole file is the
+#     print itself and is cut as hiss.
+#
+# pause_floor_suppressed_only (both engines, 2026-10-21):
+#   - false (Default): every file takes the configured fill.
+#   - true: the configured fill reaches only a file the reference suppressor ran on
+#     (apl_reference_suppress / cathar_reference_suppress); every other file takes
+#     the release fill (cluster, flat, 12 dB). The per-frame shelved fill is the
+#     suppressor's pause half: on the 135 IA hunt clips whose print it refuses, the
+#     programme keeps its hiss, and the fill tripped every v4 guard tripped there
+#     (pump, pause modulation, dulling; 15 clips). With it on those clips read the
+#     shipped output exactly; the four Tata tapes all run the suppressor.
 #
 # loudnorm_target_lra:
 #   - The mux's EBU R128 loudness-range target. ffmpeg's loudnorm holds its linear
@@ -967,6 +984,7 @@ expander_knee_offset_db: 8.0
 expander_attack_s: 0.04
 expander_decay_s: 0.18
 enable_pause_floor: true
+pause_floor_suppressed_only: false
 pause_floor_fill_db: 12.0
 pause_floor_quiet_percentile: 15.0
 pause_floor_target: "cluster"

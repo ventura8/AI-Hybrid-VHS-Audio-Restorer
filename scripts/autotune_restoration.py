@@ -206,11 +206,15 @@ SHARED_KNOBS = {
     "pause_floor_fill_db": [8.0, 12.0, 18.0, 24.0],
     # The hiss-free fill (2026-10-12): each quiet frame filled under the source frame ('frame') rather than
     # under the quiet cluster's median, from a copy of the source with its hiss cut above the corner
-    # ('shelf') or low-passed there ('lowpass'), so a pause keeps its room tone and loses the tape hiss.
+    # ('shelf') or low-passed there ('lowpass'), so a pause keeps its room tone and loses the tape hiss;
+    # 'hiss_shelf' (2026-10-21) cuts the shelf from the source's hiss only, keeping the programme above the corner.
     "pause_floor_target": ["cluster", "frame"],
-    "pause_floor_shape": ["flat", "shelf", "lowpass"],
+    "pause_floor_shape": ["flat", "shelf", "lowpass", "hiss_shelf"],
     "pause_floor_shelf_hz": [2000.0, 3000.0, 4000.0],
     "pause_floor_hf_cut_db": [12.0, 18.0, 24.0, 30.0],
+    # The configured fill only where the reference suppressor ran, the release fill elsewhere (2026-10-21): inert on a
+    # tape the suppressor runs on (all four Tata tapes), it decides the files whose print the suppressor refuses.
+    "pause_floor_suppressed_only": [False, True],
     # The scan's searches every mode reads (2026-10-12): the CRT line on the whole file, the mains notch
     # confirmed on the whole file, the azimuth skew from the loudest spans with the sign the graph corrects.
     "crt_detect_mode": ["head", "welch"],
@@ -456,7 +460,14 @@ _CATHAR_MUSIC_KEYS = (
 )
 # The polish expander's knee and compand timing (filters._build_full_audio_expander_filter), shared by both engines.
 # Everything the pause floor keeper reads besides its switch (modules/pause_floor.py).
-PAUSE_FLOOR_KNOBS = ("pause_floor_fill_db", "pause_floor_target", "pause_floor_shape", "pause_floor_shelf_hz", "pause_floor_hf_cut_db")
+PAUSE_FLOOR_KNOBS = (
+    "pause_floor_fill_db",
+    "pause_floor_target",
+    "pause_floor_shape",
+    "pause_floor_shelf_hz",
+    "pause_floor_hf_cut_db",
+    "pause_floor_suppressed_only",
+)
 # Everything cathar reads about its noise print besides the switches (modules/cathar.py, noiseprint_*.py).
 NOISEPRINT_KNOBS = (
     "cathar_noiseprint_duration_s",

@@ -851,6 +851,70 @@ harness's true pauses, before the mux.
   234 hunt clips with `shelf`, on 11 today and on 24 with no fill; the five
   new ones keep their pause low band at -5 to -13 dB. 3000 Hz and 18 dB are
   the prototype's guesses, for `scripts/audibility_check.py` and a blind A/B.
+- `pause_floor_shape: hiss_shelf` (2026-10-21, `modules/pause_fill_shape.py`):
+  the shelf's cut is taken only from the cells the source holds as hiss. The
+  fill is the source gained by the MMSE-LSA estimator on its own SNR against
+  its whole-file quantile print (the reference suppressor's print), floored
+  per bin by the shelf's response. A hiss cell takes exactly the shelf's cut,
+  and a cell where the programme stands over the print passes; under the
+  corner the floor is 1. Without a print (too little live audio) it fills as
+  the plain shelf. The case it answers: the pause floor's quiet frames are
+  not only pauses (on dense or compressed programme 57-99 % of the frames sit
+  within 10 dB of the 15th percentile), and where the neural stage emptied
+  soft programme there the flat fill puts it back whole while the shelf puts
+  back its low band alone (below). A partial held through the whole file is
+  the print's 5th percentile itself and is cut as hiss.
+- `pause_floor_suppressed_only` (false; 2026-10-21): with it on, the
+  configured fill (target, shape, depth, corner, cut) reaches only a file
+  the reference suppressor ran on (`apl_reference_suppress`,
+  `cathar_reference_suppress`; `reference_suppress.is_output`), and every
+  other file takes the release fill (`cluster`, `flat`, 12 dB). The event
+  log's record says `release_fill` when it stood in.
+
+The IA confirmation of the `auto_pure_linear` v9 plateau (2026-10-21) is
+what these two answer. The plateau's five settings (the per-frame fill
+shelved at 2 kHz, fill 18 dB, the reference suppressor) were replayed
+against the shipped ones on the IA hunt's 202 kept work folders (the neural
+output after its cleanup, the post-neural stages in-process, no sibilant
+guard) and judged by `tata_v4.yaml`'s constraints with the shipped output as
+the incumbent. The plateau tripped a guard on 31 clips (15 %). Attributed
+by replaying each half alone:
+
+- On the 135 clips whose print the suppressor refuses (under 23 dB), every
+  trip was the fill's (15 clips; 10 past the guard's own move allowance).
+  Gated pauses under a programme that keeps its hiss: the shipped chain
+  takes 1-11 dB of hiss from under these programmes, and an 18 dB
+  per-frame fill empties the pauses past the pump bound even unshelved
+  (fighting-spirit -2.5 to 36.5, a 2003 promo -4.1 to 25.5). Pause
+  modulation on four clips (abc-primetime 5.5 to 19.0): the per-frame target
+  follows soft programme across the non-speech runs, and the fill switches
+  on and off where the neural stage gates it; the burst ceiling does not
+  touch it. Dulling where the shelf took the highs of soft programme the
+  flat fill had put back (capture-a-6398, a royal wedding broadcast,
+  thomas-friends).
+- On the 64 clips the suppressor runs on, 16 tripped: the fill's pump on
+  five (13-16 against the bound of 12), the suppressor's loss of loud
+  highs on eight (`hiss_prog_kept_hf_db` 1.5-4 dB down, mostly on clips the
+  shipped chain already leaves past -6) and of the top band on two.
+
+The hiss shelf cleared capture-a-6398 and took the wedding broadcast from
+-32.7 to -19.3 dB; it could not help thomas-friends, whose music never
+stops, nor the pump or the modulation. With `pause_floor_suppressed_only`
+on, the 135 refused clips came out sample for sample as shipped and the
+suppressed ones as the plateau: 16 clips tripped instead of 31. The Tata
+tapes all run the suppressor (prints 31.9, 30.3, 24.7 and 27.5 dB under
+their loud frames), so the plateau keeps its bytes there.
+
+What did not work: a pump match that would shallow the cut until the
+pauses' hiss sat a set margin under the hiss the programme keeps. Its
+estimate of the kept hiss (restored over source on the source's hiss cells
+inside its programme frames, chosen on their 3 x 3 neighbours, in the
+half-octave bands where those cells are at least half the programme cells)
+tracked ear v4's `hiss_prog_removed_db` at Spearman 0.83-0.88 (median error
+3.3 dB) on the pause floor's own input, but the pump it predicted did not
+track the measured pump at all (Spearman 0.0 with the pauses' residue in
+the model, -0.4 without): which frames ear v4 calls true pauses decides the
+pump, and the stage cannot see them. It was removed before shipping.
 
 ## auto_pure_linear Hiss After the Neural Stage
 

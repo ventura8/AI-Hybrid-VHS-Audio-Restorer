@@ -39,6 +39,12 @@ def with_release(settings, release_db):
     return {**settings, "release_db": float(release_db)} if release_db > 0.0 else dict(settings)
 
 
+def is_output(path):
+    """Whether `path` is this stage's output: the suppressor ran (`suppress` hands its input back when it could not)."""
+    path = Path(path)
+    return path.parent.name == STAGE and path.name.startswith("referenced_")
+
+
 def target_for(restored_wav, audio_dir, settings):
     """Where the suppressed audio goes: its settings in the name."""
     text = ",".join(f"{key}={value:g}" for key, value in sorted(settings.items()))
