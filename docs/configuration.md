@@ -1118,10 +1118,14 @@ their engine's suppressor on; off, every output keeps its bytes.
 On the Tata tapes the ear refused it (APL v9 round 4, 2026-10-21, real
 renders of the round-3 plateau with the release at 3 dB): the hiss under
 Vaccin's speech rose 2.18 dB over its masked threshold (the tie is 0.40)
-and Tele7abc's pause tail 0.62. There the hiss rides with the speech, so
-during speech it stands over the whole-file print and the release takes it
-for programme; on the IA clips it did not. Off it stays; a release would
-need a print that follows the hiss's level through the programme.
+and Tele7abc's pause tail 0.62. Vaccin's audio is MP3-coded, and the coder
+drops the 10-16 kHz band in speech frames: there it reads 16.9 dB under the
+quiet frames (Tele7abc, SOTI and Gaudeamus5 hold within 0.3 dB, their hiss
+stationary). The print's 5th percentile reads those dropouts, so it sits
+11.7 dB under the hiss in Vaccin's pauses, the residual hiss stands over it
+and the release takes that hiss for programme
+(`D:/ai_restore_work/scratch_relguard/hiss_ride.py`). Off it stays; a
+release would need a print that a coder's dropouts cannot pull down.
 
 The key is read after the stage cache's cached point
 (`POST_NEURAL_CONFIG_KEYS`), so a candidate that changes only it replays the

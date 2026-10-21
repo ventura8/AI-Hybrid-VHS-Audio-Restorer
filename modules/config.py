@@ -446,7 +446,8 @@ _NUMERIC_CONFIG_FIELDS = (
     # CPU replay on 19 IA hunt clips (2026-10-20): at 3 dB the top band came back past -1 dB on the three clips
     # the suppressor had pushed over it and the soft programme 1.5-2 dB, the hiss excess moving under 0.45 dB.
     # On the Tata tapes (APL v9 round 4) 3 dB let the hiss back under Vaccin's speech (+2.18 dB over its masked
-    # threshold): that hiss rides with the speech, over the whole-file print. 0 (off): every output keeps its bytes.
+    # threshold): its MP3 coder drops 10-16 kHz in speech frames, so the print reads 11.7 dB under the pauses' hiss.
+    # 0 (off): every output keeps its bytes.
     ("apl_reference_release_db", float, 0.0, 0.0, 40.0),
     ("cathar_reference_release_db", float, 0.0, 0.0, 40.0),
     # Plosive control: how far the low band must rise over its own running level, in dB,

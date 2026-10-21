@@ -159,8 +159,9 @@ The engine supports 10 execution modes configured in `config.yaml`:
     at 3 dB the top band came back on the three that crossed -1 dB, the
     hiss excess moving under 0.45 dB. On the Tata tapes the loop refused it
     (round 4): the hiss under Vaccin's speech rose 2.18 dB over its masked
-    threshold, since that hiss rides with the speech over the whole-file
-    print. Off.
+    threshold. Vaccin's MP3 coder drops 10-16 kHz in speech frames, so the
+    print's 5th percentile sits 11.7 dB under the hiss in its pauses and
+    the residual hiss reads as programme. Off.
   - Two guards wait for a listening session (2026-10-11; both off, so
     every output keeps its bytes). SOTI's lifted pauses (332 of its 3,740
     quietest frames up 10 dB or more) are the Q-30 surgical notch ringing

@@ -787,10 +787,15 @@ audio alignment, or FFmpeg multiplexing.
   (`replay_guard.py`, `run.sh`, `table.py`); the app's release reproduced
   the prototype's samples exactly. On the Tata tapes the APL loop refused it
   (v9 round 4, 2026-10-21): the hiss under Vaccin's speech rose 2.18 dB over
-  its masked threshold and Tele7abc's pause tail 0.62, because there the
-  hiss rides with the speech above the whole-file print, which the release
-  assumes residual hiss stays under. IA replay could not show that; only the
-  Tata renders did. A release needs a print that follows the hiss level.
+  its masked threshold and Tele7abc's pause tail 0.62. Measured cause
+  (`scratch_relguard/hiss_ride.py`, the 10-16 kHz band where PAL linear
+  audio carries no programme): Vaccin's MP3 coder drops that band in speech
+  frames, 16.9 dB under its quiet frames, while the other three tapes hold
+  within 0.3 dB. The print's 5th percentile reads the dropouts and sits
+  11.7 dB under the hiss in Vaccin's pauses, so residual hiss stands over the
+  print, which the release assumes it stays under. A first guess, hiss riding
+  with the speech, was wrong. A release needs a print the coder's dropouts
+  cannot pull down (a higher quantile on bands a coder gates, say).
 - **APL burst ceiling (2026-10-12)**: `apl_burst_ceiling` (`none`, `gaps`,
   `edges`) and `apl_burst_ceiling_depth_db` (30), `modules/burst_ceiling.py`
   between the polish and the pause floor (`docs/configuration.md`,
