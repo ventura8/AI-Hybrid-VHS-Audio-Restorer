@@ -279,8 +279,9 @@ KNOBS = {
         "cathar_noiseprint_method": ["window", "quantile"],
         # The reference-SNR suppressor on cathar's output (modules/reference_suppress.py), ungated.
         "cathar_reference_suppress": [False, True],
-        # Its programme release: the gain eased toward 1 where cathar's output stands this far over the print.
-        "cathar_reference_release_db": [0.0, 3.0, 6.0],
+        # Its programme release: the gain eased toward 1 where cathar's output stands this far over the pause print
+        # (3 dB lifted the hiss on the APL replays, so the first step is 6 dB).
+        "cathar_reference_release_db": [0.0, 6.0, 9.0],
         **SHARED_KNOBS,
     },
     # On the Tata tapes the scanner reads a spectral flatness of 0.022 (< apl_tonal_flatness_max 0.035),
@@ -332,8 +333,10 @@ KNOBS = {
         "apl_post_neural_suppress_min_residual_db": [3.0, 6.0, 9.0],
         # The reference-SNR suppressor: the gain read on the source, applied after the neural stage (ungated).
         "apl_reference_suppress": [False, True],
-        # Its programme release: the gain eased toward 1 where the neural output stands this far over the print.
-        "apl_reference_release_db": [0.0, 3.0, 6.0],
+        # Its programme release: the gain eased toward 1 where the neural output stands this far over the pause print.
+        # 3 dB lifted Tele7abc's pause tail 0.57-0.62 with either reference (round 4, CPU replay 2026-10-21) and the loop
+        # steps to adjacent values only, so 6 dB, which passes every guard on CPU replay, is the first step.
+        "apl_reference_release_db": [0.0, 6.0, 9.0],
         "apl_neural_level_restore": [False, True],
         "linear_air_gate": ["none", "hiss_dominated"],
         "apl_burst_ceiling": ["none", "gaps", "edges"],

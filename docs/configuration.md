@@ -1176,7 +1176,8 @@ sits in cells the neural stage left under the print, where the release
 cannot tell programme from hiss, and Pugwash's `lkr` (1.82 at every
 release: its print sits 61 dB down, so what moved it is not the gain on the
 programme). The app's release reproduced the prototype's samples exactly
-on two of the clips. Both keys are loop knobs (0, 3, 6), read only with
+on two of the clips. Both keys are loop knobs (0, 6, 9 since 2026-10-21,
+when 3 dB was measured to lift Tele7abc's pause tail), read only with
 their engine's suppressor on; off, every output keeps its bytes.
 
 On the Tata tapes the ear refused it (APL v9 round 4, 2026-10-21, real

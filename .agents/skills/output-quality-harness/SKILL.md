@@ -2702,8 +2702,12 @@ constraints, the shipped output as the incumbent
 (`D:/ai_restore_work/scratch_confirm`:
 `replay_variant.py VARIANT OVERRIDES_JSON` runs the post-neural stages
 in-process from the neural output, `REPLAY_REPO` points it at a worktree,
-`REPLAY_CLIPS` narrows it; `table_v2.py DIR:LABEL ...` tabulates). What the
-APL v9 confirmation taught:
+`REPLAY_CLIPS` narrows it). Score each clip's pair with
+`scripts/validate_restoration.py`, then tabulate with
+`python -m scripts.confirm_trips --grid scripts/tune_grids/tata_v4.yaml`
+`--incumbent S --candidate W=REPORTS_DIR --states GROUPS.tsv --verbose`:
+strict trips as the loop judges, material ones past `max_move`, split by
+group (lines of `group<TAB>clip`). What the APL v9 confirmation taught:
 
 - Split the clips by what the plateau does to them (here, whether the
   reference suppressor's depth line lets it run) and attribute each trip by

@@ -110,7 +110,16 @@ skill holds the readings, their status and the measured facts behind them.
 1. Adding a knob mid-run seeds it into the incumbent and changes every
    candidate id; carry the old folders to their new ids with the key at its
    off value (hardlink the WAVs) instead of rendering the round again, then
-   restart at a round boundary.
+   restart at a round boundary. Carry only renders the same commit's code
+   would reproduce byte for byte: a carried render is reused, never
+   re-rendered. On 2026-10-21 the release candidates carried across the
+   pause print's commit kept their old renders, and round 6 judged the
+   release on audio the new code no longer makes (Vaccin's +2.18 again);
+   set such folders aside (`stale_outputs/`) before the restart.
+1. The loop steps to adjacent knob values only. A value whose neighbour
+   loses for a measured reason (the release's 3 dB lifts Tele7abc's pause
+   tail with either reference) is unreachable behind it: change the
+   table's steps (the release's now 0, 6, 9) rather than the incumbent.
 1. Check the knob table against the code paths before a round: a knob is
    dead only when every path that reads it is (`apl_tonal_flatness_max`
    stays live with the subtraction off), and no list may hold both None
@@ -224,8 +233,9 @@ skill holds the readings, their status and the measured facts behind them.
    section 3). For the IA half, replay the plateau against the shipped
    settings on the hunt's kept work folders, split the clips by what the
    plateau does to them, attribute each trip by replaying every component
-   alone, and count material trips beside the loop's (the harness skill,
-   "Confirming a plateau on the IA corpus"): the APL v9 plateau's 31 trips
-   were the fill's on the clips the suppressor refuses.
+   alone, and count material trips beside the loop's
+   (`python -m scripts.confirm_trips`; the harness skill, "Confirming a
+   plateau on the IA corpus"): the APL v9 plateau's 31 trips were the
+   fill's on the clips the suppressor refuses.
 
 1. Run the full local quality gate before pushing.

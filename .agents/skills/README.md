@@ -121,6 +121,10 @@ the Antigravity agent system.
     the stored rounds of finished loops re-judged offline from their score
     files, old rule against new, with the vetoes' null simulation
     (`--null-draws`); CPU only, decides nothing by itself;
+  - `scripts/confirm_trips.py` (`python -m scripts.confirm_trips`): a
+    plateau's corpus confirmation tabulated, per clip the grid constraints a
+    candidate trips against the incumbent, strict (the loop's rule) and
+    material (past `max_move`), split by a clip-group map;
   - ear v4 (2026-10-12, the user's rule: be very critical of VHS hiss under
     the programme and in the pauses): the hiss readings
     (`restoration_quality/hiss_floor.py`, `hiss_programme.py`,

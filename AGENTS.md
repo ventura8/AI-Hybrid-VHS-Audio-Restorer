@@ -617,9 +617,10 @@ The repository defines the following modular skills in `.agents/skills/`.
   (`scripts/listen_ab.py`), the reward pieces
   (`scripts/reward_noise_floor.py`), the loop's judging resolution and its
   offline re-judge (`scripts/rejudge_autotune.py`), the variation pre-check
-  that gates the settings policy (`scripts/variation_precheck.py`), and the
+  that gates the settings policy (`scripts/variation_precheck.py`), the
   critical hiss readings of ear v4 (`dsp.hiss_*`, the v4 grids and their
-  constraints, `scripts/check_hiss_fixtures.py`).
+  constraints, `scripts/check_hiss_fixtures.py`), and a plateau's corpus
+  confirmation table (`scripts/confirm_trips.py`).
 - [sonarqube-quality-gate](.agents/skills/sonarqube-quality-gate/SKILL.md):
   SonarQube Cloud on this repository: the CI scan, reading and fixing its
   findings without suppressions, project settings on sonarcloud.io, and the
