@@ -54,6 +54,8 @@ export AI_RESTORE_DATA_ROOTS=/media/tapes
 The restorer itself does not read this variable. The tuning loop
 (`scripts/autotune_restoration.py`) adds each tape's folder to it for the
 scorer it launches, so a loop over tapes on another drive needs nothing set.
+The audibility check (`scripts/audibility_check.py`) and the listening tool
+(`python -m scripts.listen_ab`) need it set for the family tapes on `D:\Tata`.
 
 ## Fast Spot Checks
 
@@ -189,6 +191,18 @@ frames hold 600-1200 Hz at -1.5 dB and 2400-4800 at -11, where Piper's hold
 broadcast chain put on -- and it breathes before its phrases, since real quiet
 frames vary 11-14 dB per band frame to frame and a synthesiser's varied 5.
 
+`--digital-mute` adds one opt-in class, `digitalmute_m15`: the speech-led
+base with tape noise only, and one or two gaps of 0.75-3 s cut hard into the
+upload, the first at the head (a blank lead-in) on half the fixtures. Each
+gap is exact zeros or a dither at -120 to -100 dBFS, and the reference and
+target are silent there too; each record lists its gaps (`mute_gaps`). It is
+what an edited upload carries and a tape does not, the case cathar's
+noise-print mute guard is for (`docs/configuration.md`): never a quieter
+stretch of hiss, which is a real floor the guard must keep. It draws on its
+own random stream and is off by default, so the default set, its manifest
+and `validate_fixture_realism.py`, whose variant lists do not name it, are
+unchanged.
+
 ### Does it predict real tape
 
 `validate_fixture_realism.py` reruns the four comparisons whose real-tape
@@ -313,6 +327,31 @@ music with speech and nothing on music alone; across 50 real captures noise
 removal and deviation move by 0.00 dB. The finished-output metrics still do not
 show it, for the reason they show none of the impulse stages: the chain's own
 colour is a larger error inside a pop's few milliseconds than the pop was.
+
+On real tape the pop repair fires far more often than on the set. The shipped
+renders of the four local interviews (2026-10-09) logged 3.9 to 24.2 refilled
+spans a second over both channels, on sources the harness reads as free of
+clicks. With SOTI's and Vaccin's pre-neural chain re-rendered on CPU (bit for
+bit against the stage cache), their spans are single-sample residual outliers
+in loud speech (median at the 80th and 71st percentile frame level), 98% no
+more than 1 dB over the waveform's peak within 10 ms and 79-80% within 15 ms
+of another span: the residual of speech, not clicks. They change the audio
+31.5-32.7 dB under the programme and lift no quiet frame. On the set as it
+stands the music-only class at a 15 dB margin also reads 5.39 spans a second,
+37 dB under the programme, where the set the stage was tuned on read nothing
+(0.35 with the guard at 6 dB). The pauses the
+SOTI output fills -- 332 of its 3,740 quietest 23 ms frames up 10 dB or more
+at 100-1000 Hz, which the finished output keeps and `cathar`'s does not --
+come from the surgical notch ahead of the chain instead: a Q-30 bandreject at
+250 Hz rings for tens of milliseconds when speech holding a partial near it
+stops dead, and fills the 46 ms gaps at 111.15, 100.98 and 48.81 s with
+237-258 Hz tone at -27 dB. Run alone on 10 s cuts around those gaps, the
+notch lifts 12, 19 and 24 quiet frames; the pop repair and `decrackle` lift
+none. One guard answers each finding, both off by default until a listening
+session judges them: `apl_depop_min_prominence_db` (at 6 dB, 0.50 and 1.38
+spans a second per channel on SOTI and Vaccin, +4.35 of the crackle class's
++4.67 dB kept) and `apl_surgical_ring_guard` (SOTI's notch output lifts 3
+quiet frames instead of 332); `docs/configuration.md` has the numbers.
 
 The set is also what the per-bin blend is fitted on, through
 `scripts/build_blend_dataset.py --reference target` pointed at
@@ -490,7 +529,10 @@ gates:
   say whether music and ambience survived. SI-SDR is shown, never ranked: a
   filter's phase shift turns it negative while the ear hears nothing. Read only
   where the source's stem carries a background (above -45 dBFS and within
-  20 dB of the mix); an interview without music skips it.
+  20 dB of the mix); an interview without music skips it. The gate and the
+  music grid read the worst octave on the programme the background leads
+  (`stems.octave_programme_db`, see "Gates that refused the denoising
+  itself"); the raw octave (`stems.octave_ratio_db`) is displayed only.
 - `speech` (16 kHz): Whisper large-v3-turbo transcribes source and output
   with the language forced (`--language ro`) and the character error rate
   between the two reads words changed, with the confidence delta beside it;
@@ -549,8 +591,14 @@ native-rate DSP on the source's own frame classes, reproduce the verdicts
 - `dsp.gap_air_db`: the 3-10 kHz power in the inter-word gaps (source
   frames between the p15 and p40 levels) over the loud frames. Source -6 dB
   on Tele7abc; the "silent" outputs -27, the "hissy" one -18.5, the accepted
-  cathar 0.7.5 output -22.6. `listener.hiss` flags at or above -20,
-  `listener.dead_air` at or below -25.
+  cathar 0.7.5 output -22.6. `listener.hiss` flagged above -20 dB and
+  `listener.dead_air` flags below -25. Ear v3 made `listener.hiss`
+  display-only: the round-2 finals the user heard as natural pauses read
+  -8..-12, so the flag fired on accepted files and never moved (see "Ear
+  v3" below). A gates file sets its threshold but not its severity
+  (`gates.DISPLAY_ONLY`): the v2 `experiments/quality_calibration/gates.json`,
+  which both tuning drivers default `--gates` to and `score_listen.py`
+  passes, still lists it as a flag and had made the loops count it again.
 - `dsp.pause_depth_db`: the loud frames' median level minus the deep frames'
   (under p15), output minus source. The roformer variant +41 (the long
   pauses collapse), APL baseline +36, cathar +28..+32; `listener.pause_collapse`
@@ -568,9 +616,21 @@ native-rate DSP on the source's own frame classes, reproduce the verdicts
   mixed windows): the attacks' rise on the source's onsets (median-filter
   HPSS, level-normalised) and how the onset curve survived; both engines
   soften Gaudeamus's attacks (cathar -4.5 dB tail, APL -2.0).
-  `listener.attack` flags a tail under -4 dB.
+  `listener.attack` flags a tail under -4 dB. The attack is paired on the
+  onsets (2026-10-10): the change is the median per-onset change, where it
+  was the difference of two medians, which read a 20 ms smear +0.085 dB on
+  fr's calibration bed. The Gaudeamus numbers above were read unpaired;
+  paired, the window values move about 0.3 dB in the median and the tail's
+  verdicts at -4 dB hold on Gaudeamus1 and 5.
 - `dsp.output_silent`: a window with programme whose output routes as
-  silence (the output is routed too); a hard gate.
+  silence (the output is routed too); a hard gate. The output is routed at
+  the source's level (`audio_io.output_routes`, an RMS match over the pair),
+  not at the pair's least-squares gain, which falls toward 0 when a
+  restoration keeps little of a noisy tape's waveform: on the re-scored IA
+  hunt (2026-10-12) that gain put 8 cathar and 4 `auto_pure_linear` outputs
+  playing at about -20 dBFS mean under the -50 dBFS silence line, and all
+  12 failures cleared with the level match; a window an output really drops
+  still reads as silence.
 
 These gates carry the severity `flag`: the tuning loop counts them (a
 candidate may not add flags) but they do not veto until a second listening
@@ -578,24 +638,499 @@ round confirms their thresholds. Re-scored with them, the Tele7abc
 listening set flags exactly what the listener flagged and nothing they
 accepted (`experiments/tata_listen/check_verdicts.py`;
 `score_listen.py <slug> --dsp-rescore` re-reads the dsp family into a
-stored report, keeping the MOS, ASR and stem results).
+stored report, keeping the MOS, ASR and stem results). Since ear v3 made
+`listener.hiss` display-only, the check reports a ledger flag on it, or on
+any display-only or soft gate, as not asserted instead of checking it.
 
-Three learned readings were added beside them as guardrails: `mos.scoreq_nr`
+Four learned readings were added beside them as guardrails: `mos.scoreq_nr`
 (SCOREQ, NeurIPS 2024, the no-reference MOS that with UTMOS correlated best
 with listeners in URGENT 2024; the "natural" model's ONNX export, vendored
-from Zenodo, 16 kHz), `mos.dnsmos_gap` (P.835 SIG minus BAK: the voice
-paying for the quiet), `speech.ssl_dist` (the cosine distance between the
+from Zenodo, 16 kHz; whether URGENT 2024 evaluated this variant is not
+verified, so it vetoes on its median and is never ranked), `mos.dnsmos_gap`
+(P.835 SIG minus BAK: the voice paying for the quiet), `speech.ssl_dist`
+(the cosine distance between the
 WavLM encoder's mean-pooled layer-6 states of source and output, an
 over-suppression reading that needs no transcript), and `stems.mert_dist`
 (MERT-v1-95M embedding distance on the full mix, the most balanced correlate
 with listeners in a 2025 separation test). `dsp.zimtohrli_loud` (Google's
 48 kHz psychoacoustic distance on the loud frames) has its loader but no
-binding: the PyPI wheel is published by a third party, not by the project,
-so it is not installed. An audio-LLM A/B judge was deliberately left out:
-the published evidence is system-level, open models collapse to one score,
+binding: the PyPI wheel is published by a third party, not by the project.
+The user approved installing it on 2026-10-08 (it needs only numpy); until
+it is provisioned the reading records unavailable. MERT's weights are
+CC-BY-NC-4.0, kept for research use by the same decision. An audio-LLM A/B
+judge was deliberately left out: the published evidence is system-level,
+open models collapse to one score,
 positional bias needs both orders, and nothing was validated on Romanian or
 tape; it would only ever break ties between near-equal winners at the end,
 never score inside the loop.
+
+### Ear v3
+
+The user's ear found three things the v2 harness could not see, and ear v3
+(Phase 0, built 2026-10-09 to the plan approved on 2026-10-08) is built
+around them:
+
+- a whole-spectrum tilt. The `auto_pure_linear` air shelf at +2 dB (7.5 kHz)
+  lifted the output about 1.6 dB above 4 kHz on every frame, and the user
+  heard the 's' as thin. The sibilance readings are net of the plain frames
+  and the gap readings are relative to the same side's loud frames, so a
+  change that lifts every frame cancels in both; the least-squares gain
+  match can absorb a tilt; `tata_v1.yaml` and `tata_v2.yaml` rank
+  `dsp.hf_4k8k.delta.median` up, and the HF gates are one-sided. In each of
+  the 16 rounds of the four APL loops a +1 dB candidate was scored; it
+  ranked behind the +2 dB incumbent in 15 and lost to another accepted move
+  in the 16th. The user chose +1 dB by ear (2026-10-08).
+- a stage that touched almost nothing. At a high-band share of 0.5 the
+  sibilant guard's detector found 3 events in five minutes of Vaccin where
+  the harness found 30 (12.5% of its fricative frames), and two loops tuned
+  its mix and crossover on changes of -70..-100 dBFS.
+- a flag that never moved. The round-2 finals the user heard as natural
+  pauses read `gap_air` -8..-12 dB, and cathar alpha 2 ("has hiss", round 1)
+  -15..-18.5: gap level alone does not order the verdicts.
+
+So every reading is now ranked as a two-sided distance from what the user
+accepted, `weight * max(0, |x - target| - dead_zone) / scale`, never as a
+raw direction; every net reading gets an absolute twin; timbre is read on
+programme cells only (time-frequency cells where the source stands at least
+12 dB over its own floor on loud frames), gain-matched on the 300-3000 Hz
+programme cells; a capture profile per source clips the readings to what
+the source can hold; an event reading reports how many events it stands
+on; a candidate inaudibly different from the incumbent is a tie; learned
+judges veto on their median beyond three times their benign floor and are
+never summed into a score; speech, music and mixed have their own grids;
+and a reading is admitted by a monotonic response on the calibration
+degradations and a benign floor, with the user's verdicts as falsifiers.
+Every threshold and target is uncalibrated until Round 0 re-scores the
+stored listening files, derives them on Tele7abc and tests them on SOTI and
+Vaccin. Round 0 ran on 2026-10-09; its report, whose proposals are not
+adopted yet, is [ear_v3_round0.md](ear_v3_round0.md).
+
+#### The new readings
+
+- **The capture profile (R0)**, `scripts/restoration_quality/source_profile.py`,
+  read once per source on the raw multichannel file and cached under the
+  scorer's cache (`profile/<source key>_<code hash>.json`), shown as
+  `meta.*`: the programme bandwidth (the highest 1/6-octave band where the
+  loud frames stand 3 dB over the inter-word gaps), the brickwall cut (a
+  codec low-pass), the mains frequency read on 1 s frames, the CRT line's
+  frequency, wander and origin, and the channel state with the signed
+  correlation. The hum and whistle readings now take the profile's mains and
+  line instead of 50 Hz and 15625 Hz. On the Tata tapes the bands end at
+  4490 Hz (Tele7abc), 5040 Hz (SOTI) and 7127 Hz (Vaccin); Tele7abc and SOTI
+  have a dead right channel; every tape is 50 Hz; the lines on Tele7abc and
+  SOTI are steady (7 and 13 ppm) and do not follow the hum, so they come
+  from the playback chain, not the tape.
+- **Spectral balance (R1)**, `balance_metrics.py`: per 1-ERB band, the
+  median output-over-source level on programme cells, as a tilt above
+  1 kHz (`dsp.balance_tilt_db_oct`) and the presence (2-5 kHz), air (5 kHz to
+  the band) and body (100-300 Hz) levels. Hiss removal must not read as
+  dulling, so a cell must also stand 18 dB over its bin's noise and a band
+  that noise could fill reads nothing; on oracle hiss removal over
+  `artifacts/realistic-v2` it then moves under 0.25 dB at p90 (it read up to
+  -15 dB of air without the guards). The flags `listener.bright` and
+  `listener.dull` read presence or air at +1 and -1 dB. R1 cannot see the
+  's' (no 's' frame is a loud frame), and a reading needs a band of R1's
+  own 1-ERB layout under the clip: air gets its first band only under a
+  5292 Hz band, presence under 2125 Hz and the tilt its third band under
+  1408 Hz (`balance_metrics.readable_from_hz`), so where a tape's band ends at
+  4.5-5 kHz R1 cannot see the air shelf either. A window whose source holds an
+  analog mute reads R1 None (`runner.holds_mute`: 5% of its live 20 ms frames
+  15 dB or more under the source's floor); without the guard the quiet frames
+  measure the mute and read hiss removal as about -19 dB of air. The floor
+  (`runner.mute_floor_db`) is the median of each programme window's p10 when
+  there are seven windows or more (`MUTE_MEDIAN_WINDOWS`): a mute up to 7.5 s
+  touches three windows at most, so it cannot own it. Below that it is the
+  higher of the median (`median_floor_db`) and the p25 of every live frame in
+  them (`span_floor_db`), the median taking the higher middle p10 of an even
+  count, so a mute sets the floor only when it fills more than half the windows
+  and a quarter of the span. Each alone missed one: a 15 s pair's two
+  windows both cover its last 7.5 s, so a 2 s mute owned the median; a 4 s mute
+  owned the median of five windows on 37.5-40 s pairs; a blank lead-in (4 s
+  before 11 s of speech, 8 s before 15 s, 10 s before 20 s, 60 s before 15 s)
+  owned the p25. Measured 2026-10-09, with the median alone in brackets:
+  realistic-v2 `_vhs` 0 of 920 windows skipped (0), `_clean` 23 (0), `_target`
+  293 (95); IA 20 of 109 (6), three of them over two -86 dBFS stretches the
+  median missed (3.5 s at the end in windows 1-2, 1.06 s at the start in
+  window 0) and two the 8.2 s at -62 dBFS that open jakki-brambles; Tata 1 of 137
+  (1). Every misreading window of a 1-4 s mute at -90 to -65 dBFS on 15-50 s
+  pairs is guarded, except a 4 s mute in 15 s (24% at every depth).
+- **The 's' read absolutely (R2)**, `sibilance.py`: `dsp.sib_abs_level_db`,
+  the fricative frames' level from 4 kHz up after R1's gain match, and
+  `dsp.sib_texture_db`, the roughness of the 's' spectrum. Both are clipped
+  to the brickwall rather than the programme band, which is read on voiced
+  frames. On the air-shelf set (+2 / +1 dB / off) the level reads
+  +0.53 / +0.25 / -0.04 dB on Tele7abc and +0.63 / +0.32 / +0.03 on Vaccin.
+  The texture separates round one's "distortion of spoken 's'" (APL
+  baseline, no_air, roformer: +2.18..+2.26) from the cathar renders
+  (+0.83..+1.34), and APL no_air reads level +0.05 against the baseline's
+  +0.72: its "thin" was texture, not level. Since calibration v3 the level's
+  gain match is taken around each 's' (R1's programme cells within 0.5 s),
+  so a slow level rider is no change to the 's', and the texture needs 30
+  fricative frames in a window (on 10 its spread is noise).
+- **The residual in the true pauses (R4)**, `pause_metrics.py`:
+  `dsp.gap_atten_db`, `gap_slope_db_oct`, `gap_spread_db`,
+  `gap_hf_excess_db` (4-10 kHz minus 0.2-1 kHz), `gap_lsd_db`,
+  `gap_mod_dist_db`, `gap_island_kurt` and `gap_pause_s`, on every source
+  frame at or under p40 inside a non-speech run of at least 200 ms (a
+  four-band DSP VAD averaged over 60 ms; `AI_RESTORE_PAUSE_VAD=silero` asks
+  for silero-vad once it is installed). Hum leaves both sides first. On the
+  one Tele7abc pair where only the cathar binary differs, 0.7.3 (heard:
+  hiss; the ledger's 0.7.6 is an erratum) reads an HF excess of +3.11 dB
+  and 0.7.5 (clean) +0.49; their attenuation, 42.3 against 42.8 dB, does not
+  separate them. No threshold is set yet, and `listener.hiss` stays
+  display-only; Round 0 proposed R4's flags without adopting them. A bin
+  whose source pause floor sits under the 16-bit dither plus 10 dB is left
+  out: requantising alone had lifted Vaccin's notched top band 9-16 dB.
+- **Gain riding (R7)**, `file_metrics.py`: `file.gain_ride_lu`, the p95 of
+  the short-term loudness difference left once the static gain is removed,
+  over windows standing 10 LU over the source's floor, each output window
+  read along the sync's lag track so a speed drift is no ride. The accepted
+  v2 finals read 0.82-1.80 LU on the speech tapes, so it is shown, not
+  flagged, until the `loudnorm_ride` degradation calibrates it.
+- **Sync**, `file_metrics.py`: `file.sync_drift_ms`, `file.sync_offset_ms`
+  and `file.sync_unmatched` from 8 s envelope anchors at the start, centre
+  and end of the raw pair, which every window reading aligns away. Hard
+  gates at one PAL video frame (40 ms) and no unmatched anchor; the 32 v2
+  final pairs read 4.7-5.4 ms of constant lag and under 0.3 ms of drift.
+- **Alignment**, `scripts/pair_alignment.py`: every paired reading (the
+  windows, the trade metric, the hum reading, the reference, defect and
+  listening scorers) runs on a pair trimmed to one timeline. Until
+  2026-10-11 the lag was the peak of |corr| over the first 1.86 s
+  (`xcorr_head`): a quiet head gave it nothing to read, its waveform
+  correlation followed the bass whose phase cathar's dewind turns, and |corr|
+  hid an inverted output. The default, `gcc_phat_spans`, reads GCC-PHAT
+  (150-7000 Hz, bins within 30 dB of each side's median) on up to seven of
+  the source's loudest 1.5 s spans and takes the lag that at least two, and
+  half, of the spans with a phase coherence of 0.1 agree on within 2
+  samples. Otherwise it abstains: the lag is unknown, the pair is trimmed at
+  the prior (`--align-prior-ms`, the mux's 4.97 ms) or at 0, and the scored
+  variant's `alignment` record says why; it also names the method, the
+  polarity and the spans, while `lag_samples` stays the applied lag. The lag
+  an output carries is the mux limiter's 219 samples plus the shift the
+  app's sync stage applied (its run log prints it). On the IA hunt's 205
+  shift-synced clips (2026-10-11, CPU) the head search read it within 8
+  samples on 137 cathar and 199 APL outputs, the vote on 203 and 202 (median
+  error 0, p95 1, max 4 samples); the rest abstain: digital silence, an
+  output with no phase coherence on any span, and a 431 ms shift outside
+  the +-4096 search. On the four Tata tapes the vote read all eight shipped
+  outputs exactly, where the head search missed five by 6-181 samples. The
+  prior breaks ties between distinct peaks only, never the shoulders of the
+  highest peak's own lobe, which on narrowband programme stand within 10 %
+  of it and pulled lags a sample or two short (exact on 175 cathar and 196
+  APL hunt outputs of 204 with a logged shift, 169 and 177 before; review
+  of 2026-10-12). `AI_RESTORE_ALIGN_METHOD=xcorr_head`, or
+  `--align-method xcorr_head`, reproduces scores stored before then:
+  re-read on the hunt, it matched all 470 stored lags. A one-family re-score
+  (`validate_restoration.py --merge-into`, `tune_restoration.py`) keeps the
+  stored families only where the pair is trimmed at the stored lag.
+- **Noise removed per frame**, `measure_tradeoff.py`:
+  `file.noise_removed_median_db` beside `file.noise_removed_db`. The pooled
+  reading averages the quiet frames' energy, so a few hot frames own it: the
+  hottest 1 % of SOTI's quiet frames in the shipped APL output hold 34 % of
+  their energy (222 of 3739 stand 10 dB or more over the source, cathar's
+  2), and the pooled reading says -5.17 dB where the median of the per-frame
+  drops says +3.00 (cathar +9.61 pooled, +10.40 median).
+- **The programme's low end (R11)**, `lf_metrics.py`: `dsp.lf_programme_db`,
+  the output's 40-200 Hz power over the source's on the source's loud frames,
+  less R1's programme gain match (300-3000 Hz), with each mains line R0 names
+  left out of the band (dehum is not a thinner bass; where R0 names none,
+  nothing is left out: unlike the hum reading, R11 takes no 50 Hz fallback).
+  Built for round C3, the cathar music profile (the dewind cutoff, repair on
+  music): R1's body starts at 100 Hz and read 6 of 150 realistic-v2 music
+  windows, because music's bass never falls to a floor inside a window. The
+  gain match runs on an 8192/2048 STFT, the band on one whose frame follows
+  the rate to hold about 1.35 Hz bins (32768 samples at 44.1 and 48 kHz), so
+  a mains line takes +-2.7 Hz out of the band. On the 8192 frame the same
+  exclusion took 39-61 Hz out round 50 Hz, the band the 40 / 60 / 80 Hz
+  dewind corners move, and read 40-60 Hz 20 dB down as -0.007 dB (-0.99 on
+  the band frame); at 96 kHz it left 1 band bin of 14. Two-sided: negative
+  is a thinner low end, positive more low end than the source; noise in the
+  band counts, so rumble left reads nearer 0 than rumble removed, and the
+  accepted file's reading is the target. Read on every programme route,
+  skipped where R1's mute guard skips, and None where the gain match has
+  under 100 programme cells (78 cells, half of them hiss, read +18.9 dB on a
+  realistic-v2 bed) or the band keeps under 8 bins. FFmpeg's `bass` shelf at
+  100 Hz (+1.5 / 3 / 6 dB) reads +0.56 / +1.15 / +2.41 on the en music bed,
+  its high pass at 40 / 60 / 80 Hz -0.12 / -0.47 / -1.09, over a benign
+  floor of 8.4e-6 dB; hum added at R0's mains moves it 0.022 at most. Oracle
+  removal of the fixtures' own noise, which is heavy in the low end, moves
+  it p90 0.15 dB on the music beds but 1.0 dB on speech, whose band holds
+  little programme: on speech R11 is shown, not ranked. On the 12-clip
+  music listening set (read on the 8192 frame) APL reads a median -0.50 dB,
+  cathar's music profile -0.68 and its speech settings -1.28; on
+  gaudeamus5's music windows cathar's round-one baseline reads -3.9 against
+  APL's -0.74. No grid ranks it yet, and the calibration's stand-in grid
+  (`calibration_ordering.default_grid`, used without `--grid`) leaves it out
+  (`RANKING_EXCLUDED`); round C3 needs it in `music_v3.yaml` before it runs.
+- **The time base (R12)**, `timebase_metrics.py` (backlog B1, 2026-10-12):
+  whether the output plays the source frame for frame. The app's DTW sync
+  interpolates its warp between whole 40 ms chroma frames, so every
+  off-diagonal step of the path plays a frame at 0x (a hold) or at 2x; the
+  three-anchor sync reading cannot see a 40 ms event. Per file, on the raw
+  pair at the runner's lag (the least-squares gain match came out negative on
+  a drifting fixture and on one hunt output, which inverts it):
+  `file.timebase_holds` and `_holds_per_min` (a 25 dB dip of the output's
+  300 Hz high-passed 5 ms level against the source's, 20 ms or longer, where
+  the output sat at one value: a muted hole is `file.dropouts`' business),
+  `file.timebase_plateaus` (a dense 10 ms lag track displaced by exactly 40
+  or 80 ms), `file.timebase_rate_jumps` (confident lags 200 ms apart or less
+  that differ by one or two whole frames), `file.timebase_speed_dev_pct`
+  (the local speed error, shown) and `file.timebase_tracked_share` (the
+  coverage). Hard gates `timebase.holds` and `timebase.rate_jumps` at none,
+  uncalibrated. On the IA hunt's stored outputs the 30 DTW clips read 177
+  holds on 24 clips for cathar and 49 on 15 for `auto_pure_linear` (the
+  gates fail 24 and 16), the 205 shift clips per engine read nothing; of
+  the 32 accepted v2 finals only the APL final of the one music clip that
+  took DTW reads a hold. The calibration's `sync_holds` case (1 / 3 / 6 DTW
+  glitches) reads holds 1 / 3 / 6 on the en and fr targets and on the three
+  tape cuts, `sync_drift` reads its speed error and no event (the tape cuts'
+  stored v3b cases too), every benign case nothing. The app
+  key `sync_dtw_enable` (`docs/configuration.md`) sends the length-preserving
+  chains to shift sync; on five of the hunt's DTW clips rendered with cathar
+  on the CPU the shift output reads 0 holds where the DTW warp replayed on
+  the same pre-sync audio reads 71.
+
+The engine side of the coverage check is built: with
+`AI_RESTORE_EVENT_LOG=<dir>` set, the sibilant guard, the plosive tamer,
+the pause floor and the mux write what they found or did
+(`modules/event_log.py`). The harness reading that compares the guard's
+events with its own fricatives is the next piece.
+
+#### Audibility before ranking
+
+```powershell
+.\.venv\Scripts\python.exe scripts\audibility_check.py incumbent.wav `
+    candidate.wav --json audibility.json
+```
+
+The check hashes both decoded files, aligns the candidate to the incumbent (lag
+and polarity) and reads the time-domain difference against the incumbent's
+masked threshold per 1-ERB band and 2048-sample frame, over 15 s windows. The
+pair is audible when a window has 5% of its frames over the threshold or two
+frames 6 dB over it (a click, a dropout), or one frame anywhere 12 dB over it (a
+click near a frame boundary, which lands in one Hann frame: swept across one
+hop, the two-frame rule alone read a 1 ms click as a tie in 4 to 24 of 32
+positions, depending on its level). A pair the check cannot vouch for reads
+audible, never a tie: a NaN sample, two different multichannel counts (a mono
+side is repeated on every channel and compared per channel, not refused), or
+more than 50 ms left uncompared once aligned, head and tail together
+(`length_mismatch_s`). Before the length was counted, a render cut short, empty,
+or missing its first 91 ms read as a tie; now a delay over 50 ms, or an
+equal-length shift over 25 ms, reads audible. Equal PCM hashes make a pair
+identical only when its samples are finite: one NaN spreads over its whole
+channel when DC is removed, so two different broken renders decoded alike. Two
+values are declared assumptions: the incumbent's loud frames play at 65 dB SPL,
+and the masked threshold sits 24 dB under the spread excitation. The check is
+one-sided: "inaudible" is trusted and makes a candidate a tie that cannot win,
+is never played to the user and skips the learned judges; "audible" proves
+nothing about better. On the stored listening files (2026-10-09):
+
+| Pair | Tape | Audible share | Windows at 5% | NMR peak, dB |
+| :--- | :--- | ---: | ---: | ---: |
+| air +1 vs +2 dB | Tele7abc | 0.42 | 9/9 | 7.1 |
+| air +1 vs +2 dB | SOTI | 0.34 | 25/29 | 5.5 |
+| air +1 vs +2 dB | Vaccin | 0.45 | 31/31 | 11.5 |
+| air +1 vs +2 dB | Gaudeamus5 | 0.97 | 20/20 | 22.9 |
+| sibilance v3 vs v2 | Tele7abc | 0 | 0/9 | -1.8 |
+| sibilance v3 vs v2 | SOTI | 0 | 0/29 | -4.8 |
+| sibilance v3 vs v2 | Vaccin | 0 | 0/31 | -21.2 |
+| sibilance v3 vs v2 | Gaudeamus5 | 0.0015 | 0/20 | 0.0 |
+| 1-sample shift | Tele7abc | 0 | 0/9 | -200 |
+
+At a 20 dB offset SOTI's +1 dB against off becomes a tie; at 30 dB every
+anchor still holds. The air anchor rests on one unblinded preference, so the
+first listening session repeats it as an ABX.
+
+#### The verdict ledger and the listening tool
+
+Every verdict the user gives is one line of
+`assets/quality_calibration/verdicts.jsonl`, append-only
+(`scripts/restoration_quality/ledger.py` holds the schema): the files heard with
+their sha256, the windows, the question (`abx`, `pair`, `blend`, `flag` or
+`preference`), the answer and the user's own words. Flags and clean lists come
+only from those words, and `clean["*"]` marks an output accepted with no
+complaint. The 33 backfilled records cover rounds one to three.
+`experiments/tata_listen/check_verdicts.py` reads them and exits 2 when no
+stored report scores a judged label, so it can no longer pass on nothing. A flag
+on a display-only gate (`gates.DISPLAY_ONLY` or a soft gate; `listener.hiss`
+today) is reported as not asserted and checked neither flagged nor clean, and a
+stored report that still lists such a flag does not fail on it. A flag record
+that judges labels on display-only gates alone is counted on its own ("on
+display-only gates alone"), apart from the records not asserted (longer
+rankings, trials, empty flag records). On 2026-10-09 the run checks 3 records,
+leaves 4 not asserted, 0 on display-only gates alone and 26 waiting for the
+Round 0 re-score, and lists 6 `listener.hiss` flags as not asserted (the
+Tele7abc known set and listening flags, and the four round-two pause records).
+
+```powershell
+Set-Item Env:AI_RESTORE_DATA_ROOTS "D:\Tata"
+.\.venv\Scripts\python.exe -m scripts.listen_ab threshold --listener user `
+    --device "<headphones>" --volume "<setting>"
+.\.venv\Scripts\python.exe -m scripts.listen_ab abx --tape vaccin `
+    --stim A=<file> --stim B=<file> --device "<headphones>" --volume "<setting>"
+```
+
+The page binds 127.0.0.1 only: family tapes never leave the machine, and no
+cloud or audio-LLM judge is used. `abx` runs 24 trials (17 right is
+p 0.032); `pair` asks which of two outputs is better with an explicit
+"same" and one replicate per block; `blend` finds the share of the
+candidate mixed into the incumbent the user hears 75% of the time. Cuts are
+8-12 s, aligned and placed where the two stimuli differ most audibly. The
+answers go to the ledger when the block ends.
+
+Since 2026-10-12 a block that hears nothing still says something.
+`--device` and `--volume` are required, and the rest of the playback chain
+(`--connection`, `--eq`, `--anc`, `--surround`) is kept as text. Every cut
+plays at one speech-active level, -23 dBFS (`--level-dbfs`), instead of the
+first stimulus's level within +-20 dB, so one volume setting holds for the
+whole session; a cut that would clip there refuses the block and names the
+level it would fit at. The restorations of Session 0 and 1 read -13.8 to
+-19.0 dBFS on speech, the raw Tele7abc tape -36.1 dBFS with a 20 dB crest,
+so the tape fits with 2.9 dB to spare and the restorations play 4-9 dB
+quieter than in Session 0 at the same setting. The page switches A, B and X
+at the same playhead with an 8 ms crossfade (keys 1, 2, 3 and space, loops
+of 1-3 s or over the quietest 2 s). Practice trials with feedback come
+first and are never scored; catch trials (+6 dB of air, or half the raw
+tape) sit among the scored ones and are scored apart. "Can't tell" is
+recorded but not scored. A block whose decided answers all took one button
+reads "no signal", never "disengaged"; only a missed catch trial reads
+"disengaged". Each record keeps its power (ABX: 16 trials miss a listener
+right 60% of the time 83% of the time).
+
+`threshold` finds the listener's tone thresholds at 1-12.5 kHz in three
+intervals under a hard cap (-33 dBFS RMS, or 10 dB under the speech
+level), 12 trials per frequency placed on the server so a simulated
+observer tests the convergence (median error 1.1-1.6 dB). It appends a
+dBFS-to-sensation-level map to
+`assets/quality_calibration/playback_calibration.jsonl`. With
+`AI_RESTORE_LISTENER=user` the audibility check takes that listener's
+playback level instead of assuming 65 dB SPL, within the 7-10 dB the
+normal-hearing assumption costs, and the run's id joins the verdict rule
+the loop keys its stored verdicts on. A listener named there without a
+usable run stops every import of the check, `listen_ab`'s included, so the
+first threshold run goes with the variable unset. The page and the
+switching were checked in the Browser pane on synthetic audio: switching
+between identical buffers leaves a residual of exactly 0, restarting the new
+one from zero leaves 0.99.
+
+#### The reward and the preference head
+
+The loop uses the constraints and the noise floors below (see "The loop's
+v3 guards") and, since 2026-10-11, the group reward's tie band per reading
+(see "The loop's judging resolution"); the group reward and the preference
+head are built for the training plan and not used by the loop yet.
+`python -m scripts.reward_noise_floor SOURCE=OUTPUT ... --out FILE.json`
+(as a module from the repository root) scores each output, then
+near-copies of it (one sample of delay, 16-bit requantisation, an opt-in
+resample round trip) against the same source, and writes each reading's
+test-retest floor (`readings.<key>.floor`). Run it on the shipped outputs:
+read at the identity point the floors come out 16-200 times too narrow.
+`--benign-pair SOURCE OUTPUT_A OUTPUT_B [LEDGER_ID]` (repeatable, each path
+its own value) scores two restorations of one source that a blind listener
+could not tell apart, A as the reference and B as `benign_pair`, so the
+floor is a difference nobody heard; the ledger record that says so is kept
+beside the pair. A report holds one operating point (identity, output or
+benign_pair) unless `--pool` is given, because a pooled percentile depends
+on how many deviations each point brought; `by_transform` (the largest
+deviation) and `percentile_by_transform` show each kind's share. The
+learned vetoes read the benign-pair report (see "The loop's v3
+guards"), the group reward's tie band the output-point one.
+`scripts/restoration_quality/reward.py` turns a group of candidates into
+rewards: two-sided distances per reading, a missing reading counted as the
+group's worst, per-family win rates with the floors as the tie band, the
+worst family deciding; hard gates, verdict reversals and learned vetoes
+exclude a candidate and an inaudible one ties. `preference.py` fits a
+Bradley-Terry head on the user's pairwise answers (regularised logistic,
+leave one tape out) and picks the next pair to ask; it sets the grids'
+weights and checks them, and is never the loop's objective.
+
+#### The variation pre-check (plan 3.2a)
+
+A per-tape settings policy (the GRPO plan) can only help when a per-tape
+choice sounds different from the single best setting.
+`python -m scripts.variation_precheck STATE.json ...` reads finished loop
+rounds without rendering: per round, the single best candidate (lowest mean
+rank) and the per-tape oracle (lowest rank on each tape), then
+`auditory.compare_files` between each oracle pick and the best on that
+tape. A pick is `selectable` when it is called audible and its difference
+stands above `--heard-db` (default -17.6 dB, the largest restoration
+difference not heard blind in Session 0), `below_heard` when it is smaller,
+and a `tie` when the check cannot tell it apart; the ties' rank gains show
+the ranking noise. Selectable picks go to an ABX before any training.
+
+```powershell
+$env:AI_RESTORE_DATA_ROOTS = 'D:\ai_restore_work'
+.\.venv\Scripts\python.exe -m scripts.variation_precheck `
+  D:\ai_restore_work\autotune_v6_music\apl\state.json --json precheck.json
+```
+
+#### Critical of hiss (ear v4)
+
+The user's rule of 2026-10-11, in capitals: the ear must be very critical of
+VHS hiss under speech or singing and in silence and pauses. The user heard
+hiss on every Tata tape for weeks while no reading moved. Ear v4 reads both
+places at one declared critical playback level, each file's loud frames at
+75 dB SPL (`hiss_floor.L_CRIT_DB`):
+
+- `dsp.hiss_prog_margin_db` (`restoration_quality/hiss_programme.py`): the
+  hiss left under the programme over its masked threshold. The source's
+  stationary floor (the hiss anchor, read once per source from R4's true
+  pauses) and the output's removal on noise-dominated cells give the hiss;
+  the programme masks it (Johnston's tonal and noise offsets, spread across
+  ERB bands and forward in time). Programme the source's hiss hid, which a
+  clean output reveals, is told from hiss by a spectral cap: a band's
+  residual stands at most 6 dB over what the other bands show at the same
+  instant (validation round 1: the first build read a perfect fixture output
+  +9..+22 dB, the fixed one at or under 0 on 41 of 43 linear fixtures). It
+  reads the STFT frames wholly inside each window only (validation round 2:
+  the half-padded edge frames moved a window 2.4 dB under a 0.37-sample
+  shift of the output). Where the pause anchor does not validate, a second
+  one (`hiss_stationary.py`, 2026-10-17) may: the stationary floor of
+  continuous programme, accepted only where the hiss shows through every
+  band within every 3 s and the programme stops under two hiss-alone bands.
+  It validated 38 of 360 stationary-hiss music variants with every perfect
+  output at or under 0, and no real source: on dense programme even the
+  exact noise as the anchor reads a perfect output over 0 (75 of 76
+  realistic-v2 music-bed and music-led fixtures), so the ear stays blind to
+  hiss under dense singing (`docs/ear_v4_hiss.md`, "Continuous Programme").
+  The pause path validates dense full-band music and reads its perfect
+  outputs over 0; no band-edge condition on its validation closes that and
+  keeps the Tata tapes validated (same document, "The Pause Path's Hole"):
+  the fix belongs in the reading's spectral cap, and not in a split by time,
+  which reads hiss gated out of the programme's quiet moments as removed
+  ("Revealed Programme Is Not Told Apart in Time"), nor in a reading of the
+  within-band valleys, which reads a subtractor's peaky residual 2-5 dB low
+  and the fixtures' noise-like revealed programme still as hiss ("Revealed
+  Programme Is Not Told Apart by Its Valleys").
+- `dsp.hiss_pause_margin_db` (`hiss_pause.py`): the hiss-weighted pause
+  floor over Terhardt's threshold in quiet, read where the source's pause
+  is silent apart from its hiss (a 200 ms block standing 3 dB over the
+  anchor holds programme: soft singing on a choir tape stood about 4 dB
+  over it). The hiss weight is half at 3.15 kHz and applied before the
+  band smoothing, so room tone mostly under 2-3 kHz, which the user
+  allows, does not read as hiss (a pink room floor low-passed at 2 kHz,
+  as loud as the tape's own floor at 100-1000 Hz, reads none); dead air is
+  a guard of its own.
+- Both are dB over audibility. Their excess, max(0, margin), is ranked
+  one-sided with target 0 by `scripts/tune_grids/tata_v4.yaml` and
+  `music_v4.yaml`, the loop's and the sweep's default, with tie bands from
+  same-percept transforms (`scripts/reward_noise_floor.py` with
+  `--transforms hiss`; each tie the widest transform's p95, the report's
+  `tie_floor`), never from Session 0's benign pairs. The fresh
+  realisation (`same_percept.fresh_floor`) keeps the floor's power within
+  0.04 dB and redraws it (correlation 0.07 with the old draw); the first
+  build's lost 0.32 dB of a white noise and correlated 0.26 with its draw,
+  so every fresh pause reading came out low and widened the ties.
+- The flags `listener.hiss_programme` (median) and `listener.hiss_pause`
+  (tail) fire at 0 dB and are the user's rule: no gates file and no
+  calibration moves them (`gates.USER_RULE_FIXED`).
+- Hard guards in the v4 grids' `constraints:` keep a loop from winning by
+  deleting programme or emptying the pauses (see "The loop's v3 guards").
+
+The output-quality-harness skill ("Critical of hiss") holds every step and
+constant; the acceptance record with each measured row is
+`docs/ear_v4_hiss.md`. `python -m scripts.check_hiss_fixtures` runs the
+fixture rows on `artifacts/realistic-v2`.
 
 ### Calibrating the output-quality metrics
 
@@ -610,7 +1145,20 @@ attenuated, crackle, dropouts, the line whistle, gain and compression) and
 asks, per metric and failure: does the delta point the expected way at the
 severest level, is it monotonic across the levels, and does the mildest level
 clear three times the benign floor (identity, 16-bit requantisation, a
-resample round trip, 5-60 ms shifts)? A second set is the user's own tapes
+resample round trip, 5-60 ms shifts, and since 2026-10-11 the same-percept
+transforms: a fresh realisation of the fixture's own noise that keeps its
+level wander, 2nd-order
+all-pass filters at 200 Hz and 2 kHz, a 0.37-sample delay, +-0.1 dB of gain
+and TPDF dither, each seeded from its language and name)? The same-percept
+cases feed only that sensitivity check (`check_floor` in the report); the
+gates, the known-ordering stand-in grid and the report's benign floor keep
+the older set, and no tuning grid reads either. Read with the dsp family on
+realistic-v2 en and fr they widen the floors under `dsp.gap_atten_db` from
+0.13 to 1.68 dB, `dsp.residual_noise_db` from 0.0002 to 1.34,
+`dsp.pause_depth_db` from 0.0004 to 0.20 and `dsp.gap_mod_dist_db` from
+1.89 to 2.66: the 200 Hz all-pass, a phase change, moves residual noise
+1.7-3.1 dB and gap attenuation 1.9-3.2 dB, and the dither moves fr's gap
+modulation 3.2 dB. A second set is the user's own tapes
 with this week's outputs judged by ear: the de-esser bug must be flagged
 muffled, the single 4 s probe must lose to the stitched one on coloration and
 highs while reading at least as quiet, and APL must not read as altered.
@@ -660,6 +1208,260 @@ Vaccin) found:
   Audiobox's production complexity, so the hand-set 0.3 and -0.5 would have
   vetoed the accepted outputs). Whisper's worst-decile CER is 0.3-0.7 on
   every restoration of hissy tape, so that gate is soft.
+
+The v2 gates came from a `--metrics dsp` run, so every speech, mos and stems
+gate kept its hand-set value, and the known-ordering composite (three
+learned judges) read 0 for every variant, ranking them in listing order.
+For ear v3 the calibration scores every family every time and re-scores a
+cached case that lacks one; ranks the known-ordering tapes by the v3
+two-sided score (`--grid`); takes the user's flags from the ledger; writes
+`gates_speech.json`, `gates_music.json` and `gates_mixed.json` beside the
+pooled `gates.json`; records for each gate how many verdicts it rests on,
+where they came from and how many listening rounds agree; and turns a
+listener flag into a hard gate only once two rounds agree. `--excerpts`
+runs the degradations a real tape can carry on cuts of the Tata tapes,
+since on Piper fixtures the gap readings moved only 0.02-0.37 dB. Each new
+degradation (`scripts/degradations_v3.py`: the app's own air shelf, the
+same shelf at round A1's 9000 / 7500 / 6000 Hz corners, a
+spectral tilt, four pause residuals, a Hi-Fi compander mistrack, a loudnorm
+ride, a phase-scrambled "robotic" voice, a band-limited source, treble
+dropouts, islands in the 's', a speed drift) declares which readings must
+move and which must not. Building them showed that FFmpeg's
+`treble=g:f=7500` is the RBJ shelf at Q 1/sqrt(2), that this shelf moves
+the net sibilance reading by a median 53% of the absolute one (so the net
+reading is asserted to stay under its absolute twin, not to stay still),
+and that full phase scrambling reads as a -0.8 to -1.2 dB/oct tilt. R11's
+entries apply the magnitude of FFmpeg's `bass` shelf (100 Hz) and `highpass`
+(round C3's 40 / 60 / 80 Hz corners) zero-phase: run causally on a bass-led
+bed, the high pass turned the alignment by up to 101 samples and moved
+`dsp.lkr` 0.20-0.26.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\calibrate_quality_metrics.py `
+    --fixtures artifacts\realistic-v2 --languages en fr es `
+    --known-ordering assets\quality_calibration\known_ordering_v2.json `
+    --round r0 --out experiments\quality_calibration_v3
+```
+
+Without `--grid` the ranking uses every two-sided dsp reading at "no
+change" with a dead zone of three benign floors. `--grid` reads the
+entries with a `target` under a `reward:` key, else under `ranking:` (the
+v3 tuning grids: `tata_v3.yaml` 12 entries, `music_v3.yaml` 10), else at
+the top level, and refuses a file with none. The run reads and checks the
+grid before the synthetic suite, so a bad grid stops it in seconds instead
+of after hours of scoring.
+
+The rounds that agree are counted per gate, on the ledger rounds of the
+verdicts that gate rests on (`rounds` in each gate entry, shown as e.g.
+`2 (1, 4)` in `report.md`): a round counts only when the previous
+threshold still separates the gate's good and bad readings and those
+verdicts hold a round the previous entry's did not; the run's own round
+id is display only.
+Manifest lists and by-ear ranks name no ledger round, so a gate resting on
+them counts 1, and a `--no-ledger` run or a v2 gates file restarts the
+count. Counted on the run's id, a round-4 flag about another gate on
+another tape had promoted `dead_air`, `pause_collapse` and
+`sibilance_thin` to hard on round-1 evidence alone.
+
+The benign floor leaves out the readings a benign case changes by
+construction (`quality_degradations.benign_changes`): the 5, 30 and 60 ms
+shifts delay the raw pair, so its sync readings (`file.sync_offset_ms`,
+`file.sync_lag_*_ms`) read the shift itself, the fault the 40 ms gate
+stands for. With them in, the shifts set a 57 ms floor on realistic-v2
+en + fr and relaxed the 40 ms sync-offset gate to 172 ms; the drift, one
+constant lag, stays in the floor.
+
+A check that reads nothing is unscored and says why: `clipped` when the widest
+programme band R0 read over the degradation's cases
+(`calibration_checks._source_band`) leaves the reading no band of R1's own
+layout, so no case's band carries it (`balance_metrics.bands_under` and
+`readable_under`: air needs a band of 5292 Hz, presence 2125 Hz, the tilt's
+third band 1408 Hz, so a 5.0-5.29 kHz source such as the Italian speech target
+at 5040 Hz is clipped, and `report.md` shows 5292 Hz as where air is read from),
+`not read` otherwise. The widest, not the median (2026-10-09): with
+`--excerpts`, en (3000 Hz), Tele7abc (4490), SOTI (5040) and Vaccin (7127) pool
+under one name, and their median of 4765 Hz called an air reading Vaccin failed
+to give `clipped`, which the run prints as expected; it is now `not read`. The
+summary counts only real passes, prints how many non-blind checks are unscored
+and names every one R0's band clipped. Both air-shelf entries assert R1 air
+(non-blind): on every fixture the check reports `clipped` (speech targets
+1.1-5.0 kHz, music beds 1414 Hz, whose programme ends under 1.6 kHz). With
+`--excerpts` the speech entry asserts on Vaccin (R0 7127 Hz), where the runner's
+R1 path reads +0.135 / +0.27 / +0.54 dB for a +0.5 / 1 / 2 dB shelf (the cut
+mirrors it) on 30 of 61 windows, over a benign floor of 8e-5 dB; SOTI (5040 Hz)
+and Tele7abc (4490 Hz) clip it. Those numbers come from a probe of the runner on
+the whole source, not from a calibration run, and a failing non-blind check
+makes the run exit 1: run the calibration with a Vaccin excerpt (`--metrics dsp`
+is enough) before its gates are trusted.
+
+That run (2026-10-09: en, `--metrics dsp`, `--excerpts` of Vaccin and SOTI
+at 60-360 s and the whole Tele7abc cut) passed 98 of 144 checks with eight
+non-blind failures. Each was fixed where it arose, none by loosening an
+expectation (the numbers are in the output-quality-harness skill):
+
+- `hum` failed on en: R0 names 60 Hz on the hum-free en, es and it Piper
+  targets, and the runner reads hum there, while the case injected 50 Hz.
+  The case now injects at the mains R0 names on its base.
+- `words_muted` and `dropouts` read 0 at every level on the tapes: one hole
+  sits in at most two of a 300 s cut's 40 windows, so the window median of
+  `dsp.dropouts` cannot see a few. They assert `file.dropouts`, the count
+  over the whole aligned pair, which also reads each frame's drop against
+  the programme frames' median (a level offset is no hole) and asks the
+  100-1000 Hz body to fall (a treble lift is no hole); `dropouts` draws
+  nested 30-50 ms holes on programme frames, so 3 / 6 / 12 read 3 / 6 / 12.
+- `pause_residual_hiss` failed the effect rule on slope and LSD: the
+  benign requantise set the floor on Vaccin's notched top band. R4 leaves
+  out the bins under the 16-bit dither plus 10 dB.
+- `sibilant_islands` did not order on en (10 fricative frames): the texture
+  needs 30, the islands follow each window's own fricatives, and the
+  calibration's default languages are en and fr.
+- `loudnorm_ride` moved R2's level on Vaccin by up to 0.56 dB; with the gain
+  matched around each 's' it moves 0.045 dB at most.
+- `sync_drift` read as a gain ride on the 300 s cuts (up to 1.34 LU); read
+  along the sync's lag track it reads 0.032 LU at most.
+
+With fr beside en (calibration v3b, 2026-10-10) two more checks failed, each
+traced to its cause:
+
+- `hiss_in_pauses` did not order gap_air on fr: the hiss lands where the
+  expander's gain is closed, while gap_air reads the p15-p40 frames, 60-71 %
+  of them inside the speech, where the hiss sits 31-73 dB under the frame's
+  own air. The entry asserts R4's true-pause attenuation instead (-33.9 /
+  -43.9 / -53.8 dB on en, -41.0 / -51.0 / -60.9 on fr, about 4700x its
+  floor) and reports gap_air.
+- `transient_smear` read fr's 20 ms smear +0.085 dB on `dsp.attack_db`,
+  a difference of two medians that landed on different onsets. Paired on
+  the onsets it reads every window negative and orders on both languages.
+
+The score cache's schema is 7 (R12's time-base readings are new,
+2026-10-12; 6 had R11 read on its own STFT and the attack paired), so every
+v3 score is read again; cases are built once and reused, so delete the
+cases a change rebuilds (or all of `cases/`, since `dropouts` no longer
+draws from the shared generator). The new `sync_holds` case asserts R12's
+holds and rate jumps and holds the three-anchor sync under its 40 ms gate;
+`sync_drift` also asserts R12's speed error up and its gated counts at 0.
+
+The calibration writes its gate files under `--out`; the tuning drivers
+still default `--gates` to the v2 `experiments/quality_calibration/gates.json`,
+so an ear v3 round names the v3 file:
+`--gates experiments\quality_calibration_v3\gates.json`.
+
+### Gates that refused the denoising itself
+
+Several hard gates failed most shipped outputs whatever the settings,
+because they read the removal of hiss as damage (E1, 2026-10-12). Judge
+only; no restoration default moved.
+
+- The stems' worst octave. On tape the non-vocal stem carries the hiss, so
+  an octave the background never filled read as stripped once the hiss was
+  gone, and the least-squares match of the two stems, a waveform measure,
+  scaled a restoration that moves phase (cathar) down as a whole. The gate
+  `stems.octave_programme` now reads `stems.octave_programme_db`
+  (`scripts/restoration_quality/stem_octave.py`): the two mixes compared on
+  the cells where the source's level-true stem stands 18 dB over its noise
+  and holds the mix within 1 dB, per octave, levelled by the mix's own
+  median octave. The output is never separated for it. On CPU from cached
+  stems: the 24 v2 music finals the user accepted read -2.42..0.00 dB on
+  the 22 that read (the raw octave failed 13 of 21, APL
+  x_vid-20230606-121054 at -38.8); `background_stripped` (en, the
+  2026-09-20 stems) reads -5.9 / -11.1 / -14.9 dB at -6 / -12 / -24 (raw
+  -0.9 / -2.6 / -14.3), on one window of two and through one octave whose
+  guard (b) passes narrowly; a planted one-octave mute of a hiss-bearing
+  realistic-v2 bed fails 118 of the 122 windows where the muted octave
+  reads, and the oracle 1 of 174. Blind spot: a bed that never falls to a
+  floor inside the window reads None (a sustained chord, stripped or not;
+  the realistic-v2 beds' 250-500 Hz octave reads on 17 of 100 windows).
+  The calibration's `stem_octave_muted` (1000-2000 Hz) and
+  `music_hiss_removed` cases are built on the music fixture's clean bed and
+  its own recorded noise, not the speech fixture's `noise`, on which the
+  mute's octave never read. The real-separator checks run on the GPU.
+  Guard (c), added 2026-10-12: a background cell counts only at -90 dBFS
+  or more (`CELL_FLOOR_DBFS`, the level of the sine whose power the cell
+  holds; -90 dBFS is a sine one 16-bit step in amplitude), since guard (a)
+  is relative and passes cells under anything a capture carries over a
+  clean floor. R1's -70 dBFS, a broadband level, was too high for a cell:
+  it left m_wbbddanceswithwolves unread on both engines and moved APL
+  m_videoplayback-2021-07-11 from -0.79 to -2.24 dB. At -90 the accepted
+  finals keep their readings (22 read, three move by 0.19 dB at most, none
+  under -3), `background_stripped` reads as before, and on the hunt two
+  cathar verdicts move to a pass (treasure-hunt, the-riddlers) while APL
+  keeps its 18 failures. It does not clear et-el-extraterrestre-tve
+  (-54.0 / -54.3): its 4-16 kHz cells are window 0's first two STFT
+  frames, where the zero padding meets a source that starts mid-signal, at
+  -68 dBFS. Dropping two frames at each end of a window clears it
+  (-0.19 / -2.56) but moves every reading, so it waits for a calibration.
+- `speech.cer_median` and `mos.audiobox_pc` are soft until a verdict sets
+  them; the grids' learned vetoes on both stay.
+- `Gate.calibrated` is False for every hand-set threshold (lkr's 1.747, a
+  v2 known-good bound, is the exception), and a gates-file `floor` entry
+  resting on no verdict is never calibrated and never tightens the code's
+  threshold: the v3 and v3b files' lkr 0.3 had failed the shipped Tata
+  outputs on 3 of 4 tapes (APL) and 4 of 4 (cathar).
+- The hole gate reads `file.dropouts`, the count over the whole aligned
+  pair; the window tail of `dsp.dropouts` went blind on long files, and the
+  name is retired so the v2 file's 57.3 (a count 1d644fb replaced) cannot
+  land on it. Its bound, 4 holes, is the smallest whole count the oracle
+  pairs admit: every benign case reads 0, and of the 920 realistic-v2
+  oracle pairs 13.8 % read more than 1 hole and 4.8 % more than 4. Most of
+  those holes are the count misreading hum and low-margin noise removal
+  (the m09 hum fixtures against their clean programme: 10 of 10, up to 14).
+  It reports only (soft) since the integration review of 2026-10-12: a
+  fixed count does not scale with the tape's length, it failed the shipped
+  outputs the user accepted on 2 of the 4 Tata tapes (cathar SOTI 16 holes,
+  APL SOTI 9), and as a hard gate it would refuse the stronger hiss removal
+  the user asked for. R12's holds catch the sync step's frozen frames.
+- `calibrate_quality_metrics.py` writes no gates file without
+  `--known-ordering` (the floor rule alone hands the guesses on), and it
+  scores every realistic-v2 capture against its `_target` and `_clean`
+  programme (`--oracle-max N` spreads N per language): a hard gate failing
+  more than 5 % of those pairs refuses the denoising itself, and the run
+  writes no gates file and exits 1.
+
+The oracle check's dsp family on CPU, all five languages (920 pairs), under
+today's gates: `dsp.whistle` fails 288 (31 %), `dsp.hf_8k16k` 102 (11 %),
+`dsp.clicks` 45 at the code's 0.5 (1 at the v2 file's 0.79), `file.dropouts`
+44, `dsp.hum` 18, `dsp.hf_4k8k` 8, `file.lra` 1. The whistle reading (the
+peak within 30 Hz of the line over its 500 Hz neighbourhood's median) reads
+3-5 dB on the clean references, a maximum of near-empty bins, where the
+hissy source read 1-3, and +33 dB where a band-limited capture held nothing
+at the line; the air gate reads the hiss leaving the loud frames' 8-16 kHz
+as air lost. Until those two readings are made oracle-proof, a calibration
+run with the check writes no gates file.
+
+The whistle reading is oracle-proof since 2026-10-12
+(`dsp_metrics.WHISTLE_FLOOR_DB`): the neighbourhood's median is read no
+lower than the bin a sine 80 dB under the loud frames (p70) would fill, and
+the reading never goes under 0. The captures read -40 to -52 dB before, a
+hole and not a line: the fixtures' tape noise is notched within 40 Hz of
+both line rates (`realistic_defects._without_tones`). Re-read on the same
+15 s windows, all 920 pairs pass at a floor of 70 to 90 dB (28 fail at
+100), while the planted lines keep reading (the whistle class +41 dB, the
+transport classes' recorded whine +10 to +21). On the IA hunt the clips
+over the 3 dB gate fall from 8 to 2 (cathar) and from 7 to 1 (APL); the
+ones left are a polarity-inverted pair whose channel mean cancels the
+source and a render whose band sits 1-5 dB over the floor. Of the 34 cathar
+clips whose old reading rose over 1 dB, two held a line at the line rate in
+both halves of the clip, both missed or misnamed by the scanner's head
+search (`crt_detect_mode`, `docs/configuration.md`). The air gate still
+waits for its oracle re-run.
+
+The air gates are programme-bound since 2026-10-12: `dsp.hf_4k8k` and
+`dsp.hf_8k16k` read None on a band that starts at or above R0's programme
+bandwidth (`dsp_metrics.programme_band_ratios_db`), where the band holds
+the tape's hiss and not the voice. On the re-scored IA hunt 43 of the 44
+`auto_pure_linear` clips failing the 8-16 kHz gate had a programme
+bandwidth under 8 kHz (median 3.6 kHz): the gate was refusing the hiss
+removal the user asked for. Without a source profile both bands read as
+before.
+
+The hunt's stored scores (235 IA clips per engine, shipped defaults)
+re-gated without re-scoring, with the v2 gates file: clips failing any hard
+gate fall from 216 to 112 (cathar) and from 205 to 161 (APL). The raw
+octave (157 and 126 clips), CER (127, 94) and Audiobox PC (75, 13) no
+longer count; `file.dropouts` adds 11 and 10. With the programme octave
+read on CPU from the cached stems it fails 66 of 178 cathar clips and 18 of
+178 APL clips, so 146 and 169 clips fail some gate. Under the v3b file the
+old rules failed lkr on 103 and 35 clips; the new ones on 3 and 4.
 
 ### Fine-tuning on real tapes
 
@@ -742,6 +1544,229 @@ cathar identity reference was re-based on the new defaults and 0.7.6 (the
 previous reference is `experiments/cathar_ab_head_before_feedback_2026_09_26`).
 The listening set `D:\Tata\New folder\variants\v2` (every plateau beside its
 source, with `index.md`) is what confirms or overrides them by ear.
+
+### The loop's knob tables
+
+Before ear v3's rounds the loop's tables were re-read against the code paths
+that read each knob (2026-10-09). `apl_tonal_flatness_max` had been listed
+as dead with the subtraction stage off, but the plosive tamer and the hum
+canceller's series length read it: the tuned APL finals carried 0.01 where
+the shipped default is 0.035, and the Tata tapes read 0.022, so tuned APL ran
+the tamer and the 40-harmonic hum series and shipped APL does not. The first
+APL round (A0) settles which is better. `apl_music_persistence_min` decides
+which tapes take `apl_music_neural_model` (now a knob of its own), and
+`apl_noiseprint_tonal_s` also feeds the stem path's background suppressor.
+The music profile's de-esser switch, expander depth and CRT notch width are
+knobs; the music rounds could not move them before. The cathar binary knob
+(`[None, 0.7.6]`) is gone: once the installers provisioned 0.7.6 it
+rendered the same binary twice; it returns only for cathar 0.8.0 in round
+C0. `apl_neural_model` listed `[None, ROFORMER, ROFORMER_AGGR]`, one
+setting twice once the listener round made the Mel-RoFormer the default:
+from a start without the key every round rendered the default under its
+file name (found inert) and never proposed the aggressive model. It is now
+`[ROFORMER, ROFORMER_AGGR]`, seeded from the app's resolved value, so its
+one move is the aggressive model; a saved state holding None for such a
+knob is seeded too.
+
+A dead move is now left out twice. Before rendering, `INERT_WHEN` drops the
+knobs the incumbent's switches make dead (each entry names every switch it
+needs, `(when, knobs)`), and the tapes' lengths drop a print-length move
+that cannot change cathar's probe. After rendering, every candidate's audio
+is hashed per tape, exactly and with its DC offset kept, into
+`cands/<cid>/<slug>.audio_sha256.json`; a candidate that sounds byte for
+byte like the incumbent or an earlier candidate on every tape is logged as
+`inert` with a "knob-table finding" line in `log.md` and never scored. Inert
+renders had cost about 30% of a round. Since 2026-10-11 the material decides
+too: the incumbent renders first, and when the held partials its scanner
+printed for every tape stay under the music floor, the music-only knobs are
+not proposed (`scripts/autotune_material.py`).
+
+The scorer runs only the families the grid reads (`--families auto`, the
+default since 2026-10-11): dsp always, plus the family of each ranking
+entry, learned veto and gate. `tata_v3` thus skips the stems family, a
+BS-RoFormer separation of every output that took about 74 of SOTI's 113
+scoring minutes in the APL v6 speech round while the grid read none of it.
+The learned vetoes' families then run in a second stage, only on the
+incumbent and the candidates that qualify without the vetoes
+(`<slug>.learned.score.json`); the verdicts are the ones one pass over every
+family gives, since a veto can only take a qualification away.
+
+### The loop's v3 guards
+
+An ear v3 grid adds three sections the loop applies (plan 1.5,
+`scripts/autotune_guards.py`), and an ear v4 grid a fourth; the v1 and v2
+grids have none of them, so their rounds are judged as before, and
+`tune_restoration.py` reads none of them:
+
+- `reversals:`, the verdict-reversal guard, one ledger boundary per entry:
+  `{key: linear_air_gain_db, rejected_above: 2.0, verdict: r3-air-preference}`
+  (round 3: +1 dB over +2 dB and off, on every tape). A move that heads the
+  rejected way and ends at the value or past it is refused before it is
+  rendered; a move back towards the accepted side never is. A key no engine
+  tunes stops the loop as a typo. Round 3 heard every shelf at 7500 Hz, so
+  with `linear_air_freq_hz` a knob the air gain is judged as the 7500 Hz
+  shelf that lifts 4-8 kHz as much (`autotune_guards.ledger_air_gain`):
+  +1.5 dB at 6000 Hz reads as +2.57 dB and is refused, also when `combine`
+  builds it from two allowed winners; +1.0 dB at 6000 Hz reads as +1.72 dB
+  and passes, though on the en fixture it lifts R2's 's' level and
+  `hf_4k8k` as much as the rejected shelf, so the ear settles it.
+- `audibility: {offset_db: 24.0}`, the audibility tie. After the hash, each live
+  candidate is compared with the incumbent per tape by `auditory.compare_files`,
+  stopping at the first audible tape, and the verdict is kept in
+  `cands/<cid>/<slug>.audibility.json`. A candidate inaudible on every tape is a
+  tie: not scored, never accepted. A pair the check cannot compare (other sample
+  rates) reads audible. It decodes whole files while no scorer runs; synthetic
+  stereo took about 1 s per 2 min. The stored verdict is keyed on
+  `auditory.VERDICT_RULE`, the two files and the offset, so a verdict an older
+  rule wrote is read again; bump `VERDICT_RULE` with any change to what
+  `compare_files` calls audible.
+- `vetoes:`, the learned median veto, family-wise since 2026-10-11
+  (`autotune_judging.familywise_vetoes`). Per listed learned judge, the
+  candidate's median against the incumbent's counts per tape as worse or
+  better when it moves past the scorer's jitter floor (`--jitter-floors`);
+  an exact one-sided sign test across the tapes, Holm-corrected over the
+  grid's veto readings at 0.05, must find worse outnumbering better, and at
+  least a third of the tapes must have moved the `worse` way by more than
+  `floor_multiple` times that reading's benign floor (a reading the
+  incumbent has and the candidate lost counts as such a move). Under seven
+  tapes no outcome can reach the Holm threshold, so on the four speech
+  tapes every tape must move the worse way instead. Such a candidate cannot
+  win (`reward.gate_constraints` with `learned_veto`). Until then one tape
+  past the limit vetoed: in the cathar music loop 37 of 54 vetoes stood on
+  one tape-reading. The floors come from `--noise-floors`, a
+  `reward_noise_floor` report (default
+  `experiments\reward\noise_floor_benign.json`, the Session 0 benign pairs;
+  both v3 grids set `floor_multiple` to 1); a hiss reading's limit takes its
+  jitter floor instead.
+  A veto with no floor stops the loop before the first render, so a v3 grid does
+  not run unguarded. A floor of 0 stops it the same way: CER read at
+  `--repeats 1` can have a p95 deviation of exactly 0, and a limit of 0 would
+  veto any move the worse way, Whisper's own jitter included. The refusal names
+  the reading and the cause. A veto whose reading the report lacks stops the
+  loop with `reward.NO_FLOOR`, which names `--families` (the report reads only
+  the families it was run with; `python -m scripts.reward_noise_floor` runs dsp
+  alone by default). A floor of 0 stops it with `reward.NO_BENIGN_FLOOR`, which
+  asks for `--repeats 2` or more, or `resample_roundtrip` in `--transforms`.
+- `constraints:` (ear v4, `tata_v4.yaml` and `music_v4.yaml`): hard guards
+  on dsp readings, `{reading: {worse: up | down, max_move, bound}}`. A
+  candidate whose reading, on some tape, is worse than the incumbent's by
+  more than `max_move` (default 0) and lies beyond `bound` (default: none)
+  cannot win, and neither can one that lost a reading the incumbent has.
+  Past the bound the limit does not follow the incumbent: a candidate worse
+  than its incumbent and more than `max_move` past the bound cannot win
+  either, or a loop could creep `max_move` further every accepted round.
+  Their families are scored in the first stage, so every candidate is
+  checked in both judgements; `log.md` marks it `guarded` with the tape,
+  the reading and its move. A key that is not `metric.side.stat` with a
+  registered metric stops the loop as a typo. The v4 grids use them for no
+  new audible hiss over the incumbent or the raw tape, no dead air on
+  speech windows, no room band emptied, no hiss gated out of the pauses but
+  kept under speech, no dulling and no musical noise.
+
+Before a v3 round, write that report on the shipped APL and cathar outputs
+of the tuning tapes, with every family the vetoes name (`tata_v3`: speech
+and mos; `music_v3`: stems and mos):
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.reward_noise_floor SOURCE=OUTPUT ... `
+    --families speech,mos,stems --repeats 2 `
+    --out experiments\reward\noise_floor.json
+```
+
+Near-copies barely move Whisper or the learned embeddings, so at three times
+those floors the vetoes would refuse moves on the judges' own jitter (Round 0
+measured CER 0.0025 and speaker cosine 2.9e-5). The vetoes' floors come from
+pairs a blind listener could not tell apart, in a report of their own, passed
+as `--noise-floors experiments\reward\noise_floor_benign.json`, the loop's
+default. Measured 2026-10-09 on the four Session 0 pairs (16 scorings, 125 s,
+two repeats): CER 0.038, speaker cosine 0.0063, UTMOS 0.051, SCOREQ 0.136,
+SIGMOS COL 0.226 and DISC 0.153, MERT 0.0029, Audiobox PQ 0.205 and PC
+0.167. Those floors already mark what was not heard, so each veto is one
+floor, not three (at three the CER limit would pass an 11-point drop):
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.reward_noise_floor `
+    --benign-pair SOURCE OUTPUT_A OUTPUT_B LEDGER_ID ... `
+    --families dsp,speech,mos,stems --repeats 2 --max-seconds 125 `
+    --out experiments\reward\noise_floor_benign.json
+```
+
+Session 0's pairs (`round: session0` in the ledger) were told apart by
+nobody at a playback level nobody recorded, so their floors are generous;
+weigh each veto's `floor_multiple` against them.
+
+`log.md` shows a refused candidate as `refused (verdict reversal)`, a tie as
+`tie (inaudible on every tape)` and a vetoed one as `vetoed`, each with a
+line naming the reason (the boundary and its ledger verdict, or the
+reading, how many tapes moved which way and the test that tripped).
+
+### The loop's judging resolution
+
+`scripts/autotune_judging.py` (2026-10-11) gives the loop's ranking the tie
+band `reward.py` uses. Per reading, two candidates tie when their two-sided
+distances differ by no more than the larger side's share
+`min(floor, max(0, |x - target| + floor - dead_zone)) / scale`, with
+`floor` the reading's Session 0 benign-pair floor (`--noise-floors`), and
+every dead zone is bounded from below by that floor. A candidate's rank on
+a reading is one plus every candidate ahead beyond the band plus half of
+every tie, which without floors is exactly the old average rank: with no
+report the loop warns and judges as before. A tape counts as a win only
+when the candidate out-ranks the incumbent and moved past the band the
+better way on at least one reading there, so third candidates cannot carry
+a tie, or a sub-floor gain beside a real loss, into a win (without floors
+this adds nothing: out-ranking needs some reading strictly better).
+Why: the v6 APL speech round tied 25 renders whose spread on each ranked
+reading sat under the floors, and with narrower zones and exact ranks
+`expander_attack_s` 0.08 won all four tapes on moves of 0.002-0.1 dB.
+
+Readings of hiss or residual noise (every `dsp.hiss_*`,
+`dsp.residual_noise_db`, every `dsp.gap_*`, `dsp.pause_depth_db`,
+`dsp.hf_8k16k`, `mos.sigmos_noise`, and on the same rule the other pause
+readings, `file.noise_removed_db` and `mos.dnsmos_bak`) never take a floor
+from the benign pairs, which differed grossly there (residual noise 16.4 dB,
+pause depth 5.8 dB): the user's rule of 2026-10-11 that the ear be very
+critical of VHS hiss. Their tie band, dead-zone floor and veto limit come
+from `--jitter-floors` (default `experiments\reward\noise_floor.json`, the
+reference repeat, `shift_1` and `requantise_16`); a report holding a benign
+pair is refused there. The hiss flags (`listener.hiss_programme`,
+`listener.hiss_pause`) fall under the same rule. Ear v4's hiss entries
+carry a grid `tie` (the same-percept p95): their band is the larger of the
+tie and the jitter floor, with or without a floors file, and their dead
+zone stays as the grid sets it (0), so the tie forgives once; H1's
+`max_move` is the same tie (`scripts/autotune_judging.py`, "The hiss ear's
+ties").
+
+`log.md` gains, per round, a table of every scored candidate's distance per
+reading and tape, the floor and its source under each reading, and a `*`
+where a reading moved past its band against the incumbent. A round in which
+every scored candidate stayed level with the incumbent and nothing else
+held one back ends
+`every move below the Session 0 benign-pair floor (N readings unmoved)`;
+otherwise it is a plateau, with how many candidates were level, moved and
+lost, or were held back by a veto, a grid constraint, a gate or a reversal.
+
+`python -m scripts.rejudge_autotune` (command below) re-judges stored
+rounds from their score files four ways (old, band only, family-wise veto
+only, both) and simulates the vetoes' null: the incumbent moved by noise of
+the jitter or the benign-pair size, and every candidate's tape deltas given
+random signs. Run on the v6 and v7 loops (2026-10-11), the old rule
+reproduced every stored decision; on speech nothing changed (vetoes 2 to 1
+on APL, 8 to 3 on cathar); on music the band alone refuses every accepted
+move (each moved the benign-floored readings by a median across clips of a
+tenth of their floor or less), and with both changes the APL round accepts
+`pause_floor_fill_db` 8 and the C3 round `cathar_music_dewind_cutoff` 60,
+both winning on the stems readings, which carry jitter floors only. The
+any-tape rule vetoed 44-68% of benign-size null candidates and 10-55% of
+sign-flipped ones, the family-wise rule 0-1.5%. Nothing ships from this: an
+accepted move still needs a blind block.
+
+```powershell
+$env:AI_RESTORE_DATA_ROOTS = 'D:\ai_restore_work'
+.\.venv\Scripts\python.exe -m scripts.rejudge_autotune `
+  D:\ai_restore_work\autotune_v6_music\apl --grid scripts\tune_grids\music_v3.yaml `
+  --noise-floors experiments\reward\noise_floor_benign.json `
+  --jitter-floors experiments\reward\noise_floor.json --null-draws 400
+```
 
 ## CI Parity
 

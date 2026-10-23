@@ -9,11 +9,130 @@ when its mean rank across tapes is better, it wins on at least half the tapes an
 no more hard gates than the incumbent. The loop stops when no candidate qualifies (a
 plateau); `--rounds` (default 20) is only a safety cap. The listener is asked at the plateau.
 
+Judging resolution (2026-10-11, `scripts/autotune_judging.py`): two candidates tie on a reading
+when their distances differ by less than reward.py's tie band, sized from the Session 0
+benign-pair floors (`--noise-floors`), and every dead zone is bounded from below by that floor;
+hiss and residual-noise readings take their floors only from scorer jitter and same-percept
+near-copies (`--jitter-floors`, the user's rule). A tape counts as a win only when the candidate
+out-ranks the incumbent and moved past the band the better way on some reading. `log.md` carries each
+candidate's per-reading distances per tape, and a round in which every scored candidate was
+level with the incumbent ends "every move below the Session 0 benign-pair floor (N readings
+unmoved)" instead of "plateau". The learned vetoes are family-wise (`autotune_guards`).
+
+An ear v3 grid (`tune_grids/tata_v3.yaml`, `music_v3.yaml`) adds three guards to that verdict
+(plan 1.5, `scripts/autotune_guards.py`); a v1 or v2 grid has none of these sections and is
+judged as before. `reversals:` refuses, before it is rendered, a move that heads past a ledger
+boundary the way the user rejected (`linear_air_gain_db` up to 2.0 or above: round 3 heard
++1 dB over +2 dB, all at 7500 Hz, so another `linear_air_freq_hz` is judged as the 7500 Hz shelf
+lifting 4-8 kHz as much, `autotune_guards.ledger_air_gain`). `audibility:` makes a candidate
+`auditory.compare_files` cannot tell from the incumbent on any tape a tie, never scored and
+never accepted. `vetoes:` keeps a candidate
+from winning when a learned judge's median moved past `floor_multiple` x its benign floor
+(`--noise-floors`, a `scripts/reward_noise_floor.py` report) on some tape; a veto without a
+floor stops the loop before the first render.
+
+Ear v4 (`tune_grids/tata_v4.yaml`, `music_v4.yaml`, the default grid since 2026-10-12: the
+user's rule, be very critical of VHS hiss under the programme and in the pauses) adds
+`constraints:`, the grid's hard guards (`autotune_guards.mark_constraints`): a candidate whose
+reading, on some tape, is worse than the incumbent's by more than `max_move` and beyond `bound`,
+or worse and more than `max_move` past `bound` (the limit does not follow the incumbent round by
+round), cannot win. They are stage-1 readings, so `judge` marks them on every candidate in both
+passes; they keep "no hiss" from being won by deleting programme or emptying the pauses. Its hiss
+entries carry a grid `tie` (the same-percept jitter report's p95), which is their tie band with or
+without `--jitter-floors` and which their H1 constraints take as `max_move`; they keep the dead
+zone the grid sets (0) and never take a benign-pair floor (`autotune_judging`, "The hiss ear's
+ties", which also says which layer owns what). A candidate a constraint excludes is held back in
+the round's label, never "below the floor".
+
+Inert candidates are found twice. Before rendering, `INERT_WHEN` leaves out the knobs the
+incumbent's switches make dead (a de-esser threshold with the de-esser off, the air gain with
+the shelf off, the split-band factors under the Wiener denoiser), and `DURATION_BOUND` leaves
+out the moves the tapes' own length makes dead (cathar's print length on tapes too short to
+use it). After rendering, every candidate's decoded audio is hashed per tape
+(`audio_fingerprint`); a candidate that sounds exactly like the incumbent, or like a candidate
+proposed before it, on every tape is marked inert, logged in `log.md` as a knob-table finding
+and never scored. Inert renders cost about 30% of a round before (ear v3 design, section 5.2);
+a round then took about 4 h for ~21 APL candidates on four tapes: ~205 s of render per
+candidate, the rest scoring (design, section 7).
+
+The hash (`exact_audio_sha256`) is the loop's own and exact: the samples as stored (float as
+float, integer PCM as int32) with the rate, channel count and sample type, read in blocks of
+`HASH_BLOCK_FRAMES`. The harness's `auditory.audio_sha256` is not used here: it hashes
+`audio_io.load_audio`, which removes each channel's DC offset, so two renders that differ by
+an offset alone would read as one and an audible-or-not question would be answered "inert"
+(design 5.2 asks for a byte-identical match); and it decodes the whole file at once, about
+1.3 GB of float32 per hour of stereo tape per copy and three copies on the way, while the
+loop hashes whole tapes beside two scorers of ~4 GB each.
+
+Knob-table facts the tables below rest on (2026-10-09, read from the code paths):
+
+- `apl_tonal_flatness_max` is live with the subtraction stage off: the plosive tamer
+  (`plosive_tamer._skip_reason`) and the hum canceller's series length
+  (`hum_cancel._series_length`) read it. The tuned finals carry 0.01, the shipped default is
+  0.035 and the Tata tapes read 0.022, so tuned APL ran the tamer and the 40-harmonic hum
+  series while shipped APL does not.
+- `apl_music_persistence_min` is live with the stem path off: it decides which tapes take
+  `apl_music_neural_model` (`processing._neural_stage`).
+- `apl_noiseprint_tonal_s` is live with the subtraction stage off once the stem path is on:
+  it is the probe of the background suppressor (`apl_stems._background_pass`), which runs
+  while `apl_music_bg_floor_db` is below 0.
+- `cathar_noiseprint_duration_s` only applies to a tape at least
+  `cathar.NOISEPRINT_MIN_MATERIAL_RATIO` (20) times longer than it; a shorter tape learns from
+  `cathar.NOISEPRINT_SHORT_S` (0.75 s) whatever the knob says (`cathar._probe_duration_s`).
+  4.5 s needs 90 s of tape and 6 s needs 120 s, so on a set of short clips the knob is dead.
+  The tapes' lengths come from ffprobe; a tape within `DURATION_MARGIN_S` of the switch, or
+  one ffprobe cannot read, keeps every move live.
+- `env:AI_RESTORE_CATHAR_BIN [None, 0.7.6]` rendered the same binary twice once the
+  installers provisioned 0.7.6; a binary knob returns only for a new build (round C0).
+- `apl_neural_model [None, ROFORMER, ROFORMER_AGGR]` listed one setting twice once the listener
+  round made the Mel-RoFormer the app's default (`DEFAULT_APL_NEURAL_MODEL`): from a start
+  without the key every round proposed the default under its file name, a render the hash
+  then found inert, and never the aggressive model. The list is `[ROFORMER, ROFORMER_AGGR]`,
+  seeded from the app's resolved value, so its one move is the live alternative. A list that
+  holds None and the app's own default names one setting twice.
+- The cathar music profile's de-esser switch, expander depth and CRT notch width were not
+  knobs, so the music rounds could not move them.
+- The air shelf's corner and the polish expander's attack and decay were hard-coded in
+  `modules/filters.py` (7500 Hz, 0.04 / 0.18 s); since 2026-10-09 they are
+  `linear_air_freq_hz`, `expander_attack_s` and `expander_decay_s`, whose defaults build the
+  same filter strings. The shelf is APL's alone (cathar's polish runs without air); the
+  expander timing is shared, since cathar's mode runs the same polish expander
+  (`modes/cathar.py` -> `processing._polish_full_audio_step`).
+- cathar's `declip` ran on every tape and its `dehum` took the scanner's mains family (none when
+  the scan found no hum); since 2026-10-10 `cathar_declip_mode` ('always' | 'detected') and
+  `cathar_dehum_freq` ('scanner' | 0) are knobs (round C4), whose defaults issue the same
+  command lines. Both stages run on speech and music alike, so neither is a music key; each is
+  dead with its stage switch off. cathar 0.8.0's declip returned a synthetic file peaking at
+  0.5 sample for sample, and reshaped every sample over its 0.95 threshold on unclipped files
+  peaking at 0.97 and 1.0 (peaks to 0.96 and 0.99), so on tapes that peak under
+  `cathar_declip_threshold` 'detected' should render the same audio and the hash then marks it
+  inert.
+
+`--stage-cache DIR` (plan 1.5) points every candidate's render at one neural-stage cache
+(`AI_RESTORE_STAGE_CACHE`, `modules/stage_cache.py`; `--stage-cache-gb` caps it, 50 GB by
+default): an auto_pure_linear candidate whose knobs all act after the neural denoiser (air,
+sibilant guard, pause floor, expanders, loudness range) replays the incumbent's chain and model
+output instead of rendering them. Each candidate's `timing.json` records the hits and misses
+its `run.log` reports. cathar never uses the cache. Off by default.
+
+`--families auto` (the default) scores only the families the grid reads, and in two stages: the
+learned vetoes' families run only on the incumbent and the candidates that already qualify
+(`scripts/autotune_scoring.py` holds the scorers, the families and the stages).
+
+Inertness from the tapes' material (plan 1.5, design 5.1; `scripts/autotune_material.py`): each
+round renders the incumbent first and reads the held partials the app's scanner printed for
+every tape in its `run.log`. When no tape reaches the incumbent's music floor, the music-only
+knobs (the `cathar_music_*` keys; `apl_music_neural_model`, `apl_music_stem_path`,
+`apl_music_bg_floor_db`) are left out, and a move of the floor itself is left out when no tape
+crosses it. Cathar's speech keys on a clip set that is all music are still left to the hash.
+
 usage:
   autotune_restoration.py --engine cathar|apl --tapes tapes.json [--rounds 20] [--out experiments/autotune]
-                          [--grid scripts/tune_grids/tata_v1.yaml] [--families dsp,stems,speech,mos]
+                          [--grid scripts/tune_grids/tata_v4.yaml] [--families auto|dsp,stems,speech,mos]
                           [--start '{"cathar_alpha": 2.0}' | --start-file final.json] [--language ro] [--gates gates.json]
-                          [--parallel 2]
+                          [--parallel 2] [--noise-floors experiments/reward/noise_floor_benign.json]
+                          [--jitter-floors experiments/reward/noise_floor.json]
+                          [--stage-cache experiments/autotune/stage_cache] [--stage-cache-gb 50]
 
 `tapes.json` maps a slug to a video path. Everything is resumable: candidates are keyed by
 their settings, and a scored candidate is never run or scored twice.
@@ -23,28 +142,51 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import time
+from importlib import import_module
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from scripts import tune_restoration as tune  # noqa: E402
-from scripts.restoration_quality import audio_io  # noqa: E402
+# Imported by name once the repository is on sys.path, so the script runs from any directory.
+tune = import_module("scripts.tune_restoration")
+audio_io = import_module("scripts.restoration_quality.audio_io")
+guards_mod = import_module("scripts.autotune_guards")
+# Ear v4 (2026-10-12): critical of hiss under the programme and in the pauses, with the hard guards against dead air.
+DEFAULT_GRID = Path("scripts/tune_grids/tata_v4.yaml")
+cathar = import_module("modules.cathar")
+stage_cache = import_module("modules.stage_cache")
+scoring = import_module("scripts.autotune_scoring")
+material = import_module("scripts.autotune_material")
+judging = import_module("scripts.autotune_judging")
+renders = import_module("scripts.autotune_renders")
+joint = import_module("scripts.autotune_joint_moves")
+# Called through this module, so a test can stand in for the scorer.
+score_round = scoring.score_round
+SCORER_PARALLEL = scoring.SCORER_PARALLEL
 
 ENV_PREFIX = "env:"
 ROFORMER = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 ROFORMER_AGGR = "denoise_mel_band_roformer_aufr33_aggr_sdr_27.9768.ckpt"
-CATHAR_076 = "experiments/cathar-0.7.6/cathar.exe"
-SCORER_PARALLEL = 2
 LOG_MD = "log.md"
+# Each candidate's render log: the app's output, with the stage-cache hits and the scanner's readings.
+RUN_LOG = "run.log"
+HASH_SIDECAR_SUFFIX = ".audio_sha256.json"
+HASH_BLOCK_FRAMES = 1 << 20
+# Recorded in every sidecar: a sidecar written by another hash function (the harness's DC-blind one) is never trusted.
+HASH_NAME = "exact-pcm"
+# ffprobe's container length and the length the app reads may differ by a fraction of a second.
+DURATION_MARGIN_S = 1.0
+# Model-name knobs are bare file names; `tune_restoration.known_config_fields` types only apl_neural_model.
+MODEL_KNOBS = ("apl_neural_model", "apl_music_neural_model")
 
 # Knobs both engines share: the polish expander (the stage that turns a denoised pause into
 # dead air), the mux's loudness-range target (loudnorm drops to dynamic mode above it and rides
@@ -53,12 +195,33 @@ SHARED_KNOBS = {
     "enable_dynamic_expander": [True, False],
     "expander_depth_db": [4.0, 7.0, 12.0],
     "expander_knee_offset_db": [0.0, 4.0, 8.0],
+    # The expander's compand timing (round A3, pause texture), hard-coded 0.04 / 0.18 s until 2026-10-09.
+    "expander_attack_s": [0.02, 0.04, 0.08],
+    "expander_decay_s": [0.12, 0.18, 0.3],
     "loudnorm_target_lra": [11.0, 20.0, 40.0],
     "crt_notch_q": [30.0, 60.0, 120.0],
     # The pause floor keeper (modules/pause_floor.py): the source's own pause texture put back
     # this many dB under its level, so a pause never collapses to dead air.
     "enable_pause_floor": [False, True],
     "pause_floor_fill_db": [8.0, 12.0, 18.0, 24.0],
+    # The hiss-free fill (2026-10-12): each quiet frame filled under the source frame ('frame') rather than
+    # under the quiet cluster's median, from a copy of the source with its hiss cut above the corner
+    # ('shelf') or low-passed there ('lowpass'), so a pause keeps its room tone and loses the tape hiss;
+    # 'hiss_shelf' (2026-10-21) cuts the shelf from the source's hiss only, keeping the programme above the corner.
+    "pause_floor_target": ["cluster", "frame"],
+    "pause_floor_shape": ["flat", "shelf", "lowpass", "hiss_shelf"],
+    "pause_floor_shelf_hz": [2000.0, 3000.0, 4000.0],
+    "pause_floor_hf_cut_db": [12.0, 18.0, 24.0, 30.0],
+    # The configured fill only where the reference suppressor ran, the release fill elsewhere (2026-10-21): inert on a
+    # tape the suppressor runs on (all four Tata tapes), it decides the files whose print the suppressor refuses.
+    "pause_floor_suppressed_only": [False, True],
+    # The scan's searches every mode reads (2026-10-12): the CRT line on the whole file, the mains notch
+    # confirmed on the whole file, the azimuth skew from the loudest spans with the sign the graph corrects.
+    "crt_detect_mode": ["head", "welch"],
+    "scanner_mains_vote": ["head", "confirmed"],
+    "azimuth_estimate_method": ["head", "spans"],
+    # Drift clips to shift sync instead of DTW, whose 40 ms holds the ear's time base reads.
+    "sync_dtw_enable": [True, False],
 }
 
 # Ordered candidate values per knob; None means "the app's default" (the override is dropped).
@@ -71,6 +234,9 @@ KNOBS = {
         "cathar_enable_noiseprint": [True, False],
         "cathar_beta": [0.005, 0.01, 0.02],
         "cathar_deesser_threshold": [6.0, 9.0, 12.0],
+        # Round C2 (plan Part 2): where the multiband de-esser starts and how many bands it splits into.
+        "cathar_deesser_freq": [4000, 5000, 6000],
+        "cathar_deesser_bands": [1, 3],
         "cathar_enable_deesser": [True, False],
         "cathar_noiseprint_duration_s": [4.5, 6.0],
         "cathar_enable_coherent": [True, False],
@@ -78,31 +244,67 @@ KNOBS = {
         "cathar_enable_deplosive": [True, False],
         "cathar_repair_strength": [2, 4],
         # The music profile (modules/cathar.py) overrides cathar_alpha, the print, the coherent
-        # path and the deplosive on every clip whose held partials reach the floor, so on a music
-        # clip only these keys move; the rounds before they were knobs moved nothing there.
+        # path, the deplosive and the de-esser on every clip whose held partials reach the floor,
+        # and sets its own expander depth and CRT notch width, so on a music clip only these keys
+        # move; the rounds before they were knobs moved nothing there.
         "cathar_music_alpha": [0.25, 0.5, 1.0],
         "cathar_music_enable_noiseprint": [False, True],
         "cathar_music_enable_coherent": [False, True],
         "cathar_music_enable_deplosive": [False, True],
+        "cathar_music_enable_deesser": [False, True],
+        "cathar_music_expander_depth_db": [4.0, 7.0, 12.0],
+        "cathar_music_crt_notch_q": [30.0, 60.0, 120.0],
         "cathar_music_persistence_min": [0.005, 0.02, 0.05],
+        # Round C3 (plan Part 2, music profile): music took cathar_beta, cathar_enable_repair and
+        # cathar_dewind_cutoff until 2026-10-09, so these start at 0.02, on and 80 Hz. The floor list
+        # brackets 0.02 (cathar reads 0.0-0.1, higher keeps more floor); the dewind is cathar's second
+        # high-pass, after the pre-conditioning graph's scanned one (modules/config.py).
+        "cathar_music_beta": [0.005, 0.01, 0.02, 0.04],
+        "cathar_music_enable_repair": [True, False],
+        "cathar_music_dewind_cutoff": [40, 60, 80],
+        # Round C4 (plan Part 2): declip on every tape (every release) or only on the scanner's clipping
+        # verdict, and dehum at the scanner's mains family (every release; none when the scan found no
+        # hum) or at cathar's own detection (`dehum --freq 0`, on every tape). Both apply to speech and music.
+        "cathar_declip_mode": ["always", "detected"],
+        "cathar_dehum_freq": ["scanner", 0],
         # Split-band subtraction (modules/split_band.py): the highs get their own factor.
         "cathar_split_band_hz": [0, 4000, 6000, 8000],
         "cathar_alpha_high": [0.5, 1.0, 1.5, 2.0, 3.0],
         "cathar_music_alpha_high": [0.25, 0.5, 1.0],
-        f"{ENV_PREFIX}AI_RESTORE_CATHAR_BIN": [None, CATHAR_076],
+        # The noise print's guards (2026-10-12): no digital mute in the pick, a print too close to the
+        # programme scaled, dropped or replaced by the whole-file quantile print, or that print throughout.
+        "cathar_noiseprint_mute_guard": [False, True],
+        "cathar_noiseprint_min_depth_db": [0.0, 13.0, 20.0],
+        "cathar_noiseprint_shallow_action": ["scale", "drop", "quantile"],
+        "cathar_noiseprint_method": ["window", "quantile"],
+        # The reference-SNR suppressor on cathar's output (modules/reference_suppress.py), ungated.
+        "cathar_reference_suppress": [False, True],
+        # Its programme release: the gain eased toward 1 where cathar's output stands this far over the pause print
+        # (3 dB lifted the hiss on the APL replays, so the first step is 6 dB).
+        "cathar_reference_release_db": [0.0, 6.0, 9.0],
         **SHARED_KNOBS,
     },
     # On the Tata tapes the scanner reads a spectral flatness of 0.022 (< apl_tonal_flatness_max 0.035),
     # so APL takes its tonal path: apl_spectral_alpha_tonal and apl_noiseprint_tonal_s are the live
     # knobs there (apl_spectral_alpha and apl_noiseprint_duration_s produced bit-identical audio),
-    # and the flatness threshold itself decides whether an interview is treated as tonal at all.
+    # and the flatness threshold itself decides whether an interview is treated as tonal at all, in
+    # the subtraction stage, the plosive tamer and the hum canceller alike. The tonal probe length
+    # also feeds the stem path's background suppressor (apl_stems._background_pass).
     "apl": {
         "apl_spectral_alpha_tonal": [1.5, 2.0, 2.5, 3.0],
         "apl_noiseprint_tonal_s": [2.5, 4.0, 6.0],
         "apl_tonal_flatness_max": [0.01, 0.035],
         "enable_linear_air": [True, False],
-        "linear_air_gain_db": [1.0, 2.0],
-        "apl_neural_model": [None, ROFORMER, ROFORMER_AGGR],
+        # Round A1 (brightness, plan Part 2: 0 / 0.5 / 1.0 / 1.5 dB): the shelf's gain around the by-ear +1 dB
+        # (0 is the enable_linear_air False neighbour; +2 dB, which round 3 rejected, is not proposed, so a v1 / v2
+        # grid without the reversal cannot step to it) and its corner, hard-coded at 7500 Hz until 2026-10-09. The
+        # v3 grids' reversal judges the pair as one shelf (autotune_guards.ledger_air_gain): +1.5 dB at 6000 Hz is refused.
+        "linear_air_gain_db": [0.5, 1.0, 1.5],
+        "linear_air_freq_hz": [6000.0, 7500.0, 9000.0],
+        # The app's default model is ROFORMER (seeded from the app), so the one move is the aggressive model.
+        "apl_neural_model": [ROFORMER, ROFORMER_AGGR],
+        # The model on music (empty, the default, follows the chain's own choice).
+        "apl_music_neural_model": [None, ROFORMER],
         "apl_enable_learned_blend": [True, False],
         "apl_enable_spectral_denoise": [True, False],
         "apl_use_native_suppress": [False, True],
@@ -124,30 +326,62 @@ KNOBS = {
         "apl_music_stem_path": [False, True],
         "apl_music_persistence_min": [0.005, 0.02, 0.05],
         "apl_music_bg_floor_db": [-20.0, -10.0, -5.0, 0.0],
+        # Post-neural hiss stages (2026-10-12): the gated MMSE-LSA suppressor where the neural stage left
+        # the source's hiss, the programme level restored after the separator's peak normalisation, the air
+        # shelf skipped on a hiss-dominated tape, and the ceiling on the hiss left next to speech.
+        "apl_post_neural_suppress": [False, True],
+        "apl_post_neural_suppress_min_residual_db": [3.0, 6.0, 9.0],
+        # The reference-SNR suppressor: the gain read on the source, applied after the neural stage (ungated).
+        "apl_reference_suppress": [False, True],
+        # Its programme release: the gain eased toward 1 where the neural output stands this far over the pause print.
+        # 3 dB lifted Tele7abc's pause tail 0.57-0.62 with either reference (round 4, CPU replay 2026-10-21) and the loop
+        # steps to adjacent values only, so 6 dB, which passes every guard on CPU replay, is the first step.
+        "apl_reference_release_db": [0.0, 6.0, 9.0],
+        "apl_neural_level_restore": [False, True],
+        "linear_air_gate": ["none", "hiss_dominated"],
+        "apl_burst_ceiling": ["none", "gaps", "edges"],
+        "apl_burst_ceiling_depth_db": [20.0, 30.0, 40.0],
+        # The surgical notch's ring into gaps capped, and a depop span refused unless it stands out.
+        "apl_surgical_ring_guard": [False, True],
+        "apl_depop_min_prominence_db": [0.0, 6.0, 12.0],
         **SHARED_KNOBS,
     },
 }
+# Every setting a grid's reversal may name: a key no engine tunes would never fire, so it is refused as a typo.
+ALL_KNOBS = frozenset(knob for table in KNOBS.values() for knob in table)
 ENGINES = {
     "cathar": {"process_mode": "cathar", "suffix": "_Cathar_Cleaned"},
     "apl": {"process_mode": "auto_pure_linear", "suffix": "_PureLinear_Cleaned"},
 }
-PYTHON = str(REPO / ".venv" / "Scripts" / "python.exe") if (REPO / ".venv" / "Scripts" / "python.exe").exists() else sys.executable
+PYTHON = scoring.PYTHON
 
 
 # ----------------------------------------------------------------------------- candidates
 
 
+def _without_defaults(overrides):
+    """The overrides that set something: a None value means the app's own default."""
+    return {k: v for k, v in overrides.items() if v is not None}
+
+
 def candidate_id(overrides):
     """A stable short id for a set of overrides (None values dropped first)."""
-    clean = {k: v for k, v in sorted(overrides.items()) if v is not None}
+    clean = _without_defaults(overrides)
     return hashlib.sha256(json.dumps(clean, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:10]
 
 
 def split_overrides(overrides):
     """`(config_overrides, env)`: `env:` keys become environment for the app's children."""
-    config = {k: v for k, v in overrides.items() if not k.startswith(ENV_PREFIX) and v is not None}
-    env = {k[len(ENV_PREFIX) :]: v for k, v in overrides.items() if k.startswith(ENV_PREFIX) and v is not None}
+    chosen = _without_defaults(overrides)
+    config = {k: v for k, v in chosen.items() if not k.startswith(ENV_PREFIX)}
+    env = {k.removeprefix(ENV_PREFIX): v for k, v in chosen.items() if k.startswith(ENV_PREFIX)}
     return config, env
+
+
+def validation_problems(config):
+    """Problems with config overrides against the app's typed settings, model-name knobs included."""
+    fields = {**tune.known_config_fields(), **{name: (str, None, None) for name in MODEL_KNOBS}}
+    return tune.validate_overrides(config, fields)
 
 
 def seed_defaults(engine, start, out_dir):
@@ -158,21 +392,35 @@ def seed_defaults(engine, start, out_dir):
     a neighbour never re-runs the default under another name.
     """
     seeded = dict(start)
-    missing = [knob for knob, values in KNOBS[engine].items() if knob not in seeded and None not in values]
+    missing = _unseeded(engine, seeded)
     if not missing:
         return seeded
+    resolved = _app_defaults(engine, out_dir)
+    for knob in missing:
+        match = _matching_value(resolved.get(knob), KNOBS[engine][knob])
+        if match is not None:
+            seeded[knob] = match
+    return seeded
+
+
+def _unseeded(engine, seeded):
+    """The knobs `seeded` leaves at the app's default (unnamed or None) whose candidates do not list that default as None.
+
+    A saved state from before a table change may hold None for such a knob (the old
+    `apl_neural_model` list offered it); it is seeded like a knob it does not name.
+    """
+    return [knob for knob, values in KNOBS[engine].items() if seeded.get(knob) is None and None not in values]
+
+
+def _app_defaults(engine, out_dir):
+    """CONFIG as the app resolves it for this engine with no override."""
     probe = out_dir / "defaults"
     probe.mkdir(parents=True, exist_ok=True)
     (probe / tune.CONFIG_YAML).write_text(
         tune.materialise_config((REPO / tune.CONFIG_YAML).read_text(encoding="utf-8"), ENGINES[engine]["process_mode"], {}),
         encoding="utf-8",
     )
-    resolved = tune.resolved_config(probe, PYTHON)
-    for knob in missing:
-        match = _matching_value(resolved.get(knob), KNOBS[engine][knob])
-        if match is not None:
-            seeded[knob] = match
-    return seeded
+    return tune.resolved_config(probe, PYTHON)
 
 
 def _matching_value(seen, values):
@@ -184,82 +432,265 @@ def _matching_value(seen, values):
     return None
 
 
-# Knobs that cannot change the audio while a switch holds the value given here: candidates
-# moving them render byte-identical output and only cost a render and a scoring pass each. The
-# switch itself stays a knob, so the loop can still turn the stage back on and then move them.
-# Values absent from the incumbent read as the app's defaults (the subtraction stage and the stem
-# path are off since the listener round; the split band is 0).
-_SUBTRACTION_KNOBS = (
+# Knobs that cannot change the audio while every switch in `when` holds the value given there:
+# candidates moving them render byte-identical output and only cost a render and a scoring pass
+# each. The switches stay knobs, so the loop can still turn the stage back on and then move
+# them. Values absent from the incumbent read as the app's defaults (SWITCH_DEFAULTS: what the
+# repository's config.yaml resolves to). An entry is written only from every code path that
+# reads the knob; a knob dead on some material only (a music key on a speech tape) is decided
+# from the incumbent's render log instead (`autotune_material`), so a live knob is never hidden.
+# Read only inside spectral_denoise, behind apl_enable_spectral_denoise. apl_noiseprint_tonal_s is
+# not here: the stem path's background suppressor reads it too (its own entry below).
+SUBTRACTION_KNOBS = (
     "apl_spectral_alpha_tonal",
-    "apl_noiseprint_tonal_s",
-    "apl_tonal_flatness_max",
     "apl_enable_learned_blend",
     "apl_use_native_suppress",
     "apl_suppress_gain_floor_db",
 )
+_CATHAR_MUSIC_KEYS = (
+    "cathar_music_alpha",
+    "cathar_music_enable_noiseprint",
+    "cathar_music_enable_coherent",
+    "cathar_music_enable_deplosive",
+    "cathar_music_enable_deesser",
+    "cathar_music_expander_depth_db",
+    "cathar_music_crt_notch_q",
+    "cathar_music_persistence_min",
+    "cathar_music_alpha_high",
+    "cathar_music_beta",
+    "cathar_music_enable_repair",
+    "cathar_music_dewind_cutoff",
+)
+# The polish expander's knee and compand timing (filters._build_full_audio_expander_filter), shared by both engines.
+# Everything the pause floor keeper reads besides its switch (modules/pause_floor.py).
+PAUSE_FLOOR_KNOBS = (
+    "pause_floor_fill_db",
+    "pause_floor_target",
+    "pause_floor_shape",
+    "pause_floor_shelf_hz",
+    "pause_floor_hf_cut_db",
+    "pause_floor_suppressed_only",
+)
+# Everything cathar reads about its noise print besides the switches (modules/cathar.py, noiseprint_*.py).
+NOISEPRINT_KNOBS = (
+    "cathar_noiseprint_duration_s",
+    "cathar_noiseprint_mute_guard",
+    "cathar_noiseprint_min_depth_db",
+    "cathar_noiseprint_shallow_action",
+    "cathar_noiseprint_method",
+)
+EXPANDER_SHAPE_KNOBS = ("expander_knee_offset_db", "expander_attack_s", "expander_decay_s")
 INERT_WHEN = {
     "apl": (
-        ("apl_enable_spectral_denoise", False, _SUBTRACTION_KNOBS),
-        ("apl_music_stem_path", False, ("apl_music_persistence_min", "apl_music_bg_floor_db")),
-        ("apl_enable_sibilant_guard", False, ("apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_sibilant_hf_share_min")),
-        ("enable_pause_floor", False, ("pause_floor_fill_db",)),
-        ("enable_dynamic_expander", False, ("apl_expander_depth_db", "expander_knee_offset_db")),
+        ({"apl_enable_spectral_denoise": False}, SUBTRACTION_KNOBS),
+        # The tonal probe feeds the subtraction stage and the stem path's background suppressor, which
+        # runs only on the stem path and only with a floor below 0 (apl_stems._background_pass).
+        ({"apl_enable_spectral_denoise": False, "apl_music_stem_path": False}, ("apl_noiseprint_tonal_s",)),
+        ({"apl_enable_spectral_denoise": False, "apl_music_bg_floor_db": 0.0}, ("apl_noiseprint_tonal_s",)),
+        # The native suppressor and the post-neural one read the gain floor (spectral_denoise._native_suppress,
+        # post_neural_suppress): it is dead only with both off.
+        (
+            {"apl_use_native_suppress": False, "apl_post_neural_suppress": False, "apl_reference_suppress": False},
+            ("apl_suppress_gain_floor_db",),
+        ),
+        ({"apl_post_neural_suppress": False}, ("apl_post_neural_suppress_min_residual_db",)),
+        ({"apl_reference_suppress": False}, ("apl_reference_release_db",)),
+        ({"apl_burst_ceiling": "none"}, ("apl_burst_ceiling_depth_db",)),
+        # apl_music_persistence_min is not here: it also picks the tapes that take apl_music_neural_model.
+        ({"apl_music_stem_path": False}, ("apl_music_bg_floor_db",)),
+        ({"apl_enable_sibilant_guard": False}, ("apl_sibilant_mix", "apl_sibilant_guard_hz", "apl_sibilant_hf_share_min")),
+        ({"enable_pause_floor": False}, PAUSE_FLOOR_KNOBS),
+        # pause_floor.shaper_for: a flat fill reads neither the corner nor the cut, a low-pass not the cut.
+        ({"pause_floor_shape": "flat"}, ("pause_floor_shelf_hz", "pause_floor_hf_cut_db")),
+        ({"pause_floor_shape": "lowpass"}, ("pause_floor_hf_cut_db",)),
+        # filters._append_expander_stage builds no compand with the expander off: its depth, knee and timing are dead.
+        ({"enable_dynamic_expander": False}, ("apl_expander_depth_db",) + EXPANDER_SHAPE_KNOBS),
+        # filters._build_linear_air_filter returns no shelf with the air off, whatever the gain or corner.
+        ({"enable_linear_air": False}, ("linear_air_gain_db", "linear_air_freq_hz")),
     ),
     "cathar": (
-        ("cathar_split_band_hz", 0, ("cathar_alpha_high", "cathar_music_alpha_high")),
-        ("enable_pause_floor", False, ("pause_floor_fill_db",)),
-        ("enable_dynamic_expander", False, ("expander_depth_db", "expander_knee_offset_db")),
+        ({"cathar_split_band_hz": 0}, ("cathar_alpha_high", "cathar_music_alpha_high")),
+        # `denoise --wiener` takes no alpha or beta, and the split band needs a factor to split.
+        (
+            {"cathar_denoise_method": "wiener"},
+            (
+                "cathar_alpha",
+                "cathar_beta",
+                "cathar_music_alpha",
+                "cathar_music_beta",
+                "cathar_split_band_hz",
+                "cathar_alpha_high",
+                "cathar_music_alpha_high",
+            ),
+        ),
+        # cathar._cathar_precondition_pass runs no dewind with the switch off, whatever the material's cutoff.
+        ({"cathar_enable_dewind": False}, ("cathar_music_dewind_cutoff",)),
+        # Speech takes cathar_enable_repair, music cathar_music_enable_repair: the strength is dead only with both off.
+        ({"cathar_enable_repair": False, "cathar_music_enable_repair": False}, ("cathar_repair_strength",)),
+        # Speech takes cathar_enable_deesser, music cathar_music_enable_deesser: dead only with both off.
+        (
+            {"cathar_enable_deesser": False, "cathar_music_enable_deesser": False},
+            ("cathar_deesser_threshold", "cathar_deesser_freq", "cathar_deesser_bands"),
+        ),
+        ({"cathar_enable_noiseprint": False, "cathar_music_enable_noiseprint": False}, NOISEPRINT_KNOBS),
+        # The depth guard's action is read only once the guard is on (cathar._learned_print).
+        ({"cathar_noiseprint_min_depth_db": 0.0}, ("cathar_noiseprint_shallow_action",)),
+        ({"cathar_reference_suppress": False}, ("cathar_reference_release_db",)),
+        ({"cathar_music_profile": False}, _CATHAR_MUSIC_KEYS),
+        ({"enable_pause_floor": False}, PAUSE_FLOOR_KNOBS),
+        # pause_floor.shaper_for: a flat fill reads neither the corner nor the cut, a low-pass not the cut.
+        ({"pause_floor_shape": "flat"}, ("pause_floor_shelf_hz", "pause_floor_hf_cut_db")),
+        ({"pause_floor_shape": "lowpass"}, ("pause_floor_hf_cut_db",)),
+        ({"enable_dynamic_expander": False}, ("expander_depth_db", "cathar_music_expander_depth_db") + EXPANDER_SHAPE_KNOBS),
+        # cathar._cathar_analog_repair_pass runs no declip or dehum with its switch off, whatever the mode or frequency.
+        ({"cathar_enable_declip": False}, ("cathar_declip_mode",)),
+        ({"cathar_enable_dehum": False}, ("cathar_dehum_freq",)),
     ),
 }
 # Knobs an engine never reads: auto_pure_linear takes apl_expander_depth_db, not the shared depth.
 NEVER_READ = {"apl": ("expander_depth_db",), "cathar": ()}
-_SWITCH_DEFAULTS = {
+# The repository's config.yaml over modules/config.py's defaults, which is what a candidate starts from.
+SWITCH_DEFAULTS = {
     "apl_enable_spectral_denoise": False,
+    "apl_use_native_suppress": False,
     "apl_music_stem_path": False,
+    "apl_music_bg_floor_db": -10.0,
     "apl_enable_sibilant_guard": True,
     "enable_pause_floor": True,
     "enable_dynamic_expander": True,
+    "enable_linear_air": True,
     "cathar_split_band_hz": 0,
+    "cathar_denoise_method": "spectral",
+    "cathar_enable_deesser": True,
+    "cathar_music_enable_deesser": False,
+    "cathar_enable_noiseprint": True,
+    "cathar_music_enable_noiseprint": False,
+    "cathar_music_profile": True,
+    "cathar_enable_dewind": True,
+    "cathar_enable_repair": True,
+    "cathar_music_enable_repair": True,
+    "cathar_enable_declip": True,
+    "cathar_enable_dehum": True,
+    "pause_floor_shape": "flat",
+    "apl_post_neural_suppress": False,
+    "apl_reference_suppress": False,
+    "cathar_reference_suppress": False,
+    "apl_burst_ceiling": "none",
+    "cathar_noiseprint_min_depth_db": 0.0,
 }
 
 
-def inert_knobs(engine, incumbent):
-    """The knobs that cannot move this engine's audio under the incumbent's switches."""
+def _switch_value(incumbent, switch):
+    value = incumbent.get(switch)
+    return SWITCH_DEFAULTS[switch] if value is None else value
+
+
+def inert_knobs(engine, incumbent, durations=None, readings=None):
+    """The knobs that cannot move this engine's audio under the incumbent's switches and, given `durations` and the
+    tapes' held-partials `readings` (`autotune_material`), on these tapes."""
     inert = set(NEVER_READ.get(engine, ()))
-    for switch, off, knobs in INERT_WHEN.get(engine, ()):
-        value = incumbent.get(switch)
-        if (_SWITCH_DEFAULTS[switch] if value is None else value) == off:
+    for when, knobs in INERT_WHEN.get(engine, ()):
+        if all(_switch_value(incumbent, switch) == value for switch, value in when.items()):
             inert.update(knobs)
+    inert.update(_dead_on_these_tapes(engine, incumbent, durations))
+    inert.update(material.material_inert(engine, incumbent, readings))
     return inert
 
 
-def neighbour_moves(engine, incumbent):
+def cathar_print_s(value, duration_s):
+    """Seconds of tape cathar learns its print from with `cathar_noiseprint_duration_s` at `value` on a tape this long.
+
+    `cathar._probe_duration_s`'s rule, read from its own constants. None when the length is
+    unknown or within DURATION_MARGIN_S of the switch, so a tape that cannot tell never makes
+    a move dead.
+    """
+    switch_s = float(value) * cathar.NOISEPRINT_MIN_MATERIAL_RATIO
+    if duration_s is None or abs(duration_s - switch_s) < DURATION_MARGIN_S:
+        return None
+    applies = duration_s >= switch_s or float(value) <= cathar.NOISEPRINT_SHORT_S
+    return float(value) if applies else cathar.NOISEPRINT_SHORT_S
+
+
+# Knobs whose effect depends on the tape's length: the setting each value gives a tape of a given length.
+DURATION_BOUND = {"cathar_noiseprint_duration_s": cathar_print_s}
+
+
+def _settings_per_tape(knob, value, durations):
+    return tuple(DURATION_BOUND[knob](value, seconds) for seconds in durations.values())
+
+
+def dead_move(knob, value, incumbent, durations):
+    """Whether moving `knob` to `value` leaves every tape on the setting the incumbent's value already gives it."""
+    current = incumbent.get(knob)
+    if knob not in DURATION_BOUND or current is None or not durations:
+        return False
+    settings = _settings_per_tape(knob, value, durations)
+    return None not in settings and settings == _settings_per_tape(knob, current, durations)
+
+
+def _every_move_dead(knob, values, incumbent, durations):
+    return all(dead_move(knob, v, incumbent, durations) for v in values if v != incumbent.get(knob))
+
+
+def _dead_on_these_tapes(engine, incumbent, durations):
+    """The length-bound knobs of this engine none of whose other values changes the setting of any tape."""
+    bound = {knob: values for knob, values in KNOBS[engine].items() if knob in DURATION_BOUND}
+    return {knob for knob, values in bound.items() if _every_move_dead(knob, values, incumbent, durations)}
+
+
+def tape_durations(tapes):
+    """`{slug: seconds}` read by ffprobe; None for a tape it cannot read, which keeps every length-bound move live."""
+    return {slug: tune.probe_duration(tape) for slug, tape in tapes.items()}
+
+
+def _neighbours(values, current):
+    """The values next to `current` in the ordered list, or every other value when it is not one of them."""
+    if current in values:
+        index = values.index(current)
+        low, high = max(index - 1, 0), index + 2
+        values = values[low:high]
+    return [v for v in values if v != current]
+
+
+def neighbour_moves(engine, incumbent, durations=None, readings=None):
     """`[(knob, value)]`: the values adjacent to each knob's current value (or every value when unset).
 
-    Knobs the incumbent's switches make inert are left out (see INERT_WHEN).
+    Knobs the incumbent's switches make inert are left out (see INERT_WHEN), and so is a move
+    the tapes' lengths make dead (see DURATION_BOUND; `durations` is `{slug: seconds}`) or their
+    material makes dead (`readings`, the held partials of the incumbent's render; see
+    `autotune_material`).
     """
     moves = []
-    inert = inert_knobs(engine, incumbent)
+    inert = inert_knobs(engine, incumbent, durations, readings)
     for knob, values in KNOBS[engine].items():
-        if knob in inert:
-            continue
-        current = incumbent.get(knob, None)
-        if current not in values:
-            moves += [(knob, v) for v in values if v != current]
-            continue
-        index = values.index(current)
-        moves += [(knob, values[i]) for i in (index - 1, index + 1) if 0 <= i < len(values)]
+        if knob not in inert:
+            moves += [
+                (knob, v) for v in _neighbours(values, incumbent.get(knob)) if _live(engine, knob, v, incumbent, (durations, readings))
+            ]
     return moves
 
 
-def propose(engine, incumbent):
-    """`{id: overrides}` for every single-knob neighbour of the incumbent."""
+def _live(engine, knob, value, incumbent, tapes):
+    """Whether the move can change some tape: neither its length nor its material makes it dead."""
+    durations, readings = tapes
+    return not (dead_move(knob, value, incumbent, durations) or material.dead_floor_move(engine, knob, value, incumbent, readings))
+
+
+def propose(engine, incumbent, durations=None, readings=None):
+    """`{id: overrides}` for every single-knob neighbour of the incumbent that can change the audio on these tapes, and
+    every joint move the incumbent lacks (`autotune_joint_moves`)."""
     proposals = {}
-    for knob, value in neighbour_moves(engine, incumbent):
+    for knob, value in neighbour_moves(engine, incumbent, durations, readings):
         overrides = {**incumbent, knob: value}
         proposals[candidate_id(overrides)] = overrides
+    proposals.update(joint.joint_moves(engine, incumbent, candidate_id))
     proposals.pop(candidate_id(incumbent), None)
     return proposals
+
+
+def _moves(candidate, incumbent):
+    """The settings where `candidate` differs from the incumbent."""
+    return {k: v for k, v in candidate.items() if v != incumbent.get(k)}
 
 
 def combine(incumbent, winners):
@@ -268,8 +699,9 @@ def combine(incumbent, winners):
         return {}
     overrides = dict(incumbent)
     for candidate in winners:
-        overrides.update({k: v for k, v in candidate.items() if candidate.get(k) != incumbent.get(k)})
-    return {candidate_id(overrides): overrides} if candidate_id(overrides) != candidate_id(incumbent) else {}
+        overrides.update(_moves(candidate, incumbent))
+    cid = candidate_id(overrides)
+    return {cid: overrides} if cid != candidate_id(incumbent) else {}
 
 
 # ----------------------------------------------------------------------------- running
@@ -282,12 +714,54 @@ def run_candidate(engine, overrides, tapes, out_dir):
     wavs = {slug: cand_dir / f"{slug}.wav" for slug in tapes}
     if all(w.exists() for w in wavs.values()):
         return wavs
-    config, env = split_overrides(overrides)
-    config = {"batch_jobs": 1, **config}  # one candidate at a time; the app's own batch stays sequential inside it
-    spec = {**ENGINES[engine], "env": env}
+    renders.check_free_space(cid, render_paths(tapes, out_dir))
+    spec = {**ENGINES[engine], "env": split_overrides(overrides)[1]}
+    extra_env = _prepare_candidate(cid, cand_dir, spec, overrides)
+    started = time.time()
+    _move_stale_outputs(cid, tapes, spec["suffix"], out_dir)
+    _restore(cand_dir, tapes, extra_env)
+    _collect_outputs(cid, tapes, spec["suffix"], wavs)
+    timing = {"wall_s": time.time() - started, "stage_cache": stage_cache_counts(cand_dir / RUN_LOG)}
+    (cand_dir / "timing.json").write_text(json.dumps(timing), encoding="utf-8")
+    return wavs
+
+
+def render_paths(tapes, out_dir):
+    """The folders a render writes in: each tape's (its restored video), the loop's and the stage cache's when it is on."""
+    folders = {str(Path(tape).parent) for tape in tapes.values()} | {str(out_dir)}
+    cache = os.environ.get(stage_cache.ENV_VAR)
+    if cache:
+        folders.add(cache)
+    return sorted(folders)
+
+
+def stage_cache_counts(run_log):
+    """The neural-stage cache's hits and misses a candidate's run log reports (both 0 with the cache off)."""
+    try:
+        text = Path(run_log).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"hits": 0, "misses": 0}
+    return {"hits": text.count("[Stage Cache] Hit "), "misses": text.count("[Stage Cache] Miss ")}
+
+
+def enable_stage_cache(folder, cap_gb=None):
+    """Points every candidate's render at one neural-stage cache; the children inherit it. None leaves it as it is (off)."""
+    if folder is None:
+        return None
+    root = Path(folder).resolve()
+    os.environ[stage_cache.ENV_VAR] = str(root)
+    if cap_gb is not None:
+        os.environ[stage_cache.MAX_GB_ENV] = f"{cap_gb:g}"
+    print(f"stage cache: {root} (cap {stage_cache.max_bytes() / stage_cache.GB:g} GB)", flush=True)
+    return root
+
+
+def _prepare_candidate(cid, cand_dir, spec, overrides):
+    """Writes the candidate's config, checks the app honours every override; returns the engine's extra environment."""
+    config = {"batch_jobs": 1, **split_overrides(overrides)[0]}  # one candidate at a time; the app's own batch stays sequential
     cand_dir.mkdir(parents=True, exist_ok=True)
     (cand_dir / "overrides.json").write_text(json.dumps(overrides, indent=1), encoding="utf-8")
-    problems = tune.validate_overrides(config)
+    problems = validation_problems(config)
     if problems:
         raise SystemExit(f"{cid}: {problems}")
     (cand_dir / tune.CONFIG_YAML).write_text(
@@ -297,8 +771,12 @@ def run_candidate(engine, overrides, tapes, out_dir):
     reverted = tune.assert_overrides_resolved(config, tune.resolved_config(cand_dir, PYTHON, extra_env))
     if reverted:
         raise SystemExit(f"{cid}: the app did not honour {reverted}")
-    started = time.time()
-    with open(cand_dir / "run.log", "w", encoding="utf-8") as log:
+    return extra_env
+
+
+def _restore(cand_dir, tapes, extra_env):
+    """Runs the app on every tape in a fresh interpreter launched in the candidate's folder."""
+    with open(cand_dir / RUN_LOG, "w", encoding="utf-8") as log:
         subprocess.run(
             [PYTHON, str(REPO / "restore_audio_hybrid.py"), *(str(Path(p)) for p in tapes.values())],
             cwd=str(cand_dir),
@@ -309,145 +787,230 @@ def run_candidate(engine, overrides, tapes, out_dir):
             timeout=tune.RUN_TIMEOUT_PER_EXCERPT_S * 4 * max(1, len(tapes)),
             check=False,
         )
+
+
+def _produced(tape, suffix):
+    """The restored video the app writes beside a tape: `<stem><suffix><ext>`."""
+    return Path(tape).with_name(f"{Path(tape).stem}{suffix}{Path(tape).suffix}")
+
+
+def _move_stale_outputs(cid, tapes, suffix, out_dir):
+    """Moves an output already beside a tape into `out_dir/stale_outputs/` before the render, and says so.
+
+    The app skips a tape whose output exists ("Output already exists. Skipping."), and the loop
+    would collect that file as this candidate's audio. A render stopped after one tape left one:
+    on 2026-10-17 a stopped v8 run handed three of its outputs to the v9 incumbent, and a stopped
+    candidate's Tele7abc to the next candidate. Moved, never deleted: the file may be the user's.
+    """
+    for tape in tapes.values():
+        produced = _produced(tape, suffix)
+        if produced.exists():
+            stale = out_dir / "stale_outputs"
+            stale.mkdir(parents=True, exist_ok=True)
+            target = stale / f"{cid}__{produced.name}"
+            shutil.move(str(produced), str(target))
+            print(f"  {cid}: moved {produced.name}, already beside its tape, to {target}", flush=True)
+
+
+def _collect_outputs(cid, tapes, suffix, wavs):
+    """Moves each restored tape's audio into the candidate's WAV and deletes the restored video beside the tape.
+
+    A tape without an output, or whose audio cannot be extracted, gets its reason from the run log;
+    the others are still collected, so nothing is left beside a tape, and then
+    `autotune_renders.RenderFailed` names every tape that failed.
+    """
+    reasons = {}
     for slug, tape in tapes.items():
-        produced = Path(tape).with_name(f"{Path(tape).stem}{spec['suffix']}{Path(tape).suffix}")
+        produced = _produced(tape, suffix)
         if not produced.exists():
-            raise SystemExit(f"{cid}: no output for {slug} ({produced.name})")
-        shutil.move(str(audio_io.extract_wav(produced, cand_dir)), str(wavs[slug]))
+            reasons[slug] = renders.failure_reason(wavs[slug].parent / RUN_LOG, tape)
+            continue
+        try:
+            shutil.move(str(audio_io.extract_wav(produced, wavs[slug].parent)), str(wavs[slug]))
+        except (OSError, subprocess.SubprocessError) as exc:
+            reasons[slug] = f"its audio could not be extracted: {exc}"[: renders.REASON_CHARS]
         produced.unlink()
-    (cand_dir / "timing.json").write_text(json.dumps({"wall_s": time.time() - started}), encoding="utf-8")
-    return wavs
+    if reasons:
+        raise renders.RenderFailed(cid, reasons)
 
 
-def score_round(candidates, tapes, out_dir, families, gates, language, parallel=SCORER_PARALLEL):
-    """Scores every candidate on every tape, at most `parallel` tape processes at once; returns `{cid: {slug: flat}}`.
+# ----------------------------------------------------------------------------- inert detection
 
-    A scorer holds about 4 GB of RAM with every model resident; two engines tuning at
-    once with four scorers each ran a 62 GB machine out of memory, so the default is two.
+
+def exact_audio_sha256(path):
+    """SHA-256 of a file's decoded samples as stored, after its rate, channel count and sample type.
+
+    Two files that decode to the same samples hash alike whatever their headers or tags say,
+    and any other two do not: float files are read as stored and integer PCM as int32, so no
+    two distinct sample values collapse into one, and nothing is subtracted (a DC offset is a
+    difference). Read in blocks so an hour of tape never sits in memory at once.
     """
-    (out_dir / "rounds").mkdir(parents=True, exist_ok=True)
-    pending = [(slug, tape, [cid for cid in candidates if not _score_path(out_dir, cid, slug).exists()]) for slug, tape in tapes.items()]
-    pending = [(slug, tape, cids) for slug, tape, cids in pending if cids]
-    for start in range(0, len(pending), max(1, parallel)):
-        batch = pending[start : start + max(1, parallel)]
-        procs = [(slug, cids, _launch_scorer(slug, tape, cids, out_dir, families, gates, language)) for slug, tape, cids in batch]
-        for slug, cids, (log, proc) in procs:
-            _harvest(slug, cids, log, proc, out_dir)
-    return {cid: {slug: json.loads(_score_path(out_dir, cid, slug).read_text(encoding="utf-8")) for slug in tapes} for cid in candidates}
+    digest = hashlib.sha256()
+    with sf.SoundFile(str(path)) as audio:
+        dtype = {"FLOAT": "float32", "DOUBLE": "float64"}.get(audio.subtype, "int32")
+        digest.update(f"{audio.samplerate}|{audio.channels}|{dtype}|".encode("ascii"))
+        for block in audio.blocks(blocksize=HASH_BLOCK_FRAMES, dtype=dtype, always_2d=True):
+            digest.update(block.tobytes())
+    return digest.hexdigest()
 
 
-def _harvest(slug, cids, log, proc, out_dir):
-    proc.wait()
-    log.close()
-    if proc.returncode != 0:
-        raise SystemExit(f"scoring {slug} failed (see {out_dir / 'rounds' / f'score_{slug}.log'})")
-    report = json.loads((out_dir / "rounds" / f"score_{slug}.json").read_text(encoding="utf-8"))
-    for cid in cids:
-        flat = tune.runner.aggregates_for_tuning(report, cid)
-        _score_path(out_dir, cid, slug).write_text(json.dumps(flat, indent=1), encoding="utf-8")
-        _drop_cache_entries(out_dir, cid, slug)
+def _cached_audio_sha256(wav):
+    """The WAV's decoded-audio hash, kept beside it and reused while the file and the hash function are unchanged."""
+    key = f"{audio_io.file_key(wav)}|{HASH_NAME}"
+    sidecar = wav.with_name(wav.stem + HASH_SIDECAR_SUFFIX)
+    cached = guards_mod.read_json(sidecar)
+    if cached.get("key") == key and isinstance(cached.get("sha256"), str):
+        return cached["sha256"]
+    digest = exact_audio_sha256(wav)
+    sidecar.write_text(json.dumps({"key": key, "sha256": digest}), encoding="utf-8")
+    return digest
 
 
-def _drop_cache_entries(out_dir, cid, slug):
-    """The scorer's cache entries for a scored output (its resampled arrays, its DC-free copy), which nothing reads again.
+def audio_fingerprint(out_dir, cid, tapes):
+    """One decoded-audio hash per tape, in tape order: what the candidate sounds like, whatever its settings."""
+    return tuple(_cached_audio_sha256(guards_mod.candidate_wav(out_dir, cid, slug)) for slug in tapes)
 
-    A candidate output is scored once; its entries (three rates, ~1 GB per hour of tape) only
-    fill the disk afterwards: two loops on full tapes grew 250 GB of them in three days and
-    ran the machine out of space. The source side of the cache stays, every round reuses it.
+
+def find_inert(fingerprints, incumbent_id):
+    """`{cid: same_as}` for every candidate whose audio repeats the incumbent's, or an earlier candidate's, on every tape.
+
+    `fingerprints` maps each candidate id (the incumbent's among them) to its `audio_fingerprint`,
+    in proposal order. The incumbent is never inert; of candidates that sound alike, the first
+    proposed is scored and the others name it.
     """
-    wav = out_dir / "cands" / cid / f"{slug}.wav"
-    if not wav.exists():
-        return
-    for entry in (out_dir / "cache").glob(f"{audio_io.file_key(wav)}_*"):
-        entry.unlink()
+    owners = {fingerprints[incumbent_id]: incumbent_id}
+    inert = {}
+    for cid, fingerprint in fingerprints.items():
+        owner = owners.setdefault(fingerprint, cid)
+        if owner != cid:
+            inert[cid] = owner
+    return inert
 
 
-def _score_path(out_dir, cid, slug):
-    return out_dir / "cands" / cid / f"{slug}.score.json"
+def _aside_verdict(**why):
+    """The verdict of a candidate set aside before scoring: no rank, never qualifies; `why` says what set it aside."""
+    return {"mean_rank": None, "wins": 0, "failures": 0.0, "flags": 0.0, "per_tape": {}, "qualifies": False, **why}
 
 
-LANGUAGE_RE = re.compile(r"^[a-z]{2,3}$")
+def _inert_verdict(same_as):
+    return _aside_verdict(inert=same_as)
 
 
-def _existing_path(value, what):
-    """A command-line path resolved and checked to exist; a value shaped like an option is refused."""
-    text = str(value)
-    if text.startswith("-"):
-        raise SystemExit(f"{what} looks like an option, not a path: {text}")
-    resolved = Path(text).resolve()
-    if not resolved.exists():
-        raise SystemExit(f"{what} does not exist: {resolved}")
-    return resolved
+def _without(candidates, left_out):
+    """`candidates` less the ids in `left_out`."""
+    return {cid: overrides for cid, overrides in candidates.items() if cid not in left_out}
 
 
-def _scorer_arguments(slug, tape, cids, out_dir, families, gates, language):
-    """The scorer's argument list from checked inputs: the tape and the gates must exist, the language is a code."""
-    if not LANGUAGE_RE.match(language):
-        raise SystemExit(f"--language must be a two- or three-letter code: {language!r}")
-    unknown = set(families) - set(tune.runner.ALL_FAMILIES)
-    if unknown:
-        raise SystemExit(f"unknown metric families: {sorted(unknown)}")
-    out_dir = _existing_path(out_dir, "--out")
-    args = [PYTHON, str(REPO / "scripts" / "validate_restoration.py"), str(_existing_path(tape, "tape"))]
-    args += [f"{cid}={out_dir / 'cands' / cid / f'{slug}.wav'}" for cid in cids]
-    args += ["--metrics", ",".join(families), "--language", language, "--cache-dir", str(out_dir / "cache")]
-    args += ["--report", str(out_dir / "rounds" / f"score_{slug}.json")]
-    if gates:
-        args += ["--gates", str(_existing_path(gates, "--gates"))]
-    return args
+def _split_inert(everything, incumbent_id, tapes, out_dir):
+    """`(live, inert)`: the candidates worth scoring and `{cid: same_as}` for the ones that sound like another."""
+    inert = find_inert({cid: audio_fingerprint(out_dir, cid, tapes) for cid in everything}, incumbent_id)
+    return _without(everything, inert), inert
 
 
-def _scorer_env(tape):
-    """The scorer's environment: the tape's folder joins AI_RESTORE_DATA_ROOTS, since the scorer confines its paths."""
-    roots = [entry for entry in os.environ.get("AI_RESTORE_DATA_ROOTS", "").split(os.pathsep) if entry]
-    return {**os.environ, "PYTHONIOENCODING": "utf-8", "AI_RESTORE_DATA_ROOTS": os.pathsep.join([*roots, str(Path(tape).resolve().parent)])}
+def _with_set_aside(verdicts, inert, ties, refused):
+    """The judged verdicts plus one for every candidate set aside before scoring: inert, a tie or refused."""
+    verdicts.update({cid: _inert_verdict(same_as) for cid, same_as in inert.items()})
+    verdicts.update({cid: _aside_verdict(tie=True) for cid in ties})
+    verdicts.update({cid: _aside_verdict(refused=why) for cid, why in refused.items()})
+    return verdicts
 
 
-def _launch_scorer(slug, tape, cids, out_dir, families, gates, language):
-    args = _scorer_arguments(slug, tape, cids, out_dir, families, gates, language)
-    log = open(out_dir / "rounds" / f"score_{slug}.log", "a", encoding="utf-8")
-    proc = subprocess.Popen(args, cwd=str(REPO), stdout=log, stderr=subprocess.STDOUT, env=_scorer_env(tape))
-    return log, proc
+def _with_failed(verdicts, failed):
+    """The verdicts plus one for every candidate whose render failed (`failed` is `{cid: {slug: why}}`)."""
+    verdicts.update({cid: _failed_verdict(reasons) for cid, reasons in failed.items()})
+    return verdicts
+
+
+def _failed_verdict(reasons):
+    """The verdict of a candidate whose render failed: `failed` lists `<slug>: <why>` per tape."""
+    return _aside_verdict(failed=[f"{slug}: {why}" for slug, why in reasons.items()])
 
 
 # ----------------------------------------------------------------------------- judging
 
 
-def rank_on_tape(flats, ranking):
-    """`{cid: rank_score}` on one tape from flat aggregates, with the grid's directions."""
-    summaries = {cid: {"metrics": {key: {"median": value} for key, value in flat.items()}} for cid, flat in flats.items()}
-    return tune.rank_variants(summaries, ranking)
-
-
-def judge(scores, incumbent_id, ranking):
-    """`{cid: {"mean_rank", "wins", "failures", "per_tape", "qualifies"}}` against the incumbent across tapes."""
+def _tables(scores, ranking, incumbent_id, floors):
+    """`{slug: autotune_judging.TapeTable}` over every tape the candidates were scored on."""
     tapes = list(next(iter(scores.values())))
-    per_tape = {slug: rank_on_tape({cid: scores[cid][slug] for cid in scores}, ranking) for slug in tapes}
-    verdicts = {cid: _verdict(cid, scores[cid], per_tape, incumbent_id) for cid in scores}
-    base = verdicts[incumbent_id]
-    for cid, verdict in verdicts.items():
-        verdict["qualifies"] = cid != incumbent_id and _beats(verdict, base, len(tapes))
+    return {slug: judging.tape_table({cid: scores[cid][slug] for cid in scores}, ranking, incumbent_id, floors) for slug in tapes}
+
+
+def judge(scores, incumbent_id, ranking, vetoes=None, veto_ids=None, *, floors=None, constraints=None):
+    """`{cid: {"mean_rank", "wins", "failures", "per_tape", "qualifies", ...}}` against the incumbent across tapes.
+
+    `floors` (`autotune_judging.Floors`) gives each reading its tie band and dead-zone floor; None
+    (no floors file) keeps exact ties, except on an entry whose grid carries a `tie` (ear v4: the
+    hiss readings), which is its band either way. With `vetoes` (`{reading: reward.Veto}`, a v3
+    grid's learned judges) a candidate the family-wise rule trips also carries `vetoed` and cannot
+    qualify. `veto_ids` limits the veto to those candidates (the two-stage scoring reads the
+    learned judges on the contenders only); None checks every candidate. With `constraints`
+    (`{reading: reward.Constraint}`, a v4 grid's hard guards on dsp readings) every candidate is
+    checked and one that trips a constraint on some tape carries `constrained` and cannot qualify.
+    """
+    floors = floors or judging.NO_FLOORS
+    tables = _tables(scores, ranking, incumbent_id, floors)
+    verdicts = {cid: _verdict(cid, scores[cid], tables, incumbent_id) for cid in scores}
+    _mark_constraints(verdicts, scores, incumbent_id, constraints)
+    for cid in scores if veto_ids is None else veto_ids:
+        guards_mod.mark_vetoes(verdicts[cid], scores[cid], scores[incumbent_id], vetoes, floors)
+    qualify(verdicts, incumbent_id, len(tables))
     return verdicts
 
 
-def _verdict(cid, tape_scores, per_tape, incumbent_id):
-    ranks = {slug: per_tape[slug][cid] for slug in tape_scores}
+def _mark_constraints(verdicts, scores, incumbent_id, constraints):
+    """Marks every candidate a grid constraint trips on some tape (`autotune_guards.mark_constraints`), the incumbent too."""
+    for cid in scores:
+        guards_mod.mark_constraints(verdicts[cid], scores[cid], scores[incumbent_id], constraints)
+
+
+def qualify(verdicts, incumbent_id, n_tapes):
+    """Sets `qualifies`: not the incumbent, beats it and passes the guards."""
+    base = verdicts[incumbent_id]
+    for cid, verdict in verdicts.items():
+        verdict["qualifies"] = cid != incumbent_id and _beats(verdict, base, n_tapes) and guards_mod.allowed(verdict, base)
+
+
+def _total(tape_scores, key):
+    return sum(flat.get(key, 0.0) for flat in tape_scores.values())
+
+
+def _mean_rank(ranks):
+    """The mean of the tapes' ranks, None when no tape ranked anything."""
     known = [r for r in ranks.values() if r is not None]
-    wins = sum(1 for slug, r in ranks.items() if r is not None and r < per_tape[slug][incumbent_id])
-    failures = sum(flat.get("gates.hard_failures", 0.0) for flat in tape_scores.values())
-    flags = sum(flat.get("gates.listener_flags", 0.0) for flat in tape_scores.values())
-    return {"mean_rank": float(np.mean(known)) if known else None, "wins": wins, "failures": failures, "flags": flags, "per_tape": ranks}
+    return float(np.mean(known)) if known else None
+
+
+def _verdict(cid, tape_scores, tables, incumbent_id):
+    """One candidate's ranks, wins (ahead of the incumbent and better past the band on some reading), gate counts and
+    per-reading distances."""
+    ranks = {slug: tables[slug].ranks[cid] for slug in tape_scores}
+    return {
+        "mean_rank": _mean_rank(ranks),
+        "wins": len(judging.tape_wins(tables, cid, incumbent_id)),
+        "failures": _total(tape_scores, "gates.hard_failures"),
+        "flags": _total(tape_scores, "gates.listener_flags"),
+        "per_tape": ranks,
+        "distances": {slug: tables[slug].distances[cid] for slug in tape_scores},
+        "moved": judging.moved_tapes(tables, cid),
+        "status": judging.reading_status(tables, cid),
+        "level": all(table.level(cid) for table in tables.values()),
+    }
+
+
+def _no_worse(verdict, base):
+    return all(verdict.get(key, 0.0) <= base.get(key, 0.0) for key in ("failures", "flags"))
 
 
 def _beats(verdict, base, n_tapes):
     """Better mean rank, ahead on at least half the tapes, no more hard failures and no more listener flags."""
-    if verdict["mean_rank"] is None or base["mean_rank"] is None:
+    if None in (verdict["mean_rank"], base["mean_rank"]):
         return False
-    no_worse = verdict["failures"] <= base["failures"] and verdict.get("flags", 0.0) <= base.get("flags", 0.0)
-    return verdict["mean_rank"] < base["mean_rank"] and verdict["wins"] * 2 >= n_tapes and no_worse
+    better = verdict["mean_rank"] < base["mean_rank"] and verdict["wins"] * 2 >= n_tapes
+    return better and _no_worse(verdict, base)
 
 
 def describe(overrides, incumbent):
+    """The overrides as JSON, only the keys that differ from the incumbent's when any do."""
     changed = {k: v for k, v in overrides.items() if incumbent.get(k) != v}
     if not overrides:
         return "defaults"
@@ -458,6 +1021,7 @@ def describe(overrides, incumbent):
 
 
 def load_state(out_dir, start):
+    """The run's saved state, or a fresh one starting from `start`."""
     path = out_dir / "state.json"
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -465,94 +1029,261 @@ def load_state(out_dir, start):
 
 
 def save_state(out_dir, state):
+    """Writes the run's state, so a stopped run resumes where it was."""
     (out_dir / "state.json").write_text(json.dumps(state, indent=1, default=str), encoding="utf-8")
 
 
 def run_round(args, engine, tapes, out_dir, state, ranking, number):
     """One round: neighbours, runs, scores, the combination of the winners, the verdict; True when the incumbent moved."""
     incumbent = state["incumbent"]
-    incumbent_id = candidate_id(incumbent)
-    proposals = propose(engine, incumbent)
+    proposals = propose(engine, incumbent, getattr(args, "durations", None), _incumbent_readings(engine, tapes, out_dir, incumbent))
     if not proposals:
         return False
-    everything = {incumbent_id: incumbent, **proposals}
-    print(f"round {number}: incumbent {incumbent_id} {describe(incumbent, {})}; {len(proposals)} candidates", flush=True)
+    everything = {candidate_id(incumbent): incumbent, **proposals}
+    print(f"round {number}: incumbent {candidate_id(incumbent)} {describe(incumbent, {})}; {len(proposals)} candidates", flush=True)
     verdicts = _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, incumbent)
-    winners = [everything[cid] for cid, v in verdicts.items() if v["qualifies"]]
-    combo = combine(incumbent, winners)
+    combo = combine(incumbent, [everything[cid] for cid, v in verdicts.items() if v["qualifies"]])
     if combo:
         everything.update(combo)
         verdicts = _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, incumbent)
-    ordered = sorted(verdicts.items(), key=lambda kv: (kv[1]["mean_rank"] is None, kv[1]["mean_rank"] or 0.0))
-    qualifying = [cid for cid, v in ordered if v["qualifies"]]
-    state["rounds"].append(
-        {"round": number, "incumbent": incumbent_id, "verdicts": verdicts, "accepted": qualifying[0] if qualifying else None}
-    )
-    if qualifying:
-        state["incumbent"] = everything[qualifying[0]]
-    _report_round(out_dir, number, incumbent, everything, ordered, qualifying, len(tapes))
+    accepted = _settle(state, number, incumbent, everything, verdicts)
+    _report_round(out_dir, state["rounds"][-1], incumbent, everything, len(tapes), floors=getattr(args, "floors", None), ranking=ranking)
     save_state(out_dir, state)
-    return bool(qualifying)
+    return accepted is not None
+
+
+def _incumbent_readings(engine, tapes, out_dir, incumbent):
+    """The tapes' held partials from the incumbent's render log, rendering the incumbent first when it is new; logs when
+    they make the music knobs dead."""
+    try:
+        run_candidate(engine, incumbent, tapes, out_dir)
+    except renders.RenderFailed as exc:
+        raise renders.incumbent_failed(exc) from exc
+    readings = material.held_partials(out_dir / "cands" / candidate_id(incumbent) / RUN_LOG, len(tapes))
+    note = material.speech_note(engine, incumbent, readings)
+    if note:
+        print(note, flush=True)
+    return readings
+
+
+def _ordered(verdicts):
+    """`[(cid, verdict)]` best mean rank first; candidates without a rank (inert ones included) last."""
+    return sorted(verdicts.items(), key=lambda kv: (kv[1]["mean_rank"] is None, kv[1]["mean_rank"] or 0.0))
+
+
+def _settle(state, number, incumbent, everything, verdicts):
+    """Records the round and moves the incumbent to the best qualifying candidate; returns its id or None."""
+    accepted = next((cid for cid, v in _ordered(verdicts) if v["qualifies"]), None)
+    state["rounds"].append({"round": number, "incumbent": candidate_id(incumbent), "verdicts": verdicts, "accepted": accepted})
+    if accepted is not None:
+        state["incumbent"] = everything[accepted]
+    return accepted
+
+
+def _render(engine, candidates, tapes, out_dir, incumbent):
+    """Renders every candidate; returns `{cid: {slug: why}}` for the ones whose render failed.
+
+    The incumbent failing stops the run (nothing can be judged without it), and so do
+    `autotune_renders.MAX_FAILURES_IN_A_ROW` failures in a row.
+    """
+    failed, streak = {}, renders.FailureStreak()
+    for cid, overrides in candidates.items():
+        print(f"  running {cid} {describe(overrides, incumbent)}", flush=True)
+        try:
+            run_candidate(engine, overrides, tapes, out_dir)
+        except renders.RenderFailed as exc:
+            print(f"  render failed: {exc}", flush=True)
+            if cid == candidate_id(incumbent):
+                raise renders.incumbent_failed(exc) from exc
+            failed[cid] = exc.reasons
+            streak.failed(exc)
+        else:
+            streak.passed()
+    return failed
 
 
 def _run_and_judge(args, engine, everything, tapes, out_dir, state, ranking, incumbent):
+    """Renders every candidate no ledger boundary refuses, sets the inert and inaudible ones aside unscored, judges the rest.
+
+    `args.guards` holds the grid's v3 guards; without it (a v1 or v2 grid) nothing is refused,
+    tied or vetoed.
+    """
+    guards = getattr(args, "guards", guards_mod.NO_GUARDS)
     state["candidates"].update(everything)
     save_state(out_dir, state)
-    for cid, overrides in everything.items():
-        print(f"  running {cid} {describe(overrides, incumbent)}", flush=True)
-        run_candidate(engine, overrides, tapes, out_dir)
-    scores = score_round(everything, tapes, out_dir, args.families, args.gates, args.language, args.parallel)
-    return judge(scores, candidate_id(incumbent), ranking)
+    refused = guards_mod.refusals(everything, incumbent, guards.reversals)
+    # A render that failed earlier in this run is not tried again in it (the round's second pass renders the combination).
+    failed = state.setdefault("failed", {})
+    failed.update(_render(engine, _without(everything, {**refused, **failed}), tapes, out_dir, incumbent))
+    rendered = _without(everything, {**refused, **failed})
+    incumbent_id = candidate_id(incumbent)
+    live, inert = _split_inert(rendered, incumbent_id, tapes, out_dir)
+    ties = guards_mod.find_ties(live, incumbent_id, tapes, out_dir, guards.audibility_offset_db)
+    verdicts = score_and_judge(args, _without(live, ties), (tapes, out_dir), ranking, incumbent_id, guards)
+    return _with_failed(_with_set_aside(verdicts, inert, ties, refused), _only(failed, set(everything) & set(failed)))
 
 
-def _report_round(out_dir, number, incumbent, everything, ordered, qualifying, n_tapes):
-    lines = [f"## round {number}", "", f"incumbent `{candidate_id(incumbent)}` {describe(incumbent, {})}", ""]
+def score_and_judge(args, scorable, where, ranking, incumbent_id, guards):
+    """Two-stage scoring (plan 1.5), exact: the families the ranking and the gates read on every candidate, a judgement
+    without the learned vetoes, then the other families on the incumbent and the candidates that qualified so far,
+    and the final judgement with the vetoes on those contenders. A veto can only take a qualification away, so
+    the verdicts are the ones a single pass over every family gives. `guards` (`autotune_guards.Guards`) brings the
+    vetoes and the grid's constraints; the constraints' families are scored in the first stage
+    (`autotune_scoring.split_families`), so both judgements apply them to every candidate."""
+    tapes, out_dir = where
+    args.floors = getattr(args, "floors", None)
+    ranked, rest = scoring.split_families(args.families, ranking, scoring.gate_names(args.gates), guards.constraints)
+    options = (args.gates, args.language, args.parallel)
+    scores = score_round(scorable, tapes, out_dir, ranked, *options)
+    first = judge(scores, incumbent_id, ranking, floors=args.floors, constraints=guards.constraints)
+    contenders = [cid for cid, verdict in first.items() if verdict["qualifies"]]
+    missing = scoring.lacking(scores, [incumbent_id, *contenders], rest) if contenders else []
+    if missing:
+        learned = score_round(_only(scorable, missing), tapes, out_dir, rest, *options, scoring.LEARNED_STAGE)
+        scoring.merge_families(scores, learned, rest)
+    return judge(scores, incumbent_id, ranking, guards.vetoes, veto_ids=contenders, floors=args.floors, constraints=guards.constraints)
+
+
+def _only(candidates, ids):
+    """`candidates` restricted to `ids`."""
+    return {cid: candidates[cid] for cid in ids}
+
+
+def _cells(verdict, n_tapes):
+    """The rank, wins, failures, flags and verdict cells of one candidate's row."""
+    aside = guards_mod.aside_cell(verdict)
+    if aside:
+        return f"- | - | - | - | {aside}"
+    rank = "-" if verdict["mean_rank"] is None else f"{verdict['mean_rank']:.2f}"
+    qualifies = guards_mod.qualifies_cell(verdict)
+    return f"{rank} | {verdict['wins']}/{n_tapes} | {verdict['failures']:.0f} | {verdict.get('flags', 0.0):.0f} | {qualifies}"
+
+
+def _outcome(record, everything, incumbent, floors):
+    """The round's last word: what was accepted, or why nothing was (`autotune_judging.plateau_label`)."""
+    accepted = record["accepted"]
+    if accepted is None:
+        return judging.plateau_label(record["verdicts"], record["incumbent"], floors) + _untried(record["verdicts"])
+    return f"accepted `{accepted}` -> {describe(everything[accepted], incumbent)}"
+
+
+def _untried(verdicts):
+    """A plateau's caveat when renders failed: those moves were never heard, so the plateau is not proven."""
+    failed = sum(1 for verdict in verdicts.values() if verdict.get("failed"))
+    return f"; {failed} render(s) failed, their moves untried (render failure lines below)" if failed else ""
+
+
+def _inert_findings(ordered, everything, incumbent):
+    """One knob-table finding per inert candidate: its move rendered audio another candidate already had."""
+    inert = [(cid, v["inert"]) for cid, v in ordered if v.get("inert")]
+    return [
+        f"knob-table finding: `{cid}` {describe(everything[cid], incumbent)} sounds the same as `{same_as}` on every tape; not scored"
+        for cid, same_as in inert
+    ]
+
+
+def _report_round(out_dir, record, incumbent, everything, n_tapes, *, floors=None, ranking=None):
+    """Appends the round's table, its per-reading distances, its outcome and its findings to log.md and prints them."""
+    ordered = _ordered(record["verdicts"])
+    floors = floors or judging.NO_FLOORS
+    lines = [f"## round {record['round']}", "", f"incumbent `{candidate_id(incumbent)}` {describe(incumbent, {})}", ""]
     lines += ["| candidate | change | mean rank | wins | hard failures | flags | qualifies |", "|---|---|---|---|---|---|---|"]
-    for cid, v in ordered:
-        rank = "-" if v["mean_rank"] is None else f"{v['mean_rank']:.2f}"
-        flag = "yes" if v["qualifies"] else "-"
-        cells = f"{rank} | {v['wins']}/{n_tapes} | {v['failures']:.0f} | {v.get('flags', 0.0):.0f} | {flag}"
-        lines.append(f"| {cid} | {describe(everything[cid], incumbent)} | {cells} |")
-    outcome = (
-        f"accepted `{qualifying[0]}` -> {describe(everything[qualifying[0]], incumbent)}"
-        if qualifying
-        else "no candidate qualified: plateau"
-    )
-    lines += ["", outcome, ""]
+    lines += [f"| {cid} | {describe(everything[cid], incumbent)} | {_cells(v, n_tapes)} |" for cid, v in ordered]
+    lines += judging.distance_lines(ordered, lambda cid: describe(everything[cid], incumbent), floors, ranking)
+    moved = guards_mod.guard_findings(ordered, lambda cid: describe(everything[cid], incumbent))
+    findings = [*_inert_findings(ordered, everything, incumbent), *moved]
+    lines += ["", _outcome(record, everything, incumbent, floors), *findings, ""]
     with open(out_dir / LOG_MD, "a", encoding="utf-8") as log:
         log.write("\n".join(lines) + "\n")
     print("\n".join(lines), flush=True)
 
 
-def main(argv=None):
+def _parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--engine", choices=list(KNOBS), required=True)
     parser.add_argument("--tapes", type=Path, required=True, help="JSON {slug: video path}")
     parser.add_argument("--out", type=Path, default=Path("experiments/autotune"))
-    parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v2.yaml"))
+    parser.add_argument("--grid", type=Path, default=DEFAULT_GRID)
     # The loop stops at a plateau (user: "stop only when no more improvements are possible"); the cap is a safety net.
     parser.add_argument("--rounds", type=int, default=20)
-    parser.add_argument("--families", default="dsp,stems,speech,mos")
+    parser.add_argument("--families", default=scoring.AUTO_FAMILIES, help="auto (the families the grid reads) or a list")
     parser.add_argument("--start", default="{}", help="JSON overrides to start from")
     parser.add_argument("--start-file", type=Path, default=None, help="a final.json of an earlier run to start from (wins over --start)")
     parser.add_argument("--language", default="ro")
     parser.add_argument("--parallel", type=int, default=SCORER_PARALLEL, help="tape scorers running at once (about 4 GB RAM each)")
     parser.add_argument("--gates", type=Path, default=tune.DEFAULT_GATES if tune.DEFAULT_GATES.exists() else None)
+    parser.add_argument(
+        "--noise-floors",
+        type=Path,
+        default=guards_mod.DEFAULT_NOISE_FLOORS if guards_mod.DEFAULT_NOISE_FLOORS.exists() else None,
+        help="a scripts/reward_noise_floor.py --benign-pair report: the floors of the vetoes, the tie band and the dead zones",
+    )
+    parser.add_argument(
+        "--jitter-floors",
+        type=Path,
+        default=judging.DEFAULT_JITTER_FLOORS if judging.DEFAULT_JITTER_FLOORS.exists() else None,
+        help="a scripts/reward_noise_floor.py report of repeats and near-copies: the hiss readings' floors, the vetoes' moves",
+    )
+    parser.add_argument(
+        "--stage-cache", type=Path, default=None, help="a folder for the neural-stage cache (AI_RESTORE_STAGE_CACHE); off by default"
+    )
+    parser.add_argument("--stage-cache-gb", type=float, default=None, help="the stage cache's cap in GB (default 50)")
     args = parser.parse_args(argv)
     args.families = tuple(args.families.split(","))
-    tapes = {slug: str(Path(p)) for slug, p in json.loads(args.tapes.read_text(encoding="utf-8")).items()}
-    out_dir = args.out / args.engine
-    out_dir.mkdir(parents=True, exist_ok=True)
-    ranking = tune.load_grid(args.grid)["ranking"]
+    return args
+
+
+def _noise_floors(path):
+    """`{reading: floor}` from a `scripts/reward_noise_floor.py` report, or {} without one."""
+    return guards_mod.noise_floors(scoring.existing_path(path, "--noise-floors") if path else None)
+
+
+def _floors(args):
+    """The ranking's floors: the benign pairs of `--noise-floors`, the scorer jitter of `--jitter-floors`; a warning per
+    missing report (without the benign pairs the ranking keeps exact ties, without the jitter hiss readings get none)."""
+    benign = _noise_floors(args.noise_floors)
+    path = scoring.existing_path(args.jitter_floors, "--jitter-floors") if args.jitter_floors else None
+    jitter = judging.jitter_floors(guards_mod.read_json(path), path) if path else {}
+    if not benign:
+        print("warning: no --noise-floors report: candidates tie only on equal distances and the dead zones stay as set", flush=True)
+    if not jitter:
+        print("warning: no --jitter-floors report: hiss readings and veto moves have no jitter floor", flush=True)
+    return judging.Floors(benign, jitter)
+
+
+def _resume(args, out_dir):
+    """The saved state, or a fresh one from the start settings; the incumbent seeded with every knob's real value."""
     start = json.loads(args.start_file.read_text(encoding="utf-8")) if args.start_file else json.loads(args.start)
     state = load_state(out_dir, seed_defaults(args.engine, start, out_dir))
     # A knob added to the table after the run began is seeded too, so its first moves are neighbours of the real value.
     state["incumbent"] = seed_defaults(args.engine, state["incumbent"], out_dir)
+    # A render that failed in an earlier run is tried again: its cause (a bug, a full disk) may be fixed since.
+    state.pop("failed", None)
+    return state
+
+
+def main(argv=None):
+    """Runs rounds until a plateau or the round cap, then writes the incumbent to `final.json`."""
+    args = _parse_args(argv)
+    enable_stage_cache(args.stage_cache, args.stage_cache_gb)
+    tapes = {slug: str(Path(p)) for slug, p in json.loads(args.tapes.read_text(encoding="utf-8")).items()}
+    out_dir = args.out / args.engine
+    out_dir.mkdir(parents=True, exist_ok=True)
+    grid = tune.load_grid(args.grid)
+    ranking = grid["ranking"]
+    args.floors = _floors(args)
+    args.guards = guards_mod.loop_guards(grid, judging.veto_floors(args.floors), ALL_KNOBS)
+    print(f"guards: {guards_mod.describe_guards(args.guards)}; floors: {judging.describe_floors(args.floors)}", flush=True)
+    args.families = scoring.resolve_families(args.families, grid, args.gates)
+    print(f"scoring families: {','.join(args.families)}", flush=True)
+    args.durations = tape_durations(tapes)
+    print(f"tape lengths (s): {json.dumps(args.durations)}", flush=True)
+    state = _resume(args, out_dir)
     if not (out_dir / LOG_MD).exists():
         (out_dir / LOG_MD).write_text(f"# autotune {args.engine}\n\ntapes: {', '.join(tapes)}\n\n", encoding="utf-8")
-    for number in range(len(state["rounds"]) + 1, args.rounds + 1):
-        if not run_round(args, args.engine, tapes, out_dir, state, ranking, number):
-            break
+    number = len(state["rounds"]) + 1
+    while number <= args.rounds and run_round(args, args.engine, tapes, out_dir, state, ranking, number):
+        number += 1
     final = state["incumbent"]
     print(f"final {args.engine}: {candidate_id(final)} {describe(final, {})}", flush=True)
     (out_dir / "final.json").write_text(json.dumps(final, indent=1, default=str), encoding="utf-8")

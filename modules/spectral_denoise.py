@@ -13,8 +13,6 @@ nothing and the final loudness normalisation then amplified the untouched hiss.
 This module supplies the missing stage, and applies it only where it is the better tool.
 """
 
-from pathlib import Path
-
 import numpy as np
 import scipy.signal
 
@@ -39,6 +37,7 @@ from .config import (
     APL_USE_NATIVE_SUPPRESS,
 )
 from .filters import _read_audio_for_analysis, estimate_snr_margin_db
+from .stage_names import stage_output
 from .utils import log_msg
 
 # When subtraction has run, the deep separator is the better partner for it. The light
@@ -125,7 +124,7 @@ def frame_powers(mono_signal, sample_rate):
     return freqs, power, power.sum(axis=0)
 
 
-def _harmonic_excess_db(mono_signal, sample_rate, mains_hz):
+def harmonic_excess_db(mono_signal, sample_rate, mains_hz):
     """How far the mains harmonics stand above their own spectral neighbourhood, in dB.
 
     Summed as energy across harmonics and expressed as a ratio, so it reads the same on a
@@ -165,7 +164,7 @@ def detect_mains_hz(wav_path):
         return None
     best_hz, best_excess = 0.0, 0.0
     for candidate in MAINS_CANDIDATES_HZ:
-        excess = _harmonic_excess_db(mono_signal, sample_rate, candidate)
+        excess = harmonic_excess_db(mono_signal, sample_rate, candidate)
         if excess > best_excess:
             best_hz, best_excess = candidate, excess
     return best_hz if best_excess >= APL_HUM_MIN_EXCESS_DB else 0.0
@@ -277,7 +276,7 @@ def _native_suppress(source_wav, output_dir, alpha, probe_s):
 
     return spectral_suppress.suppress_or_none(
         source_wav,
-        output_dir / f"suppressed_{Path(source_wav).name}",
+        stage_output(output_dir, "suppressed", source_wav),
         noise_bias=APL_SUPPRESS_NOISE_BIAS * (alpha / APL_SPECTRAL_ALPHA if APL_SPECTRAL_ALPHA > 0.0 else 1.0),
         gain_floor_db=APL_SUPPRESS_GAIN_FLOOR_DB,
         dd_alpha=APL_SUPPRESS_DD_ALPHA,
@@ -329,7 +328,7 @@ def apply_when_needed(source_wav, audio_dir, total_duration=None):
     try:
         subtracted = _subtract(source_wav, output_dir, total_duration)
     except (OSError, RuntimeError) as exc:
-        log_msg(f"    [Spectral Denoise] Skipped after failure: {exc}")
+        log_msg(f"    [Spectral Denoise] Skipped after failure: {exc}", level="WARNING")
         return source_wav
     if subtracted is None:
         log_msg("    [Spectral Denoise] No engine could run; leaving the neural stage to work alone.")
@@ -352,7 +351,7 @@ def _repair_over_subtraction(source_wav, subtracted, output_dir):
     """
     if not APL_ENABLE_LEARNED_BLEND or subtracted is None or subtracted == source_wav:
         return subtracted
-    blended = apply_blend(source_wav, subtracted, output_dir / f"blended_{Path(subtracted).name}")
+    blended = apply_blend(source_wav, subtracted, stage_output(output_dir, "blended", subtracted))
     if blended != subtracted:
         log_msg("    [Spectral Denoise] Repaired over-subtraction with the fitted per-bin blend.")
     return blended
@@ -457,5 +456,5 @@ def apply_tonal_cleanup(source_wav, audio_dir, strategy=None, total_duration=Non
     try:
         return _run_tonal_stages(source_wav, output_dir, targets, total_duration)
     except (OSError, RuntimeError) as exc:
-        log_msg(f"    [Tonal Cleanup] Skipped after failure: {exc}")
+        log_msg(f"    [Tonal Cleanup] Skipped after failure: {exc}", level="WARNING")
         return source_wav

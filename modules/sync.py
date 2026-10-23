@@ -5,7 +5,7 @@ import sys
 import time
 from typing import Optional
 
-from .config import DTW_RESOLUTION, SYNC_METHOD
+from .config import DTW_RESOLUTION, SYNC_DTW_ENABLE, SYNC_METHOD
 from .hardware import CPU_THREADS, GPU_VRAM_GB
 from .utils import _save_audio_atomic, draw_progress_bar, format_time, log_msg
 
@@ -530,10 +530,26 @@ def _align_stems_dtw(original_wav, processed_wav, output_wav):
         return _align_stems_shift(original_wav, processed_wav, output_wav)
 
 
-def _align_stems(original_wav, processed_wav, output_wav, sync_method=None):
-    """Aligns a processed track to the reference, honouring a strategy override."""
+def _resolved_sync_method(sync_method, length_preserving):
+    """The method that runs: the strategy's override (else `sync_method`), shift for a length-preserving chain with DTW off.
+
+    A chain that keeps the length and the time base of the source it syncs against (auto_pure_linear,
+    cathar, every single-track mode) needs no warp, and the DTW path's whole 40 ms frames play at 0x
+    or 2x (the ear's time-base reading). `sync_dtw_enable` false sends such a chain to shift sync.
+    """
     method = SYNC_METHOD if sync_method is None else sync_method
-    if method == "dtw":
+    if method == "dtw" and length_preserving and not SYNC_DTW_ENABLE:
+        log_msg("    DTW sync is off for length-preserving chains (sync_dtw_enable: false); shift sync instead.")
+        return "shift"
+    return method
+
+
+def _align_stems(original_wav, processed_wav, output_wav, sync_method=None, length_preserving=False):
+    """Aligns a processed track to the reference, honouring a strategy override.
+
+    `length_preserving` marks a chain whose output keeps the source's length and time base, which
+    `sync_dtw_enable` may keep off DTW.
+    """
+    if _resolved_sync_method(sync_method, length_preserving) == "dtw":
         return _align_stems_dtw(original_wav, processed_wav, output_wav)
-    else:
-        return _align_stems_shift(original_wav, processed_wav, output_wav)
+    return _align_stems_shift(original_wav, processed_wav, output_wav)

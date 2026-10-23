@@ -25,6 +25,7 @@ except ImportError:
 
 # Import config constants
 from .config import DEBUG_LOGGING, LOG_FILE, PROCESS_MODE
+from .ffmpeg_failures import is_deterministic_failure
 from .hardware import get_nvidia_paths, prepare_runtime_library_paths
 
 VENV_DIR_NAME = ".venv"
@@ -125,6 +126,16 @@ if added_any:
 
 _venv_scripts_missing = not scripts_dirs
 
+# How many lines this process logged at each level. The stage cache reads the WARNING and
+# ERROR count around a render: a stage that fell back after a failure logs one, and a
+# fallback is never frozen into the cache (modules/stage_cache.py).
+_LEVEL_COUNTS = collections.Counter()
+
+
+def problem_count():
+    """The WARNING and ERROR lines this process has logged so far."""
+    return _LEVEL_COUNTS["WARNING"] + _LEVEL_COUNTS["ERROR"]
+
 
 def _resolve_log_level(is_error, level):
     if is_error:
@@ -138,10 +149,20 @@ def _should_print_log(console, effective_level):
     return console
 
 
+def _console_text(message):
+    """The console form of a log message: its leading line breaks kept (spacing), every other line break or control
+    character a space. A batch child's stdout is that file's log, so a line break in a file's name must not print as a
+    line of its own (security review, 2026-10-19); the session log collapses the same way (`one_line`)."""
+    message = str(message)
+    body = message.lstrip("\n")
+    lead, body = "\n" * (len(message) - len(body)), one_line(body)
+    return lead + (body if body.startswith("   ") else f"   {body}")
+
+
 def _print_log_message(message):
     sys.stdout.write("\r\033[K")
     sys.stdout.flush()
-    text = f"   {message}" if not message.startswith("   ") else message
+    text = _console_text(message)
     try:
         print(text)
     except UnicodeEncodeError:
@@ -176,25 +197,32 @@ def _rotate_if_over(log_file, limit):
 _LOG_CONTROL = str.maketrans(dict.fromkeys([*range(0x00, 0x09), *range(0x0A, 0x20), 0x7F, 0x85, 0x2028, 0x2029], " "))
 
 
-def _one_line(message):
+def one_line(message):
     """`message` as a single log line: every line break and control character becomes a space."""
     return str(message).translate(_LOG_CONTROL)
 
 
-def _open_log_for_append(log_file):
-    """The session log opened for appending, refusing a symlink (O_NOFOLLOW where the platform has it)."""
+def open_private_log(log_file, truncate=False):
+    """A log opened for writing (appended to, or truncated), refusing a symlink: O_NOFOLLOW where the platform has it,
+    and an explicit check where it does not (Windows), so a planted link never redirects the write to another file."""
     log_file = Path(log_file)
     if log_file.is_symlink():
-        raise OSError(f"refusing to follow a symlinked session log: {log_file}")
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-    return os.fdopen(os.open(str(log_file), flags, 0o600), "a", encoding="utf-8")
+        raise OSError(f"refusing to follow a symlinked log: {log_file}")
+    mode = os.O_TRUNC if truncate else os.O_APPEND
+    flags = os.O_WRONLY | os.O_CREAT | mode | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    return os.fdopen(os.open(str(log_file), flags, 0o600), "w" if truncate else "a", encoding="utf-8")
+
+
+def _open_log_for_append(log_file):
+    """The session log opened for appending, refusing a symlink."""
+    return open_private_log(log_file)
 
 
 def _append_log_file(effective_level, clean_msg):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _rotate_log_file()
     with _open_log_for_append(LOG_FILE) as f:
-        f.write(f"[{timestamp}] [{effective_level:5}] {_one_line(clean_msg)}\n")
+        f.write(f"[{timestamp}] [{effective_level:5}] {one_line(clean_msg)}\n")
 
 
 def log_msg(message, is_error=False, console=True, level="INFO"):
@@ -208,6 +236,7 @@ def log_msg(message, is_error=False, console=True, level="INFO"):
         level: Log level - 'INFO', 'DEBUG', or 'ERROR'. DEBUG never prints to console.
     """
     effective_level = _resolve_log_level(is_error, level)
+    _LEVEL_COUNTS[effective_level] += 1
     should_print = _should_print_log(console, effective_level)
 
     if should_print:
@@ -739,7 +768,8 @@ def _finish_command(process, cmd, description, start_time, duration, output_buff
     for err_line in output_buffer:
         log_msg(f"  > {err_line.strip()}", is_error=True)
 
-    raise subprocess.CalledProcessError(process.returncode, cmd)
+    # The tail rides on the error so a retry can tell a deterministic failure from a lack of memory.
+    raise subprocess.CalledProcessError(process.returncode, cmd, output="".join(output_buffer))
 
 
 def run_command_with_progress(cmd, env=None, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
@@ -808,10 +838,22 @@ def _replace_with_valid_audio(temp_path, final_path):
     return True
 
 
+def _retry_with_fewer_threads(error, threads):
+    """Whether a failed CPU run is worth another try on fewer threads; a deterministic failure (ffmpeg_failures) is not."""
+    if threads <= 1:
+        return False
+    if is_deterministic_failure(error):
+        log_msg("    [Error] The command failed for a reason fewer threads cannot change; not retrying.", is_error=True)
+        return False
+    return True
+
+
 def attempt_cpu_run_with_retry(command_builder_func, initial_threads, description=DEFAULT_PROGRESS_DESCRIPTION, total_duration=None):
     """
     Retries a CPU-bound command with reduced threads on RAM OOM.
     command_builder_func: Accepts 'threads' (int), returns [cmd, args...].
+    A failure whose output names a deterministic cause (a missing stream, an unreadable input,
+    an unknown filter; modules/ffmpeg_failures.py) is raised at once.
     """
     current_threads = initial_threads
 
@@ -827,16 +869,15 @@ def attempt_cpu_run_with_retry(command_builder_func, initial_threads, descriptio
             return True  # Success
 
         except subprocess.CalledProcessError as e:
-            if current_threads > 1:
-                log_msg("    [Warning] CPU failed. Retrying with fewer threads...", is_error=True)
-                current_threads = max(1, current_threads // 2)
-
-                # Cleanup RAM
-                import gc
-
-                gc.collect()
-            else:
+            if not _retry_with_fewer_threads(e, current_threads):
                 raise e
+            log_msg("    [Warning] CPU failed. Retrying with fewer threads...", is_error=True)
+            current_threads = max(1, current_threads // 2)
+
+            # Cleanup RAM
+            import gc
+
+            gc.collect()
 
 
 def _save_audio_atomic(file_path, data, sample_rate, subtype="FLOAT"):

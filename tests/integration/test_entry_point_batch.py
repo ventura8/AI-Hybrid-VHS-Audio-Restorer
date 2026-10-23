@@ -26,6 +26,8 @@ def test_process_files_uses_children_for_several_files_and_several_jobs():
 
 def test_run_parallel_batch_reports_the_failed_files(tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(restore_audio_hybrid, "BATCH_LOG_DIR", tmp_path / "app" / "logs")
+    (tmp_path / "app").mkdir()
     files = [Path("a.mp4"), Path("b.mp4"), Path("c.mp4")]
     codes = {"a.mp4": 0, "b.mp4": 1, "c.mp4": 0}
     with patch("restore_audio_hybrid._restore_in_child", side_effect=lambda path, log_dir: codes[path.name]):
@@ -33,7 +35,8 @@ def test_run_parallel_batch_reports_the_failed_files(tmp_path, capsys, monkeypat
     out = capsys.readouterr().out
     assert "3 files, 2 at a time" in out
     assert "1 of 3 files failed: b.mp4" in out
-    assert (tmp_path / "logs").is_dir()
+    assert (tmp_path / "app" / "logs").is_dir()
+    assert not (tmp_path / "logs").exists()
 
 
 def _restore_one_in_child(tmp_path):

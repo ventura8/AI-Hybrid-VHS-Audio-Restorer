@@ -163,10 +163,10 @@ def _prepare(clean_path, degraded_path, restored_path, mask_path):
     everywhere, the target of a camcorder-side class, which carries neither the plosives
     nor the tape.
     """
-    clean_stereo, _rate = _read(clean_path)
+    clean_stereo, rate = _read(clean_path)
     degraded_stereo, _r2 = _read(degraded_path)
     restored_stereo, _r3 = _read(restored_path)
-    clean, restored, lag = _align(_mono(clean_stereo), _mono(restored_stereo))
+    clean, restored, lag = _align(_mono(clean_stereo), _mono(restored_stereo), rate)
     degraded = _trimmed(_mono(degraded_stereo), lag, len(clean))
     length = min(len(clean), len(degraded), len(restored))
     clean, degraded, restored = clean[:length], degraded[:length], _match_gain(clean[:length], restored[:length])

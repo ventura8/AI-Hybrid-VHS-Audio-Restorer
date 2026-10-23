@@ -5,7 +5,7 @@
         [--windows 15 --hop 7.5] [--metrics all|dsp,stems,speech,mos]
         [--report out.json] [--markdown out.md] [--listen-dir DIR --worst 3]
         [--language ro] [--device cuda] [--cache-dir experiments/quality_cache]
-        [--gates gates.json]
+        [--gates gates.json] [--align-method gcc_phat_spans|xcorr_head] [--align-prior-ms 4.97]
 
 SOURCE and every PATH may be a video (audio is extracted once into the cache) or a WAV.
 With --outputs-dir the outputs are found next to the source by the mode suffixes
@@ -46,6 +46,18 @@ def _parse_args(argv=None):
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--cache-dir", type=Path, default=Path("experiments/quality_cache"))
     parser.add_argument("--gates", type=Path, default=None)
+    parser.add_argument(
+        "--align-method",
+        choices=runner.ALIGN_METHODS,
+        default=None,
+        help="the aligner (default: AI_RESTORE_ALIGN_METHOD, else gcc_phat_spans); xcorr_head reproduces scores before 2026-10-11",
+    )
+    parser.add_argument(
+        "--align-prior-ms",
+        type=float,
+        default=None,
+        help="an expected lag that breaks ties and trims a pair the aligner abstains on (the mux delays outputs by 4.97 ms)",
+    )
     parser.add_argument(
         "--merge-into",
         type=Path,
@@ -112,6 +124,11 @@ def _families(spec):
     return runner.ALL_FAMILIES if spec == "all" else tuple(part.strip() for part in spec.split(",") if part.strip())
 
 
+def _seconds(milliseconds):
+    """`--align-prior-ms` in seconds, None when it was not given."""
+    return None if milliseconds is None else milliseconds / 1000.0
+
+
 def main(argv=None):
     args = _confined(_parse_args(argv))
     gates = gates_mod.load_gates(args.gates) if args.gates else gates_mod.GATES
@@ -126,6 +143,8 @@ def main(argv=None):
         families=_families(args.metrics),
         registry=registry,
         language=args.language,
+        align_method=args.align_method,
+        align_prior_s=_seconds(args.align_prior_ms),
     )
     listen_index = listening.render_listening_set(result, cards, args.listen_dir, count=args.worst) if args.listen_dir else None
     result = _merged(result, args, gates)

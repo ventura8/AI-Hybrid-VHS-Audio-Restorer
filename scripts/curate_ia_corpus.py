@@ -106,7 +106,7 @@ def _get_clip_duration(clip_path: Path) -> float:
         str(clip_path),
     ]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=10)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=10)
         return float(res.stdout.strip()) if res.stdout.strip() else 0.0
     except (subprocess.SubprocessError, OSError, ValueError):
         return 0.0

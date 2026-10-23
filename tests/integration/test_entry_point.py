@@ -25,10 +25,10 @@ def test_main_success():
         patch("restore_audio_hybrid.check_dependencies", return_value=True),
         patch("restore_audio_hybrid._show_banner"),
         patch("restore_audio_hybrid._get_input_files", return_value=mock_input_files),
-        patch("restore_audio_hybrid.process_hybrid_audio") as mock_process,
+        patch("restore_audio_hybrid.process_hybrid_audio", return_value=True) as mock_process,
         patch("builtins.input"),
     ):
-        restore_audio_hybrid.main()
+        assert restore_audio_hybrid.main() == restore_audio_hybrid.EXIT_OK
 
         mock_process.assert_called_once()
         args, kwargs = mock_process.call_args
@@ -63,7 +63,7 @@ def test_main_no_dependencies():
         patch("restore_audio_hybrid.check_dependencies", return_value=False),
         patch("builtins.print") as mock_print,
     ):
-        restore_audio_hybrid.main()
+        assert restore_audio_hybrid.main() == restore_audio_hybrid.EXIT_NOTHING_RAN
 
         # Should print error and return
         assert any("Critical Error" in str(c) for c in mock_print.call_args_list)
@@ -78,12 +78,12 @@ def test_main_no_files():
         patch("restore_audio_hybrid._get_input_files", return_value=([], False)),
         patch("builtins.print") as mock_print,
     ):
-        restore_audio_hybrid.main()
+        assert restore_audio_hybrid.main() == restore_audio_hybrid.EXIT_NOTHING_RAN
         assert any("No valid video files found" in str(c) for c in mock_print.call_args_list)
 
 
 def test_main_keyboard_interrupt():
-    """Test main handles interruptions graciously."""
+    """Test main handles interruptions graciously at a console."""
     mock_input_files = ([Path("test.mp4")], False)
 
     with (
@@ -92,6 +92,7 @@ def test_main_keyboard_interrupt():
         patch("restore_audio_hybrid._show_banner"),
         patch("restore_audio_hybrid._get_input_files", return_value=mock_input_files),
         patch("restore_audio_hybrid.process_hybrid_audio"),
+        patch("restore_audio_hybrid.stdin_is_console", return_value=True),
         patch("builtins.input", side_effect=KeyboardInterrupt),
         patch("builtins.print") as mock_print,
     ):
@@ -128,6 +129,8 @@ def test_entry_point_name_main():
         patch("modules.ui.run_init_sequence", return_value=("CPU", "GPU")),
         patch("modules.utils.check_dependencies", return_value=False),
         patch("builtins.print") as mock_print,
+        pytest.raises(SystemExit) as exited,
     ):
         runpy.run_path(str(REPO_ROOT / "restore_audio_hybrid.py"), run_name="__main__")
-        assert any("Critical Error" in str(c) for c in mock_print.call_args_list)
+    assert exited.value.code == 2
+    assert any("Critical Error" in str(c) for c in mock_print.call_args_list)

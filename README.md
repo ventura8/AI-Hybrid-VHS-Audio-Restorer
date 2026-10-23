@@ -502,10 +502,11 @@ Pass `--help` (or `-h`) to `start.sh`, `start.bat`, or
 `restore_audio_hybrid.py` to print usage and exit without processing.
 
 A folder of tapes goes faster with `batch_jobs` in `config.yaml`: that many
-files restore at once, each in its own interpreter with its own log under
-`logs/`, and every file's output is the same bytes as when it runs alone. The
-cathar engine is single-threaded, so this is the only way it uses more cores;
-neural modes hold their models on the GPU once per job.
+files restore at once, each in its own interpreter with its own log under the
+application's `logs/` folder (beside `session_log.txt`, never the folder you
+launch from), and every file's output is the same bytes as when it runs
+alone. The cathar engine is single-threaded, so this is the only way it uses
+more cores; neural modes hold their models on the GPU once per job.
 
 ## Development & Testing
 

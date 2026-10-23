@@ -137,3 +137,34 @@ def test_merge_families_takes_the_fresh_pair_when_the_windows_differ():
     fresh["variants"]["v"]["rows"].append(dict(fresh["variants"]["v"]["rows"][0]))
     merged = tr.merge_families(stored, fresh, ("dsp",), {})
     assert merged["variants"]["v"] is fresh["variants"]["v"]
+
+
+def _aligned_pairs(stored_lag, fresh_lag):
+    """A stored pair scored by the head search (no `alignment` record) and a fresh one scored by the vote."""
+    stored, fresh = _pair(clicks=2.0, disc=-0.9), _pair(clicks=0.0, disc=-0.1)
+    stored["variants"]["v"].update({"lag_samples": stored_lag, "families": {"dsp": "ok", "mos": "ok"}})
+    fresh["variants"]["v"].update({"lag_samples": fresh_lag, "alignment": {"method": "gcc_phat_spans", "applied_lag_samples": fresh_lag}})
+    return stored, fresh
+
+
+def test_merge_families_takes_the_fresh_pair_when_the_aligner_moved_the_lag():
+    """A dsp re-score whose pair is now trimmed at 219, not 178: the kept mos rows were read on another timeline."""
+    stored, fresh = _aligned_pairs(178, 219)
+    merged = tr.merge_families(stored, fresh, ("dsp",), {})["variants"]["v"]
+    assert merged is fresh["variants"]["v"]
+    assert set(merged["families"]) == {"dsp"}
+
+
+def test_merge_families_at_the_same_lag_keeps_the_other_families_and_takes_the_alignment():
+    stored, fresh = _aligned_pairs(219, 219)
+    merged = tr.merge_families(stored, fresh, ("dsp",), {})["variants"]["v"]
+    assert merged is stored["variants"]["v"]
+    assert (merged["rows"][0]["delta"], merged["families"]) == (
+        {"dsp.clicks_per_s": 0.0, "mos.sigmos_disc": -0.9},
+        {"dsp": "ok", "mos": "ok"},
+    )
+    assert merged["alignment"] == {"method": "gcc_phat_spans", "applied_lag_samples": 219}
+
+
+def test_a_new_variant_is_never_on_a_stored_timeline():
+    assert tr.same_timeline(None, {"rows": [], "lag_samples": 219}) is False

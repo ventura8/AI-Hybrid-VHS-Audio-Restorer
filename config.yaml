@@ -79,13 +79,16 @@ denoise_model: "UVR-DeNoise-Lite.pth"
 adaptive_denoise_threshold_db: -50.0
 
 # neural_chunk_seconds:
-#   - The longest track the UVR denoiser processes in one pass, in seconds.
-#   - The separator keeps several full-length copies of the track in memory after
+#   - The longest track the neural denoiser (UVR, or the Mel-RoFormer that
+#     apl_neural_model names) processes in one pass, in seconds.
+#   - The UVR separator keeps several full-length copies of the track in memory after
 #     inference, about 30 GB per hour of audio, so a long capture fails outright:
-#     3h00m runs out of memory on a 62 GB machine. A track longer than this value is
-#     cut into equal chunks no longer than it, each overlapping the next by two
-#     seconds, denoised one at a time and rejoined with a crossfade; the result is
-#     the whole-track result to within float rounding (see docs/configuration.md).
+#     3h00m runs out of memory on a 62 GB machine. The RoFormer's memory per hour has
+#     never been measured; it is sized by the same figure. A track longer than this
+#     value is cut into equal chunks no longer than it, each overlapping the next by
+#     two seconds, denoised one at a time and rejoined with a crossfade; the result is
+#     the whole-track result to within float rounding, on each model's own grid (see
+#     docs/configuration.md, "Long Captures").
 #   - Default: 0, which sizes the chunk from the machine: half its memory at that
 #     rate, between five minutes and two hours (57 minutes on a 62 GB desktop,
 #     28 on a 30 GB laptop). Tracks up to the chunk length are processed whole. Set
@@ -139,9 +142,23 @@ enhance_tau: 0.3
 #   - Min behavior (25 Hz): Faster processing, lower timing precision (~40ms).
 #   - Max behavior (100 Hz): Highest timing precision (~10ms), slower processing.
 #   - Practical default: 25 (faster); use 50 for better precision in drift-heavy audio.
+#
+# sync_dtw_enable:
+#   - Type: Boolean
+#   - true (default): a tape the scanner reads as drifting (has_drift) takes DTW
+#     sync, as every release has run.
+#   - false: auto_pure_linear (its stem path too), cathar and every single-track
+#     mode take shift sync instead, whatever the scanner or sync_method says. Their
+#     chains keep the source's length and time base, so a warp can only add error:
+#     the DTW path plays whole 40 ms frames at 0x or 2x. On the IA hunt's stored
+#     outputs (2026-10-12) 24 of 30 cathar and 15 of 30 auto_pure_linear outputs
+#     sent to DTW carry frozen holds, none of the 205 per engine sent to shift.
+#     The stem modes (hybrid, multipass_auto, auto_pure) keep DTW. Not yet heard
+#     by a listener, so the default keeps every output's bytes.
 # ------------------------------------------------------------------------------
 sync_method: "shift"
 dtw_resolution: 25
+sync_dtw_enable: true
 
 # ------------------------------------------------------------------------------
 # Processing Mode & Multi-Pass Cascaded Engine
@@ -235,6 +252,86 @@ batch_jobs: 8
 #   - Default: 50.0 (Empirical: 50 Hz PAL mains hum detected in 13/21 tapes;
 #     100 Hz 2nd harmonic auto-detected separately by auto_ffmpeg_native scan;
 #     set to 60.0 for NTSC captures, 0.0 to disable entirely)
+#
+# azimuth_reject_inverted_pair (the scanner's azimuth reading, which the analog
+# pre-conditioning of every mode, cathar included, applies as a delay):
+#   - A pair whose channels correlate negatively (r <= -0.3) carries one channel with
+#     its polarity inverted. The azimuth gate reads |r|, so such a pair passes it and
+#     the lag it reads is not a skew: on L/-L pairs a 1 kHz tone reads -0.50 ms and a
+#     2 kHz tone -0.25 ms, which the pre-conditioning would apply as a delay. The scan
+#     always logs such a pair.
+#   - false (Default): the skew is read as before, so every output keeps its bytes.
+#   - true: no azimuth skew is read from an inverted pair.
+#
+# azimuth_estimate_method (where the scan reads that azimuth skew; 2026-10-12):
+#   - 'head' (Default): the first 32768 samples (0.74 s) cross-correlated, the integer
+#     peak taken, as every release has, so every output keeps its bytes. Its sign is
+#     the one the graph does not correct: a right channel 1 sample late reads -0.02 ms
+#     and the graph delays the right channel 1 more. On the IA hunt (232 stereo clips,
+#     the app's scan and pre-conditioning step on CPU) it delayed a channel on 43, and
+#     against the same graph without the delay the mono sum's 4-8 kHz fell on 40
+#     (median -1.43 dB, worst -3.14) while the programme's skew grew by a median 1.00
+#     sample.
+#   - 'spans': GCC-PHAT on up to seven of the loudest 1.5 s spans, 150-7000 Hz, voting
+#     to a fraction of a sample (modules/azimuth_spans.py); no delay when the spans
+#     disagree, cohere weakly or agree on under half a sample; the |r| gate and
+#     azimuth_reject_inverted_pair apply as before. It delayed a channel on 28: the
+#     mono 4-8 kHz rose on 27 (median +0.45 dB, up to +8.2) and fell on one (-0.36 dB,
+#     capture-a-3102), the residual skew a median 0.15 sample. The Tata tapes read no
+#     delay with either method. auto_pure_linear gains most: cathar's own azimuth
+#     stage re-aligns the channels whatever the pre-conditioning did. Not judged by
+#     ear yet.
+#
+# crt_detect_mode (where the scan looks for the CRT line whistle; 2026-10-12): the
+# pre-conditioning of every mode notches the line it finds, and its standard holds
+# the mains search to 50/100 or 60/120 Hz.
+#   - 'head' (Default): one FFT of the first 32768 samples (0.74 s), a line called at
+#     1.7x the band's median magnitude, as every release has, so every output keeps
+#     its bytes. Hiss in the band reads 2.9x on its own, so a hissy tape gets a notch
+#     and a mains family by chance (a 50 Hz tape read as NTSC keeps its hum), and a
+#     line that starts late or wanders is missed or named the wrong standard. IA hunt,
+#     235 sources: of R0's 71 lines 2 missed (et-el-extraterrestre, a 23 dB line the
+#     cathar render keeps) and 2 the wrong standard; 59 sources R0 finds no line on
+#     notched.
+#   - 'welch': up to 256 segments spread over the whole file, averaged, a line called
+#     at 10 dB over the band's median and 6 dB over the bins 108-215 Hz either side,
+#     both at least 21 dB over the root of the segments, and no tooth of a comb
+#     (modules/crt_line.py; noise of 0.8-60 s never fires it). 68 of R0's 71 lines
+#     named right, none wrong, 3 weak ones (7-10 dB) missed, 15 narrow tones R0 does
+#     not track notched, 5 combs refused; realistic-v2: 19 of 20 planted lines, 51 of
+#     440 captures without one (head 284). The hum notch moves on 14 sources, toward
+#     R0's mains on 8. cathar on CPU, 91 hunt clips: et-el's and toshiba's lines and
+#     terrytoons' 50 Hz hum come out; 9-october-2008-comedy-channel-promo-break-8's
+#     4.1 dB line, notched by head by chance, is exposed 4.6 dB by the denoise.
+#     Not judged by ear yet.
+# scanner_mains_vote (which mains notch the scan leaves; backlog B2, 2026-10-12):
+#   - The notch sets every mode's pre-conditioning pair (Q 15 at the fundamental and
+#     its second harmonic), cathar's dehum family (cathar_dehum_freq 'scanner') and
+#     auto_pure_linear's third-to-fifth harmonic and post-denoise notches.
+#   - 'head' (Default): the first 32768 samples (0.74 s), each candidate's bin against
+#     the bins two either side, as every release has, so every output keeps its bytes.
+#     It notched 123 of the 203 IA hunt clips R0 reads as hum-free and 29 of the 200
+#     hum-free realistic-v2 speech and chord fixtures. On a hum-free target the pair
+#     alone moves LSD 40-400 Hz by a median 1.6-1.7 dB and R11 by -0.2 to -0.4 dB
+#     (auto_pure_linear's five notches 2.8 dB and -0.5 to -0.7 dB).
+#   - 'confirmed': the head's notch kept only where the whole analysed signal's eight
+#     harmonics of its family stand 6 dB over their neighbourhood
+#     (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on); it
+#     never adds one. R0 names the IA hum tapes by measure_hum.hum_excess_db, the same
+#     computation at the same 6 dB, so on the hunt and catalog_hum48 it agrees with R0
+#     by construction (122 of the 123 hunt false fires cleared, all 35 right-family
+#     notches on the 75 hum tapes kept, one wrong-family notch dropped): those counts
+#     do not test it. cathar 0.8.0 on CPU without the cleared notches: R11 nearer 0 on
+#     99 of 121 hunt clips (a median 0.12 dB; the output's hum excess rose a median
+#     0.03 dB, at most 1.38 dB over the source). realistic-v2's labels test it: it
+#     cleared 17 of the 29 false fires (LSD 40-400 Hz nearer the target on 14, a
+#     median 0.23 dB) and kept 12 (6.1-10.7 dB, 8 of them music), and it dropped 10 of
+#     the 76 notches on hum fixtures, 5 of the right family (their injected 50 Hz hum
+#     reads 3.9-5.9 dB over the whole 15 s), which those fixtures cannot price
+#     (dropping any notch reads nearer their targets). A vote
+#     that also adds notches was measured and not built: the chord beds read as hum
+#     (13.4-15.2 dB of excess on targets without any), so it notched 112 of the 200.
+#     auto_pure_linear was not rendered (GPU). Not judged by ear yet.
 # ------------------------------------------------------------------------------
 afftdn_nr: 10.0
 afftdn_nf: -55.0
@@ -242,6 +339,10 @@ afftdn_tn: true
 highpass_freq: 80
 enable_adeclick: true
 notch_freq: 50.0
+azimuth_reject_inverted_pair: false
+azimuth_estimate_method: "head"
+crt_detect_mode: "head"
+scanner_mains_vote: "head"
 
 # ------------------------------------------------------------------------------
 # ARNNDN Speech Settings (for 'arnndn_speech' mode)
@@ -259,7 +360,13 @@ notch_freq: 50.0
 #                         (Recommended for tapes with NF > -40 dB and high hiss content)
 #
 # Custom Models:
-#   You can also specify custom model filenames placed inside 'models/arnndn/' or 'models/'.
+#   You can also specify custom model filenames placed inside the application's own
+#   'models/arnndn/' or 'models/' folder (a 'models/' folder in the directory you
+#   launch from is not searched, and a model file that links outside its folder is
+#   skipped). The value must be a bare '.rnnn' filename: a path separator, '..', a leading
+#   dot, a drive prefix, a non-'.rnnn' suffix, or a filtergraph metacharacter
+#   (' " ; , [ ]) is rejected and falls back to cb.rnnn. The name is passed to an
+#   FFmpeg filter, so this blocks a planted config.yaml from injecting filters.
 #
 # arnndn_highpass_freq:
 #   - Cuts sub-audible mechanical rumble before neural inference (Default: 80 Hz)
@@ -330,6 +437,17 @@ arnndn_enable_adeclick: true
 #     speech over a music bed 0.007-0.033, dry dialogue under 0.003, so 0.05 sits in
 #     the gap. cathar_music_profile false gives every tape the speech settings.
 #
+# cathar_music_beta / cathar_music_enable_repair / cathar_music_dewind_cutoff:
+#   - The music profile's subtraction floor, transient spike repair switch and dewind
+#     cutoff, in place of cathar_beta, cathar_enable_repair and cathar_dewind_cutoff on a
+#     tape the profile takes. Until 2026-10-09 music ran the speech keys, so 0.02, true
+#     and 80 keep every music output's bytes. Round C3 (music profile) searches them;
+#     none is judged by ear yet.
+#   - A cathar tape is high-passed twice: the pre-conditioning graph's highpass at the
+#     scanner's rumble pick (0 / 45 / 60 / 75 Hz, 80 when the scan fails), then cathar's
+#     dewind, a high-pass at its cutoff (80, the higher of the two). The music cutoff
+#     replaces the dewind's only; a tape the scanner cut at 60 or 75 Hz keeps that cut.
+#
 # cathar_beta:
 #   - Spectral floor to prevent musical noise artifacts (suggested: 0.005 to 0.05, default: 0.01)
 #
@@ -360,8 +478,128 @@ arnndn_enable_adeclick: true
 # cathar_enable_declip:
 #   - Analog saturation / preamp de-clipping (default: true)
 #
+# cathar_declip_mode (round C4):
+#   - 'always' (Default): declip runs on every tape, as every release has.
+#   - 'detected': declip runs only on a tape the scanner flagged as clipped
+#     (profile.has_clipping_any_channel: 20 or more samples at |x| >= 0.985
+#     counted over every channel of the minutes the scan reads, the first 60 s of
+#     a tape under 4 min or four spread 60 s blocks of a longer one). Counted per
+#     channel, not in the mono mix: a tape with one dead channel (half the 21-tape
+#     library) has its live side halved by the mix, which then never reaches
+#     0.985, while the pre-conditioning mirrors that side to full scale before
+#     cathar runs. The mono-mix verdict (profile.has_clipping) still switches the
+#     pre-conditioning adeclip and auto_pure_linear's own declip, unchanged. A
+#     scan that left no verdict (unreadable audio, so the scanner's fallback
+#     strategy; a caller with no strategy) runs declip as on 'always' and logs a
+#     WARNING. Clipping outside the scanned minutes can go unflagged.
+#   - cathar 0.8.0's declip gave a synthetic file peaking at 0.5 back sample for
+#     sample and reshaped every sample over cathar_declip_threshold (0.95) on
+#     unclipped files peaking at 0.97 and 1.0, so the modes differ on tapes with
+#     peaks over 0.95 that the scanner does not flag; 'detected' also saves the
+#     stage's runtime (5.29 s on an 8 s fixture). Not judged by ear yet: the C3
+#     listening session decides.
+#
 # cathar_enable_dehum:
 #   - Adaptive mains buzz filter (default: true)
+#
+# cathar_dehum_freq (round C4):
+#   - 'scanner' (Default): dehum --freq takes the scanner's mains family (notch_hz
+#     50 or 100 -> 50, 60 or 120 -> 60; notch_freq when the strategy carries no
+#     reading) and no dehum runs on a tape the scan read as hum-free, as every
+#     release has. The scanner votes on the first 32768 samples (about 0.7 s).
+#   - 0: dehum --freq 0 on every tape: cathar 0.8.0 detects the family from the
+#     recording itself. With cathar_dehum_adaptive (true) the tracker also picks
+#     50 vs 60 and passes a file without hum through unchanged (synthetic files:
+#     --freq 0, 50 and 60 gave identical output on 50 Hz hum, and a hum-free file
+#     came back sample for sample), so the change shows on tapes the scanner read
+#     as hum-free. Not judged by ear yet: the C3 listening session decides.
+#   - Measured 2026-10-12 (cathar 0.8.0, CPU; catalog_hum48, the IA hunt's other 29
+#     hum clips and the 5 identity clips): 0 rendered 73 of 82 byte for byte as
+#     'scanner', the identity clips 5/5 at both values. Of the 38 hum clips the scan
+#     read as hum-free, 31 came out unchanged; 3 readable tapes lost 2.9-6.1 dB more
+#     excess (lines 2.8-6.7 dB) at 0.05-0.66 dB more low-band deviation and R11
+#     0.1-2.6 dB lower, 3 moved within 0.12 dB, one unreadable 3.1 dB. 2 of the 39
+#     notched hum clips did worse (diamonds-are-forever -0.61 dB, lines -1.44). Over
+#     the readable scanner-zero hum tapes the paired change was 0.0 dB (17 of 20 at
+#     6-12 dB of source excess and 5 of 7 at 12 and over unchanged; the group medians
+#     moved +0.05 and +0.40 dB): no consistent gain, so 'scanner' stays.
+#
+# cathar_noiseprint_mute_guard (2026-10-12):
+#   - false (Default): the noise print is learned from the quietest window
+#     whatever it holds, as every release has.
+#   - true: a candidate window that is a digital mute is left out of the pick,
+#     single-window and stitched: half or more of its samples repeat the one
+#     before (exact zeros, a held DC level), or it sits under -70 dBFS and 30 dB
+#     under the p20 of the material's 23 ms frames (frames under -90 dBFS left
+#     out of that p20). When every window is a mute the denoise runs without a
+#     learned print. 7 of 136 IA clips picked a window under -70 dBFS; on those 7
+#     (15 s, CPU, 2026-10-12) the pick moved on all 7 and removal rose a median
+#     0.42 dB (0.01 to 2.60), while bbc-two-continuity's -86 dBFS analog floor
+#     stayed sample for sample. lion-king-dodge lost 3.4 dB at 8-16 kHz: its new
+#     window straddles the mute and programme. Not judged by ear yet; see
+#     docs/configuration.md, "cathar Noise-Print Mute Guard". cathar mode only.
+#
+# cathar_noiseprint_min_depth_db / cathar_noiseprint_shallow_action (2026-10-12):
+#   - 0 (Default): the learned print goes to the denoise as every release has;
+#     nothing is measured.
+#   - Over 0: the print's window(s), picked again as the extractor picked them,
+#     must sit at least this many dB under the material's loud frames (p90 of
+#     the mono mix's 1024-sample frame RMS). A shallower print is programme: on
+#     a 15 s clip with no pause the quietest 0.75 s is programme, and on the IA
+#     hunt the subtraction stripped the background bed on 56 of cathar's 64
+#     stems.octave_programme failures (their windows a median 8.3 dB under the
+#     loud frames, 13.0 on the passing clips). 'scale' (Default) scales the
+#     print so it sits exactly that deep (<print>_depth<D>db.np.json); 'drop'
+#     denoises without a learned print, as the music profile does; 'quantile'
+#     subtracts the whole-file quantile print instead (cathar_noiseprint_method
+#     below), and scales when it cannot be learned (fewer than 20 live
+#     windows), with a WARNING.
+#   - At 20 on the 159 speech-profile hunt clips (cathar 0.8.0 on CPU at the
+#     denoise stage, 2026-10-12): 109 touched; failing clips still failing 25
+#     of 62 ('scale') or 17 ('drop'), no passing clip fails, quiet-frame removal
+#     5.49 / 3.23 dB (failing / passing) -> 1.70 / 1.66 ('scale') or 0.11 / 0.30
+#     ('drop'). A deep print keeps its bytes (all 50 such clips). At 13: 88
+#     touched, 38 ('scale') or 22 ('drop') still failing, none new.
+#   - The four Tata tapes' stitched pauses sit only 13.7-16.9 dB under their
+#     loud frames, so at 20 the guard fires on all four and the denoise removes
+#     about half the noise ('scale') or none ('drop'); at 13 all four come out
+#     byte for byte as with the guard off. Not judged by ear; cathar only.
+#   - 'quantile' (2026-10-12, the 56 denoise-class failing and 96 passing hunt
+#     clips, re-read with the harness at 03afd4a, where 53 fail at the stage):
+#     at 13, 30 still fail as on 'scale' (14 on 'drop'), one passing clip
+#     starts, and the hiss floor under the programme comes down 10.6 / 9.5 dB
+#     (failing / passing; shipped 14.1 / 10.7, 'scale' 9.3 / 8.8). At 20 it
+#     still leaves 30 (the quantile print does not depend on D; 'scale' 17).
+#     The Tata tapes keep their bytes at 13. Candidate for the listening
+#     session: 13 with 'quantile'.
+#
+# cathar_noiseprint_method (2026-10-12):
+#   - 'window' (Default): the print is learned from the quietest 0.75 s (six
+#     stitched 0.75 s pauses on 90 s of material or more), as every release has.
+#   - 'quantile': the print is written from the whole material
+#     (modules/noiseprint_quantile.py): per bin, the 5th percentile of the
+#     0.37 s moving mean of cathar's own frames (left channel), +0.62 dB, over
+#     the frames that are not digital mutes, streamed. On realistic-v2 it reads
+#     the exact tape noise at a median log-spectral distance of 4.22 dB (the
+#     window 4.93, the stitched pick 8.59); on music with no pause it reads
+#     the 3-16 kHz noise -1.4 to -0.3 dB off where the window learns programme
+#     (+5.0 to +5.8 dB). Material with fewer than 20 live windows goes back to
+#     the window pick; the window path's mute and depth guards do not apply.
+#   - CPU, cathar 0.8.0, 2026-10-12: at the denoise stage of the IA hunt, 25 of
+#     the 56 denoise-class stems.octave_programme failures stop failing (53 ->
+#     28) and 3 of the 96 passing clips start; the hiss floor under the
+#     programme comes down 10.2 dB instead of 14.1 (failing clips) and 8.9
+#     instead of 10.7 (passing). On the four Tata tapes it leaves 1.5-3.1 dB
+#     more hiss above 7 kHz, stops the stitched print's 24-32 dB cut of speech
+#     at 3-6 kHz on soti and tele7abc, and lowers musical noise. With
+#     cathar_alpha 1.25 the hiss removal comes back to the window's (hunt: 37
+#     of 56 still failing, 7 passing clips start). On real tape it reads
+#     1.0-1.1 dB under the true-pause hiss at 6-10 kHz (Tata, 52 IA clips),
+#     +0.3 dB over on the fixtures, and it needs noise-only material in 5 %
+#     of the windows (about 1.1 s of a 15 s clip) or it learns the
+#     programme's floor (itv-continuity). Not judged by ear: see
+#     docs/configuration.md, "cathar Quantile Noise Print". cathar speech
+#     profile only.
 #
 # cathar_enable_repair:
 #   - Specialized non-linear transient spectral spike and dropout repair (default: true)
@@ -419,7 +657,9 @@ cathar_inpaint_max_gap_ms: 50
 cathar_inpaint_iterations: 3
 cathar_enable_declip: true
 cathar_declip_threshold: 0.95
+cathar_declip_mode: "always"
 cathar_enable_dehum: true
+cathar_dehum_freq: "scanner"
 cathar_enable_repair: true
 cathar_repair_strength: 2
 cathar_enable_dewow: false
@@ -427,6 +667,10 @@ cathar_enable_enhance: false
 cathar_enhance_method: "replicate"
 cathar_enable_noiseprint: true
 cathar_noiseprint_duration_s: 4.5
+cathar_noiseprint_mute_guard: false
+cathar_noiseprint_min_depth_db: 0.0
+cathar_noiseprint_shallow_action: "scale"
+cathar_noiseprint_method: "window"
 cathar_dehum_adaptive: true
 cathar_dehum_harmonics: 8
 cathar_enable_mono_below: true
@@ -442,6 +686,9 @@ cathar_music_enable_deplosive: false
 cathar_music_enable_deesser: false
 cathar_music_expander_depth_db: 4.0
 cathar_music_crt_notch_q: 60.0
+cathar_music_beta: 0.02
+cathar_music_enable_repair: true
+cathar_music_dewind_cutoff: 80
 cathar_enable_deesser: true
 cathar_deesser_bands: 3
 cathar_deesser_freq: 4000
@@ -458,7 +705,8 @@ cathar_dereverb_strength: 2.0
 #   - false: Disabled.
 #
 # enable_loudnorm:
-#   - true:  Applies broadcast EBU R128 (-16 LUFS) loudness normalization and True-Peak limiting (Default).
+#   - true:  Applies two-pass EBU R128 loudness normalization (-16 LUFS, -1 dBTP) followed by a
+#            sample-peak limiter (alimiter at -1 dBFS; see loudnorm_linear_fallback) (Default).
 #   - false: Disabled.
 #
 # enable_dynamic_expander:
@@ -466,7 +714,8 @@ cathar_dereverb_strength: 2.0
 #   - false: Disabled.
 #
 # enable_linear_air:
-#   - true:  Applies a high-frequency presence shelf at 7.5 kHz to auto_pure_linear (Default),
+#   - true:  Applies a high-frequency presence shelf at linear_air_freq_hz (7500 Hz by default) to
+#            auto_pure_linear (Default),
 #            linear_air_gain_db dB high (1.0; 2.0 until 2026-10-08).
 #            By ear (2026-10-08): the user heard APL's 's' as thin at +2 dB and picked +1 dB in an A/B
 #            against +2 dB and off on the four Tata tapes. The shelf is the only thing that brightens the
@@ -475,6 +724,13 @@ cathar_dereverb_strength: 2.0
 #            8-12 kHz drops ~0.7 dB and 4-8 kHz ~0.3 dB; nothing below 4 kHz moves. The harness's
 #            loops kept +2 dB: it does not read the brighter top as a fault.
 #   - false: Disabled.
+#
+# linear_air_freq_hz:
+#   - The air shelf's corner frequency in Hz (ffmpeg treble f, 1000-16000). 7500 is the
+#     shelf every release has shipped (hard-coded until 2026-10-09), so outputs keep their
+#     bytes. Round A1 (brightness) searches 6000 / 7500 / 9000 beside linear_air_gain_db;
+#     not yet judged by ear. A lower corner lifts more: +1.5 dB at 6000 Hz lifts 4-8 kHz like
+#     +2.57 dB at 7500 Hz, past the +2 dB round 3 rejected, so the tuning loop refuses it.
 #
 # expander_depth_db / expander_knee_offset_db:
 #   - The expander's depth under its knee and the knee's offset above the scanner's
@@ -485,12 +741,69 @@ cathar_dereverb_strength: 2.0
 #     cathar on speech; auto_pure_linear takes 12 dB (apl_expander_depth_db, in
 #     modules/config.py) and cathar on music 4 dB (cathar_music_expander_depth_db).
 #
+# expander_attack_s / expander_decay_s:
+#   - The same expander's attack and decay in seconds (compand attacks / decays): how
+#     fast its level follower rises into a word and lets go after it, so how soon a
+#     pause is pushed down. 0.04 / 0.18 are the times every release has shipped
+#     (hard-coded until 2026-10-09), shared by both engines, so outputs keep their
+#     bytes. Round A3 (pause texture) searches 0.02-0.08 / 0.12-0.3; not yet judged
+#     by ear.
+#
 # enable_pause_floor / pause_floor_fill_db / pause_floor_quiet_percentile:
 #   - The pause floor keeper: in the frames the source calls quiet (at or under its
 #     quiet percentile level), an attenuated copy of the source is put back under the
 #     restored audio so a pause keeps its own, quieter texture, pause_floor_fill_db
 #     under the source's pause level. On since the listener round: all four loops
 #     accepted it at 12 dB and none moved it (8 and 18 dB lost every round).
+#
+# pause_floor_target (both engines, 2026-10-12):
+#   - 'cluster' (Default): every pause is aimed at one level, the quiet frames'
+#     median minus pause_floor_fill_db, as every release has; outputs keep their
+#     bytes. The hiss diagnosis of 2026-10-11 found three ways it misses: that
+#     median sits 9-15 dB over the true pauses on dense speech or music; where the
+#     neural stage passed the floor the fill adds on top of it (+5.6 dB over the
+#     source on dvd-205405-0); and the separator's peak normalisation drops the
+#     programme up to 10.6 dB, so the fill sits that much too loud (fourstarrevue's
+#     pauses +1.8 dB over the source).
+#   - 'frame': each quiet frame is aimed at pause_floor_fill_db under the source
+#     frame, scaled by the restored programme's gain on the source's loud frames
+#     (p70 and up); a frame already at its target gets nothing. CPU replay on the
+#     diagnosis work directories (the paused WAV, before the mux): true-pause hiss
+#     (3-16 kHz band median against the source) -7.6 -> -13.4 dB over 120 hunt
+#     clips, SOTI -10.9 -> -13.0, Tele7abc -3.5 -> -12.6; hunt clips with pause
+#     hiss over the source 10 -> 3, pause LF over it 27 -> 11.
+#
+# pause_floor_shape / pause_floor_shelf_hz / pause_floor_hf_cut_db:
+#   - 'flat' (Default): the fill is the source as it is, its tape hiss included.
+#   - 'shelf': the fill is the source cut pause_floor_hf_cut_db above
+#     pause_floor_shelf_hz (a 4th-order Butterworth low-pass run forward and
+#     backward, plus the rest that many dB down); 'lowpass': low-passed there (2nd
+#     order, forward and backward; the cut is unused). The pause keeps its room tone
+#     and loses the hiss, and the deficit is read through the same shaping, so a
+#     hiss burst left in a pause never stands in for the body. Replayed with
+#     'frame': hunt true-pause hiss -30.3 dB ('shelf') / -40.3 dB ('lowpass') with
+#     the pause LF at -7.6 dB, as with no fill; SOTI -30.8 and Tele7abc -30.5 dB
+#     with the LF at -11.3 / -11.8 and gap_air at -20.0 / -11.7 dB. The -25 dB
+#     dead-air flag trips on 16 of 234 hunt clips with 'shelf', 11 today, 24 with
+#     no fill. 3000 Hz / 18 dB are the prototype's guesses; a GPU render and a
+#     blind A/B decide every non-default value here.
+#   - 'hiss_shelf' (2026-10-21): the shelf's cut taken only from the cells the
+#     source holds as hiss (the MMSE-LSA gain on the source's SNR against its
+#     whole-file quantile print, floored by the shelf), so soft programme above the
+#     corner that the neural stage emptied is filled whole. On the IA hunt it
+#     cleared capture-a-6398 (kept HF 0.1 -> -8.5 with 'shelf') and took a wedding
+#     broadcast from -32.7 to -19.3 dB; a partial held through the whole file is the
+#     print itself and is cut as hiss.
+#
+# pause_floor_suppressed_only (both engines, 2026-10-21):
+#   - false (Default): every file takes the configured fill.
+#   - true: the configured fill reaches only a file the reference suppressor ran on
+#     (apl_reference_suppress / cathar_reference_suppress); every other file takes
+#     the release fill (cluster, flat, 12 dB). The per-frame shelved fill is the
+#     suppressor's pause half: on the 135 IA hunt clips whose print it refuses, the
+#     programme keeps its hiss, and the fill tripped every v4 guard tripped there
+#     (pump, pause modulation, dulling; 15 clips). With it on those clips read the
+#     shipped output exactly; the four Tata tapes all run the suppressor.
 #
 # loudnorm_target_lra:
 #   - The mux's EBU R128 loudness-range target. ffmpeg's loudnorm holds its linear
@@ -499,12 +812,174 @@ cathar_dereverb_strength: 2.0
 #     gain between words. The run log states the measured range and the mode. 20 is
 #     the listener round's plateau, accepted by all four loops.
 #
+# loudnorm_linear_fallback:
+#   - What the mux does when loudnorm would leave its linear mode only because of the
+#     true-peak rule. ffmpeg holds linear mode only while the measured true peak plus
+#     the gain to -16 LUFS stays at or under -1 dBTP, the measured range stays at or
+#     under loudnorm_target_lra, and the measurement is set (I and LRA not 0, TP not
+#     99, threshold not -70), except that a programme under 3 s always runs linear
+#     (mastering.linear_mode_blockers is the rule, the short case included when the
+#     mux passes the duration). The run log now applies all of it; it used to check
+#     the range alone, and of the 616 distinct decisions it logged as "linear" in the
+#     repository's run logs on 2026-10-09, 229 (37%) broke the true-peak half and ran
+#     dynamic.
+#   - 'ffmpeg' (Default): loudnorm falls back to its dynamic mode and rides the gain,
+#     as every release so far has; every output keeps its bytes.
+#   - 'gain_limiter': one gain to the target (volume) and the mux's existing limiter
+#     on the peaks instead. A range over its target still goes to loudnorm. That
+#     limiter is alimiter at -1 dBFS on the samples, not a true-peak limiter: on
+#     synthetic programmes with clicks the render peaked at up to +0.24 dBTP, where
+#     loudnorm's dynamic mode held -1.8. With AI_RESTORE_EVENT_LOG set the render's
+#     true peak is measured and recorded. Not yet judged by ear; the pause-texture
+#     round decides it.
+#
+# apl_post_neural_suppress / apl_post_neural_suppress_floor_gap_db /
+# apl_post_neural_suppress_min_residual_db (auto_pure_linear only):
+#   - The hiss the Mel-RoFormer passes. The neural stage is the only one in this mode
+#     that removes hiss, and it is nearly an identity on music and adverts; on some
+#     hiss-dominated tapes it passes the floor too, mostly in 3-4.8 kHz (in energy,
+#     -4.4/-7.7 dB under the programme there against cathar's -8.0/-9.2; diagnosis of
+#     2026-10-11). On, the mode's MMSE-LSA suppressor runs after the sibilant guard,
+#     its noise learned from the post-neural audio's quietest stretch
+#     (apl_suppress_noise_bias, apl_suppress_gain_floor_db, apl_suppress_dd_alpha,
+#     apl_noiseprint_duration_s), on a tape whose 8-16 kHz band is hiss-dominated
+#     (median minus p10 of its frame energy at or under floor_gap_db, 3.0) and whose
+#     floor under the programme the neural stage left within min_residual_db (6.0) of
+#     the source's, on the 3-16 kHz band median or the 3-4.8 kHz energy. CPU replay on
+#     the diagnosis's work folders: the gate opens on 47 of 235 hunt clips (10 on the
+#     band median alone) and on none of the Tata excerpts or music clips. Followed by
+#     the prototype's per-frame shelved pause fill it renders the prototype's numbers
+#     exactly (its 10 clips, 9 of which this gate opens on: floor under the programme
+#     -15.7 dB, loud-frame 8-16 kHz -3.5 dB, musical noise lkr 0.39). Followed by
+#     today's pause floor it makes the pauses worse, because the floor refills what
+#     the suppressor lowered with the source's hiss: on the 48 clips the gate opens on
+#     the pause hiss rose on 19 of the 27 with pauses, by 29-81 dB on 7, and the floor
+#     under the programme rose on 6, by up to 19 dB. Ungated it ate music's highs.
+#     false (Default): every output keeps its bytes; a GPU render with the per-frame
+#     pause fill and a listening session judge it.
+#
+# apl_reference_suppress (auto_pure_linear only):
+#   - The same MMSE-LSA gain, read on the pre-conditioned source instead of the
+#     post-neural audio and applied to the post-neural audio, after the sibilant
+#     guard: the neural stage's mask and the source's SNR multiply, so a cell where
+#     the source held only hiss loses up to apl_suppress_gain_floor_db and a cell
+#     where the programme stood over the hiss keeps its level. Its noise is the
+#     source's whole-file quantile print (5th percentile of the 0.37 s moving mean,
+#     +2 dB), held at its level: the quietest 4 s stretch the gated suppressor and
+#     the native one learn from read 13-25 dB over the Tata tapes' true pauses
+#     below 8 kHz (speech), the quantile print within 2.7 dB. Ungated, but a
+#     print standing under 23 dB below the loud frames (it learned programme)
+#     runs no suppressor. CPU replay of the v9 incumbent on the four Tata
+#     tapes, with the per-frame pause fill shelved at 2 kHz by 30 dB, and on
+#     the IA hunt: docs/configuration.md, "Reference-SNR Suppressor".
+#     false (Default): every output keeps its bytes until the loop and a listening
+#     session judge it.
+#
+# cathar_reference_suppress (cathar only):
+#   - The same gain on cathar's output before the polish, at the estimator's
+#     shipped settings (noise bias 1.0, gain floor -20 dB, decision-directed
+#     0.96). CPU replay on the four Tata tapes with the per-frame fill shelved at
+#     2 kHz by 30 dB: the hiss under speech 14.5 / 9.0 / 7.8 / 11.6 dB over its
+#     masked threshold to 0 on every tape, the pause tail 26.8 / 19.9 / 19.5 /
+#     31.0 to 3.3 / 0 / 0 / 11.3, every v4 guard passing.
+#     false (Default): cathar keeps its bytes.
+#
+# apl_reference_release_db / cathar_reference_release_db:
+#   - The reference suppressor's programme release. The two masks multiply, so a
+#     cell the restoring stage kept as programme loses the source-SNR gain as well:
+#     soft programme 0-10 dB over the source's hiss lost 2-9 dB, and on 5 of the 63
+#     IA hunt clips past the 23 dB depth line a v4 guard tripped. Hiss the stage
+#     left sits at or under the source's print, so where the restored audio stands
+#     this many dB over the print the gain eases toward 1, fully 6 dB higher. CPU
+#     replay on 19 IA clips: at 3 dB the top band came back past -1 dB on the
+#     three clips that had crossed it, the soft programme 1.5-2 dB, the hiss excess
+#     moving under 0.45 dB. Read only with the engine's reference suppressor on.
+#     On the Tata tapes (APL v9 round 4) 3 dB let the hiss back under Vaccin's
+#     speech (+2.18 dB over its masked threshold): its MP3 coder drops the
+#     10-16 kHz band in speech frames, the print's 5th percentile reads those
+#     dropouts and sits 11.7 dB under the pauses' hiss, so the residual hiss
+#     stood over the print and the release took it for programme. It now reads
+#     against the pause print (the median over the source's pause frames, never
+#     under the print, 2026-10-21): on CPU replay of the Tata tapes 6 dB passes
+#     every v4 guard and brings back the loud highs on all four (Vaccin's hiss
+#     under speech 0.00; 3 dB still lifts Tele7abc's pause tail 0.57). On the
+#     loops' real renders cathar accepted 6 dB with its suppressor (round 5)
+#     and APL refused it (round 7: Tele7abc's pause tail +0.616). Steps 0, 6, 9.
+#     0 (Default): off, every output keeps its bytes.
+#
+# apl_neural_level_restore (auto_pure_linear only):
+#   - The separator peak-normalises to 0.9, so a hot or declipped tape leaves the
+#     neural stage up to 10.7 dB quieter (fourstarrevue) and the expander's knee and
+#     the pause floor's target read the wrong level. true scales the neural output back
+#     by the loud-frame projection gain (within 0.1 dB of the separator's peak ratio on
+#     all 26 replayed clips that peaked over 0.9); a gain under 0.5 dB is left alone.
+#     false (Default): every output keeps its bytes.
+#
+# linear_air_gate (auto_pure_linear only):
+#   - 'none' (Default): the air shelf (linear_air_gain_db) on every tape, as every
+#     release has. 'hiss_dominated': skipped where the post-neural hiss gate opens; on
+#     those tapes the shelf lifted the residual 0.35 dB under the programme (replay
+#     median) and 0.67 dB in the loud frames' 8-16 kHz.
+#
+# apl_burst_ceiling / apl_burst_ceiling_depth_db (auto_pure_linear only):
+#   - The hiss the Mel-RoFormer leaves next to speech, held down after the
+#     polish and before the pause floor (modules/burst_ceiling.py). In the
+#     source's non-speech blocks ('gaps') or in those and the speech blocks
+#     within 150 ms of a gap ('edges'), each restored cell (one ERB band of
+#     3-16 kHz over 23 ms) keeps at most apl_burst_ceiling_depth_db (30) under
+#     the source's band floor where the source holds only hiss, and all of the
+#     source's programme where it carries some, a word's decaying tail
+#     included (3 dB over the floor, joined to sure programme); a band acts
+#     only where the neural stage emptied the gaps that deep. A cell under
+#     its ceiling and every sample no capped frame reaches keep their bytes.
+#   - 'none' (Default): nothing is read; every output keeps its bytes.
+#   - CPU replay on the hiss diagnosis's stage WAVs (2026-10-12), then the
+#     'frame' + 'shelf' pause floor: 'edges' took the hiss at the word edges
+#     from -20.5 to -22.9 dB (Tele7abc) and -24.6 to -25.9 dB (SOTI), the
+#     short gaps' energy from -16.5 to -17.2 and -22.5 to -28.5 dB, the floor
+#     under the programme 0.9-1.7 dB lower; gap air -11.8 / -20.8 dB (flag
+#     -25), loud-frame highs and sibilance unchanged, lkr +0.06 at most; the
+#     word-edge cells 3-6 dB over the source's floor lose 0.9-2.6 dB (as
+#     first committed, before the tail rule, 3.7-6.1 dB: it ate word tails).
+#     It skips the seven of 13 clips the RoFormer passed whole or that hold
+#     no gap. The pauses' energy mean barely moves: what carries it is
+#     programme the ceiling keeps (a word's tail on Tele7abc). Pumping risk
+#     where the hiss under the programme stays near the source's level
+#     (abc-primetime: short gaps -3.7 -> -26.8 dB under a -4 dB floor). Not
+#     rendered or heard yet.
+#
+# mux_limiter_latency_compensation:
+#   - The mux's limiter (alimiter at -1 dBFS) delays the audio by its lookahead: a
+#     synthetic impulse at sample 10000 came out at 10219, 219 samples or 4.97 ms at
+#     44.1 kHz (ffmpeg 9.0.1), so every output of every mode plays 4.97 ms late against
+#     its video and against the preserved original track.
+#   - false (Default): the limiter as every release has run it; every output keeps its
+#     bytes, which cathar's identity check compares.
+#   - true: alimiter's latency=1 removes the delay (the impulse stayed at 10000, the
+#     length unchanged). A pure time shift; it needs the user's sign-off on re-basing
+#     the identity check before it becomes the default.
+#
+# mux_sample_rate:
+#   - Every stage runs at 44.1 kHz; this is the rate the mux encodes the restored track
+#     at. The source's audio start time is always kept: the restored track starts where
+#     the source's audio started against the video (it used to start with the video:
+#     a 48 kHz MPEG-PS capture with its audio 5.578 ms after the video came out with it
+#     10.911 ms before).
+#   - 'pipeline' (Default): 44.1 kHz in every container except MPEG-PS (.mpg/.mpeg),
+#     which keeps the source's rate (DVD-Video allows MP2 only at 48 kHz; a rate MP2
+#     cannot encode goes to 48 kHz). Every other container keeps its bytes.
+#   - 'source': every container keeps the source's rate when its codec encodes it
+#     (AAC's and MP2's rates; PCM takes any). Changes every 48 kHz source's bytes.
+#
 # crt_notch_q:
 #   - Q of the CRT line-whistle notch in the pre-conditioning graph (30 is the shipped
 #     width; cathar's music profile narrows it to cathar_music_crt_notch_q).
 #
 # preserve_original_audio_track:
 #   - true:  Preserves original untouched audio as Stream 2 alongside restored audio in container.
+#            The restored track is flagged default and the archival one cleared, so a player
+#            starts on the restored audio (MP4 and MOV opened on the tape audio until
+#            2026-10-17: ffmpeg copied the source stream's default flag to the archival copy).
 #   - false: Output container contains restored clean audio track only (Default).
 # ------------------------------------------------------------------------------
 enable_deesser: true
@@ -512,13 +987,35 @@ enable_loudnorm: true
 enable_dynamic_expander: true
 expander_depth_db: 7.0
 expander_knee_offset_db: 8.0
+expander_attack_s: 0.04
+expander_decay_s: 0.18
 enable_pause_floor: true
+pause_floor_suppressed_only: false
 pause_floor_fill_db: 12.0
 pause_floor_quiet_percentile: 15.0
+pause_floor_target: "cluster"
+pause_floor_shape: "flat"
+pause_floor_shelf_hz: 3000.0
+pause_floor_hf_cut_db: 18.0
 loudnorm_target_lra: 20.0
+loudnorm_linear_fallback: "ffmpeg"
+mux_limiter_latency_compensation: false
+mux_sample_rate: "pipeline"
 crt_notch_q: 30.0
 enable_linear_air: true
 linear_air_gain_db: 1.0
+linear_air_freq_hz: 7500.0
+linear_air_gate: "none"
+apl_post_neural_suppress: false
+apl_post_neural_suppress_floor_gap_db: 3.0
+apl_post_neural_suppress_min_residual_db: 6.0
+apl_reference_suppress: false
+cathar_reference_suppress: false
+apl_reference_release_db: 0.0
+cathar_reference_release_db: 0.0
+apl_neural_level_restore: false
+apl_burst_ceiling: "none"
+apl_burst_ceiling_depth_db: 30.0
 preserve_original_audio_track: false
 
 # ------------------------------------------------------------------------------

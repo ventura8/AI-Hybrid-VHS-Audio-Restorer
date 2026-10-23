@@ -2,7 +2,12 @@
 
 import json
 
+import pytest
+
 from scripts.restoration_quality import gates as g
+
+# The `source` a calibration entry derived from the known ordering names.
+KNOWN_ORDERING = "known ordering"
 
 
 def _aggregate(**entries):
@@ -56,14 +61,14 @@ def test_speaker_floor_resolves_the_relative_threshold():
 
 
 def test_hard_failures_ignore_soft_gates():
-    aggregate = _aggregate(**{"file.lufs": (-20.0, -20.0, 4.0, 4.0), "dsp.lkr": (0.0, 0.0, 0.9, 0.9)})
+    aggregate = _aggregate(**{"file.lufs": (-20.0, -20.0, 4.0, 4.0), "dsp.lkr": (0.0, 0.0, 1.9, 1.9)})
     verdicts = g.evaluate_gates(aggregate, g.GATES)
     assert _status(verdicts, "file.lufs") == "failed"
     assert g.hard_failures(verdicts) == ["dsp.lkr"]
 
 
 def test_listener_flags_are_counted_apart_from_hard_failures():
-    aggregate = _aggregate(**{"dsp.gap_air_db": (-30.0, -30.0, -5.0, -5.0), "dsp.lkr": (0.0, 0.0, 0.9, 0.9)})
+    aggregate = _aggregate(**{"dsp.gap_air_db": (-30.0, -30.0, -5.0, -5.0), "dsp.lkr": (0.0, 0.0, 1.9, 1.9)})
     verdicts = g.evaluate_gates(aggregate, g.GATES)
     assert _status(verdicts, "listener.dead_air") == "failed"
     assert _status(verdicts, "listener.hiss") == "passed"
@@ -104,3 +109,106 @@ def test_load_gates_ignores_keys_the_gate_does_not_carry(tmp_path):
     path.write_text(json.dumps({"dsp.lkr": {"threshold": 1.75, "severity": "hard", "source": "known good bound"}}), encoding="utf-8")
     merged = g.load_gates(path)
     assert merged["dsp.lkr"].threshold == 1.75
+
+
+def test_the_hiss_flag_is_shown_but_no_longer_counted():
+    """Gap level does not order the verdicts (ear v3, R4): a hissy gap reading fails a soft gate, not a flag."""
+    verdicts = g.evaluate_gates(_aggregate(**{"dsp.gap_air_db": (-10.0, -10.0, 5.0, 5.0)}), g.GATES)
+    assert _status(verdicts, "listener.hiss") == "failed"
+    assert g.GATES["listener.hiss"].severity == g.SOFT
+    assert "listener.hiss" not in g.flag_failures(verdicts)
+
+
+@pytest.mark.parametrize(("top", "flags"), [(1.5, ["listener.bright"]), (-1.5, ["listener.dull"]), (0.5, []), (-0.9, [])])
+def test_bright_and_dull_read_presence_or_air_two_sided(top, flags):
+    """One reading, two flags: a lifted top is bright, a lost one dull, the accepted band between them flags nothing."""
+    verdicts = g.evaluate_gates(_aggregate(**{"dsp.balance_top_db": (top, top, top, top)}), g.GATES)
+    assert [name for name in g.flag_failures(verdicts) if name in ("listener.bright", "listener.dull")] == flags
+
+
+def test_the_bright_and_dull_thresholds_say_they_are_uncalibrated():
+    """+1.0 / -1.0 dB are starting values until Round 0 reads the accepted +1 dB air file."""
+    verdicts = g.evaluate_gates(_aggregate(**{"dsp.balance_top_db": (0.0, 0.0, 0.0, 0.0)}), g.GATES)
+    calibrated = {v["gate"]: v["calibrated"] for v in verdicts}
+    assert calibrated["listener.bright"] is calibrated["listener.dull"] is False
+    assert calibrated["dsp.lkr"] is True
+
+
+@pytest.mark.parametrize(
+    ("entries", "failed"),
+    [
+        ({"file.sync_drift_ms": 0.3, "file.sync_offset_ms": 5.0, "file.sync_unmatched": 0.0}, []),
+        ({"file.sync_drift_ms": 55.0, "file.sync_offset_ms": 5.0, "file.sync_unmatched": 0.0}, ["file.sync_drift"]),
+        ({"file.sync_drift_ms": 0.3, "file.sync_offset_ms": 1500.0, "file.sync_unmatched": 0.0}, ["file.sync_offset"]),
+        ({"file.sync_offset_ms": 5.0, "file.sync_unmatched": 2.0}, ["file.sync_unmatched"]),
+    ],
+)
+def test_a_sync_fault_of_a_video_frame_is_a_hard_failure(entries, failed):
+    """40 ms of drift or offset parts lips from picture; an anchor the output does not follow is a broken sync."""
+    aggregate = _aggregate(**{name: (value, value, value, value) for name, value in entries.items()})
+    assert [name for name in g.hard_failures(g.evaluate_gates(aggregate, g.GATES)) if name.startswith("file.sync")] == failed
+
+
+def test_a_calibration_entry_that_names_its_source_is_calibrated(tmp_path):
+    """A threshold a calibration derived carries its `source`; a hand override without one keeps the default."""
+    path = tmp_path / "gates.json"
+    entries = {"listener.bright": {"threshold": 0.3, "source": KNOWN_ORDERING}, "listener.dull": {"threshold": -0.4}}
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    merged = g.load_gates(path)
+    assert (merged["listener.bright"].threshold, merged["listener.bright"].calibrated) == (0.3, True)
+    assert (merged["listener.dull"].threshold, merged["listener.dull"].calibrated) == (-0.4, False)
+
+
+def test_a_stored_v2_gates_file_cannot_make_the_hiss_reading_count_again(tmp_path):
+    """The v2 gates.json lists listener.hiss as a flag; its threshold merges, its severity does not (display-only)."""
+    path = tmp_path / "gates.json"
+    entry = {"threshold": -19.95, "severity": "flag", "source": KNOWN_ORDERING}
+    path.write_text(json.dumps({"listener.hiss": entry, "listener.dead_air": {"threshold": -26.0, "severity": "hard"}}), encoding="utf-8")
+    merged = g.load_gates(path)
+    assert (merged["listener.hiss"].threshold, merged["listener.hiss"].severity, merged["listener.hiss"].calibrated) == (
+        -19.95,
+        g.SOFT,
+        True,
+    )
+    assert merged["listener.dead_air"].severity == g.HARD
+    verdicts = g.evaluate_gates(_aggregate(**{"dsp.gap_air_db": (-10.0, -10.0, 5.0, 5.0)}), merged)
+    assert _status(verdicts, "listener.hiss") == "failed"
+    assert "listener.hiss" not in g.flag_failures(verdicts)
+
+
+def test_a_base_without_the_display_only_gate_takes_the_file_entry_whole(tmp_path):
+    """Only a gate the base defines keeps the base's severity; a file-only gate needs the severity it names."""
+    path = tmp_path / "gates.json"
+    hiss = {"metric": "dsp.gap_air_db", "stat": "median", "op": "<=", "threshold": -20.0, "severity": "flag"}
+    path.write_text(json.dumps({"listener.hiss": hiss}), encoding="utf-8")
+    assert g.load_gates(path, base={})["listener.hiss"].severity == g.FLAG
+
+
+PROGRAMME_FLAG, PAUSE_FLAG = "listener.hiss_programme", "listener.hiss_pause"
+HISS_FLAGS = (PROGRAMME_FLAG, PAUSE_FLAG)
+
+
+def test_the_hiss_flags_fire_at_the_audibility_threshold():
+    """Ear v4: hiss under the programme (median) and in the pauses (tail) flag at 0 dB, uncalibrated, as listener flags."""
+    programme, pause = g.GATES[PROGRAMME_FLAG], g.GATES[PAUSE_FLAG]
+    assert (programme.metric, programme.stat, programme.op, programme.threshold) == ("dsp.hiss_prog_margin_db", "median", "<=", 0.0)
+    assert (pause.metric, pause.stat, pause.op, pause.threshold) == ("dsp.hiss_pause_margin_db", "tail", "<=", 0.0)
+    assert {(gate.severity, gate.calibrated) for gate in (programme, pause)} == {(g.FLAG, False)}
+
+
+def test_audible_hiss_is_counted_as_a_listener_flag():
+    """A margin over 0 dB fails the flag and counts; one under it passes."""
+    audible = _aggregate(**{"dsp.hiss_prog_margin_db": (1.0, 2.0, -5.0, -4.0), "dsp.hiss_pause_margin_db": (-3.0, -1.0, -9.0, -8.0)})
+    verdicts = g.evaluate_gates(audible)
+    assert g.flag_failures(verdicts).count(PROGRAMME_FLAG) == 1
+    assert _status(verdicts, PAUSE_FLAG) == "passed"
+
+
+def test_a_gates_file_cannot_move_the_users_hiss_rule(tmp_path):
+    """An entry for a hiss flag is ignored whole: threshold, statistic, severity and calibration stay the user's rule."""
+    path = tmp_path / "gates.json"
+    entry = {"threshold": 9.0, "stat": "delta.median", "severity": "hard", "source": KNOWN_ORDERING}
+    path.write_text(json.dumps(dict.fromkeys(HISS_FLAGS, entry)), encoding="utf-8")
+    merged = g.load_gates(path)
+    assert [merged[name] for name in HISS_FLAGS] == [g.GATES[name] for name in HISS_FLAGS]
+    assert g.USER_RULE_FIXED == frozenset(HISS_FLAGS)

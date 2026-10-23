@@ -1,6 +1,7 @@
-"""Pure logic of the self-driving tuner: candidate ids, neighbours, combinations, the verdict."""
+"""Pure logic of the self-driving tuner: candidate ids, neighbours, combinations, the verdict, inert switches."""
 
 from scripts import autotune_restoration as at
+from scripts import autotune_scoring as scoring
 
 
 def test_candidate_id_ignores_none_values_and_key_order():
@@ -35,7 +36,7 @@ def test_combine_merges_two_winning_moves_and_ignores_a_single_one():
     winners = [{"cathar_alpha": 1.5, "cathar_beta": 0.01}, {"cathar_alpha": 2.0, "cathar_beta": 0.005}]
     combo = at.combine(incumbent, winners)
     assert list(combo.values()) == [{"cathar_alpha": 1.5, "cathar_beta": 0.005}]
-    assert at.combine(incumbent, winners[:1]) == {}
+    assert not at.combine(incumbent, winners[:1])
 
 
 def _scores():
@@ -84,27 +85,27 @@ def test_score_round_launches_at_most_parallel_scorers_at_once(tmp_path):
 
     launched, alive = [], []
 
-    def fake_launch(slug, tape, cids, out_dir, families, gates, language):
+    def fake_launch(slug, tape, cids, out_dir, families, gates, language, stage=""):
         launched.append(slug)
         alive.append(slug)
         return None, None
 
-    def fake_harvest(slug, cids, log, proc, out_dir):
+    def fake_harvest(slug, cids, log, proc, out_dir, stage=""):
         alive.remove(slug)
         for cid in cids:
-            at._score_path(out_dir, cid, slug).parent.mkdir(parents=True, exist_ok=True)
-            at._score_path(out_dir, cid, slug).write_text('{"x": 1.0}', encoding="utf-8")
+            scoring._score_path(out_dir, cid, slug).parent.mkdir(parents=True, exist_ok=True)
+            scoring._score_path(out_dir, cid, slug).write_text('{"x": 1.0}', encoding="utf-8")
 
     peak = []
     original = fake_launch
 
-    def counting_launch(*args):
-        result = original(*args)
+    def counting_launch(*args, **kwargs):
+        result = original(*args, **kwargs)
         peak.append(len(alive))
         return result
 
     tapes = {"a": "a.mov", "b": "b.mov", "c": "c.mov"}
-    with patch.object(at, "_launch_scorer", counting_launch), patch.object(at, "_harvest", fake_harvest):
+    with patch.object(scoring, "_launch_scorer", counting_launch), patch.object(scoring, "_harvest", fake_harvest):
         scores = at.score_round({"c1": {}, "c2": {}}, tapes, tmp_path, ("dsp",), None, "ro", parallel=2)
     assert launched == ["a", "b", "c"]
     assert max(peak) <= 2
@@ -122,8 +123,8 @@ def test_drop_cache_entries_removes_the_scored_outputs_entries_and_keeps_the_sou
     output_key, source_key = audio_io.file_key(wav), "0123456789abcdef"
     for name in (f"{output_key}_219_16000.npy", f"{output_key}_dcfree.wav", f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"):
         (cache / name).write_bytes(b"x")
-    at._drop_cache_entries(tmp_path, "abc", "soti")
-    at._drop_cache_entries(tmp_path, "missing", "soti")
+    scoring._drop_cache_entries(tmp_path, "abc", "soti")
+    scoring._drop_cache_entries(tmp_path, "missing", "soti")
     assert sorted(p.name for p in cache.iterdir()) == [f"{source_key}_219_16000.npy", f"{source_key}_soti.wav"]
 
 
@@ -147,5 +148,42 @@ def test_the_scorer_environment_adds_the_tape_folder_to_the_data_roots(tmp_path,
 
     corpus = str(tmp_path / "corpus")
     monkeypatch.setenv("AI_RESTORE_DATA_ROOTS", corpus)
-    env = at._scorer_env(tmp_path / "tapes" / "tape.mov")
+    env = scoring._scorer_env(tmp_path / "tapes" / "tape.mov")
     assert env["AI_RESTORE_DATA_ROOTS"].split(os.pathsep) == [corpus, str((tmp_path / "tapes").resolve())]
+
+
+# ----------------------------------------------------------------------------- ear v4: constraints in the judgement
+
+EXCESS = "dsp.hiss_prog_excess_db.output.median"
+M = "dsp.m.delta.median"
+V4_RANKING = {M: "down"}
+
+
+def _v4_scores():
+    """`dead` ranks best and empties the pauses (its excess falls) but trips the hiss constraint on t1; `fine` beats inc."""
+    return {
+        "inc": {"t1": {M: 2.0, EXCESS: 8.0}, "t2": {M: 2.0, EXCESS: 8.0}},
+        "fine": {"t1": {M: 1.0, EXCESS: 8.2}, "t2": {M: 1.0, EXCESS: 7.0}},
+        "dead": {"t1": {M: 0.5, EXCESS: 9.5}, "t2": {M: 0.5, EXCESS: 7.0}},
+    }
+
+
+def test_judge_marks_constraints_on_every_candidate_even_without_vetoes():
+    """The first pass of the two-stage scoring judges without vetoes but with the constraints: `dead` cannot qualify."""
+    rules = at.guards_mod.reward.parse_constraints({EXCESS: {"worse": "up", "max_move": 0.65}})
+    verdicts = at.judge(_v4_scores(), "inc", V4_RANKING, constraints=rules)
+    assert [verdicts[cid]["qualifies"] for cid in ("inc", "fine", "dead")] == [False, True, False]
+    assert verdicts["dead"]["constrained"] == ["t1 dsp.hiss_prog_excess_db.output.median +1.5"]
+
+
+def test_judge_keeps_the_constraints_in_the_vetoed_pass():
+    """With vetoes limited to the contenders, a constrained candidate outside them is still marked."""
+    rules = at.guards_mod.reward.parse_constraints({EXCESS: {"worse": "up", "max_move": 0.65}})
+    verdicts = at.judge(_v4_scores(), "inc", V4_RANKING, {}, veto_ids=["fine"], constraints=rules)
+    assert ("constrained" in verdicts["dead"], verdicts["fine"]["qualifies"]) == (True, True)
+
+
+def test_the_loop_defaults_to_the_v4_grid():
+    """The self-driving loop judges with tata_v4 unless told otherwise."""
+    args = at._parse_args(["--engine", "cathar", "--tapes", "tapes.json"])
+    assert args.grid == at.DEFAULT_GRID == at.Path("scripts/tune_grids/tata_v4.yaml")

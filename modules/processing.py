@@ -33,10 +33,19 @@ from . import apl_stems as _apl_stems
 from . import deepfilter_denoise as _deepfilter
 from . import denoise_cache as _denoise_cache
 from . import denoise_chunking as _denoise_chunking
+from . import denoise_model as _denoise_model
 from . import enhance_chunking as _chunking
 from . import mastering as _mastering
+from . import mux_format as _mux_format
+from . import neural_level as _neural_level
+from . import notch_ring_guard as _notch_ring_guard
+from . import post_neural_suppress as _post_neural_suppress
+from . import reference_suppress as _reference_suppress
 from . import resemble_denoise as _resemble
+from . import source_checks as _source_checks
 from . import spectral_denoise as _spectral_denoise
+from . import stage_cache as _stage_cache
+from . import stage_cache_key as _stage_cache_key
 from . import utils as _utils
 from .config import (
     APL_MUSIC_NEURAL_MODEL,
@@ -63,6 +72,7 @@ from .filters import (
 )
 from .hardware import CPU_THREADS, CUDA_ENV, CUDA_VISIBLE_DEVICE, GPU_BATCH_SIZE
 from .hygiene import atomic_target, partial_path, publish, remove_tree, scoped_temp_dir, sweep_partials
+from .stage_names import stage_output
 from .sync import _align_stems
 from .utils import (
     FFMPEG_BIN,
@@ -140,7 +150,7 @@ def get_video_duration_sec(video_path):  # pragma: no cover
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
-        val = subprocess.check_output(cmd).decode().strip()
+        val = subprocess.check_output(cmd).decode("utf-8", "replace").strip()
         return float(val)
     except Exception:  # pragma: no cover
         return None
@@ -155,6 +165,9 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
     if original_wav.exists():
         original_wav.unlink()
 
+    # A source without an audio stream is a skip, decided before ffmpeg runs: the extraction
+    # used to fail on it and retry on fewer threads six times (modules/source_checks.py).
+    _source_checks.require_audio_stream(video_path)
     log_msg("  [System] Extracting Audio Stream...")
 
     # Extract to .tmp first to maintain atomic guarantees
@@ -178,13 +191,21 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
         ]
 
     attempt_cpu_run_with_retry(build_extract_cmd, CPU_THREADS, description="Extracting Audio", total_duration=total_duration)
+    _publish_extraction(tmp_wav, original_wav)
 
+
+def _publish_extraction(tmp_wav, original_wav):
+    """Moves a valid extraction into place; a decode with no samples is a skip, anything else invalid a failure.
+
+    ffmpeg exits 0 on a stream whose packets an edit list hides (hunt v3: Pooh, Powerpuff,
+    Rocky), leaving a 92-byte WAV header with no samples; that is the source, not the run.
+    """
     if is_valid_audio(tmp_wav):
         tmp_wav.rename(original_wav)
-    else:
-        if tmp_wav.exists():
-            tmp_wav.unlink()
-        raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")  # pragma: no cover
+        return
+    _source_checks.reject_empty_decode(tmp_wav)
+    tmp_wav.unlink(missing_ok=True)
+    raise RuntimeError("Extraction failed: Output audio is invalid, empty, or too small.")
 
 
 # audio-separator labels stems per model, not to one convention: BS-Roformer emits
@@ -495,11 +516,6 @@ def _enhance_vocals_step(vocals_wav, enhanced_vocals_dir, work_dir, total_durati
     return final_output
 
 
-def _has_denoised_candidates(candidates_denoised):
-    """Checks whether any candidate files exist in denoised directory."""
-    return bool(candidates_denoised)
-
-
 def _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure):
     """Handles failure when separator produces no candidates."""
     if fallback_on_failure:
@@ -508,13 +524,11 @@ def _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_f
     raise RuntimeError(warning_message.strip())
 
 
-def _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure):
-    """Selects primary denoised output file from generated candidates."""
-    clean_candidates = [f for f in candidates_denoised if "(No Noise)" in f.name]
-    if clean_candidates:
-        return clean_candidates[0]
-    if _has_denoised_candidates(candidates_denoised):
-        return candidates_denoised[0]
+def _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure, model_name=None):
+    """Selects the clean stem the separator wrote (`denoise_model.clean_stem`): '(No Noise)', the MDXC target, never a residual."""
+    chosen = _denoise_model.clean_stem(candidates_denoised, model_name)
+    if chosen is not None:
+        return chosen
     return _handle_missing_denoised_candidate(warning_message, input_wav, fallback_on_failure)
 
 
@@ -525,7 +539,7 @@ def _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, 
     log_msg("    [AI] Starting Inference (GPU Accelerated)...")
     separator.separate(str(input_wav))
     candidates_denoised = sorted(denoised_output_dir.glob(WAV_GLOB), key=lambda path: path.name.lower())
-    return _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure)
+    return _select_denoised_candidate(candidates_denoised, warning_message, input_wav, fallback_on_failure, model_name)
 
 
 def _denoise_one_chunk(model_name):
@@ -540,12 +554,17 @@ def _denoise_one_chunk(model_name):
         separator = _build_separator(out_dir, normalization_threshold=_denoise_chunking.CHUNK_PEAK)
         _load_separator_model(separator, model_name)
         separator.separate(str(chunk_wav))
-        produced = _denoise_chunking.clean_output_in(out_dir)
+        produced = _denoise_chunking.clean_output_in(out_dir, model_name)
         if produced is None:
-            raise RuntimeError(f"UVR-DeNoise produced no clean stem for {chunk_wav.name}")
+            raise RuntimeError(f"The denoiser ({model_name}) produced no clean stem for {chunk_wav.name}")
         return produced
 
     return denoise_chunk
+
+
+def _model_fetcher(model_name, output_dir):
+    """Downloads a model's files without loading it, as its first load would: a fresh store gets the yaml the chunk grid reads."""
+    return lambda: _build_separator(output_dir).download_model_files(model_name)
 
 
 def _run_denoise_separator(
@@ -560,7 +579,10 @@ def _run_denoise_separator(
     try:
         model_name = _resolve_override(denoise_model, DENOISE_MODEL)
         if _denoise_chunking.duration_needs_chunking(input_wav):
-            result = _denoise_chunking.run(input_wav, denoised_output_dir, _denoise_one_chunk(model_name))
+            fetch = _model_fetcher(model_name, denoised_output_dir)
+            result = _denoise_chunking.run(
+                input_wav, denoised_output_dir, _denoise_one_chunk(model_name), model_name=model_name, fetch_model=fetch
+            )
         else:
             result = _denoise_whole(input_wav, denoised_output_dir, model_name, warning_message, fallback_on_failure)
         log_msg(f"    {selected_label}: {result.name}")
@@ -607,30 +629,32 @@ def _ensure_float_pcm(wav_path):
             temp_path = wav_path.with_name(f"{wav_path.stem}.float.tmp{wav_path.suffix}")
             _write_float_blocks_atomic(wav_path, info, temp_path)
     except Exception as exc:
-        log_msg(f"    [Debug] Left {wav_path.name} at its original bit depth: {exc}", level="DEBUG")
+        log_msg(f"    [Warning] Left {wav_path.name} at its original bit depth: {exc}", level="WARNING")
     return wav_path
 
 
-def _select_preferred_denoised_output(valid_denoised):
-    """Pick a deterministic denoised output, preferring '(No Noise)' when present."""
-    sorted_valid_denoised = sorted(valid_denoised, key=lambda path: path.name.lower())
-    clean_candidates = [f for f in sorted_valid_denoised if "(No Noise)" in f.name]
+def _select_preferred_denoised_output(valid_denoised, model_name=None):
+    """The clean stem among valid outputs a previous run left, or None when all are residuals (`denoise_model.clean_stem`)."""
+    return _denoise_model.clean_stem(valid_denoised, model_name)
 
-    if clean_candidates:
-        return clean_candidates[0]
 
-    return sorted_valid_denoised[0]
+def _existing_denoised_output(denoised_dir, denoise_model=None):
+    """The clean stem a previous run left in a denoise directory, or None, which denoises afresh.
+
+    A directory holding only a residual stem ('(Noise)', '(other)': a run stopped between
+    the separator's two writes) holds no finished output.
+    """
+    valid_denoised = [f for f in denoised_dir.glob(WAV_GLOB) if is_valid_audio(f)]
+    return _select_preferred_denoised_output(valid_denoised, _resolve_override(denoise_model, DENOISE_MODEL))
 
 
 def _denoise_vocals_step(vocals_wav, denoised_vocals_dir, total_duration=None, denoise_model=None):
     """Step 2b: Denoise Speech Stem (UVR-DeNoise-Lite) via Python API."""
     del total_duration
-    candidates_denoised = list(denoised_vocals_dir.glob(WAV_GLOB))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
+    existing = _existing_denoised_output(denoised_vocals_dir, denoise_model)
+    if existing is not None:
         log_msg("  [Step 2/5] Skipping Speech Denoising (exists)")
-        return _select_preferred_denoised_output(valid_denoised)
+        return existing
 
     log_msg("  [Step 2/5] Denoising Speech Stem (UVR-DeNoise-Lite - AI Engine)...")
 
@@ -647,12 +671,10 @@ def _denoise_vocals_step(vocals_wav, denoised_vocals_dir, total_duration=None, d
 
 def _denoise_background_step(background_wav, denoised_background_dir, denoise_model=None):
     """Step 4: Denoise Background (UVR-DeNoise-Lite) via Python API."""
-    candidates_denoised = list(denoised_background_dir.glob(WAV_GLOB))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
+    existing = _existing_denoised_output(denoised_background_dir, denoise_model)
+    if existing is not None:
         log_msg("  [Step 3/5] Skipping Background Denoising (exists)")
-        return _select_preferred_denoised_output(valid_denoised)
+        return existing
 
     log_msg("  [Step 3/5] Denoising Background (UVR-DeNoise-Lite - AI Engine)...")
 
@@ -669,12 +691,10 @@ def _denoise_background_step(background_wav, denoised_background_dir, denoise_mo
 
 def _denoise_full_audio_step(original_wav, denoised_audio_dir, denoise_model=None):
     """Denoises the full extracted audio track for denoise_only mode."""
-    candidates_denoised = list(denoised_audio_dir.glob(WAV_GLOB))
-    valid_denoised = [f for f in candidates_denoised if is_valid_audio(f)]
-
-    if valid_denoised:
+    existing = _existing_denoised_output(denoised_audio_dir, denoise_model)
+    if existing is not None:
         log_msg("  [Step 2/4] Skipping Full-Audio Denoise (exists)")
-        return _select_preferred_denoised_output(valid_denoised)
+        return existing
 
     log_msg("  [Step 2/4] Denoising Full Audio (UVR-DeNoise-Lite - AI Engine)...")
 
@@ -689,7 +709,9 @@ def _denoise_full_audio_step(original_wav, denoised_audio_dir, denoise_model=Non
     )
 
 
-def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None):
+def _final_mix_output_command(
+    video_path, aligned_vocals, aligned_background, tmp_output_video, audio_args, threads, filter_expr=None, plan=None
+):
     """Generates FFmpeg arguments for final 2-stem mix.
 
     Args:
@@ -700,23 +722,25 @@ def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tm
         audio_args (list): Audio encoding parameters.
         threads (int): CPU worker threads count.
         filter_expr (str, optional): Prebuilt amix expression; built from config when omitted.
+        plan (mux_format.MuxPlan, optional): Where the stems start and the rate they are encoded
+            at (the source's audio start and the container's rate); today's command when omitted.
 
     Returns:
         list: FFmpeg CLI arguments.
     """
     filter_expr = _resolve_override(filter_expr, _build_mix_filter_expression())
+    plan = _resolve_override(plan, _mux_format.MuxPlan())
     cmd = [
         FFMPEG_BIN,
         "-stats",
         "-hide_banner",
         "-threads",
         str(threads),
+        *plan.global_args(),
         "-i",
         str(video_path),
-        "-i",
-        str(aligned_vocals),
-        "-i",
-        str(aligned_background),
+        *plan.restored_input(aligned_vocals, PRESERVE_ORIGINAL_AUDIO_TRACK),
+        *plan.restored_input(aligned_background, PRESERVE_ORIGINAL_AUDIO_TRACK),
         "-filter_complex",
         filter_expr,
         "-map",
@@ -725,9 +749,10 @@ def _final_mix_output_command(video_path, aligned_vocals, aligned_background, tm
         "[mixed]",
         "-c:v",
         "copy",
+        *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
-        cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
+        cmd.extend(_archival_track_args(video_path.suffix, audio_args))
     else:
         cmd.extend(audio_args)
     cmd.extend(["-y", str(tmp_output_video)])
@@ -815,13 +840,16 @@ def _final_mix_step(
 
     tmp_output = _staged_output_path(final_output_video, aligned_vocals.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
+    # Both stems start where the source's audio started and are encoded at the rate the
+    # container keeps (modules/mux_format.py); an unreadable source gives today's command.
+    plan = _mux_format.plan_for(video_path, final_output_video.suffix)
     loudnorm_args = _resolve_loudnorm_args(
-        video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration
+        video_path, aligned_vocals, aligned_background, vocal_mix_vol, bg_mix_vol, total_duration=duration, sample_rate=plan.sample_rate
     )
-    filter_expr = _build_mix_filter_expression(vocal_mix_vol, bg_mix_vol, loudnorm_args)
+    filter_expr = _build_mix_filter_expression(vocal_mix_vol, bg_mix_vol, loudnorm_args, sample_rate=plan.sample_rate)
 
     def build_mix_cmd(threads):
-        return _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output, audio_args, threads, filter_expr)
+        return _final_mix_output_command(video_path, aligned_vocals, aligned_background, tmp_output, audio_args, threads, filter_expr, plan)
 
     attempt_cpu_run_with_retry(build_mix_cmd, CPU_THREADS, description="Final Mixing", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Mix Failed: Output video invalid/empty.")
@@ -839,7 +867,7 @@ def _single_audio_stream_args(filter_expr):
     return ["-filter_complex", filter_expr, "-map", "[mastered]"]
 
 
-def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_video, audio_args, threads, filter_expr=None):
+def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_video, audio_args, threads, filter_expr=None, plan=None):
     """Generates FFmpeg arguments for remuxing a single audio track.
 
     Args:
@@ -850,28 +878,32 @@ def _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output_
         threads (int): CPU worker threads count.
         filter_expr (str, optional): Mastering graph; the track is mapped directly
             when omitted.
+        plan (mux_format.MuxPlan, optional): Where the track starts and the rate it is
+            encoded at; today's command when omitted.
 
     Returns:
         list: FFmpeg CLI arguments.
     """
+    plan = _resolve_override(plan, _mux_format.MuxPlan())
     cmd = [
         FFMPEG_BIN,
         "-stats",
         "-hide_banner",
         "-threads",
         str(threads),
+        *plan.global_args(),
         "-i",
         str(video_path),
-        "-i",
-        str(processed_audio_wav),
+        *plan.restored_input(processed_audio_wav, PRESERVE_ORIGINAL_AUDIO_TRACK),
         "-map",
         "0:v:0",
         *_single_audio_stream_args(filter_expr),
         "-c:v",
         "copy",
+        *plan.output_args(),
     ]
     if PRESERVE_ORIGINAL_AUDIO_TRACK:
-        cmd.extend(["-map", "0:a:0?", *_preserved_audio_args(video_path.suffix, audio_args), *_scope_audio_args_for_stream(audio_args, 0)])
+        cmd.extend(_archival_track_args(video_path.suffix, audio_args))
     else:
         cmd.extend(audio_args)
     cmd.extend(["-y", str(tmp_output_video)])
@@ -898,11 +930,16 @@ def _final_mux_single_audio_step(video_path, processed_audio_wav, final_output_v
 
     tmp_output = _staged_output_path(final_output_video, processed_audio_wav.parent)
     audio_args = _get_audio_encoding_args(final_output_video.suffix)
-    loudnorm_args = _resolve_single_track_loudnorm_args(video_path, processed_audio_wav, total_duration=duration)
-    filter_expr = _build_single_audio_filter_expression(loudnorm_args)
+    # The track starts where the source's audio started, at the rate the container keeps
+    # (modules/mux_format.py); an unreadable source gives today's command.
+    plan = _mux_format.plan_for(video_path, final_output_video.suffix)
+    loudnorm_args = _resolve_single_track_loudnorm_args(
+        video_path, processed_audio_wav, total_duration=duration, sample_rate=plan.sample_rate
+    )
+    filter_expr = _build_single_audio_filter_expression(loudnorm_args, sample_rate=plan.sample_rate)
 
     def build_mux_cmd(threads):
-        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_args, threads, filter_expr)
+        return _build_single_audio_mux_command(video_path, processed_audio_wav, tmp_output, audio_args, threads, filter_expr, plan)
 
     attempt_cpu_run_with_retry(build_mux_cmd, CPU_THREADS, description="Final Remux", total_duration=duration)
     _promote_valid_output(tmp_output, final_output_video, "Final Remux Failed: Output video invalid/empty.")
@@ -967,9 +1004,10 @@ def _process_single_track_pipeline(
     filtered_audio_wav = step_func(original_wav, audio_dir, total_duration=video_dur)
 
     log_msg(f"  [Step 3/4] Smart Audio Sync ({sync_label})...")
-    aligned_audio = work_dir / f"aligned_{filtered_audio_wav.name}"
+    aligned_audio = stage_output(work_dir, "aligned", filtered_audio_wav)
     sync_reference = ref_wav or original_wav
-    _align_stems(sync_reference, filtered_audio_wav, aligned_audio, sync_method=sync_method)
+    # Every single-track chain keeps the source's length and time base (sync.py, sync_dtw_enable).
+    _align_stems(sync_reference, filtered_audio_wav, aligned_audio, sync_method=sync_method, length_preserving=True)
 
     _final_mux_single_audio_step(video_path, aligned_audio, final_output_video, total_duration=video_dur)
 
@@ -1094,6 +1132,8 @@ def _run_dsp_filter_file(input_wav, output_wav, filter_expr, desc, total_duratio
     if is_valid_audio(tmp_wav):
         publish(tmp_wav, output_wav)
         return output_wav
+    # A fallback logs at WARNING, so the stage cache never stores it (modules/stage_cache.py).
+    log_msg(f"    [Warning] {desc} wrote no valid audio; its input is handed on.", level="WARNING")
     tmp_wav.unlink(missing_ok=True)
     return input_wav
 
@@ -1111,7 +1151,7 @@ def _deess_vocals_step(vocals_wav, enhanced_vocals_dir, total_duration=None):
     """
     if not ENABLE_DEESSER or not is_valid_audio(vocals_wav):
         return vocals_wav
-    output_wav = enhanced_vocals_dir / f"deessed_{vocals_wav.name}"
+    output_wav = stage_output(enhanced_vocals_dir, "deessed", vocals_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [AI Vocal Polish] Applying Dynamic Sibilance De-Esser...")
@@ -1131,7 +1171,7 @@ def _expand_background_step(background_wav, denoised_bg_dir, total_duration=None
     """
     if not ENABLE_DYNAMIC_EXPANDER or not is_valid_audio(background_wav):
         return background_wav
-    output_wav = denoised_bg_dir / f"expanded_{background_wav.name}"
+    output_wav = stage_output(denoised_bg_dir, "expanded", background_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [AI Background Polish] Applying Downward Dynamic Noise Expander...")
@@ -1150,7 +1190,7 @@ def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strat
     if not polish_filter:
         return denoised_wav
     fingerprint = hashlib.sha256(polish_filter.encode("utf-8")).hexdigest()[:12]
-    output_wav = polish_dir / f"polished_{fingerprint}_{denoised_wav.name}"
+    output_wav = stage_output(polish_dir, f"polished_{fingerprint}", denoised_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [AI Full-Audio Polish] Applying Air Polish and Downward Dynamic Expander...")
@@ -1160,12 +1200,13 @@ def _polish_full_audio_step(denoised_wav, polish_dir, total_duration=None, strat
 def _pre_denoise_surgical_step(precond_wav, audio_dir, total_duration=None, strategy=None, hum_cancel=False):
     """Pass 2.5: Pre-denoise surgical DSP notching of the higher mains harmonics."""
     if not is_valid_audio(precond_wav):
+        log_msg(f"    [Warning] {Path(precond_wav).name} does not read as audio; the surgical notch is skipped.", level="WARNING")
         return precond_wav
     surgical_filter = build_pre_denoise_surgical_filter(strategy=strategy, hum_cancel=hum_cancel)
     if not surgical_filter:
         return precond_wav
     fingerprint = hashlib.sha256(surgical_filter.encode("utf-8")).hexdigest()[:12]
-    output_wav = audio_dir / f"surgical_{fingerprint}_{precond_wav.name}"
+    output_wav = stage_output(audio_dir, f"surgical_{fingerprint}", precond_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [Surgical Pre-Denoise DSP] Applying Pre-Denoising Tonal Notches & Rumble Filter...")
@@ -1180,7 +1221,7 @@ def _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=None, str
     if not cleanup_filter:
         return denoised_wav
     fingerprint = hashlib.sha256(cleanup_filter.encode("utf-8")).hexdigest()[:12]
-    output_wav = audio_dir / f"cleaned_{fingerprint}_{denoised_wav.name}"
+    output_wav = stage_output(audio_dir, f"cleaned_{fingerprint}", denoised_wav)
     if is_valid_audio(output_wav):
         return output_wav
     log_msg("    [Surgical Post-Denoise DSP] Notching Residual Tones Post-Denoise...")
@@ -1210,7 +1251,79 @@ def _neural_stage(apl_chain, model_to_use, surgical_wav, strategy=None):
     return named or model_to_use, _spectral_denoise.neural_wanted(surgical_wav)
 
 
-POST_NEURAL_STAGES = frozenset({"apply_air", "sibilant_guard", "pause_floor", "expander_depth_db"})
+POST_NEURAL_STAGES = frozenset(
+    {
+        "apply_air",
+        "sibilant_guard",
+        "pause_floor",
+        "expander_depth_db",
+        "post_neural_suppress",
+        "neural_level_restore",
+        "air_gate",
+        "burst_ceiling",
+    }
+)
+# The post-neural stage switches, each False unless the caller names it.
+POST_NEURAL_SWITCHES = (
+    "sibilant_guard",
+    "pause_floor",
+    "apply_air",
+    "post_neural_suppress",
+    "neural_level_restore",
+    "air_gate",
+    "burst_ceiling",
+)
+# The stage switches the cached point reads, in the order the step takes them.
+NEURAL_FLAGS = ("spectral_denoise", "physical_repair", "deepfilternet", "hum_cancel", "plosive_tamer", "tone_cancel", "resemble_denoise")
+
+
+def _run_neural_model(surgical_wav, audio_dir, denoise_sub_dir, model_to_use, flags, total_duration):
+    """The neural model: DeepFilterNet when asked for, else Resemble when asked for, else the UVR / RoFormer separator."""
+    return _deepfilter.denoise_or(
+        surgical_wav,
+        audio_dir / "deepfilter_denoised",
+        flags["deepfilternet"],
+        lambda: _resemble.denoise_or(
+            surgical_wav,
+            audio_dir / "resemble_denoised",
+            flags["resemble_denoise"],
+            lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, denoise_model=model_to_use),
+            total_duration=total_duration,
+        ),
+    )
+
+
+def _neural_output(original_wav, audio_dir, total_duration, denoise_model, strategy, flags):
+    """Everything up to and including the neural model: (surgical_wav, denoised_wav).
+
+    The surgical notch (with its ring guard, `apl_surgical_ring_guard`, off by default), the
+    deterministic chain, the model choice and the model, in that order. The stage cache
+    (`modules/stage_cache.py`) replays exactly this pair; nothing here reads a post-neural
+    setting.
+    """
+    model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
+    surgical_wav = _pre_denoise_surgical_step(
+        original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=flags["hum_cancel"]
+    )
+    surgical_wav = _notch_ring_guard.apply_when_enabled(original_wav, surgical_wav)
+    plan = _apl_chain.stage_plan(
+        audio_dir,
+        total_duration,
+        strategy,
+        flags["physical_repair"],
+        flags["spectral_denoise"],
+        hum_cancel=flags["hum_cancel"],
+        plosive_tamer=flags["plosive_tamer"],
+        tone_cancel=flags["tone_cancel"],
+    )
+    surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
+    if "spectral_denoise" in applied:
+        model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
+    model_to_use, neural_wanted = _neural_stage(flags["spectral_denoise"], model_to_use, surgical_wav, strategy)
+    denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
+    if not neural_wanted:
+        return surgical_wav, surgical_wav
+    return surgical_wav, _run_neural_model(surgical_wav, audio_dir, denoise_sub_dir, model_to_use, flags, total_duration)
 
 
 def _denoise_and_polish_full_audio_step(
@@ -1230,80 +1343,73 @@ def _denoise_and_polish_full_audio_step(
 ):
     """Cascades pre-denoise surgical DSP, neural denoising, post-cleanup, and adaptive polish.
 
-    `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard` and
-    `pause_floor`, all False unless named, and `expander_depth_db`, the polish expander's
-    depth for this caller (auto_pure_linear passes its own; None keeps the shared
-    `expander_depth_db`). Any other name is a TypeError like a misspelt keyword would be.
+    `stages` holds the post-neural settings: the switches `apply_air`, `sibilant_guard`,
+    `pause_floor`, `post_neural_suppress`, `neural_level_restore`, `air_gate` and
+    `burst_ceiling`, all False unless named (each stage then reads its own key), and
+    `expander_depth_db`, the polish expander's depth for this caller (auto_pure_linear
+    passes its own; None keeps the shared `expander_depth_db`). Any other name is a
+    TypeError like a misspelt keyword would be.
     """
     unknown = set(stages) - POST_NEURAL_STAGES
     if unknown:
         raise TypeError(f"unknown post-neural stage(s): {sorted(unknown)}")
     expander_depth_db = stages.get("expander_depth_db")
-    stages = {name: bool(stages.get(name, False)) for name in ("sibilant_guard", "pause_floor", "apply_air")}
-    model_to_use = _resolve_adaptive_denoise_model(strategy, denoise_model)
-    surgical_wav = _pre_denoise_surgical_step(
-        original_wav, audio_dir, total_duration=total_duration, strategy=strategy, hum_cancel=hum_cancel
+    stages = {name: bool(stages.get(name, False)) for name in POST_NEURAL_SWITCHES}
+    flags = dict(
+        zip(NEURAL_FLAGS, (spectral_denoise, physical_repair, deepfilternet, hum_cancel, plosive_tamer, tone_cancel, resemble_denoise))
     )
-    plan = _apl_chain.stage_plan(
+    # With AI_RESTORE_STAGE_CACHE unset this is the producer itself; set, a recurring key replays its pair.
+    surgical_wav, denoised_wav = _stage_cache.through(
+        lambda: _neural_output(original_wav, audio_dir, total_duration, denoise_model, strategy, flags),
+        original_wav,
         audio_dir,
-        total_duration,
-        strategy,
-        physical_repair,
-        spectral_denoise,
-        hum_cancel=hum_cancel,
-        plosive_tamer=plosive_tamer,
-        tone_cancel=tone_cancel,
+        _stage_cache_key.neural_call(total_duration, denoise_model, strategy, flags, PIPELINE_SAMPLE_RATE),
     )
-    surgical_wav, applied = _apl_chain.run(surgical_wav, plan)
-    if "spectral_denoise" in applied:
-        model_to_use = _spectral_denoise.DEEP_DENOISE_MODEL
-    model_to_use, neural_wanted = _neural_stage(spectral_denoise, model_to_use, surgical_wav, strategy)
-    denoise_sub_dir = _without_stale_neural_output(_neural_denoise_dir(audio_dir, Path(surgical_wav), model_to_use))
-    denoised_wav = surgical_wav
-    if neural_wanted:
-        denoised_wav = _deepfilter.denoise_or(
-            surgical_wav,
-            audio_dir / "deepfilter_denoised",
-            deepfilternet,
-            lambda: _resemble.denoise_or(
-                surgical_wav,
-                audio_dir / "resemble_denoised",
-                resemble_denoise,
-                lambda: _denoise_full_audio_step(surgical_wav, denoise_sub_dir, denoise_model=model_to_use),
-                total_duration=total_duration,
-            ),
-        )
+    # The neural output at its input's programme level when opted in and apl_neural_level_restore is on.
+    denoised_wav = _neural_level.restore_when_needed(surgical_wav, denoised_wav, audio_dir, stages)
     cleaned_wav = _post_denoise_cleanup_step(denoised_wav, audio_dir, total_duration=total_duration, strategy=strategy)
     return _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, expander_depth_db)
 
 
 def _post_neural_stages(original_wav, surgical_wav, cleaned_wav, audio_dir, total_duration, strategy, stages, depth_db=None):
-    """After the neural stage: the sibilant guard (against the pre-neural audio), the polish, then the pause floor.
+    """After the neural stage: the sibilant guard (against the pre-neural audio), the hiss stages, the polish, the pause floor.
 
-    The guard runs before the polish so the expander sees the restored fricatives; the pause
-    floor runs after it so the expander cannot take the fill back out. Its reference is the
-    pre-conditioned audio the chain started from.
+    The guard runs before the polish so the expander sees the restored fricatives; the
+    post-neural suppressor and the air gate after the guard, so the suppressor cleans what
+    the polish will see; the burst ceiling after the polish, on the levels the listener gets;
+    the pause floor after both so the expander cannot take the fill back out and the fill
+    reads the deficit the ceiling left. The pause floor's, the hiss gate's and the ceiling's
+    reference is the pre-conditioned audio the chain started from.
     """
     if stages.get("sibilant_guard"):
         from . import sibilant_guard as _sibilant_guard
 
         cleaned_wav = _sibilant_guard.apply_when_needed(surgical_wav, cleaned_wav, audio_dir, strategy=strategy)
+    # The post-neural suppressor and the air gate, each read only when opted in and its key is on.
+    cleaned_wav, apply_air = _post_neural_suppress.apply_when_needed(original_wav, cleaned_wav, audio_dir, stages)
     polished = _polish_full_audio_step(
         cleaned_wav,
         audio_dir,
         total_duration=total_duration,
         strategy=strategy,
-        apply_air=stages.get("apply_air", False),
+        apply_air=apply_air,
         depth_db=depth_db,
     )
+    if stages.get("burst_ceiling"):
+        from . import burst_ceiling as _burst_ceiling
+
+        polished = _burst_ceiling.apply_when_needed(original_wav, polished, audio_dir, stages)
     if stages.get("pause_floor"):
         from . import pause_floor as _pause_floor
 
-        polished = _pause_floor.apply_when_needed(original_wav, polished, audio_dir, strategy=strategy)
+        suppressed = _reference_suppress.is_output(cleaned_wav)
+        polished = _pause_floor.apply_when_needed(original_wav, polished, audio_dir, strategy=strategy, suppressed=suppressed)
     return polished
 
 
-def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None):
+def _align_and_mix_stems(
+    work_dir, original_wav, vocals_wav, background_wav, video_path, final_output_video, video_dur, strategy=None, length_preserving=False
+):
     """Aligns polished stems to the source timing and renders the final 2-stem mix.
 
     Args:
@@ -1315,14 +1421,16 @@ def _align_and_mix_stems(work_dir, original_wav, vocals_wav, background_wav, vid
         final_output_video (pathlib.Path): Output video file.
         video_dur (float): Duration in seconds.
         strategy (dict, optional): Pre-computed acoustic restoration strategy.
+        length_preserving (bool): Both stems keep the source's length and time base (auto_pure_linear's
+            stem path), so `sync_dtw_enable` may keep them off DTW; the stem modes leave it False.
     """
     sync_method = _strategy_value(strategy, "sync_method", None)
 
-    aligned_vocals = work_dir / f"aligned_{vocals_wav.name}"
-    _align_stems(original_wav, vocals_wav, aligned_vocals, sync_method=sync_method)
+    aligned_vocals = stage_output(work_dir, "aligned", vocals_wav)
+    _align_stems(original_wav, vocals_wav, aligned_vocals, sync_method=sync_method, length_preserving=length_preserving)
 
-    aligned_background = work_dir / f"aligned_{background_wav.name}"
-    _align_stems(original_wav, background_wav, aligned_background, sync_method=sync_method)
+    aligned_background = stage_output(work_dir, "aligned", background_wav)
+    _align_stems(original_wav, background_wav, aligned_background, sync_method=sync_method, length_preserving=length_preserving)
 
     _final_mix_step(
         video_path,
@@ -1554,6 +1662,10 @@ def process_hybrid_audio(video_path, gpu_name, target_output_dir=None):
         log_msg(f"  [System] Task Completed: {video_path.name}")
         return True
 
+    except _source_checks.SourceSkipped as skip:
+        log_msg(f"  [Skip] {video_path.name}: {skip}", is_error=True)
+        return False
+
     except Exception as e:
         log_msg(f"  [Error] Processing failed: {e}", is_error=True)
         return False
@@ -1581,6 +1693,7 @@ _loudnorm_target_args = _mastering._loudnorm_target_args
 _mastering_chain = _mastering._mastering_chain
 _measured_loudnorm_args = _mastering._measured_loudnorm_args
 _parse_loudnorm_json = _mastering._parse_loudnorm_json
+_archival_track_args = _mastering._archival_track_args
 _preserved_audio_args = _mastering._preserved_audio_args
 _resolve_loudnorm_args = _mastering._resolve_loudnorm_args
 _resolve_measured_loudnorm = _mastering._resolve_measured_loudnorm
