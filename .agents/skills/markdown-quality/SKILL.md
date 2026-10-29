@@ -48,8 +48,12 @@ poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 ## Gate Quirks on a Windows Checkout
 
 - `core.autocrlf=true` gives CRLF working copies and `mdformat --check` fails
-  on them whatever their content; `git checkout -- file` restores CRLF too.
-  Normalise the touched files to LF (`sed -i 's/\r$//'`) before the check;
+  on them whatever their content; `git checkout -- file` restores CRLF too,
+  and so does `git apply` (a patch carried between worktrees failed the v1.4.0
+  release gate this way while `git diff` showed nothing: it compares after
+  the conversion). Normalise the touched files to LF (`sed -i 's/\r$//'`)
+  before the check, and check them inside the repository, where mdformat
+  reads its config (a copy elsewhere passed);
   git stores LF either way. `Path.write_text` on Windows writes CRLF unless
   it is given `newline="\n"`. (A Bash heredoc turned both escapes into
   spaces the first time this was written: put backslashes in files with the

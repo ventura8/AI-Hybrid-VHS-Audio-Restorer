@@ -109,7 +109,8 @@ def test_the_spans_record_the_frames_either_band_lifts(tmp_path, monkeypatch):
     produced, _restored = _keep(tmp_path / "work", "bands")
     record = json.loads((tmp_path / "events" / event_log.record_name(pause_floor.STAGE, Path("res.wav"))).read_text(encoding="utf-8"))
     assert record["deficit"] == "bands"
-    assert record["outcome"] > 0 and record["filled_s"]
+    assert record["outcome"] > 0
+    assert record["filled_s"]
     assert produced.exists()
 
 

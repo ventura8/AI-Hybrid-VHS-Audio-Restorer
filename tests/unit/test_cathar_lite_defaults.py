@@ -51,8 +51,9 @@ def test_the_constants_carry_the_lighter_set():
         cfg.CATHAR_EXPANDER_DECAY_S,
         cfg.CATHAR_PAUSE_FLOOR_HF_CUT_DB,
     )
+    shared = (cfg.EXPANDER_DEPTH_DB, cfg.EXPANDER_ATTACK_S, cfg.EXPANDER_DECAY_S, cfg.PAUSE_FLOOR_HF_CUT_DB)
     assert constants == tuple(CATHAR_OWN.values())
-    assert (cfg.EXPANDER_DEPTH_DB, cfg.EXPANDER_ATTACK_S, cfg.EXPANDER_DECAY_S, cfg.PAUSE_FLOOR_HF_CUT_DB) == tuple(SHARED.values())
+    assert shared == tuple(SHARED.values())
 
 
 def _loaded(user_config):
