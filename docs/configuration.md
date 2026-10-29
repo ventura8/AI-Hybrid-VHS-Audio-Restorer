@@ -2488,7 +2488,13 @@ before and after the mkdir, and the source is skipped with that reason
 at one; the cleanup never removes through a link; a stale partial that is a
 dangling link is removed instead of written through, and a cross-volume
 publish unlinks whatever sits at the partial's name before it copies
-(`tests/unit/test_work_dir_links.py`).
+(`tests/unit/test_work_dir_links.py`). A real work directory can carry
+links too: one named like a partial (`original.tmp.wav` pointing at a
+file the user owns) was left by the sweep, and the extraction's
+`ffmpeg -y` wrote through it (security review of PR #21, 2026-10-29).
+The app makes no links, so the sweep removes every link inside the work
+directory, the link and never its target, and the extraction removes a
+stale partial or link at its partial's name before ffmpeg runs.
 
 ## Long Captures
 

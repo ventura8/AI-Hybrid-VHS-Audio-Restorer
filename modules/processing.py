@@ -78,6 +78,7 @@ from .hygiene import (
     open_work_dir,
     partial_path,
     publish,
+    remove_stale,
     remove_tree,
     scoped_temp_dir,
     sweep_partials,
@@ -172,16 +173,16 @@ def _extract_audio_step(video_path, original_wav, total_duration=None):
         log_msg("  [System] Skipping Extraction (valid exists)")
         return
 
-    if original_wav.exists():
-        original_wav.unlink()
+    remove_stale(original_wav)
 
     # A source without an audio stream is a skip, decided before ffmpeg runs: the extraction
     # used to fail on it and retry on fewer threads six times (modules/source_checks.py).
     _source_checks.require_audio_stream(video_path)
     log_msg("  [System] Extracting Audio Stream...")
 
-    # Extract to .tmp first to maintain atomic guarantees
+    # Extract to .tmp first to maintain atomic guarantees; ffmpeg -y follows a link at that name, so a stale one goes.
     tmp_wav = original_wav.with_suffix(".tmp.wav")
+    remove_stale(tmp_wav)
 
     def build_extract_cmd(threads):
         return [
