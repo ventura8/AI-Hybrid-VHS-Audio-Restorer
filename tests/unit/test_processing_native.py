@@ -173,7 +173,7 @@ def test_filter_arnndn_step_missing_model_raises(mock_valid, mock_has_filter, tm
     out_dir = tmp_path / "out_dir"
     out_dir.mkdir()
 
-    with patch("modules.filters._resolve_arnndn_model_path", return_value=Path(tmp_path / "missing.rnnn")):
+    with patch("modules.filters._resolve_arnndn_model_path", return_value=None):
         with pytest.raises(FileNotFoundError, match="ARNNDN model file not found"):
             modules.filters._filter_arnndn_step(orig, out_dir)
 

@@ -5,6 +5,7 @@ with its 1-4 kHz body gone and its noise 10 dB down, which is what the neural st
 """
 
 import functools
+import json
 from unittest.mock import patch
 
 import numpy as np
@@ -12,7 +13,7 @@ import pytest
 import scipy.signal
 import soundfile as sf
 
-from modules import sibilant_guard
+from modules import event_log, sibilant_guard
 
 RATE = 44100
 SECONDS = 6.0
@@ -185,3 +186,57 @@ def test_a_failure_inside_the_stage_leaves_the_audio_usable(pair, tmp_path):
     ):
         assert sibilant_guard.apply_when_needed(reference, restored, tmp_path / "work") == restored
     assert "after failure" in log.call_args[0][0]
+
+
+def _guard_with_log(pair, work, log_dir, monkeypatch):
+    """The pair through the stage with the event log on (or off, when `log_dir` is None); returns the guarded samples."""
+    reference, restored = pair
+    if log_dir is None:
+        monkeypatch.delenv("AI_RESTORE_EVENT_LOG", raising=False)
+    else:
+        monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(log_dir))
+    with patch("modules.sibilant_guard.APL_ENABLE_SIBILANT_GUARD", True), patch("modules.sibilant_guard.log_msg"):
+        return sf.read(str(sibilant_guard.apply_when_needed(reference, restored, work)), dtype="float32")[0]
+
+
+def _record(log_dir, reference):
+    """The stage's event-log record for a reference."""
+    return json.loads((log_dir / event_log.record_name(sibilant_guard.STAGE, reference)).read_text(encoding="utf-8"))
+
+
+def test_the_event_log_holds_the_fricatives_found_and_changes_no_sample(pair, tmp_path, monkeypatch):
+    """Every injected 's' has a logged event over it, in seconds; the guarded samples are the same with the log off."""
+    logged = _guard_with_log(pair, tmp_path / "on", tmp_path / "events", monkeypatch)
+    record = _record(tmp_path / "events", pair[0])
+    spans = [(int(start * RATE), int(stop * RATE)) for start, stop in record["events_s"]]
+    assert (record["count"], record["guard_hz"], record["hf_share_min"]) == (
+        10,
+        sibilant_guard.APL_SIBILANT_GUARD_HZ,
+        sibilant_guard.HF_SHARE_MIN,
+    )
+    assert all(_overlaps(burst, spans) for burst in SIBILANTS)
+    assert np.array_equal(logged, _guard_with_log(pair, tmp_path / "off", None, monkeypatch))
+
+
+def test_a_switched_off_guard_logs_why_it_did_not_look(pair, tmp_path, monkeypatch):
+    """Off, the guard still says so in the log."""
+    reference, restored = pair
+    monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(tmp_path / "events"))
+    with patch("modules.sibilant_guard.APL_ENABLE_SIBILANT_GUARD", False):
+        assert sibilant_guard.apply_when_needed(reference, restored, tmp_path / "work") == restored
+    record = _record(tmp_path / "events", reference)
+    assert (record["skipped"], record["events_s"], record["hf_share_min"]) == ("switched off", [], sibilant_guard.HF_SHARE_MIN)
+
+
+def test_a_failure_after_the_detection_replaces_the_events_with_the_error(pair, tmp_path, monkeypatch):
+    """The blend raised, so the output carries no guard: the record says the stage failed, not what it found."""
+    reference, restored = pair
+    monkeypatch.setenv("AI_RESTORE_EVENT_LOG", str(tmp_path / "events"))
+    with (
+        patch("modules.sibilant_guard.APL_ENABLE_SIBILANT_GUARD", True),
+        patch("modules.sibilant_guard.guard_file", side_effect=RuntimeError("no room")),
+        patch("modules.sibilant_guard.log_msg"),
+    ):
+        assert sibilant_guard.apply_when_needed(reference, restored, tmp_path / "work") == restored
+    record = _record(tmp_path / "events", reference)
+    assert (record["skipped"], record["count"], record["mix"]) == ("failed: no room", 0, sibilant_guard.APL_SIBILANT_MIX)

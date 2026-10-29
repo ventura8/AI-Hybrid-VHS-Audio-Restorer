@@ -65,20 +65,28 @@ def test_the_apl_mode_passes_its_own_expander_depth(tmp_path):
     assert denoise.call_args.kwargs["expander_depth_db"] == 12.0
 
 
-def test_the_cathar_mode_passes_the_music_depth_only_on_music(tmp_path):
+def test_the_cathar_mode_passes_the_music_depth_on_music_and_its_own_on_speech(tmp_path):
+    """The music profile's depth on music, cathar_expander_depth_db on speech, cathar's own timing on both (2026-10-25)."""
     orig = tmp_path / "orig.wav"
     seen = []
     with (
         patch("modules.processing._resolve_preconditioned_audio", side_effect=lambda _w, _o, _d, _m, strategy: (orig, strategy)),
         patch("modules.processing._process_single_track_pipeline") as pipeline,
         patch("modules.cathar.filter_cathar_vhs_pipeline", return_value=orig),
-        patch("modules.processing._polish_full_audio_step", side_effect=lambda w, *_a, **kw: seen.append(kw["depth_db"]) or w),
+        patch("modules.modes.cathar.reference_suppressed", side_effect=lambda _s, w, _d: w),
+        patch(
+            "modules.processing._polish_full_audio_step",
+            side_effect=lambda w, *_a, **kw: seen.append((kw["depth_db"], kw["timing_s"])) or w,
+        ),
         patch("modules.pause_floor.apply_when_needed", side_effect=lambda _i, w, *_a, **_k: w),
         patch("modules.cathar.CATHAR_MUSIC_PROFILE", True),
         patch("modules.cathar.CATHAR_MUSIC_PERSISTENCE_MIN", 0.05),
         patch("modules.cathar.CATHAR_MUSIC_EXPANDER_DEPTH_DB", 4.0),
+        patch("modules.cathar.CATHAR_EXPANDER_DEPTH_DB", 12.0),
+        patch("modules.cathar.CATHAR_EXPANDER_ATTACK_S", 0.08),
+        patch("modules.cathar.CATHAR_EXPANDER_DECAY_S", 0.12),
     ):
         for strategy in (_music(), _speech()):
             CatharMode().execute(tmp_path / "work", orig, tmp_path / "in.mp4", tmp_path / "out.mp4", 20.0, strategy=strategy)
             pipeline.call_args[0][5](orig, tmp_path / "work")
-    assert seen == [4.0, None]
+    assert seen == [(4.0, (0.08, 0.12)), (12.0, (0.08, 0.12))]

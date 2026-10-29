@@ -4,17 +4,22 @@ Provides filter graph generation, model path resolution, character escaping,
 and robust process execution for VHS native DSP restoration and pre-conditioning:
 - Stage 1: Hardware DC Offset Bias Removal (2 Hz sub-audible highpass filter).
 - Stage 2: Stereo Channel Balance Auto-Leveling (Left/Right channel RMS balancing).
-- Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay).
+- Stage 3: Stereo Azimuth Delay & Phase Alignment (inter-channel cross-correlation delay;
+  a polarity-inverted pair is logged, and read as no skew behind azimuth_reject_inverted_pair;
+  azimuth_estimate_method reads it from the head or from the loudest spans' GCC-PHAT vote).
 - Stage 4: Analog Preamp De-Clipping (peak clipping threshold reconstruction via adeclip).
 - Stage 5: Impulsive Pop/Click Suppression (adeclick) and Motor Rumble Highpass (45-75 Hz).
-- Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters).
-- Stage 7: CRT Horizontal Flyback Line Whine Notch (15.625 kHz PAL / 15.734 kHz NTSC).
+- Stage 6: Fundamental & Harmonic Mains Buzz Rejection (50/60/100/120 Hz notch filters;
+  scanner_mains_vote keeps the head's vote or confirms it on the whole analysed signal).
+- Stage 7: CRT Horizontal Flyback Line Whine Notch (15.625 kHz PAL / 15.734 kHz NTSC; crt_detect_mode
+  finds the line in the first 0.74 s or in the whole file's averaged spectrum).
 - Stage 8: Camcorder Plastic Enclosure Acoustic Resonance Notching (1.5 kHz - 3.5 kHz).
 - Stage 9: Fast Fourier Spectral Denoising (afftdn) or Neural RNNoise (arnndn).
 """
 
 import hashlib
 import http.client
+import math
 import urllib.parse
 from pathlib import Path
 
@@ -36,17 +41,25 @@ from .config import (
     ARNNDN_ENABLE_ADECLICK,
     ARNNDN_HIGHPASS_FREQ,
     ARNNDN_MODEL,
+    AZIMUTH_ESTIMATE_METHOD,
+    AZIMUTH_REJECT_INVERTED_PAIR,
+    CRT_DETECT_MODE,
     CRT_NOTCH_Q,
     ENABLE_ADECLICK,
     ENABLE_DYNAMIC_EXPANDER,
     ENABLE_LINEAR_AIR,
+    EXPANDER_ATTACK_S,
+    EXPANDER_DECAY_S,
     EXPANDER_DEPTH_DB,
     EXPANDER_KNEE_OFFSET_DB,
     HIGHPASS_FREQ,
+    LINEAR_AIR_FREQ_HZ,
     LINEAR_AIR_GAIN_DB,
     NOTCH_FREQ,
+    SCANNER_MAINS_VOTE,
 )
 from .hardware import CPU_THREADS
+from .stage_names import stage_output
 from .utils import (
     FFMPEG_BIN,
     MODELS_DIR,
@@ -325,13 +338,25 @@ def _validate_arnndn_file_integrity(model_path, model_name):
         return False
 
 
+def _store_model_file(directory, model_name):
+    """The resolved model file inside directory, or None when absent or when its real path leaves it.
+
+    A file that is a link to somewhere outside the store folder is skipped, so a link placed
+    in the store can never hand FFmpeg a file outside it.
+    """
+    model_file = directory / model_name
+    if not model_file.is_file():
+        return None
+    resolved = model_file.resolve()
+    return resolved if resolved.parent == directory.resolve() else None
+
+
 def _search_model_in_dirs(model_name, search_dirs):
-    """Searches candidate folders for an RNNoise model file and verifies its integrity."""
+    """Searches the store folders for an RNNoise model file confined to them and verifies its integrity."""
     for directory in search_dirs:
-        model_file = directory / model_name
-        if model_file.is_file():
-            if _validate_arnndn_file_integrity(model_file, model_name):
-                return model_file.resolve()
+        model_file = _store_model_file(directory, model_name)
+        if model_file is not None and _validate_arnndn_file_integrity(model_file, model_name):
+            return model_file
     return None
 
 
@@ -407,24 +432,50 @@ def _try_auto_download_arnndn(model_name):
     return None
 
 
-def _resolve_arnndn_model_path(model_name=ARNNDN_MODEL):
-    """Resolves ARNNDN model file across candidate paths, auto-downloading if missing or corrupt."""
-    candidate = Path(model_name)
-    if candidate.is_file() and _validate_arnndn_file_integrity(candidate, candidate.name):
-        return candidate.resolve()
+def _arnndn_store_dirs():
+    """The RNNoise store folders: the package-anchored model store, never the working directory."""
+    return [MODELS_DIR / "arnndn", MODELS_DIR]
 
-    search_dirs = [Path("models") / "arnndn", Path("models"), MODELS_DIR / "arnndn", MODELS_DIR]
-    found = _search_model_in_dirs(model_name, search_dirs)
+
+def _resolve_arnndn_model_path(model_name=ARNNDN_MODEL):
+    """Resolves an RNNoise model inside the model store, auto-downloading known names.
+
+    Only the bare filename is honoured, so a planted config.yaml cannot name a path
+    outside the store (a CWD-relative or absolute `arnndn_model`): the name is joined onto
+    the package-anchored store folders and never opened as given. A `models/` folder in the
+    working directory is not searched (a folder of tapes would otherwise supply its own
+    store), and a store file whose real path leaves its folder is skipped. Returns None
+    when the store has no such model. modules.config also reduces `arnndn_model` to a bare
+    `.rnnn` filename before it reaches here.
+    """
+    safe_name = Path(str(model_name)).name
+    found = _search_model_in_dirs(safe_name, _arnndn_store_dirs())
     if found is not None:
         return found
+    return _try_auto_download_arnndn(safe_name)
 
-    downloaded = _try_auto_download_arnndn(model_name)
-    return downloaded if downloaded is not None else candidate.resolve()
+
+# Characters that cannot be represented inside a single-quoted FFmpeg filter option. A
+# single quote terminates the quoted option (FFmpeg drops it across its two parse levels,
+# so it cannot round-trip), and once a quote has broken out `; , [ ]` would start new
+# filters or pads. A legitimate model path (a bare `.rnnn` filename under the model store)
+# never contains them, so the path is refused rather than risk filtergraph injection.
+_FILTER_PATH_FORBIDDEN = ("'", '"', ";", ",", "[", "]", "\n", "\r", "\0")
 
 
 def _escape_ffmpeg_filter_path(file_path):
-    """Escapes path characters (like colons in Windows drive paths) for FFmpeg filter syntax."""
-    return str(Path(file_path).resolve().as_posix()).replace("\\", r"\\").replace("'", r"\'").replace(":", r"\:")
+    """Escapes a model path for an FFmpeg single-quoted filter option (`...='<path>'`).
+
+    The caller wraps the value in single quotes. Inside those quotes a drive colon and a
+    backslash still split the filter option unless escaped (a bare `D:` truncates the value
+    to `D`), while spaces are literal. `.as_posix()` first turns every separator into `/`.
+    A single quote cannot survive FFmpeg's two parse levels, so a path carrying one (or
+    another filtergraph metacharacter) is refused outright.
+    """
+    posix = str(Path(file_path).resolve().as_posix())
+    if any(ch in posix for ch in _FILTER_PATH_FORBIDDEN):
+        raise ValueError(f"Unsafe character in FFmpeg filter path: {posix!r}")
+    return posix.replace("\\", r"\\").replace(":", r"\:")
 
 
 def _build_arnndn_filter_string(
@@ -487,7 +538,7 @@ def _run_ffmpeg_filter_step(original_wav, output_wav, filter_str, step_label, ta
 
 def _filter_vhs_native_step(original_wav, filtered_audio_dir, total_duration=None):
     """Applies FFmpeg native VHS filter chain (highpass, adeclick, afftdn, notch)."""
-    output_wav = filtered_audio_dir / f"vhs_filtered_{original_wav.name}"
+    output_wav = stage_output(filtered_audio_dir, "vhs_filtered", original_wav)
     if is_valid_audio(output_wav):
         log_msg("  [Step 2/4] Skipping Native VHS Filtering (exists)")
         return output_wav
@@ -504,7 +555,7 @@ def _filter_vhs_native_step(original_wav, filtered_audio_dir, total_duration=Non
 
 def _filter_arnndn_step(original_wav, filtered_audio_dir, total_duration=None, model_name=None):
     """Applies FFmpeg Recurrent Neural Network (RNNoise) speech denoiser."""
-    output_wav = filtered_audio_dir / f"arnndn_filtered_{original_wav.name}"
+    output_wav = stage_output(filtered_audio_dir, "arnndn_filtered", original_wav)
     if is_valid_audio(output_wav):
         log_msg("  [Step 2/4] Skipping ARNNDN Speech Filtering (exists)")
         return output_wav
@@ -513,7 +564,7 @@ def _filter_arnndn_step(original_wav, filtered_audio_dir, total_duration=None, m
     if not ffmpeg_has_filter("arnndn"):
         raise RuntimeError("The available FFmpeg executable does not support the 'arnndn' filter.")
     model_path = _resolve_arnndn_model_path(selected_model)
-    if not model_path.is_file():
+    if model_path is None:
         raise FileNotFoundError(f"ARNNDN model file not found: {selected_model}. Place it in models/arnndn/ or models/.")
 
     filter_str = _build_arnndn_filter_string(str(model_path))
@@ -597,6 +648,9 @@ MAINS_CANDIDATES_DEFAULT = (50.0, 60.0, 100.0, 120.0)
 def _detect_mains_buzz_notch(signal_data, sr, line_rate_hz=0.0):
     """Detects 50Hz (PAL), 59.94/60Hz (NTSC), or harmonic buzz peaks.
 
+    `scanner_mains_vote` picks the vote: 'head' (`_head_mains_vote`, every release's) or
+    'confirmed' (`modules/mains_vote.py`: that vote, kept where the whole signal carries hum).
+
     Args:
         signal_data (numpy.ndarray): Mono audio waveform samples.
         sr (int): Sampling rate in Hz.
@@ -606,6 +660,16 @@ def _detect_mains_buzz_notch(signal_data, sr, line_rate_hz=0.0):
     Returns:
         float: Detected notch frequency in Hz (0.0 if no buzz detected).
     """
+    notch = _head_mains_vote(signal_data, sr, line_rate_hz)
+    if SCANNER_MAINS_VOTE != "confirmed":
+        return notch
+    from . import mains_vote
+
+    return mains_vote.confirmed_notch(signal_data, sr, notch)
+
+
+def _head_mains_vote(signal_data, sr, line_rate_hz):
+    """The 'head' vote: the first 32768 samples, each candidate's bin against the bins two either side (over 1.8 wins)."""
     if len(signal_data) < 8192 or np is None:
         return 0.0
 
@@ -712,18 +776,62 @@ def _is_valid_stereo(stereo_audio):
 AZIMUTH_MIN_CORRELATION = 0.3
 
 
-def _channel_correlation(left, right):
-    """Absolute Pearson correlation between two channels; 0.0 if either is silent."""
+def signed_channel_correlation(left, right):
+    """Pearson correlation between two channels with its sign; 0.0 if either is silent.
+
+    A pair wired or captured with one channel's polarity inverted reads near -1: the same
+    content, upside down.
+    """
     left_centred = left - np.mean(left)
     right_centred = right - np.mean(right)
     denom = float(np.sqrt(np.sum(left_centred**2) * np.sum(right_centred**2)))
     if denom <= 0.0:
         return 0.0
-    return abs(float(np.sum(left_centred * right_centred) / denom))
+    return float(np.sum(left_centred * right_centred) / denom)
+
+
+def _channel_correlation(left, right):
+    """Absolute Pearson correlation between two channels; 0.0 if either is silent."""
+    return abs(signed_channel_correlation(left, right))
+
+
+def _refuses_inverted_pair(correlation):
+    """Flags a polarity-inverted pair in the log; True when the configuration refuses to read a lag from one.
+
+    The gate reads |r|, so an inverted pair (r near -1) passes it, and the lag the
+    cross-correlation's maximum then gives is not the skew: for L and -L the maximum is where
+    the programme's own autocorrelation is most negative, half a period of its strongest
+    partial. Measured with this detector on L/-L pairs at 44.1 kHz: a 1 kHz tone reads
+    -0.50 ms, a 2 kHz tone -0.25 ms, noise low-passed at 3 kHz -0.23 ms, each of which the
+    pre-conditioning would "correct" with a delay; a 200 Hz-led voice (half period 2.5 ms,
+    outside the 1 ms window) and white noise read 0. `azimuth_reject_inverted_pair` (off by
+    default, so every output stays the same bytes) returns no skew for such a pair instead.
+    """
+    refused = bool(AZIMUTH_REJECT_INVERTED_PAIR)
+    action = "no azimuth delay read from it" if refused else "the azimuth delay read from it is unreliable"
+    log_msg(f"    [Auto-Scan] Channels are polarity-inverted (r={correlation:.2f}); {action}.")
+    return refused
+
+
+def _azimuth_pair_usable(left, right):
+    """Whether a lag read between two channels can be an azimuth skew: they share content, and in phase unless allowed.
+
+    Only a correlation at or under -AZIMUTH_MIN_CORRELATION is an inverted pair; everything
+    else meets the |r| gate as before. A NaN correlation (a channel holding NaN samples)
+    fails every comparison, so the gate has always let it through; it still does, and it
+    is not flagged as inverted.
+    """
+    correlation = signed_channel_correlation(left, right)
+    if correlation <= -AZIMUTH_MIN_CORRELATION:
+        return not _refuses_inverted_pair(correlation)
+    return math.isnan(correlation) or abs(correlation) >= AZIMUTH_MIN_CORRELATION
 
 
 def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
     """Detects sub-millisecond inter-channel time delay (azimuth phase skew).
+
+    `azimuth_estimate_method` picks the reading: 'head' (`_head_azimuth_skew`, every
+    release's) or 'spans' (`_spans_azimuth_skew`).
 
     Args:
         stereo_audio (numpy.ndarray): Stereo 2-channel audio array.
@@ -735,9 +843,20 @@ def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
     """
     if not _is_valid_stereo(stereo_audio) or np is None:
         return 0.0
+    reader = _spans_azimuth_skew if AZIMUTH_ESTIMATE_METHOD == "spans" else _head_azimuth_skew
+    return reader(stereo_audio, sr, max_lag_samples)
+
+
+def _head_azimuth_skew(stereo_audio, sr, max_lag_samples):
+    """The 'head' reading: the integer peak of the first 32768 samples' cross-correlation, in ms.
+
+    Its sign is the one the pre-conditioning graph does not correct: a right channel 5 samples
+    late reads -0.11 ms, and the graph delays the right channel by 5 more (ffmpeg, 2026-10-12:
+    the lag went from 5 to 10 samples). It stays as it is so every output keeps its bytes.
+    """
     left = stereo_audio[:32768, 0]
     right = stereo_audio[:32768, 1]
-    if _channel_correlation(left, right) < AZIMUTH_MIN_CORRELATION:
+    if not _azimuth_pair_usable(left, right):
         return 0.0
 
     corr = np.correlate(left - np.mean(left), right - np.mean(right), mode="full")
@@ -745,6 +864,24 @@ def _detect_stereo_azimuth_skew(stereo_audio, sr, max_lag_samples=44):
     if not (0 < abs(lag) <= max_lag_samples):
         return 0.0
     return round(float(lag) / float(sr) * 1000.0, 2)
+
+
+def _spans_azimuth_skew(stereo_audio, sr, max_lag_samples):
+    """The 'spans' reading (`modules/azimuth_spans.py`): the delay that puts the right channel back on the left, in ms.
+
+    The correlation gate and the inverted-pair rule read the whole scanned audio, as the
+    vote does. Positive delays the left channel (the right one runs late), negative the right.
+    """
+    from . import azimuth_spans
+
+    left = stereo_audio[:, 0]
+    right = stereo_audio[:, 1]
+    if not _azimuth_pair_usable(left, right):
+        return 0.0
+    reading = azimuth_spans.read_skew(left, right, sr, max_lag_samples)
+    delay_ms = azimuth_spans.delay_ms(reading.lag, sr, max_lag_samples)
+    log_msg(f"    [Auto-Scan] Azimuth (spans): {azimuth_spans.describe(reading, delay_ms)}.")
+    return delay_ms
 
 
 def _analysis_block_offsets(total_frames, block_frames):
@@ -788,7 +925,14 @@ def _read_stereo_audio_for_analysis(wav_path):
     try:
         audio_info = sf.info(str(wav_path))
         return _read_analysis_audio(wav_path, audio_info), audio_info.samplerate
-    except Exception:
+    except Exception as exc:
+        # Every "unreadable" a stage reports (hum, tones, plosives, the subtraction's margin and
+        # tonality, the repair's gate) comes from here: a WARNING keeps a render that read
+        # nothing out of the stage cache, since a fresh render may read it.
+        log_msg(
+            f"    [Analysis] {Path(wav_path).name} could not be read ({type(exc).__name__}: {exc}); measured as unreadable.",
+            level="WARNING",
+        )
         return None, None
 
 
@@ -895,7 +1039,7 @@ def _filter_auto_vhs_native_step(original_wav, filtered_audio_dir, total_duratio
     Returns:
         pathlib.Path: Path to filtered audio WAV file.
     """
-    output_wav = filtered_audio_dir / f"auto_vhs_filtered_{original_wav.name}"
+    output_wav = stage_output(filtered_audio_dir, "auto_vhs_filtered", original_wav)
     if is_valid_audio(output_wav):
         log_msg("  [Step 2/4] Skipping Auto VHS Filtering (exists)")
         return output_wav
@@ -929,7 +1073,12 @@ def _is_short_for_crt(signal_data, sr):
 # nearest. Probing each nominal bin exactly fails whenever the tape runs slightly
 # off speed: the strongest whine in a real 21-tape library sat at 15633 Hz and was
 # being reported as NTSC. Prominence separation is wide - tapes carrying the whine
-# measure 1.9-85.7x the band median, tapes without it 1.0-1.5x.
+# measure 1.9-85.7x the band median, tapes without it 1.0-1.5x. Measured since
+# (2026-10-12): hiss in the band reads 2.9x on its own (the maximum of 335 Rayleigh
+# bins over their median; white noise clears 1.7x 200 times in 200), so the head
+# search notches, and picks a mains family for, any hissy tape; the "without" tapes
+# held nothing in the band. crt_detect_mode 'welch' (modules/crt_line.py) reads the
+# whole file's averaged spectrum instead.
 CRT_SEARCH_LOW_HZ = 15450.0
 CRT_SEARCH_HIGH_HZ = 15900.0
 CRT_MIN_PROMINENCE = 1.7
@@ -938,6 +1087,9 @@ CRT_LINE_RATES_HZ = (15625.0, 15734.0)
 
 def _detect_crt_flyback_notch(signal_data, sr):
     """Detects the 15625 Hz (PAL) or 15734 Hz (NTSC) CRT line whistle.
+
+    `crt_detect_mode` picks the search: 'head' (`_head_crt_line`, every release's) or
+    'welch' (`_welch_crt_line`, the whole file's averaged spectrum).
 
     Args:
         signal_data (numpy.ndarray): Mono audio waveform samples.
@@ -948,7 +1100,22 @@ def _detect_crt_flyback_notch(signal_data, sr):
     """
     if _is_short_for_crt(signal_data, sr):
         return 0.0
+    search = _welch_crt_line if CRT_DETECT_MODE == "welch" else _head_crt_line
+    return search(signal_data, sr)
 
+
+def _welch_crt_line(signal_data, sr):
+    """The 'welch' search (`modules/crt_line.py`), logged with the peak it rests on."""
+    from . import crt_line
+
+    found = crt_line.search(signal_data, sr)
+    verdict = crt_line.verdict(found, CRT_LINE_RATES_HZ)
+    log_msg(f"    [Auto-Scan] CRT line (whole file): {crt_line.describe(found, verdict)}")
+    return verdict
+
+
+def _head_crt_line(signal_data, sr):
+    """The 'head' search: the strongest bin of one FFT of the first 32768 samples at 1.7x the band's median magnitude."""
     chunk = signal_data[:32768]
     fft_mag = np.abs(np.fft.rfft(chunk))
     freqs = np.fft.rfftfreq(len(chunk), 1.0 / sr)
@@ -1114,29 +1281,38 @@ def _filter_precondition_step(original_wav, output_wav, precond_config, total_du
     )
 
 
-def _build_full_audio_expander_filter(noise_floor_db=None, depth_db=None, knee_offset_db=None):
+def _build_full_audio_expander_filter(noise_floor_db=None, depth_db=None, knee_offset_db=None, timing_s=None):
     """Constructs an adaptive downward dynamic expander curve based on noise floor.
 
     The curve pushes what sits under the knee (`noise_floor + knee_offset`, clamped to -60..-35
     dBFS) down by `depth_db` more, and maps -90 dBFS to -100: this is the stage that turns a
     denoised pause into dead air. `expander_depth_db` / `expander_knee_offset_db` in the config
-    move it (7 / +4 are the shipped curve); the tuning loop searches them.
+    move it (7 dB / +8 dB are the shipped curve, +4 dB was v1.3.2's knee); the tuning loop searches
+    them. `expander_attack_s` / `expander_decay_s` time its level follower (0.04 / 0.18 s, the
+    shipped `attacks=0.04:decays=0.18`); `timing_s`, an (attack, decay) pair, overrides both
+    (cathar's own, `cathar_expander_attack_s` / `_decay_s`).
     """
     depth = EXPANDER_DEPTH_DB if depth_db is None else float(depth_db)
     offset = EXPANDER_KNEE_OFFSET_DB if knee_offset_db is None else float(knee_offset_db)
+    attack, decay = (EXPANDER_ATTACK_S, EXPANDER_DECAY_S) if timing_s is None else timing_s
+    timing = f"compand=attacks={float(attack):g}:decays={float(decay):g}"
     if noise_floor_db is None:
-        return f"compand=attacks=0.04:decays=0.18:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
+        return f"{timing}:points=-90/-100|-65/{-65.0 - depth:g}|-45/-45|0/0"
     knee = max(-60.0, min(-35.0, float(noise_floor_db) + offset))
     mid = round((knee - 90.0) / 2.0, 1)
-    return f"compand=attacks=0.04:decays=0.18:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
+    return f"{timing}:points=-90/-100|{mid:.1f}/{mid - depth:.1f}|{knee:.1f}/{knee:.1f}|0/0"
 
 
 def _build_linear_air_filter(gain_db=None):
-    """Constructs a gentle high-shelf presence curve compensating for tape head loss."""
+    """Constructs a gentle high-shelf presence curve compensating for tape head loss.
+
+    The shelf sits at `linear_air_freq_hz` (7500 Hz, the shipped `f=7500`), `gain_db` high
+    (`linear_air_gain_db` when None).
+    """
     gain_db = LINEAR_AIR_GAIN_DB if gain_db is None else gain_db
     if not ENABLE_LINEAR_AIR or gain_db <= 0.0:
         return None
-    return f"treble=g={gain_db:.1f}:f=7500"
+    return f"treble=g={gain_db:.1f}:f={float(LINEAR_AIR_FREQ_HZ):g}"
 
 
 def _append_linear_air_stage(stages, apply_air):
@@ -1147,23 +1323,25 @@ def _append_linear_air_stage(stages, apply_air):
             stages.append(air)
 
 
-def _append_expander_stage(stages, strategy, depth_db=None):
-    """Appends adaptive downward dynamic expander stage if enabled; `depth_db` overrides the shared depth."""
+def _append_expander_stage(stages, strategy, depth_db=None, timing_s=None):
+    """Appends adaptive downward dynamic expander stage if enabled; `depth_db` and `timing_s` override the shared ones."""
     if ENABLE_DYNAMIC_EXPANDER:
         noise_floor_db = (strategy or {}).get("profile", {}).get("noise_floor_db")
-        stages.append(_build_full_audio_expander_filter(noise_floor_db, depth_db=depth_db))
+        stages.append(_build_full_audio_expander_filter(noise_floor_db, depth_db=depth_db, timing_s=timing_s))
 
 
-def build_full_audio_polish_filter(strategy=None, apply_air=False, depth_db=None):
+def build_full_audio_polish_filter(strategy=None, apply_air=False, depth_db=None, timing_s=None):
     """Assembles the chained polish filter with optional linear air and dynamic expander.
 
     `depth_db` is the expander depth the engine and material ask for (auto_pure_linear's
-    `apl_expander_depth_db`, cathar's `cathar_music_expander_depth_db` on music); None takes
-    the shared `expander_depth_db`.
+    `apl_expander_depth_db`, cathar's `cathar_expander_depth_db`, `cathar_music_expander_depth_db`
+    on music); None takes the shared `expander_depth_db`. `timing_s` is the expander's
+    (attack, decay) in seconds (cathar's own); None takes the shared `expander_attack_s` /
+    `expander_decay_s`.
     """
     stages = []
     _append_linear_air_stage(stages, apply_air)
-    _append_expander_stage(stages, strategy, depth_db)
+    _append_expander_stage(stages, strategy, depth_db, timing_s)
     return ",".join(stages) if stages else None
 
 

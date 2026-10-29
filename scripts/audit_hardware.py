@@ -19,7 +19,7 @@ def _nvidia_smi():
         return []
     command = [binary, "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=10)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=10)
     except (subprocess.TimeoutExpired, OSError):
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]

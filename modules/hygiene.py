@@ -8,6 +8,13 @@ that lets a rerun resume would otherwise take the fragment for the whole.
 While a video is processed, every temp-file API is pointed inside its work directory so
 library scratch leaves with the work directory rather than accumulating in the system
 temp.
+
+The work directory sits beside the tape, a path a folder of tapes can plant: shipped as a
+link (`.temp_work_<stem>` pointing at the user's home), the partial sweep walked the tree it
+points to and unlinked every `*.tmp*` and hidden `*.wav` there, and the stages wrote into
+it (security review, 2026-10-26). `open_work_dir` refuses a link or a non-directory at the
+path, the sweep never follows a link, and a stale partial that is a dangling link is
+removed rather than written through.
 """
 
 import contextlib
@@ -29,8 +36,31 @@ def partial_path(target):
     return target.with_name(f"{target.stem}{PARTIAL_MARKER}{target.suffix}")
 
 
+class WorkDirRefused(OSError):
+    """A work directory's path holds a link or something other than a directory this run can own."""
+
+
+def is_link(path):
+    """Whether `path` is a symbolic link or a Windows directory junction: either leads out of the tree it sits in."""
+    path = Path(path)
+    return path.is_symlink() or path.is_junction()
+
+
+def open_work_dir(work_dir):
+    """Creates `work_dir`, or reopens one an earlier run left, and returns it; raises `WorkDirRefused` when the path is
+    a link or not a directory, before and after the mkdir, so nothing is swept or written inside a tree it leads to."""
+    work_dir = Path(work_dir)
+    if is_link(work_dir):
+        raise WorkDirRefused(f"{work_dir.name} is a link; nothing is written inside the tree it points to")
+    work_dir.mkdir(exist_ok=True)
+    if is_link(work_dir) or not work_dir.is_dir():
+        raise WorkDirRefused(f"{work_dir.name} is not a directory this run can own")
+    return work_dir
+
+
 def _remove_if_exists(path):
-    if path.exists():
+    """Removes `path`, a dangling link included: its target would otherwise be created by the next write."""
+    if is_link(path) or path.exists():
         path.unlink()
 
 
@@ -106,11 +136,27 @@ def _unlink_partial(path, removed):
         log_msg(f"    [Hygiene] Could not remove partial {path.name}: {exc}", is_error=True)
 
 
+def _real_dirs(root, names):
+    """The subdirectory names under `root` that are not links, so a walk stays inside the tree."""
+    return [name for name in names if not is_link(Path(root) / name)]
+
+
 def _partials_under(work_dir):
-    """Every unpublished partial below a directory, or nothing when it does not exist."""
-    if not work_dir.is_dir():
+    """Every unpublished partial below a directory, walked without following a link; nothing when the directory does
+    not exist or is itself a link."""
+    if is_link(work_dir) or not work_dir.is_dir():
         return []
-    return [path for path in work_dir.rglob("*") if path.is_file() and is_partial(path)]
+    found = []
+    for root, dirs, files in os.walk(work_dir, followlinks=False):
+        dirs[:] = _real_dirs(root, dirs)
+        found += _partial_files(root, files)
+    return found
+
+
+def _partial_files(root, names):
+    """The files under `root` named as partials, links left out (unlinking one would not reach a partial of ours)."""
+    paths = [Path(root) / name for name in names]
+    return [path for path in paths if is_partial(path) and not is_link(path)]
 
 
 def sweep_partials(work_dir):

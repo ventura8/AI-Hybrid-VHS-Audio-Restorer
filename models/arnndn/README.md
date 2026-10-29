@@ -17,6 +17,14 @@ repository:
   - Upstream Date: 2018-09-01
   - SHA-256: `70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0`
 
+The pins are checked byte for byte (`ARNNDN_MODEL_SHA256` in
+`modules/filters.py`, `tests/unit/test_arnndn_model_pins.py`). The files are
+plain ASCII, so `.gitattributes` marks `*.rnnn` binary: Git for Windows'
+`core.autocrlf` used to check them out with CRLF line endings, every model
+then missed its pin, and the first `arnndn_speech` run deleted it and
+downloaded it again. A checkout made before that rule needs
+`git checkout -- models/arnndn` after deleting the three files.
+
 ## Licensing Status
 
 According to the upstream repository author

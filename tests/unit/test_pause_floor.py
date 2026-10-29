@@ -158,17 +158,22 @@ def _shifted_pair():
     return env, np.concatenate([np.full(3, 0.01), env[:-3]])
 
 
+def _aligned(reference, restored):
+    """The envelopes on one timeline, the fill and the band read as the broadband pair (a flat fill)."""
+    return pause_floor._envelopes((reference, restored, reference, restored))
+
+
 def test_envelope_lag_finds_a_shift_and_alignment_trims_to_the_overlap():
     env, shifted = _shifted_pair()
     assert pause_floor.envelope_lag(env, shifted) == 3
-    ref, res, lag = pause_floor._aligned(env, shifted)
-    assert lag == 3
-    assert len(ref) == len(res) == 397
-    assert np.allclose(ref, res)
+    aligned = _aligned(env, shifted)
+    assert aligned.lag == 3
+    assert len(aligned.reference) == len(aligned.restored) == len(aligned.fill) == len(aligned.band) == len(aligned.weight) == 397
+    assert np.allclose(aligned.reference, aligned.restored)
 
 
 def test_alignment_reads_the_opposite_shift_as_a_negative_lag():
     env, shifted = _shifted_pair()
-    ref, res, lag = pause_floor._aligned(shifted, env)
-    assert lag == -3
-    assert len(ref) == len(res) == 397
+    aligned = _aligned(shifted, env)
+    assert aligned.lag == -3
+    assert len(aligned.reference) == len(aligned.restored) == 397

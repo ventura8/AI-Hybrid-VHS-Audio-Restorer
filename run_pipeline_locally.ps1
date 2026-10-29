@@ -13,7 +13,7 @@ $VenvPy = "$repoRoot\.venv\Scripts\python.exe"
 $PoetryVenvDir = "$repoRoot\.poetry-venv"
 $PoetryPy = "$PoetryVenvDir\Scripts\python.exe"
 $PoetryExe = "$PoetryVenvDir\Scripts\poetry.exe"
-$PoetryVersion = "2.4.1"
+$PoetryVersion = "2.5.1"
 
 if (-not (Test-Path $VenvPy)) {
     throw "Virtual environment interpreter not found at $VenvPy. Run install_dependencies.ps1 first."

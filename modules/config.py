@@ -83,6 +83,7 @@ DEFAULT_DENOISE_MODEL = "UVR-DeNoise-Lite.pth"
 DEFAULT_APL_NEURAL_MODEL = "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt"
 DEFAULT_VOCALS_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 DEFAULT_BACKGROUND_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
+DEFAULT_ARNNDN_MODEL = "cb.rnnn"
 MAX_ENHANCE_NFE = 128
 
 
@@ -130,10 +131,25 @@ _NUMERIC_CONFIG_FIELDS = (
     # material, and gave the two other cases their own depth: auto_pure_linear 12 dB
     # (apl_expander_depth_db, the Tata loop: hard failures 7 -> 4 over six rounds) and cathar
     # on music 4 dB (cathar_music_expander_depth_db, 9 of 12 clips, hard failures 31 -> 27).
+    # cathar on speech takes its own 12 dB since 2026-10-25 (cathar_expander_depth_db, the v9
+    # loop's lighter set with the reference suppressor, heard blind 36-0 over the shipped
+    # settings on the four Tata tapes); 7 dB stays for the modes with no depth of their own.
     ("expander_depth_db", float, 7.0, 0.0, 30.0),
     ("apl_expander_depth_db", float, 12.0, 0.0, 30.0),
+    ("cathar_expander_depth_db", float, 12.0, 0.0, 30.0),
     ("cathar_music_expander_depth_db", float, 4.0, 0.0, 30.0),
     ("expander_knee_offset_db", float, 8.0, -20.0, 20.0),
+    # The polish expander's compand attack and decay, in seconds: how fast its level follower
+    # rises into a word and lets go after it, so how soon a pause is pushed down. 0.04 / 0.18
+    # are the times every release has shipped (hard-coded in modules/filters.py until
+    # 2026-10-09); auto_pure_linear and the modes with no timing of their own read them. Round A3
+    # (pause texture) searches them; not yet judged by ear. cathar takes its own since 2026-10-25,
+    # 0.08 / 0.12 s (cathar_expander_attack_s / _decay_s, on speech and music): the v9 lighter set,
+    # heard blind 36-0 over the shipped settings with the reference suppressor.
+    ("expander_attack_s", float, 0.04, 0.001, 1.0),
+    ("expander_decay_s", float, 0.18, 0.001, 5.0),
+    ("cathar_expander_attack_s", float, 0.08, 0.001, 1.0),
+    ("cathar_expander_decay_s", float, 0.12, 0.001, 5.0),
     # Q of the CRT line-whistle notch in the pre-conditioning graph: 30 is the shipped width;
     # cathar's music profile narrows it to 60 (cathar_music_crt_notch_q, the music loop's
     # round 1: the wide notch took programme beside the line on 8 of 12 clips).
@@ -143,9 +159,26 @@ _NUMERIC_CONFIG_FIELDS = (
     # attenuated copy of the source is put back under the restored audio so a pause keeps its
     # own, quieter texture instead of collapsing to dead air (the listener's "silent in pauses").
     # The fill sits this many dB under the source's own pause level; frames above the quiet
-    # percentile are never touched.
-    ("pause_floor_fill_db", float, 12.0, 0.0, 60.0),
+    # percentile are never touched. 18 dB since 2026-10-23 (the APL v9 setting, heard blind 27-0 on the
+    # interview tapes), on suppressed files only (pause_floor_suppressed_only); the release fill keeps 12 dB.
+    ("pause_floor_fill_db", float, 18.0, 0.0, 60.0),
     ("pause_floor_quiet_percentile", float, 15.0, 1.0, 100.0),
+    # The shaped fill (pause_floor_shape 'shelf' or 'lowpass'; read only then): the corner in Hz
+    # and, on the shelf, how far everything above it is cut. 3000 Hz / 18 dB was the prototype
+    # P1b of the 2026-10-11 hiss diagnosis (PAUSE_FLOOR_SHAPE below has the numbers); 2000 Hz / 12 dB
+    # since 2026-10-23: the APL v9 loop accepted 2000 Hz, and 12 dB ties with 18 by ear-model on every
+    # Tata tape while halving the IA hunt's pump trips (docs/configuration.md). cathar cuts its own
+    # cathar_pause_floor_hf_cut_db, 18 dB since 2026-10-25: the cut its v9 loop accepted (round 5) and
+    # the lighter set heard blind 36-0 over the shipped settings and confirmed on IA (6 of 235) and
+    # realistic-v2 (LSD -0.01 dB) carried.
+    ("pause_floor_shelf_hz", float, 2000.0, 200.0, 20000.0),
+    ("pause_floor_hf_cut_db", float, 12.0, 0.0, 60.0),
+    ("cathar_pause_floor_hf_cut_db", float, 18.0, 0.0, 60.0),
+    # cathar's own fill depth on the files its reference suppressor runs on (2026-10-27), in place of
+    # pause_floor_fill_db, which auto_pure_linear reads: the cathar v10 loop's plateau took it to 24 dB (IA 5 of
+    # 235, realistic-v2 unmoved) while APL's guard refused 24 (13 of 42 sentinels). 24 since 2026-10-29, with
+    # cathar_suppress_noise_bias 1.5 (session3_cathar_v10: 3-0 over the shipped settings, 33 same).
+    ("cathar_pause_floor_fill_db", float, 24.0, 0.0, 60.0),
     # cathar's split-band subtraction (modules/split_band.py): above the crossover the denoise
     # runs a second time at cathar_alpha_high (cathar_music_alpha_high on music), so the hiss
     # in the highs and the speech band get their own factor. 0 keeps the single pass.
@@ -192,7 +225,20 @@ _NUMERIC_CONFIG_FIELDS = (
     ("cathar_music_alpha", float, 0.5, 0.0),
     # The listener round's plateau (see cathar_alpha): floor 0.02, repair strength 2.
     ("cathar_beta", float, 0.02, 0.0),
+    # The music profile's subtraction floor, in place of cathar_beta on a tape the profile takes.
+    # Until 2026-10-09 music ran at cathar_beta (the denoise step's default), so 0.02 keeps every
+    # music output's bytes. Round C3 (music profile) searches it beside cathar_music_alpha; not
+    # yet judged by ear.
+    ("cathar_music_beta", float, 0.02, 0.0),
+    # cathar's dewind is a high-pass at this cutoff (`dewind --cutoff`), and it runs after the
+    # shared pre-conditioning graph's own high-pass (`highpass=f=<highpass_hz>`, the scanner's
+    # rumble pick: 0 / 45 / 60 / 75 Hz, 80 when the scan fails), so a cathar tape is high-passed
+    # twice and at 80 Hz the dewind is the higher cut. cathar_music_dewind_cutoff replaces the
+    # dewind's cutoff on music; the pre-conditioning high-pass stays, shared with every mode, so a
+    # tape the scanner cut at 60 or 75 Hz keeps that cut under a lower dewind. 80 is the cutoff
+    # music has run at (cathar_dewind_cutoff); round C3 searches 40 / 60 / 80, not yet judged by ear.
     ("cathar_dewind_cutoff", int, 80, 0),
+    ("cathar_music_dewind_cutoff", int, 80, 0),
     ("cathar_declick_threshold", float, 8.0, 0.0),
     ("cathar_decrackle_sensitivity", int, 6, 0),
     ("cathar_declip_threshold", float, 0.95, 0.0, 1.0),
@@ -210,6 +256,21 @@ _NUMERIC_CONFIG_FIELDS = (
     # unchanged. 4.5 s (six stitched pauses, from 90 s of material) is the listener round's
     # plateau; 6 s was the shipped length.
     ("cathar_noiseprint_duration_s", float, 4.5, 0.0),
+    # cathar's noise-print depth guard (modules/noiseprint_depth.py): a print whose window(s) sit
+    # less than this many dB under the material's loud frames (p90 of 1024-sample frame RMS) is
+    # programme, and cathar_noiseprint_shallow_action scales it to this depth, drops it or replaces
+    # it with the whole-file quantile print. On a 15 s clip with no pause the print is the quietest
+    # 0.75 s of programme: on the IA hunt the failing speech-profile clips' windows sat a median 8.3
+    # dB under the loud frames against 13.0 on the passing ones, and the subtraction stripped the
+    # background bed on 56 of cathar's 64 stems.octave_programme failures. At 20 (CPU, 159 hunt
+    # clips) 25 of the 62 failing clips still fail on 'scale' and 17 on 'drop', none new; but the
+    # four Tata tapes' stitched pauses sit only 13.7-16.9 dB down, so 20 fires on all four and
+    # halves their noise removal ('scale'); at 13 they keep their bytes. 'quantile' at 13 (CPU, the
+    # 56 failing / 96 passing hunt clips) leaves 30 of the 53 failing at the stage failing, as
+    # 'scale' does, one passing clip new, and keeps more hiss removal (programme floor -10.6 / -9.5
+    # dB against -9.3 / -8.8). 0 (the default) skips the guard, so every output keeps its bytes
+    # (docs/configuration.md, "cathar Noise-Print Depth Guard").
+    ("cathar_noiseprint_min_depth_db", float, 0.0, 0.0, 60.0),
     ("cathar_dehum_harmonics", int, 8, 1),
     ("cathar_mono_below_hz", int, 100, 0),
     ("cathar_deplosive_strength", int, 4, 0),
@@ -227,11 +288,17 @@ _NUMERIC_CONFIG_FIELDS = (
     # 8-12 kHz drops ~0.7 dB and 4-8 kHz ~0.3 dB; nothing below 4 kHz moves. The harness's
     # loops kept +2 dB: it does not read the brighter top as a fault.
     ("linear_air_gain_db", float, 1.0, None),
+    # The air shelf's corner frequency (ffmpeg `treble=f`): 7500 Hz is the shelf every release
+    # has shipped (hard-coded in modules/filters.py until 2026-10-09). Round A1 (brightness)
+    # searches 6000 / 7500 / 9000 beside the gain; not yet judged by ear. Bounded under the
+    # 44.1 kHz pipeline's Nyquist.
+    ("linear_air_freq_hz", float, 7500.0, 1000.0, 16000.0),
     ("adaptive_denoise_threshold_db", float, -50.0, None),
-    # The longest track the UVR denoiser is given in one pass; longer ones are cut into
-    # equal overlapping chunks no longer than this. The separator needs about 30 GB of
-    # host memory per hour of audio, so 0 (the default) sizes the chunk from the machine:
-    # half its memory at that rate, between five minutes and two hours.
+    # The longest track the neural denoiser (UVR or the Mel-RoFormer) is given in one pass;
+    # longer ones are cut into equal overlapping chunks no longer than this. The UVR
+    # separator needs about 30 GB of host memory per hour of audio, so 0 (the default)
+    # sizes the chunk from the machine: half its memory at that rate, between five minutes
+    # and two hours. The RoFormer's memory per hour was never measured; it gets the same.
     ("neural_chunk_seconds", float, 0.0, 0.0),
     # Spectral subtraction factor, set from real tapes rather than synthetic fixtures.
     #
@@ -341,6 +408,23 @@ _NUMERIC_CONFIG_FIELDS = (
     # pops at any sensitivity and this recovers +5.5 at 7, touching 61 spans of undamaged
     # speech per 15 s at 40 dB under the programme; 5 touches 312, 8 starts missing pops.
     ("apl_depop_threshold", float, 7.0, 0.0),
+    # The pop repair's prominence guard, in dB; 0 switches it off and every output keeps its
+    # bytes. With it on, a span is refilled only when its peak prediction residual stands this
+    # far above the largest residual within 5 ms either side (impulse_repair._prominent): a
+    # click is one impulse, the residual of speech that trips the threshold comes in clusters.
+    # The threshold alone fired on clean speech far past the 4/s the calibrated class allowed:
+    # the shipped renders logged 3.9-24.2 spans/s over both channels; on SOTI and Vaccin
+    # (2026-10-11) single-sample outliers in loud frames (median at the 71st-80th percentile
+    # level), 98% no more than 1 dB over the waveform's own peak around them, 79-80% within
+    # 15 ms of another, lifting no quiet frame. Spans/s per channel at 0 / 6 / 9 dB on the
+    # shipped chain's pre-depop audio:
+    # SOTI 6.32 / 0.50 / 0.05, Vaccin 12.11 / 1.38 / 0.27, the calibrated speech classes 2.75 /
+    # 0.17 / 0.04 (m15) and 5.20 / 0.41 / 0.16 (m09); inside the pops of the five crackle
+    # fixtures +4.67 / +4.35 / +4.25 dB of repair, 80 / 75 / 74% of the pops refilled. Not yet
+    # judged by ear: off, 6 is the candidate for the listening session. Capped at 120 dB, far
+    # past any setting that still refills a click; above about 6,165 dB the guard's amplitude
+    # ratio (10 ** (dB / 20)) overflows a float and would end the render.
+    ("apl_depop_min_prominence_db", float, 0.0, 0.0, 120.0),
     # The mode's own harmonic hum canceller: how many mains harmonics it evaluates (each is
     # cancelled only where it stands above its own neighbourhood, so a high count costs
     # compute and nothing else -- an EMI buzz runs to eighty harmonics, mains hum to eight)
@@ -358,6 +442,45 @@ _NUMERIC_CONFIG_FIELDS = (
     ("apl_suppress_noise_bias", float, 1.0, 0.0),
     ("apl_suppress_gain_floor_db", float, -20.0, None),
     ("apl_suppress_dd_alpha", float, 0.96, 0.0, 1.0),
+    # The post-neural suppressor's gate (apl_post_neural_suppress, modules/post_neural_suppress.py),
+    # read on the audio after the sibilant guard against the pre-conditioned source
+    # (modules/hiss_floor.py). The first half: the source's 8-16 kHz band is hiss-dominated when
+    # its stationarity (median minus p10 of the frame energy, median over the bands) is at or under
+    # this many dB; hiss reads 2-4, programme more. The second half: the neural stage left a
+    # residual when the restored floor under the programme stands within this many dB of the
+    # source's, on the 3-16 kHz band median or on the 3-4.8 kHz bands' energy. Measured on the
+    # diagnosis's hunt (2026-10-11, 235 clips): 78 hiss-dominated; the band median admits 10 of
+    # them (the prototype P2's gate) and the 3-4.8 kHz energy 43, the band where the RoFormer
+    # removes -4.4/-7.7 dB against cathar's -8.0/-9.2. Not yet judged by ear.
+    ("apl_post_neural_suppress_floor_gap_db", float, 3.0, 0.0),
+    ("apl_post_neural_suppress_min_residual_db", float, 6.0, 0.0),
+    # The burst ceiling (apl_burst_ceiling, modules/burst_ceiling.py): in its scope, a restored
+    # cell (23 ms, one ERB band of 3-16 kHz) where the source holds only its hiss keeps at most
+    # this many dB under the source's band floor, the shelved pause fill's own level (12 + 18 dB).
+    # A band acts only where the neural stage left its gaps at least this deep. Read only with
+    # the ceiling on; not yet judged by ear.
+    ("apl_burst_ceiling_depth_db", float, 30.0, 0.0, 120.0),
+    # The reference suppressor's programme release (modules/spectral_suppress.py, RELEASE_SPAN_DB): where the
+    # restored audio stands this many dB over the source's print the gain eases toward 1, fully 6 dB higher.
+    # CPU replay on 19 IA hunt clips (2026-10-20): at 3 dB the top band came back past -1 dB on the three clips
+    # the suppressor had pushed over it and the soft programme 1.5-2 dB, the hiss excess moving under 0.45 dB.
+    # On the Tata tapes (APL v9 round 4) 3 dB let the hiss back under Vaccin's speech (+2.18 dB over its masked
+    # threshold): its MP3 coder drops 10-16 kHz in speech frames, so the print reads 11.7 dB under the pauses' hiss.
+    # The release now reads against the pause print (spectral_suppress.pause_print, 2026-10-21): on CPU replay of the
+    # Tata tapes 6 dB passes every v4 guard (Vaccin under speech 0.00), 3 dB still lifts Tele7abc's pause tail 0.57. On
+    # the loops' real renders cathar accepted 6 dB with its suppressor (round 5), APL refused it (round 7: +0.616).
+    # APL keeps 0 (off). cathar 6 dB since 2026-10-25, with its suppressor: without the release Gaudeamus5's loud highs
+    # fell 2.35 dB (the v9 loop's round 5), and the lighter set carrying it was heard blind 36-0 over the shipped settings.
+    ("apl_reference_release_db", float, 0.0, 0.0, 40.0),
+    ("cathar_reference_release_db", float, 6.0, 0.0, 40.0),
+    # cathar's reference suppressor strength (2026-10-26): the MMSE-LSA noise bias (the print scaled by it before the
+    # SNR is read) and the gain floor a hiss-only cell may lose. A higher bias or a deeper floor takes more where the
+    # source held only hiss and leaves cells where the programme stood over it near 1, where cathar_alpha 1.5 and the
+    # 4 kHz split band cut every cell (the final's IA dulling). Bias 1.5 since 2026-10-29: the corpus-guarded v10
+    # plateau (with cathar_pause_floor_fill_db 24; IA 5 of 235, realistic-v2 unmoved), never lost a blind pick to the
+    # shipped settings (session3_cathar_v10: 3-0, 33 same). The floor keeps the estimator's -20 dB.
+    ("cathar_suppress_noise_bias", float, 1.5, 0.0, 8.0),
+    ("cathar_suppress_gain_floor_db", float, -20.0, -60.0, 0.0),
     # Plosive control: how far the low band must rise over its own running level, in dB,
     # to be read as a plosive burst. 0 switches detection off, like `apl_depop_threshold`.
     # Set by the measurement in `apl_enable_plosive_tamer`.
@@ -462,6 +585,20 @@ _BOOL_CONFIG_FIELDS = (
     # 0.04 dB less deviation for the same removal (a gain-match effect of the energy left at
     # 150-250 Hz). The notch and the canceller do better together than the canceller alone.
     ("apl_surgical_mains_notch", True),
+    # Caps every 512-sample frame of those notches' output at 1 dB over their input's energy
+    # (modules/notch_ring_guard.py). A Q-30 notch rings at its own frequency when the audio
+    # feeding it stops: speech holding a partial near a notch and stopping dead hands the gap
+    # that follows a tone burst. On SOTI (2026-10-11, its chain re-rendered on CPU bit for bit
+    # against the shipped render's stage cache) the notch lifted 332 of the 3,740 quietest
+    # 23 ms frames by 10 dB or more at 100-1000 Hz, up to +28 dB; the chain after it lifted
+    # none and the finished output kept them (323 of its 331 lifted frames are the notch's;
+    # cathar's lifts 4). With the guard the notch's output lifts 3, its quiet frames sit
+    # 0.80 dB over the source's instead of 5.83, and 77% of the samples pass to the bit; on
+    # Vaccin it caps 2.7% of the frames and no reading moves; on the hum fixtures the lines
+    # stay where the notch put them (-8.81 against -8.79 dB under the clean reference). Off
+    # until a listening session judges it; like the switch above it reaches denoise_only's
+    # notch too.
+    ("apl_surgical_ring_guard", False),
     # When the scanner reported mains hum, the shared pre-conditioning has already notched
     # the fundamental and its second harmonic (Q 15) before the canceller sees the audio, so
     # on those tapes the two lowest lines it finds are the notch's skirts, not lines, and
@@ -568,6 +705,18 @@ _BOOL_CONFIG_FIELDS = (
     # Off since the listener round: the replicated highs read as hiss in the gaps.
     ("cathar_enable_enhance", False),
     ("cathar_enable_noiseprint", True),
+    # Keeps a digital mute (a window mostly holding one value, or one under -70 dBFS and 30 dB
+    # under the material's 23 ms frame p20) out of cathar's noise-print pick, single-window and
+    # stitched; when nothing else qualifies the denoise runs without a learned print
+    # (modules/noiseprint_guard.py). On the IA corpus 7 of 136 clips picked a window under
+    # -70 dBFS, and there APL removed a median 9.7 dB more than cathar against 3.38 dB elsewhere
+    # (cathar 0.7.3, 2026-09-18). Re-run on CPU on those 7 (2026-10-12): the pick moved on all 7,
+    # removal rose a median 0.42 dB (0.01 to 2.60), bbc-two-continuity's analog floor stayed
+    # sample for sample, and lion-king-dodge lost 3.4 dB at 8-16 kHz (its new window straddles
+    # the mute and programme). Off by default so every output keeps its bytes until a listening
+    # session judges it; cathar mode only (auto_pure_linear's subtraction learns its own print
+    # unguarded).
+    ("cathar_noiseprint_mute_guard", False),
     ("cathar_enable_mono_below", True),
     ("cathar_enable_deplosive", True),
     # The music profile (see cathar_music_alpha): switched as a whole, then its four stage
@@ -578,12 +727,82 @@ _BOOL_CONFIG_FIELDS = (
     ("cathar_music_enable_coherent", True),
     ("cathar_music_enable_deplosive", False),
     ("cathar_music_enable_deesser", False),
+    # The music profile's switch for cathar's transient spike repair (`repair`: isolated whistles,
+    # bursts and glitches), in place of cathar_enable_repair. On, as music has always run (it took
+    # cathar_enable_repair until 2026-10-09). APL leaves cathar's repair out of its own physical
+    # repair because on the paired fixtures it made undamaged material measurably worse
+    # (apl_enable_physical_repair); round C3 judges it off on music, not yet by ear.
+    ("cathar_music_enable_repair", True),
     # The listener-round stages: the pause floor and the sibilant guard were accepted by the
     # loops (see the numeric keys); the stem path was not and stays off.
     ("enable_pause_floor", True),
+    # The pause floor's configured fill only where the reference suppressor ran (modules/pause_floor.py,
+    # PAUSE_FLOOR_SUPPRESSED_ONLY below); every other file takes the release fill. Off: every file the configured one.
+    # On since 2026-10-23, so every file the suppressor refuses keeps the release fill's bytes.
+    ("pause_floor_suppressed_only", True),
+    # A pair correlating at r <= -0.3 is one channel polarity-inverted; the |r| azimuth gate
+    # passes it and reads a false skew (L/-L: 1 kHz tone -0.50 ms, 2 kHz -0.25 ms; see
+    # modules/filters.py). The scan always logs such a pair; on, it reads no skew from it.
+    # Off by default so every output stays the same bytes.
+    ("azimuth_reject_inverted_pair", False),
+    # The mux's limiter (alimiter, -1 dBFS) delays the audio by its lookahead: an impulse at
+    # sample 10000 came out at 10219 (219 samples, 4.97 ms at 44.1 kHz), so every output of
+    # every mode sits 4.97 ms late against its video. On, `latency=1` removes the delay (the
+    # impulse stayed at 10000, ffmpeg 9.0.1); off by default, since the shift changes every
+    # output's bytes and cathar's identity check compares them (modules/mastering.py).
+    ("mux_limiter_latency_compensation", False),
+    # The scanner sends a tape it reads as drifting (`has_drift`) to DTW sync. The chains of
+    # auto_pure_linear (its stem path too), cathar and every single-track mode keep the length and
+    # the time base of the source they sync against, so a warp can only add error: the DTW path's
+    # whole 40 ms frames play at 0x or 2x. On the IA hunt's stored outputs (2026-10-12, the ear's
+    # time-base reading) 24 of the 30 cathar and 15 of the 30 auto_pure_linear outputs sent to DTW
+    # carry frozen holds (177 and 49 in all), none of the 205 per engine sent to shift. False sends
+    # those chains to shift sync whatever the scanner or `sync_method` says; the stem modes (hybrid,
+    # multipass, auto_pure) keep DTW. True keeps every output's bytes until a listening session
+    # accepts the change.
+    ("sync_dtw_enable", True),
     ("apl_music_stem_path", False),
     ("apl_enable_sibilant_guard", True),
+    # The hiss the RoFormer passes (diagnosis of 2026-10-11, modules/post_neural_suppress.py): the
+    # mode's MMSE-LSA suppressor after the neural stage, gated per file on a hiss-dominated source
+    # whose floor the neural stage left within apl_post_neural_suppress_min_residual_db. On the 10
+    # hunt clips the prototype's gate admitted (this gate opens on 9), followed by the prototype's
+    # per-frame shelved pause fill, the floor under the programme went from -1.8 to -15.7 dB under
+    # the source's (medians) for loud-frame 8-16 kHz from -0.9 to -3.5 dB and musical noise from lkr
+    # 0.01 to 0.39 (up to 1.28); ungated it ate music's highs. Followed by today's pause floor it
+    # makes the pauses worse: the floor refills what the suppressor lowered with the source's hiss
+    # (CPU replay, the 48 clips the gate opens on: pause hiss up on 19 of 27, by 29-81 dB on 7; the
+    # floor under the programme up on 6, by up to 19 dB). Off: every output keeps its bytes until a
+    # GPU render with the per-frame pause fill and a listening session judge it.
+    ("apl_post_neural_suppress", False),
+    # The reference-SNR suppressor (modules/post_neural_suppress.py, spectral_suppress.ReferenceSuppressor):
+    # the mode's MMSE-LSA gain read on the pre-conditioned source against its whole-file quantile noise print
+    # and applied to the audio after the sibilant guard, ungated (the two masks multiply, so it only removes).
+    # The gated suppressor above learns its noise from the post-neural audio's quietest stretch, the
+    # RoFormer's near-empty pauses, while the hiss it passes under speech follows the speech 16-33 dB under
+    # the source's (3-4.8 kHz, the Tata tapes): its gate stays shut there and its estimate is far too low.
+    # CPU replay of the v9 incumbent's post-neural stages on the four Tata tapes with the per-frame shelved
+    # pause fill (2 kHz, 30 dB): see docs/configuration.md, "Reference-SNR Suppressor". On since 2026-10-23:
+    # the APL v9 loop accepted it (round 2), the blind session preferred it 27-0 on the interview tapes (a tie on
+    # the choir), its IA confirmation leaves 9 of 202 clips past a v4 guard. Off: the bytes of the earlier releases.
+    ("apl_reference_suppress", True),
+    # The separator peak-normalises to 0.9, so on a hot or declipped source the programme leaves
+    # the neural stage up to 10.7 dB under its input (fourstarrevue; 11 of 235 hunt clips 3 dB or
+    # more) and the expander's knee and the pause floor's target read the wrong level. On, the
+    # neural output is scaled back by the loud-frame projection gain (modules/neural_level.py).
+    # Off: every output keeps its bytes.
+    ("apl_neural_level_restore", False),
     ("cathar_enable_deesser", True),
+    # The reference-SNR suppressor on cathar's output before the polish (modules/reference_suppress.py): the
+    # MMSE-LSA gain read on the pre-conditioned source against its whole-file quantile print, applied to what
+    # cathar returned. CPU replay on the four Tata tapes, the per-frame fill shelved at 2 kHz by 30 dB: the hiss
+    # under speech 14.5 / 9.0 / 7.8 / 11.6 dB over its masked threshold to 0 on every tape (docs/configuration.md,
+    # "Reference-SNR Suppressor"). On since 2026-10-25 with the release (6 dB), the per-frame fill shelved at 2 kHz
+    # (cut 18 dB, fill 18 dB) and the 12 dB expander at 0.08 / 0.12 s: the v9 loop's lighter set (candidate cfd333f9c7,
+    # the final without the split band and alpha 1.5), heard blind 36-0 over the shipped settings on the four Tata
+    # tapes (session2_lite_vs_shipped), IA 6 of 235 clips past a v4 guard, realistic-v2 LSD -0.01 dB. A file whose
+    # print the suppressor refuses keeps cathar's output and the release fill; its expander still moves.
+    ("cathar_reference_suppress", True),
     ("cathar_enable_dereverb", False),
     ("cathar_dereverb_wpe", True),
 )
@@ -614,6 +833,96 @@ _BOOL_STRINGS = {
 VALID_CATHAR_DENOISE_METHODS = {"spectral", "wiener"}
 VALID_CATHAR_AZIMUTH_METHODS = {"correlation", "gcc-phat"}
 VALID_CATHAR_ENHANCE_METHODS = {"replicate", "interpolate"}
+# The mux's answer when loudnorm would leave linear mode for the true-peak rule alone: 'ffmpeg'
+# rides the gain (dynamic mode, today), 'gain_limiter' applies one gain and the mux's sample-peak
+# limiter (-1 dBFS), which can leave intersample overs (see modules/mastering.py).
+VALID_LOUDNORM_LINEAR_FALLBACKS = {"ffmpeg", "gain_limiter"}
+# Round C4 (cathar's declip and dehum). 'always' runs cathar's `declip` on every tape, as every
+# release has; 'detected' only on a tape the scanner flagged as clipped, counted over every channel
+# (profile.has_clipping_any_channel, so a one-channel tape is not halved by the mono mix), and as on
+# 'always', with a WARNING, when the scan left no verdict (cathar._clipping_verdict).
+VALID_CATHAR_DECLIP_MODES = {"always", "detected"}
+# What the noise-print depth guard does with a print shallower than cathar_noiseprint_min_depth_db:
+# 'scale' scales its magnitudes so it sits exactly that deep, 'drop' denoises without a learned
+# print (as the music profile does), 'quantile' replaces it with the whole-file quantile print
+# (modules/noiseprint_quantile.py), and scales it when that cannot be learned. Read only with the
+# guard on (modules/noiseprint_depth.py).
+VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS = {"scale", "drop", "quantile"}
+# Where cathar's learned print comes from (modules/noiseprint_quantile.py): 'window' learns it from
+# the quietest 0.75 s (six stitched pauses on 90 s or more), as every release has; 'quantile' writes
+# it from the whole material, per bin the 5th percentile of the 0.37 s moving mean (+0.62 dB),
+# streamed. cathar mode only, speech profile only (the music profile learns no print).
+VALID_CATHAR_NOISEPRINT_METHODS = {"window", "quantile"}
+# cathar_dehum_freq: 'scanner' gives `dehum --freq` the scanner's mains family (50 or 60) and runs
+# no dehum when the scan found no hum, as every release has; 0 runs `dehum --freq 0` on every tape,
+# so cathar picks the family from the recording itself (cathar 0.8.0's help).
+CATHAR_DEHUM_FREQ_SCANNER = "scanner"
+# The pause floor keeper's level and content (modules/pause_floor.py, both engines). 'cluster' aims
+# every pause at one level, the quiet frames' median minus pause_floor_fill_db; 'frame' aims each
+# quiet frame at pause_floor_fill_db under the source frame, scaled by the restored programme's gain
+# on the loud frames, and fills no frame already at its target. 'flat' fills with the source as it
+# is, hiss included; 'shelf' cuts it pause_floor_hf_cut_db above pause_floor_shelf_hz, 'lowpass'
+# low-passes it there; 'hiss_shelf' cuts the shelf only from the cells the source holds as hiss, so
+# the programme above the corner is filled whole (modules/pause_fill_shape.py). 'cluster' and
+# 'flat' are what every release has run.
+VALID_PAUSE_FLOOR_TARGETS = {"cluster", "frame"}
+VALID_PAUSE_FLOOR_SHAPES = {"flat", "shelf", "lowpass", "hiss_shelf"}
+# pause_floor_deficit (2026-10-27): 'broadband' reads a shelved fill's deficit on the shaped audio as
+# a whole, as every release has, so a pause whose room tone meets the target is not filled and its
+# emptied highs stay at digital silence; 'bands' lifts the low band and the highs to their own targets
+# (modules/pause_floor.py). Read only on a shelf ('shelf', 'hiss_shelf').
+VALID_PAUSE_FLOOR_DEFICITS = {"broadband", "bands"}
+
+# linear_air_gate: 'none' keeps auto_pure_linear's air shelf on every tape, as every release has;
+# 'hiss_dominated' skips it on a tape the post-neural hiss gate opens on (a hiss-dominated source
+# whose floor the neural stage left within apl_post_neural_suppress_min_residual_db), where the
+# +1 dB shelf lifted that residual 0.3-0.9 dB under the programme (modules/post_neural_suppress.py).
+VALID_LINEAR_AIR_GATES = {"none", "hiss_dominated"}
+
+# apl_burst_ceiling: 'none' leaves auto_pure_linear's polished audio as every release has;
+# 'gaps' holds the restored cells of the source's non-speech frames to the source's programme
+# over its hiss, or apl_burst_ceiling_depth_db under its floor where it holds only hiss
+# (modules/burst_ceiling.py); 'edges' also the speech frames within 150 ms of a gap.
+VALID_APL_BURST_CEILINGS = {"none", "gaps", "edges"}
+
+# The rate the mux encodes the restored track at (modules/mux_format.py). 'pipeline' keeps
+# 44.1 kHz, as every release has, except in MPEG-PS (.mpg/.mpeg), which keeps the source's rate
+# (DVD-Video allows MP2 only at 48 kHz); 'source' keeps the source's rate in every container
+# whose codec takes it, which changes the bytes of every 48 kHz source.
+VALID_MUX_SAMPLE_RATES = {"pipeline", "source"}
+
+# How the scan reads the stereo azimuth skew the pre-conditioning delays a channel by
+# (modules/filters.py, every mode). 'head' cross-correlates the first 32768 samples and takes
+# the integer peak, as every release has, with the sign the graph does not correct: on the IA
+# hunt (2026-10-12, 232 stereo clips, CPU) it delayed a channel on 43 and the mono sum's
+# 4-8 kHz fell on 40 (median -1.43 dB against no delay). 'spans' votes GCC-PHAT peaks on the
+# loudest spans, a fraction of a sample included, abstains when they disagree or cohere weakly
+# (modules/azimuth_spans.py), and returns the sign the graph corrects: it delayed 28, the mono
+# 4-8 kHz rose on 27 (median +0.45 dB) and fell 0.36 dB on one.
+VALID_AZIMUTH_ESTIMATE_METHODS = {"head", "spans"}
+# Where the scan looks for the CRT line whistle whose notch the pre-conditioning of every mode
+# applies, and whose standard holds the mains search to 50/100 or 60/120 Hz (modules/filters.py).
+# 'head' takes one FFT of the first 32768 samples at a 1.7x magnitude threshold, as every
+# release has: noise alone clears it (white noise 200 times in 200), so a hissy tape gets a
+# notch and a mains family by chance, and a line that starts late or wanders is missed or
+# named the wrong standard (IA hunt, 235 sources: 2 of R0's 71 lines missed, 2 the wrong
+# standard, 59 sources with no line notched). 'welch' averages up to 256 segments over the
+# whole file and asks for 10 dB over the band and 6 dB over both sides and no comb
+# (modules/crt_line.py): 68 of the 71 named right, none wrong, 3 weak ones missed, 15 narrow
+# tones R0 does not track notched, noise never.
+VALID_CRT_DETECT_MODES = {"head", "welch"}
+
+# The scan's mains vote (modules/filters.py, every mode's scan; it sets the pre-conditioning's Q 15 notches at the
+# fundamental and its second harmonic, cathar's dehum family and auto_pure_linear's mains notches). 'head' reads the
+# first 32768 samples, one bin per candidate against the bins two either side, as every release has: on the IA hunt
+# (2026-10-12, cathar 0.8.0 on CPU) it notched 123 of the 203 clips R0 reads as hum-free, and cathar without those
+# notches moved R11 nearer 0 on 100 of 122. 'confirmed' keeps the head's notch only where the whole analysed
+# signal's eight mains harmonics stand 6 dB (mains_vote.MIN_EXCESS_DB) over their neighbourhood at its family
+# (spectral_denoise.harmonic_excess_db, the reading detect_mains_hz votes on). R0 reads hum with the same
+# computation at the same 6 dB, so on the IA sets it agrees with R0 by construction (122 of those 123 dropped, every
+# right-family notch kept) and that does not test it; against realistic-v2's labels it clears 17 of the 29 false
+# fires and drops 5 of the 71 right-family hum notches. Not judged by ear yet.
+VALID_SCANNER_MAINS_VOTES = {"head", "confirmed"}
 
 
 def _reject_config_value(param_name, raw_value, default):
@@ -639,6 +948,80 @@ def _normalize_cathar_azimuth_method(raw_value):
 
 def _normalize_cathar_enhance_method(raw_value):
     return _normalize_choice(raw_value, VALID_CATHAR_ENHANCE_METHODS, "cathar_enhance_method", "replicate")
+
+
+def _normalize_loudnorm_linear_fallback(raw_value):
+    return _normalize_choice(raw_value, VALID_LOUDNORM_LINEAR_FALLBACKS, "loudnorm_linear_fallback", "ffmpeg")
+
+
+def _normalize_mux_sample_rate(raw_value):
+    return _normalize_choice(raw_value, VALID_MUX_SAMPLE_RATES, "mux_sample_rate", "pipeline")
+
+
+def _normalize_azimuth_estimate_method(raw_value):
+    return _normalize_choice(raw_value, VALID_AZIMUTH_ESTIMATE_METHODS, "azimuth_estimate_method", "head")
+
+
+def _normalize_crt_detect_mode(raw_value):
+    return _normalize_choice(raw_value, VALID_CRT_DETECT_MODES, "crt_detect_mode", "head")
+
+
+def _normalize_scanner_mains_vote(raw_value):
+    return _normalize_choice(raw_value, VALID_SCANNER_MAINS_VOTES, "scanner_mains_vote", "head")
+
+
+def _normalize_cathar_declip_mode(raw_value):
+    return _normalize_choice(raw_value, VALID_CATHAR_DECLIP_MODES, "cathar_declip_mode", "always")
+
+
+def _normalize_cathar_noiseprint_shallow_action(raw_value):
+    return _normalize_choice(raw_value, VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS, "cathar_noiseprint_shallow_action", "scale")
+
+
+def _normalize_cathar_noiseprint_method(raw_value):
+    return _normalize_choice(raw_value, VALID_CATHAR_NOISEPRINT_METHODS, "cathar_noiseprint_method", "window")
+
+
+def _normalize_pause_floor_target(raw_value):
+    return _normalize_choice(raw_value, VALID_PAUSE_FLOOR_TARGETS, "pause_floor_target", "frame")
+
+
+def _normalize_pause_floor_shape(raw_value):
+    return _normalize_choice(raw_value, VALID_PAUSE_FLOOR_SHAPES, "pause_floor_shape", "shelf")
+
+
+def _normalize_pause_floor_deficit(raw_value):
+    return _normalize_choice(raw_value, VALID_PAUSE_FLOOR_DEFICITS, "pause_floor_deficit", "broadband")
+
+
+def _normalize_linear_air_gate(raw_value):
+    return _normalize_choice(raw_value, VALID_LINEAR_AIR_GATES, "linear_air_gate", "none")
+
+
+def _normalize_apl_burst_ceiling(raw_value):
+    return _normalize_choice(raw_value, VALID_APL_BURST_CEILINGS, "apl_burst_ceiling", "none")
+
+
+def _is_zero(raw_value):
+    """A number equal to 0, quoted or not; a bool is never one, since False would otherwise read as 0.
+
+    `math.isclose` against 0 with no absolute tolerance is exact: only 0 (or -0) passes.
+    """
+    if raw_value is None or isinstance(raw_value, bool):
+        return False
+    try:
+        return math.isclose(float(raw_value), 0.0)
+    except (TypeError, ValueError):
+        return False
+
+
+def _normalize_cathar_dehum_freq(raw_value):
+    """'scanner' (the scanned mains family) or 0 (cathar's own detection); anything else warns and keeps 'scanner'."""
+    if isinstance(raw_value, str) and raw_value.strip().lower() == CATHAR_DEHUM_FREQ_SCANNER:
+        return CATHAR_DEHUM_FREQ_SCANNER
+    if _is_zero(raw_value):
+        return 0
+    return _reject_config_value("cathar_dehum_freq", raw_value, CATHAR_DEHUM_FREQ_SCANNER)
 
 
 def _is_bad_number(val):
@@ -739,6 +1122,22 @@ def _apply_user_config(defaults, user_config):
     defaults["cathar_denoise_method"] = _normalize_cathar_denoise_method(defaults.get("cathar_denoise_method"))
     defaults["cathar_azimuth_method"] = _normalize_cathar_azimuth_method(defaults.get("cathar_azimuth_method"))
     defaults["cathar_enhance_method"] = _normalize_cathar_enhance_method(defaults.get("cathar_enhance_method"))
+    defaults["loudnorm_linear_fallback"] = _normalize_loudnorm_linear_fallback(defaults.get("loudnorm_linear_fallback"))
+    defaults["cathar_declip_mode"] = _normalize_cathar_declip_mode(defaults.get("cathar_declip_mode"))
+    defaults["cathar_dehum_freq"] = _normalize_cathar_dehum_freq(defaults.get("cathar_dehum_freq"))
+    defaults["cathar_noiseprint_shallow_action"] = _normalize_cathar_noiseprint_shallow_action(
+        defaults.get("cathar_noiseprint_shallow_action")
+    )
+    defaults["cathar_noiseprint_method"] = _normalize_cathar_noiseprint_method(defaults.get("cathar_noiseprint_method"))
+    defaults["pause_floor_target"] = _normalize_pause_floor_target(defaults.get("pause_floor_target"))
+    defaults["pause_floor_shape"] = _normalize_pause_floor_shape(defaults.get("pause_floor_shape"))
+    defaults["pause_floor_deficit"] = _normalize_pause_floor_deficit(defaults.get("pause_floor_deficit"))
+    defaults["linear_air_gate"] = _normalize_linear_air_gate(defaults.get("linear_air_gate"))
+    defaults["apl_burst_ceiling"] = _normalize_apl_burst_ceiling(defaults.get("apl_burst_ceiling"))
+    defaults["mux_sample_rate"] = _normalize_mux_sample_rate(defaults.get("mux_sample_rate"))
+    defaults["azimuth_estimate_method"] = _normalize_azimuth_estimate_method(defaults.get("azimuth_estimate_method"))
+    defaults["crt_detect_mode"] = _normalize_crt_detect_mode(defaults.get("crt_detect_mode"))
+    defaults["scanner_mains_vote"] = _normalize_scanner_mains_vote(defaults.get("scanner_mains_vote"))
     defaults["vocal_mix_volume"] = _normalize_mix_volume(defaults.get("vocal_mix_volume"), "vocal_mix_volume")
     defaults["background_mix_volume"] = _normalize_mix_volume(defaults.get("background_mix_volume"), "background_mix_volume")
     _normalize_typed_config_fields(defaults)
@@ -756,7 +1155,7 @@ def load_config():
         "denoise_model": DEFAULT_DENOISE_MODEL,
         "sync_method": "shift",  # 'shift' or 'dtw'
         "process_mode": DEFAULT_PROCESS_MODE,  # includes aliases: 'multipass', 'pure', 'ffmpeg_native', 'auto_vhs_native'
-        "arnndn_model": "cb.rnnn",
+        "arnndn_model": DEFAULT_ARNNDN_MODEL,
         "cathar_denoise_method": "spectral",
         "cathar_azimuth_method": "gcc-phat",
         "cathar_enhance_method": "replicate",
@@ -768,6 +1167,55 @@ def load_config():
         # follows the chain's choice.
         "apl_neural_model": DEFAULT_APL_NEURAL_MODEL,
         "apl_music_neural_model": "",
+        # ffmpeg holds linear mode only while TP + (I_target - I) <= TP_target, LRA <= target and
+        # the measurement is set (I and LRA not 0, TP not 99, threshold not -70), and always on a
+        # programme under 3 s (mastering.linear_mode_blockers, given the duration the mux knows):
+        # of the 616 distinct decisions the run logs in the repository called "linear" on
+        # 2026-10-09, 229 (37%) broke the true-peak half and ran dynamic, riding the pauses.
+        # 'ffmpeg' keeps that and every output's bytes; 'gain_limiter'
+        # (VALID_LOUDNORM_LINEAR_FALLBACKS) is for the pause-texture round to judge.
+        "loudnorm_linear_fallback": "ffmpeg",
+        # Round C4: cathar's declip on every tape ('always') or on the scanner's clipping verdict
+        # ('detected'); cathar's dehum at the scanner's mains family ('scanner') or at cathar's own
+        # detection (0, `dehum --freq 0`). Both defaults are what every release has run, so every
+        # output keeps its bytes; the C3 listening session judges the other values.
+        "cathar_declip_mode": "always",
+        "cathar_dehum_freq": CATHAR_DEHUM_FREQ_SCANNER,
+        # The noise-print depth guard's answer to a shallow print (VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS);
+        # read only when cathar_noiseprint_min_depth_db is over 0, so the default changes no output.
+        "cathar_noiseprint_shallow_action": "scale",
+        # Where the learned print comes from (VALID_CATHAR_NOISEPRINT_METHODS): 'window' is what every
+        # release has run, so every output keeps its bytes; 'quantile' waits for a listening session.
+        "cathar_noiseprint_method": "window",
+        # The pause floor keeper's target and shape (VALID_PAUSE_FLOOR_TARGETS / _SHAPES): the per-frame
+        # target and the shelved fill since 2026-10-23, on suppressed files only (pause_floor_suppressed_only);
+        # every other file keeps the release fill, cluster and flat (see PAUSE_FLOOR_TARGET below).
+        "pause_floor_target": "frame",
+        "pause_floor_shape": "shelf",
+        # How a shelved fill reads its deficit (VALID_PAUSE_FLOOR_DEFICITS): 'broadband', as every release
+        # has, so every output keeps its bytes; 'bands' waits for a GPU render, the corpus and a listening session.
+        "pause_floor_deficit": "broadband",
+        # auto_pure_linear's air shelf on every tape ('none', as every release has run) or skipped
+        # where the post-neural hiss gate opens ('hiss_dominated'); not yet judged by ear.
+        "linear_air_gate": "none",
+        # auto_pure_linear's burst ceiling after the polish (VALID_APL_BURST_CEILINGS): 'none', so
+        # every output keeps its bytes; 'gaps' / 'edges' for a GPU render and a listening session.
+        "apl_burst_ceiling": "none",
+        # The mux's rate: 44.1 kHz in every container but MPEG-PS, which keeps the source's
+        # ('pipeline', today's bytes everywhere else); 'source' keeps it in every container.
+        "mux_sample_rate": "pipeline",
+        # The pre-conditioning's azimuth reading: the first 32768 samples' cross-correlation
+        # ('head', every release's, so every output keeps its bytes) or the loudest spans'
+        # GCC-PHAT vote ('spans', VALID_AZIMUTH_ESTIMATE_METHODS); not yet judged by ear.
+        "azimuth_estimate_method": "head",
+        # The scan's CRT line search: the first 32768 samples ('head', every release's, so every
+        # output keeps its bytes) or the whole file's averaged spectrum ('welch',
+        # VALID_CRT_DETECT_MODES); not yet judged by ear.
+        "crt_detect_mode": "head",
+        # The scan's mains vote: the first 32768 samples' single-bin vote ('head', every release's, so every
+        # output keeps its bytes) or that vote confirmed by the whole analysed signal's harmonic excess
+        # ('confirmed', VALID_SCANNER_MAINS_VOTES); not yet judged by ear.
+        "scanner_mains_vote": "head",
     }
     defaults.update(_typed_config_defaults())
     config_path = _find_config_path()
@@ -808,6 +1256,13 @@ BACKGROUND_MIX_VOL = float(CONFIG["background_mix_volume"])
 
 
 _MODEL_NAME_FORBIDDEN = ("/", "\\", ":", "\0")
+# An RNNoise model name also reaches an FFmpeg filtergraph as a quoted path, where a
+# quote or a filtergraph metacharacter could break out of the quoted option and inject
+# filters (see modules/filters._escape_ffmpeg_filter_path). Reject those too, and require
+# the `.rnnn` suffix so only an RNNoise model file is ever named.
+_ARNNDN_NAME_FORBIDDEN = _MODEL_NAME_FORBIDDEN + ("'", '"', ";", ",", "[", "]")
+_ARNNDN_SUFFIX = ".rnnn"
+_MODEL_REJECT_HINT = "model names must be a bare filename."
 
 
 def _is_bare_filename(name):
@@ -815,25 +1270,41 @@ def _is_bare_filename(name):
     return bool(name) and not name.startswith(".") and not any(ch in name for ch in _MODEL_NAME_FORBIDDEN)
 
 
-def _model_filename(setting, value, default=""):
-    """A UVR model setting reduced to a bare filename inside the model store.
+def _is_bare_arnndn_name(name):
+    """True when an RNNoise name is a bare `.rnnn` filename safe inside an FFmpeg filtergraph."""
+    return name.endswith(_ARNNDN_SUFFIX) and not name.startswith(".") and not any(ch in name for ch in _ARNNDN_NAME_FORBIDDEN)
+
+
+def _sanitized_model_name(setting, value, default, validator):
+    """Reduces a model setting to a bare filename accepted by validator, else the default.
 
     Model names are joined onto MODELS_DIR (and unlinked from it on a failed load), so a
     path from a planted config.yaml must not be able to escape the store. Only a string
-    is a candidate: anything else, or a string with a separator, a parent reference, or a
-    leading dot, or a Windows drive prefix (`D:model.ckpt`), falls back to the default.
-    Unset and empty fall back silently.
+    is a candidate: anything else, or a string the validator rejects (a separator, a
+    parent reference, a leading dot, a Windows drive prefix `D:model.ckpt`, or an FFmpeg
+    filtergraph metacharacter), falls back to the default. Unset and empty fall back
+    silently.
     """
     if value is None or value == "":
         return default
     name = value.strip() if isinstance(value, str) else ""
-    if _is_bare_filename(name):
+    if validator(name):
         return name
     print(
-        f"[Config] Ignoring '{setting}' value {value!r}: model names must be a bare filename.",
+        f"[Config] Ignoring '{setting}' value {value!r}: {_MODEL_REJECT_HINT}",
         file=sys.stderr,
     )
     return default
+
+
+def _model_filename(setting, value, default=""):
+    """A UVR model setting reduced to a bare filename inside the model store."""
+    return _sanitized_model_name(setting, value, default, _is_bare_filename)
+
+
+def _arnndn_model_filename(setting, value, default):
+    """An arnndn_model setting reduced to a safe bare `.rnnn` filename inside the model store."""
+    return _sanitized_model_name(setting, value, default, _is_bare_arnndn_name)
 
 
 # AI Configs
@@ -845,6 +1316,7 @@ NEURAL_CHUNK_SECONDS = float(CONFIG.get("neural_chunk_seconds", 0.0))
 ENHANCE_NFE = str(CONFIG["enhance_nfe"])
 ENHANCE_TAU = str(CONFIG["enhance_tau"])
 SYNC_METHOD = CONFIG["sync_method"]
+SYNC_DTW_ENABLE = bool(CONFIG.get("sync_dtw_enable", True))
 DTW_RESOLUTION = int(CONFIG["dtw_resolution"])
 PROCESS_MODE = CONFIG["process_mode"]
 ENABLE_MULTIPASS = bool(CONFIG.get("enable_multipass", True))
@@ -859,7 +1331,7 @@ ENABLE_ADECLICK = bool(CONFIG.get("enable_adeclick", True))
 NOTCH_FREQ = float(CONFIG.get("notch_freq", 50.0))
 
 # ARNNDN Speech configs
-ARNNDN_MODEL = str(CONFIG.get("arnndn_model", "cb.rnnn"))
+ARNNDN_MODEL = _arnndn_model_filename("arnndn_model", CONFIG.get("arnndn_model"), DEFAULT_ARNNDN_MODEL)
 ARNNDN_HIGHPASS_FREQ = int(CONFIG.get("arnndn_highpass_freq", 80))
 ARNNDN_ENABLE_ADECLICK = bool(CONFIG.get("arnndn_enable_adeclick", True))
 
@@ -882,9 +1354,11 @@ CATHAR_INPAINT_MAX_GAP_MS = int(CONFIG.get("cathar_inpaint_max_gap_ms", 50))
 CATHAR_INPAINT_ITERATIONS = int(CONFIG.get("cathar_inpaint_iterations", 3))
 CATHAR_ENABLE_DECLIP = bool(CONFIG.get("cathar_enable_declip", True))
 CATHAR_DECLIP_THRESHOLD = float(CONFIG.get("cathar_declip_threshold", 0.95))
+CATHAR_DECLIP_MODE = str(CONFIG.get("cathar_declip_mode", "always"))
 CATHAR_ENABLE_DEHUM = bool(CONFIG.get("cathar_enable_dehum", True))
 CATHAR_DEHUM_ADAPTIVE = bool(CONFIG.get("cathar_dehum_adaptive", True))
 CATHAR_DEHUM_HARMONICS = int(CONFIG.get("cathar_dehum_harmonics", 8))
+CATHAR_DEHUM_FREQ = CONFIG.get("cathar_dehum_freq", CATHAR_DEHUM_FREQ_SCANNER)
 CATHAR_ENABLE_REPAIR = bool(CONFIG.get("cathar_enable_repair", True))
 CATHAR_REPAIR_STRENGTH = int(CONFIG.get("cathar_repair_strength", 2))
 CATHAR_ENABLE_DEWOW = bool(CONFIG.get("cathar_enable_dewow", False))
@@ -892,11 +1366,19 @@ CATHAR_ENABLE_ENHANCE = bool(CONFIG.get("cathar_enable_enhance", False))
 CATHAR_ENHANCE_METHOD = str(CONFIG.get("cathar_enhance_method", "replicate"))
 CATHAR_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_enable_noiseprint", True))
 CATHAR_NOISEPRINT_DURATION_S = float(CONFIG.get("cathar_noiseprint_duration_s", 4.5))
+CATHAR_NOISEPRINT_MUTE_GUARD = bool(CONFIG.get("cathar_noiseprint_mute_guard", False))
+CATHAR_NOISEPRINT_MIN_DEPTH_DB = float(CONFIG.get("cathar_noiseprint_min_depth_db", 0.0))
+CATHAR_NOISEPRINT_SHALLOW_ACTION = str(CONFIG.get("cathar_noiseprint_shallow_action", "scale"))
+CATHAR_NOISEPRINT_METHOD = str(CONFIG.get("cathar_noiseprint_method", "window"))
 CATHAR_ENABLE_MONO_BELOW = bool(CONFIG.get("cathar_enable_mono_below", True))
 CATHAR_MONO_BELOW_HZ = int(CONFIG.get("cathar_mono_below_hz", 100))
 CATHAR_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_enable_deplosive", True))
 CATHAR_DEPLOSIVE_STRENGTH = int(CONFIG.get("cathar_deplosive_strength", 4))
 CATHAR_ENABLE_DEESSER = bool(CONFIG.get("cathar_enable_deesser", True))
+CATHAR_REFERENCE_SUPPRESS = bool(CONFIG.get("cathar_reference_suppress", True))
+CATHAR_REFERENCE_RELEASE_DB = float(CONFIG.get("cathar_reference_release_db", 6.0))
+CATHAR_SUPPRESS_NOISE_BIAS = float(CONFIG.get("cathar_suppress_noise_bias", 1.5))
+CATHAR_SUPPRESS_GAIN_FLOOR_DB = float(CONFIG.get("cathar_suppress_gain_floor_db", -20.0))
 CATHAR_DEESSER_BANDS = int(CONFIG.get("cathar_deesser_bands", 3))
 CATHAR_DEESSER_FREQ = int(CONFIG.get("cathar_deesser_freq", 4000))
 CATHAR_DEESSER_THRESHOLD = float(CONFIG.get("cathar_deesser_threshold", 12.0))
@@ -909,6 +1391,9 @@ CATHAR_MUSIC_ALPHA = float(CONFIG.get("cathar_music_alpha", 0.5))
 CATHAR_MUSIC_ENABLE_NOISEPRINT = bool(CONFIG.get("cathar_music_enable_noiseprint", False))
 CATHAR_MUSIC_ENABLE_COHERENT = bool(CONFIG.get("cathar_music_enable_coherent", True))
 CATHAR_MUSIC_ENABLE_DEPLOSIVE = bool(CONFIG.get("cathar_music_enable_deplosive", False))
+CATHAR_MUSIC_BETA = float(CONFIG.get("cathar_music_beta", 0.02))
+CATHAR_MUSIC_ENABLE_REPAIR = bool(CONFIG.get("cathar_music_enable_repair", True))
+CATHAR_MUSIC_DEWIND_CUTOFF = int(CONFIG.get("cathar_music_dewind_cutoff", 80))
 
 # Advanced Audio Polish & Archival Configs
 ENABLE_DEESSER = bool(CONFIG.get("enable_deesser", True))
@@ -916,12 +1401,47 @@ ENABLE_LOUDNORM = bool(CONFIG.get("enable_loudnorm", True))
 ENABLE_DYNAMIC_EXPANDER = bool(CONFIG.get("enable_dynamic_expander", True))
 ENABLE_LINEAR_AIR = bool(CONFIG.get("enable_linear_air", True))
 LOUDNORM_TARGET_LRA = float(CONFIG.get("loudnorm_target_lra", 20.0))
+LOUDNORM_LINEAR_FALLBACK = str(CONFIG.get("loudnorm_linear_fallback", "ffmpeg"))
+MUX_LIMITER_LATENCY_COMPENSATION = bool(CONFIG.get("mux_limiter_latency_compensation", False))
+MUX_SAMPLE_RATE = str(CONFIG.get("mux_sample_rate", "pipeline"))
+AZIMUTH_REJECT_INVERTED_PAIR = bool(CONFIG.get("azimuth_reject_inverted_pair", False))
+AZIMUTH_ESTIMATE_METHOD = str(CONFIG.get("azimuth_estimate_method", "head"))
+CRT_DETECT_MODE = str(CONFIG.get("crt_detect_mode", "head"))
+SCANNER_MAINS_VOTE = str(CONFIG.get("scanner_mains_vote", "head"))
 EXPANDER_DEPTH_DB = float(CONFIG.get("expander_depth_db", 7.0))
 EXPANDER_KNEE_OFFSET_DB = float(CONFIG.get("expander_knee_offset_db", 8.0))
+EXPANDER_ATTACK_S = float(CONFIG.get("expander_attack_s", 0.04))
+EXPANDER_DECAY_S = float(CONFIG.get("expander_decay_s", 0.18))
 CRT_NOTCH_Q = float(CONFIG.get("crt_notch_q", 30.0))
 ENABLE_PAUSE_FLOOR = bool(CONFIG.get("enable_pause_floor", True))
-PAUSE_FLOOR_FILL_DB = float(CONFIG.get("pause_floor_fill_db", 12.0))
+PAUSE_FLOOR_FILL_DB = float(CONFIG.get("pause_floor_fill_db", 18.0))
 PAUSE_FLOOR_QUIET_PERCENTILE = float(CONFIG.get("pause_floor_quiet_percentile", 15.0))
+# The pause floor's target and shape (2026-10-12; VALID_PAUSE_FLOOR_TARGETS / _SHAPES). Replayed on
+# the CPU on the hiss diagnosis's work directories (the paused WAV against the source, 3-16 kHz band
+# median on the true pauses): 'cluster' + 'flat' wrote the shipped WAV sample for sample on all 235
+# hunt clips, the 13 diagnosis clips and cathar's Tata excerpts. 'frame' took the hunt's pause hiss
+# from -7.6 to -13.4 dB (SOTI -10.9 -> -13.0, Tele7abc -3.5 -> -12.6); 'frame' + 'shelf' (3000 Hz,
+# 18 dB) to -30.3 dB with the pause LF at -7.6, as with no fill (Tata -30.8 / -30.5, LF -11.3 /
+# -11.8, gap_air -20.0 / -11.7). 'frame' gives the prototype P1a's readings on every clip whose pair
+# the stage accepts; the shaped fill's body guard moves three clips 1.0-1.8 dB off P1b. 'frame' + 'shelf'
+# (2000 Hz, 12 dB, fill 18) are the defaults since 2026-10-23 with the reference suppressor, on suppressed files
+# only: heard blind 27-0 over the shipped settings on the interview tapes (session1_v9).
+PAUSE_FLOOR_TARGET = str(CONFIG.get("pause_floor_target", "frame"))
+PAUSE_FLOOR_SHAPE = str(CONFIG.get("pause_floor_shape", "shelf"))
+PAUSE_FLOOR_SHELF_HZ = float(CONFIG.get("pause_floor_shelf_hz", 2000.0))
+PAUSE_FLOOR_HF_CUT_DB = float(CONFIG.get("pause_floor_hf_cut_db", 12.0))
+# How the shelved fill reads its deficit (VALID_PAUSE_FLOOR_DEFICITS, 2026-10-27). 'broadband' left the IA hunt's
+# Pavarotti documentary's true pause unfilled at fill 24: its room tone met the low band's target (-81 dB against
+# -82) while the highs the mask emptied sat at -127 dB, and the pump read +46 dB (+2 at fill 18).
+PAUSE_FLOOR_DEFICIT = str(CONFIG.get("pause_floor_deficit", "broadband"))
+# The per-frame shelved fill is the reference suppressor's pause half (2026-10-21): on the 135 IA hunt clips whose print
+# the suppressor refuses (it holds programme), the programme keeps its hiss, and every guard ear v4's constraints
+# tripped against the shipped settings (15 clips) was the fill's: pauses emptied under a hissing programme (pump),
+# a per-frame target that follows soft programme switching on and off (gap modulation), and the highs of soft
+# programme the shipped flat fill had put back. With this on, such a file takes the release fill (cluster, flat,
+# 12 dB), the 135 clips read the shipped output exactly, and the four Tata tapes, all past the suppressor's depth
+# line (31.9 / 30.3 / 24.7 / 27.5 dB), keep the configured fill.
+PAUSE_FLOOR_SUPPRESSED_ONLY = bool(CONFIG.get("pause_floor_suppressed_only", True))
 CATHAR_SPLIT_BAND_HZ = int(CONFIG.get("cathar_split_band_hz", 0))
 CATHAR_ALPHA_HIGH = float(CONFIG.get("cathar_alpha_high", 2.0))
 CATHAR_MUSIC_ALPHA_HIGH = float(CONFIG.get("cathar_music_alpha_high", 0.5))
@@ -955,6 +1475,8 @@ APL_ENABLE_TONAL_CLEANUP = bool(CONFIG.get("apl_enable_tonal_cleanup", False))
 APL_ENABLE_LEARNED_BLEND = bool(CONFIG.get("apl_enable_learned_blend", True))
 APL_ENABLE_HUM_CANCEL = bool(CONFIG.get("apl_enable_hum_cancel", True))
 APL_SURGICAL_MAINS_NOTCH = bool(CONFIG.get("apl_surgical_mains_notch", True))
+APL_SURGICAL_RING_GUARD = bool(CONFIG.get("apl_surgical_ring_guard", False))
+APL_DEPOP_MIN_PROMINENCE_DB = float(CONFIG.get("apl_depop_min_prominence_db", 0.0))
 APL_HUM_SKIP_NOTCHED = bool(CONFIG.get("apl_hum_skip_notched", False))
 APL_HUM_MAX_HARMONICS = int(CONFIG.get("apl_hum_max_harmonics", 40))
 APL_HUM_BANDWIDTH_HZ = float(CONFIG.get("apl_hum_bandwidth_hz", 1.5))
@@ -969,8 +1491,34 @@ APL_USE_RESEMBLE_DENOISE = bool(CONFIG.get("apl_use_resemble_denoise", False))
 APL_NEURAL_MODEL = _model_filename("apl_neural_model", CONFIG.get("apl_neural_model"))
 APL_MUSIC_NEURAL_MODEL = _model_filename("apl_music_neural_model", CONFIG.get("apl_music_neural_model"))
 APL_EXPANDER_DEPTH_DB = float(CONFIG.get("apl_expander_depth_db", 12.0))
+CATHAR_EXPANDER_DEPTH_DB = float(CONFIG.get("cathar_expander_depth_db", 12.0))
+CATHAR_EXPANDER_ATTACK_S = float(CONFIG.get("cathar_expander_attack_s", 0.08))
+CATHAR_EXPANDER_DECAY_S = float(CONFIG.get("cathar_expander_decay_s", 0.12))
+CATHAR_PAUSE_FLOOR_HF_CUT_DB = float(CONFIG.get("cathar_pause_floor_hf_cut_db", 18.0))
+CATHAR_PAUSE_FLOOR_FILL_DB = float(CONFIG.get("cathar_pause_floor_fill_db", 24.0))
 CATHAR_MUSIC_EXPANDER_DEPTH_DB = float(CONFIG.get("cathar_music_expander_depth_db", 4.0))
 CATHAR_MUSIC_CRT_NOTCH_Q = float(CONFIG.get("cathar_music_crt_notch_q", 60.0))
 CATHAR_MUSIC_ENABLE_DEESSER = bool(CONFIG.get("cathar_music_enable_deesser", False))
 LINEAR_AIR_GAIN_DB = float(CONFIG.get("linear_air_gain_db", 1.0))
+LINEAR_AIR_FREQ_HZ = float(CONFIG.get("linear_air_freq_hz", 7500.0))
+LINEAR_AIR_GATE = str(CONFIG.get("linear_air_gate", "none"))
+APL_POST_NEURAL_SUPPRESS = bool(CONFIG.get("apl_post_neural_suppress", False))
+APL_REFERENCE_SUPPRESS = bool(CONFIG.get("apl_reference_suppress", True))
+APL_REFERENCE_RELEASE_DB = float(CONFIG.get("apl_reference_release_db", 0.0))
+APL_POST_NEURAL_SUPPRESS_FLOOR_GAP_DB = float(CONFIG.get("apl_post_neural_suppress_floor_gap_db", 3.0))
+APL_POST_NEURAL_SUPPRESS_MIN_RESIDUAL_DB = float(CONFIG.get("apl_post_neural_suppress_min_residual_db", 6.0))
+APL_NEURAL_LEVEL_RESTORE = bool(CONFIG.get("apl_neural_level_restore", False))
+# The burst ceiling (2026-10-12; VALID_APL_BURST_CEILINGS, modules/burst_ceiling.py). CPU replay on
+# the hiss diagnosis's stage WAVs (13 clips, after the polish, then the 'frame' + 'shelf' pause
+# floor): 'edges' took the hiss in the source's hiss-only cells at the word edges from -20.5 to
+# -22.9 dB on Tele7abc and -24.6 to -25.9 on SOTI, the short gaps' energy -16.5 to -17.2 and -22.5
+# to -28.5, with gap air at -11.8 / -20.8 dB (the dead-air flag is -25), lkr +0.06 at most,
+# sibilance and the loud frames' 4-8 / 8-16 kHz unchanged, and the word-edge cells 3-6 dB over the
+# source's floor 0.9-2.6 dB down (3.7-6.1 dB before the tail rule, which ate word tails); the seven
+# clips the RoFormer passed whole or that hold no gap kept every sample. The true pauses' energy
+# mean barely moves: what carries it is programme (a word's tail on Tele7abc, the file's first
+# frame on abc-primetime), which the ceiling keeps. Open: pumping where the hiss under the
+# programme stays near the source's level (abc-primetime). Not rendered on the GPU or judged by ear.
+APL_BURST_CEILING = str(CONFIG.get("apl_burst_ceiling", "none"))
+APL_BURST_CEILING_DEPTH_DB = float(CONFIG.get("apl_burst_ceiling_depth_db", 30.0))
 PRESERVE_ORIGINAL_AUDIO_TRACK = bool(CONFIG.get("preserve_original_audio_track", False))

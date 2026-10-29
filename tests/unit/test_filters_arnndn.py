@@ -1,4 +1,5 @@
 import hashlib
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -6,22 +7,76 @@ import pytest
 
 import modules.filters
 
+_SYNTH_INPUT = "sine=frequency=440:duration=0.1"
 
-def test_resolve_arnndn_model_path_direct_and_searched(tmp_path, monkeypatch):
-    """Verify model path resolution checks direct path and candidate search folders."""
+
+def _ffmpeg_arnndn_ready():
+    """True when a real FFmpeg with the arnndn filter is available for a round-trip test."""
+    if not Path(modules.filters.FFMPEG_BIN).exists():
+        return False
+    try:
+        return modules.filters.ffmpeg_has_filter("arnndn")
+    except OSError:
+        return False
+
+
+@pytest.fixture
+def store_dir(tmp_path, monkeypatch):
+    """The arnndn folder of a package model store under tmp_path; the working directory is tmp_path."""
     monkeypatch.chdir(tmp_path)
-    direct_model = tmp_path / "direct_test.rnnn"
-    direct_model.write_bytes(b"model")
-    assert modules.filters._resolve_arnndn_model_path(str(direct_model)) == direct_model.resolve()
+    pkg_store = tmp_path / "pkg_store"
+    rnnn_dir = pkg_store / "arnndn"
+    rnnn_dir.mkdir(parents=True)
+    monkeypatch.setattr(modules.filters, "MODELS_DIR", pkg_store)
+    return rnnn_dir
 
-    model_dir = tmp_path / "models" / "arnndn"
-    model_dir.mkdir(parents=True)
-    searched_model = model_dir / "custom.rnnn"
+
+def test_resolve_arnndn_model_path_searches_store(store_dir):
+    """A bare model filename is found inside the package model store."""
+    searched_model = store_dir / "custom.rnnn"
     searched_model.write_bytes(b"model")
     assert modules.filters._resolve_arnndn_model_path("custom.rnnn") == searched_model.resolve()
 
-    nonexistent_custom_path = tmp_path / "subdir" / "missing.rnnn"
-    assert modules.filters._resolve_arnndn_model_path(str(nonexistent_custom_path)) == nonexistent_custom_path.resolve()
+
+def test_resolve_arnndn_model_path_ignores_working_directory_store(store_dir, tmp_path):
+    """A models/ folder in the working directory (a folder of tapes) is never searched."""
+    planted = tmp_path / "models" / store_dir.name / "planted.rnnn"
+    planted.parent.mkdir(parents=True)
+    planted.write_bytes(b"model")
+    assert modules.filters._resolve_arnndn_model_path("planted.rnnn") is None
+
+
+def test_resolve_arnndn_model_path_confines_absolute_to_store(store_dir, tmp_path):
+    """An absolute model path is reduced to its basename under the store, never opened as given."""
+    outside = tmp_path / "outside" / "evil.rnnn"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"model")
+    assert modules.filters._resolve_arnndn_model_path(str(outside)) is None
+
+
+def test_resolve_arnndn_model_path_confines_traversal_to_store(store_dir):
+    """A parent-traversal model name cannot escape the model store."""
+    assert modules.filters._resolve_arnndn_model_path("../../secret.rnnn") is None
+
+
+def test_store_model_file_refuses_a_path_leaving_its_folder(store_dir):
+    """A file whose real path is not directly inside the store folder is skipped."""
+    nested = store_dir / "sub" / "x.rnnn"
+    nested.parent.mkdir()
+    nested.write_bytes(b"model")
+    assert modules.filters._store_model_file(store_dir, "sub/x.rnnn") is None
+
+
+def test_resolve_arnndn_model_path_skips_link_out_of_store(store_dir, tmp_path):
+    """A link inside the store that points at an outside file is never returned."""
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"not a model")
+    link = store_dir / "linked.rnnn"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("this user cannot create symlinks")
+    assert modules.filters._resolve_arnndn_model_path("linked.rnnn") is None
 
 
 def test_fetch_remote_model_bytes_success(monkeypatch):
@@ -160,12 +215,45 @@ def test_resolve_arnndn_model_path_triggers_download(tmp_path, monkeypatch):
         mock_dl.assert_called_once_with("bd.rnnn", target_path)
 
 
-def test_resolve_arnndn_model_path_download_failed_returns_candidate(tmp_path, monkeypatch):
-    """Verify _resolve_arnndn_model_path falls back to candidate path if download fails."""
-    monkeypatch.chdir(tmp_path)
-    with patch("modules.filters._download_arnndn_model", return_value=None):
-        resolved = modules.filters._resolve_arnndn_model_path("unknown.rnnn")
-        assert resolved == Path("unknown.rnnn").resolve()
+def test_resolve_arnndn_model_path_unknown_is_none(store_dir):
+    """An unknown model absent from the store resolves to None, so the caller fails closed."""
+    assert modules.filters._resolve_arnndn_model_path("unknown.rnnn") is None
+
+
+@pytest.mark.parametrize("payload", ["m'.rnnn", "a;b.rnnn", "a[b].rnnn", "a,b.rnnn", 'a"b.rnnn'])
+def test_escape_ffmpeg_filter_path_refuses_filtergraph_metacharacters(payload):
+    """A model path with a quote or filtergraph metacharacter is refused, not escaped."""
+    with pytest.raises(ValueError, match="Unsafe character"):
+        modules.filters._escape_ffmpeg_filter_path(f"models/arnndn/{payload}")
+
+
+def test_build_arnndn_filter_string_fails_closed_on_injection():
+    """The injection payload cannot build a graph; _build_arnndn_filter_string raises."""
+    with pytest.raises(ValueError, match="Unsafe character"):
+        modules.filters._build_arnndn_filter_string("models/arnndn/x';amovie=target.wav")
+
+
+def test_escape_ffmpeg_filter_path_escapes_drive_colon():
+    """A Windows drive colon is backslash-escaped so it cannot split the filter option."""
+    escaped = modules.filters._escape_ffmpeg_filter_path("C:/models/cb.rnnn")
+    assert escaped == Path("C:/models/cb.rnnn").resolve().as_posix().replace(":", r"\:")
+
+
+def _run_arnndn_graph(tmp_path, model_path):
+    """Runs the arnndn graph for model_path on a synthetic input and returns FFmpeg stderr."""
+    graph = modules.filters._build_arnndn_filter_string(str(model_path), highpass_freq=0, enable_adeclick=False)
+    cmd = [modules.filters.FFMPEG_BIN, "-hide_banner", "-nostdin", "-f", "lavfi", "-i", _SYNTH_INPUT, "-af", graph, "-f", "null", "-"]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False).stderr
+
+
+@pytest.mark.skipif(not _ffmpeg_arnndn_ready(), reason="FFmpeg with arnndn filter is not available")
+def test_escape_roundtrips_spaced_path_through_ffmpeg(tmp_path):
+    """FFmpeg receives a spaced, drive-coloned model path literally, with no injected filter."""
+    model = tmp_path / "sub dir" / "mo del.rnnn"
+    model.parent.mkdir(parents=True)
+    stderr = _run_arnndn_graph(tmp_path, model)
+    assert model.resolve().as_posix() in stderr
+    assert "amovie" not in stderr.lower()
 
 
 def test_cb_arnndn_model_resolution():

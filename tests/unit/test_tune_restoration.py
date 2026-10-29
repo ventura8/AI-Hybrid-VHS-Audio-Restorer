@@ -167,3 +167,30 @@ def test_link_excerpts_falls_back_to_a_copy(tmp_path):
     with patch.object(tr.os, "link", side_effect=OSError("cross-device")):
         paths = tr.link_excerpts(excerpts_dir, target_dir, {"excerpts": [{"excerpt": "a.mov"}]})
     assert paths[0].read_bytes() == b"x"
+
+
+# ----------------------------------------------------------------------------- ear v4: tie buckets
+
+
+def test_distances_within_a_tie_rank_as_ties_and_beyond_it_do_not():
+    """8.00 / 8.20 at a tie of 0.65 tie; 8.0 / 9.0 do not; the buckets keep the order and None ranks last."""
+    spec = {"target": 0.0, "family": "hiss_programme", "tie": 0.65}
+    tied, _direction, _weight = tr.ranked_values("x", [8.0, 8.2], spec)
+    apart, _direction, _weight = tr.ranked_values("x", [8.0, 9.0, None], spec)
+    assert (tied[0] == tied[1], apart[0] < apart[1], apart[2]) == (True, True, None)
+
+
+def test_tie_buckets_anchor_on_the_lowest_value_of_each_bucket():
+    """A chain of small steps opens a new bucket once it is a tie past the bucket's start."""
+    assert tr.tie_buckets([0.0, 0.5, 1.0, 1.5, None], 0.65) == [0, 0, 1, 1, None]
+
+
+def test_an_entry_without_a_tie_ranks_as_before():
+    """No tie: the distances themselves."""
+    values, direction, weight = tr.ranked_values("x", [8.0, 8.2], {"target": 0.0, "family": "f"})
+    assert (values, direction, weight) == ([8.0, 8.2], "down", 1.0)
+
+
+def test_the_sweep_defaults_to_the_v4_grid():
+    """`--grid` defaults to tata_v4."""
+    assert tr.DEFAULT_GRID.name == "tata_v4.yaml"

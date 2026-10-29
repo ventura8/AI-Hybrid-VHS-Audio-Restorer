@@ -29,8 +29,8 @@ jobs:
           # SonarQube Cloud reads the full history for blame and new-code detection.
           fetch-depth: 0
       - name: Set up Python
-        # actions/setup-python@v7.0.0
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        # actions/setup-python@v7.1.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
       - name: Install Poetry
@@ -42,12 +42,10 @@ jobs:
         shell: bash
         run: |
           poetry config virtualenvs.in-project true
-      # Verify the committed lock, never regenerate it. `poetry lock` re-resolved from
-      # scratch on every run: the torch/torchvision/torchaudio multiple-constraint
-      # dependencies span the cu130 index and a separate Darwin branch, and resolving that
-      # explosion outran GitHub's 6-hour job ceiling -- three runs were killed at 6h0m19s
-      # having never reached step 7. It was also self-defeating: regenerating the lock meant
-      # CI validated a lock nobody ships, while the committed one went untested.
+      # Verify the committed lock, never regenerate it: CI tests the lock that ships, not one
+      # it made itself. Regenerating here once outran GitHub's 6-hour job ceiling (three runs
+      # killed at 6h0m19s). The cause was the torch markers in pyproject.toml, fixed in v1.4.0
+      # (see the comment above the torch pins); `poetry lock` now takes seconds.
       - name: Verify Poetry Lockfile
         shell: bash
         run: |
@@ -175,8 +173,8 @@ jobs:
         run: echo "version=$(poetry version -s)" >> "$GITHUB_OUTPUT"
       - name: SonarQube Cloud Scan
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        # SonarSource/sonarqube-scan-action@v8.3.0
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
+        # SonarSource/sonarqube-scan-action@v8.4.0
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304
         with:
           # The project's new-code definition is "previous version": the version is the app's.
           args: -Dsonar.projectVersion=${{ steps.sonar_version.outputs.version }}
@@ -211,8 +209,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Python Runtime
-        # actions/setup-python@v7.0.0
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        # actions/setup-python@v7.1.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
       - name: Download Coverage Artifacts
@@ -251,8 +249,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python 3.12
-        # actions/setup-python@v7.0.0
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        # actions/setup-python@v7.1.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
       - name: Verify Apple Silicon environment
@@ -282,8 +280,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python 3.12
-        # actions/setup-python@v7.0.0
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        # actions/setup-python@v7.1.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
       - name: Install FFmpeg via Chocolatey

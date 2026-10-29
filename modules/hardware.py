@@ -78,7 +78,7 @@ def _populate_cuda_settings(settings, device_id, is_nvidia_device):
 def _detect_nvidia_smi(settings):
     """Detects NVIDIA GPU via nvidia-smi."""
     try:
-        output = subprocess.check_output("nvidia-smi -L", shell=True, stderr=subprocess.DEVNULL).decode()
+        output = subprocess.check_output("nvidia-smi -L", shell=True, stderr=subprocess.DEVNULL).decode("utf-8", "replace")
         if "NVIDIA" in output:
             os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             settings["is_nvidia"] = True
@@ -90,7 +90,7 @@ def _get_macos_total_memory_gb():
     """Extracts unified physical memory size in GB on macOS."""
     try:
         output = subprocess.check_output(["sysctl", "-n", "hw.memsize"], stderr=subprocess.DEVNULL, timeout=5)
-        mem_bytes = int(output.decode("utf-8").strip())
+        mem_bytes = int(output.decode("utf-8", "replace").strip())
         return mem_bytes / (1024**3)
     except Exception:
         return 8.0
@@ -266,7 +266,7 @@ def _get_macos_cpu_name():
     """Extract CPU brand string on macOS."""
     try:
         output = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], stderr=subprocess.DEVNULL, timeout=5)
-        return output.decode("utf-8").strip()
+        return output.decode("utf-8", "replace").strip()
     except Exception:
         return None
 
@@ -299,7 +299,7 @@ def _get_torch_gpu_name():
 
 def _get_nvidia_smi_gpu_name():
     try:
-        output = subprocess.check_output(["nvidia-smi", "-L"], stderr=subprocess.DEVNULL, timeout=5).decode()
+        output = subprocess.check_output(["nvidia-smi", "-L"], stderr=subprocess.DEVNULL, timeout=5).decode("utf-8", "replace")
         if "NVIDIA" in output:
             return output.split(":")[1].split("(")[0].strip()
     except Exception:

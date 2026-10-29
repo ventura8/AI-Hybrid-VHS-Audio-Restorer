@@ -45,5 +45,5 @@ def test_a_symlinked_log_is_refused_and_its_target_untouched(tmp_path):
 
 
 def test_one_line_keeps_tabs_and_ordinary_text():
-    assert utils._one_line("a\tb c") == "a\tb c"
-    assert utils._one_line("a\u2028b\x85c\x1bd") == "a b c d"
+    assert utils.one_line("a\tb c") == "a\tb c"
+    assert utils.one_line("a\u2028b\x85c\x1bd") == "a b c d"

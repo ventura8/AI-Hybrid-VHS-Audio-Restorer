@@ -207,7 +207,13 @@ def _require_clean(paths):
     if not paths:
         return
     status = subprocess.run(
-        ["git", "status", "--porcelain", "--", *sorted(paths)], capture_output=True, text=True, check=False, timeout=120
+        ["git", "status", "--porcelain", "--", *sorted(paths)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=120,
     )
     dirty = [line[3:] for line in status.stdout.splitlines() if line.strip()]
     if dirty:
@@ -238,7 +244,9 @@ def _resolved_config(name):
     """
     probe = "import json; from modules import config; print(json.dumps({k: str(v) for k, v in config.CONFIG.items()}))"
     interpreter, env = _fresh_interpreter()
-    result = subprocess.run([*interpreter, "-c", probe], capture_output=True, text=True, check=False, timeout=300, env=env)
+    result = subprocess.run(
+        [*interpreter, "-c", probe], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=300, env=env
+    )
     if result.returncode != 0:
         raise SystemExit(f"variant {name}: configuration failed to import:\n{result.stderr}")
     return json.loads(result.stdout.strip().splitlines()[-1])

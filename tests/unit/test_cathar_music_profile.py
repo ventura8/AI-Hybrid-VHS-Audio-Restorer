@@ -46,24 +46,34 @@ def test_material_settings_are_the_speech_defaults_or_the_music_profile():
         patch("modules.cathar.CATHAR_MUSIC_ALPHA_HIGH", 0.25),
         patch("modules.cathar.CATHAR_ENABLE_DEESSER", True),
         patch("modules.cathar.CATHAR_MUSIC_ENABLE_DEESSER", False),
+        patch("modules.cathar.CATHAR_BETA", 0.02),
+        patch("modules.cathar.CATHAR_MUSIC_BETA", 0.01),
+        patch("modules.cathar.CATHAR_ENABLE_REPAIR", True),
+        patch("modules.cathar.CATHAR_MUSIC_ENABLE_REPAIR", False),
+        patch("modules.cathar.CATHAR_DEWIND_CUTOFF", 80),
+        patch("modules.cathar.CATHAR_MUSIC_DEWIND_CUTOFF", 60),
     ):
         speech = cathar._material_settings(_strategy(0.001))
         music = cathar._material_settings(_strategy(0.2))
-    assert speech == {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True, "deesser": True}
-    assert music == {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False, "deesser": False}
+    shared = {"alpha": 2.0, "alpha_high": 3.0, "noiseprint": True, "coherent": False, "deplosive": True, "deesser": True}
+    assert speech == {**shared, "beta": 0.02, "repair": True, "dewind_cutoff": 80}
+    profile = {"alpha": 0.5, "alpha_high": 0.25, "noiseprint": False, "coherent": True, "deplosive": False, "deesser": False}
+    assert music == {**profile, "beta": 0.01, "repair": False, "dewind_cutoff": 60}
 
 
 def test_the_music_profile_has_its_own_expander_depth_and_notch_width():
-    """On music the polish expander and the CRT notch take the profile's values; on speech the shared ones (None)."""
+    """On music the polish expander and the CRT notch take the profile's values; on speech cathar's own depth
+    (cathar_expander_depth_db, since 2026-10-25) and the shared notch (None)."""
     with (
         patch("modules.cathar.CATHAR_MUSIC_PROFILE", True),
         patch("modules.cathar.CATHAR_MUSIC_PERSISTENCE_MIN", 0.05),
         patch("modules.cathar.CATHAR_MUSIC_EXPANDER_DEPTH_DB", 4.0),
+        patch("modules.cathar.CATHAR_EXPANDER_DEPTH_DB", 12.0),
         patch("modules.cathar.CATHAR_MUSIC_CRT_NOTCH_Q", 60.0),
     ):
-        assert cathar.music_expander_depth_db(_strategy(0.2)) == 4.0
+        assert cathar.polish_depth_db(_strategy(0.2)) == 4.0
         assert cathar.music_crt_notch_q(_strategy(0.2)) == 60.0
-        assert cathar.music_expander_depth_db(_strategy(0.001)) is None
+        assert cathar.polish_depth_db(_strategy(0.001)) == 12.0
         assert cathar.music_crt_notch_q(None) is None
 
 

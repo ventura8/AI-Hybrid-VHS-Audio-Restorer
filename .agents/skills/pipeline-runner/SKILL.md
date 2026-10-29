@@ -88,3 +88,38 @@ The local pipeline executes the following stages sequentially:
     modified modules.
   - Add parameterized unit tests in `tests/unit/` targeting all branch
     conditions.
+- **Running the gate in a git worktree (Windows)**:
+  - A fresh worktree checks every tracked file out with CRLF
+    (`core.autocrlf=true`), so the gate stops at Taplo and then at the
+    Markdown check whatever the content. Normalise first:
+    `git ls-files '*.md' '*.toml' | xargs sed -i 's/\r$//'`; `git add -u`
+    afterwards clears the stat-only "M" entries (2026-10-11: two gate runs
+    lost on this). The RNNoise models are binary in `.gitattributes`
+    (2026-10-17): a worktree made before that rule holds them with CRLF,
+    and `tests/unit/test_arnndn_model_pins.py` fails until they are deleted
+    and checked out again (`git checkout -- models/arnndn`).
+  - Give the worktree a `.venv` junction to the main venv
+    (`mklink /J <worktree>\.venv <repo>\.venv`); the gate creates its own
+    `.poetry-venv` there (ignored) and its `poetry install` against the
+    junction reports "No dependencies to install" when the lock is current.
+    Before removing such a worktree, delete the junction itself first
+    (PowerShell `[System.IO.Directory]::Delete('<worktree>\.venv', $false)`,
+    which removes the link and never its target), and only then remove the
+    worktree (`git worktree remove`): a recursive delete that follows the
+    junction empties the main venv. Junctions made for a run (an
+    `artifacts` link to the main checkout's fixtures) go the same way as
+    soon as the run ends.
+    `New-Item -ItemType Junction` makes one from PowerShell; Git Bash
+    mangles `mklink /J`'s switch.
+  - robocopy follows junctions too: `/MOVE` (or `/E` without `/XJ`)
+    copies a junction's target and then deletes it at the source. On
+    2026-10-20 moving an old validation folder off a full drive emptied the
+    main `.venv` and `.poetry-venv` through two worktree junctions inside
+    it. Before moving or deleting a work folder, list its junctions
+    (`Get-ChildItem -Recurse -Force -Attributes ReparsePoint`), delete each
+    link itself as above, and pass `/XJ` to robocopy.
+  - A worktree has none of the ignored assets (`experiments/`, `models/`,
+    `experiments/quality_calibration/gates.json`,
+    `experiments/reward/noise_floor_benign.json`): tests pass there, but
+    never run a tuning loop or a scorer from a worktree, where those
+    defaults resolve to nothing.

@@ -116,6 +116,66 @@ def test_dropout_count_finds_a_hole_in_the_programme_only():
     assert dsp.dropout_count(source, paused, RATE) == 0
 
 
+def _holed(mono, start_s=0.2, ms=40.0):
+    """`mono` with one hole of `ms` inside the first burst."""
+    out = mono.copy()
+    start, length = int(start_s * RATE), int(ms * RATE / 1000.0)
+    out[start:][:length] = 0.0
+    return out
+
+
+def test_dropout_count_reads_a_hole_not_a_level_offset():
+    """An output 20 dB down everywhere (a gain match gone wrong) holds no hole; the same with one 40 ms hole holds one."""
+    source = _voice()
+    quieter = (source * np.float32(0.1)).astype(np.float32)
+    assert dsp.dropout_count(source, quieter, RATE) == 0
+    assert dsp.dropout_count(source, _holed(quieter), RATE) == 1
+
+
+def _hissing_bursts(seconds=4.0, seed=3):
+    """White-noise bursts (0.5 s every 1 s) over a faint hiss: programme whose power sits above 1 kHz, as an 's' does."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(seconds * RATE)) / RATE
+    gate = ((t % 1.0) < 0.5).astype(np.float64)
+    return (0.1 * gate * rng.standard_normal(len(t)) + 1e-4 * rng.standard_normal(len(t))).astype(np.float32)
+
+
+def test_dropout_count_skips_a_treble_only_loss(monkeypatch):
+    """100 ms with everything above 1 kHz 20 dB down and the 100-1000 Hz body kept is a treble dropout, not a hole.
+
+    Those frames fall 13 dB broadband: with the second band moved up to where the treble went, they are one hole.
+    """
+    source = _hissing_bursts()
+    freqs = np.fft.rfftfreq(len(source), 1.0 / RATE)
+    dull = np.fft.irfft(np.fft.rfft(source) * np.where(freqs > 1000.0, 0.1, 1.0), n=len(source)).astype(np.float32)
+    lifted = source.copy()
+    span = slice(int(0.1 * RATE), int(0.2 * RATE))
+    lifted[span] = dull[span]
+    assert dsp.dropout_count(source, lifted, RATE) == 0
+    assert dsp.dropout_count(source, _holed(lifted, start_s=1.2), RATE) == 1
+    monkeypatch.setattr(dsp, "DROPOUT_BODY_HZ", (2000.0, 8000.0))
+    assert dsp.dropout_count(source, lifted, RATE) == 1
+
+
+def test_chunked_levels_equal_one_pass(monkeypatch):
+    """Read 1 s at a time the frame levels are one pass's: broadband exactly, the body band within 0.01 dB."""
+    source, frame = _voice(), int(dsp.DROPOUT_FRAME_S * RATE)
+    sos = scipy.signal.butter(4, dsp.DROPOUT_BODY_HZ, btype="bandpass", fs=RATE, output="sos")
+    whole = dsp.chunk_levels(source, RATE, frame, sos)
+    monkeypatch.setattr(dsp, "DROPOUT_CHUNK_S", 1.0)
+    assert np.array_equal(dsp.chunk_levels(source, RATE, frame), dsp.frame_levels(source, frame))
+    chunked = dsp.chunk_levels(source, RATE, frame, sos)
+    loud = whole > 1e-3
+    assert np.max(np.abs(20.0 * np.log10(chunked[loud] / whole[loud]))) < 0.01
+
+
+def test_without_programme_frames_the_drop_is_not_recentred():
+    """No programme frame leaves the drops as they are."""
+    drop = np.array([-3.0, -12.0])
+    assert np.array_equal(dsp.recentred(drop, np.zeros(2, dtype=bool)), drop)
+    assert np.array_equal(dsp.recentred(drop, np.array([True, False])), [0.0, -9.0])
+
+
 def test_whistle_line_reads_the_crt_tone():
     source = _voice()
     t = np.arange(len(source)) / RATE

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tune cathar and auto_pure_linear on the user's own tapes, judged by the output-quality harness.
 
-    tune_restoration.py prepare --name tata_v1 --tapes-dir "D:\\Tata\\New folder" --grid scripts/tune_grids/tata_v1.yaml
+    tune_restoration.py prepare --name tata_v1 --tapes-dir "D:\\Tata\\New folder" --grid scripts/tune_grids/tata_v4.yaml
     tune_restoration.py run     --name tata_v1 [--engines cathar apl] [--variants cathar__baseline ...] [--limit N] [--force]
     tune_restoration.py score   --name tata_v1 [--metrics all|dsp,...] [--gates gates.json] [--rescore]
     tune_restoration.py report  --name tata_v1
@@ -17,10 +17,28 @@ are rank-aggregated per metric. The scoreboard names the best variant per engine
 the best engine per tape, and prints the exact commands for a confirmation run on the
 full tapes. Layout: experiments/tune_<name>/{manifest.json, excerpts/, runs/<variant>/,
 scoreboard.json, scoreboard.md, listen/}.
+
+A grid's `ranking` entry is a direction (`metric.side.stat: up | down`, the v1/v2 grids) or,
+from ear v3 on (`tune_grids/tata_v3.yaml`, `music_v3.yaml`), a reading spec
+`{target, family, dead_zone, scale, weight}` that `scripts/restoration_quality/reward.py`
+reads too: such an entry ranks on its two-sided distance `max(0, |x - target| - dead_zone) /
+scale` (lower first, so everything inside the dead zone ties) and weighs its rank by
+`weight` in the mean rank.
+
+Ear v4 (`tune_grids/tata_v4.yaml`, `music_v4.yaml`, the default grid since 2026-10-12): an
+entry may carry `tie` in the reading's units (the p95 of same-percept transforms, from
+`scripts/reward_noise_floor.py --transforms hiss`). Its distances are then ranked in tie
+buckets (`tie_buckets`): a distance within one tie of its bucket's lowest ranks with it, so a
+sub-jitter difference is a tie. The grids' `vetoes:`, `reversals:`, `audibility:` and
+`constraints:` sections are applied only by the self-driving loop
+(`scripts/autotune_restoration.py`); this sweep reads none of them.
 """
 
 import argparse
+import bisect
+import dataclasses
 import hashlib
+import importlib
 import json
 import os
 import shutil
@@ -45,6 +63,8 @@ from scripts.measure_tradeoff import _extract  # noqa: E402
 from scripts.restoration_quality import gates as gates_mod  # noqa: E402
 from scripts.restoration_quality import listening, runner  # noqa: E402
 
+# The v3 reading specs are parsed and measured by the reward module, loaded like the scorer above.
+REWARD = importlib.import_module("scripts.restoration_quality.reward")
 FFPROBE_BIN = str(Path(FFMPEG_BIN).with_name("ffprobe" + Path(FFMPEG_BIN).suffix)) if Path(FFMPEG_BIN).suffix else "ffprobe"
 VIDEO_EXTENSIONS = (".mov", ".mp4", ".mkv", ".avi")
 CUT_ARGS = [
@@ -67,7 +87,12 @@ CUT_ARGS = [
 ]
 PROBE_RATIO_KEY = "cathar_noiseprint_duration_s"
 RUN_TIMEOUT_PER_EXCERPT_S = 900
+# Windows caps a command line at 32,767 characters: 240 corpus clips in one app call raised WinError 206
+# (the defect hunt of 2026-10-11), so the app is launched on batches that stay under this budget.
+COMMAND_LINE_BUDGET = 24000
 DEFAULT_GATES = Path("experiments/quality_calibration/gates.json")
+# Ear v4 (2026-10-12): critical of hiss under the programme and in the pauses.
+DEFAULT_GRID = Path("scripts/tune_grids/tata_v4.yaml")
 CONFIG_YAML = "config.yaml"
 SOURCE_WAV_SUFFIX = ".src.wav"
 TIMING_JSON = "timing.json"
@@ -80,7 +105,7 @@ DEFAULT_TAPE_MAP = {"campanie": "campanie", "spitalul": "spitalul", "soti": "sot
 def probe_duration(path):
     """Seconds of media, or None when ffprobe cannot read it."""
     cmd = [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     try:
         return float(result.stdout.strip())
     except ValueError:
@@ -219,6 +244,11 @@ def build_manifest(tapes_dir, grid, out_dir, limit=0, catalog=None, whole=False)
 
 
 def load_grid(path):
+    """The whole grid file: what this driver reads (`ranking:`, `variants:`, ...) and the loop's guard sections.
+
+    An ear v3 grid's `vetoes:`, `reversals:` and `audibility:` sections are returned as they
+    stand; `autotune_restoration` applies them (`scripts/autotune_guards.py`), this driver does not.
+    """
     with open(path, "r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
 
@@ -231,14 +261,34 @@ def known_config_fields():
     for name, _default in config_mod._BOOL_CONFIG_FIELDS:
         fields[name] = (bool, None, None)
     fields["cathar_denoise_method"] = (set(config_mod.VALID_CATHAR_DENOISE_METHODS), None, None)
+    fields["cathar_declip_mode"] = (set(config_mod.VALID_CATHAR_DECLIP_MODES), None, None)
+    fields["cathar_dehum_freq"] = ({config_mod.CATHAR_DEHUM_FREQ_SCANNER, 0}, None, None)
+    fields["cathar_noiseprint_shallow_action"] = (set(config_mod.VALID_CATHAR_NOISEPRINT_SHALLOW_ACTIONS), None, None)
+    fields["cathar_noiseprint_method"] = (set(config_mod.VALID_CATHAR_NOISEPRINT_METHODS), None, None)
+    fields["pause_floor_target"] = (set(config_mod.VALID_PAUSE_FLOOR_TARGETS), None, None)
+    fields["pause_floor_shape"] = (set(config_mod.VALID_PAUSE_FLOOR_SHAPES), None, None)
+    fields["pause_floor_deficit"] = (set(config_mod.VALID_PAUSE_FLOOR_DEFICITS), None, None)
+    fields["linear_air_gate"] = (set(config_mod.VALID_LINEAR_AIR_GATES), None, None)
+    fields["apl_burst_ceiling"] = (set(config_mod.VALID_APL_BURST_CEILINGS), None, None)
+    fields["mux_sample_rate"] = (set(config_mod.VALID_MUX_SAMPLE_RATES), None, None)
+    fields["azimuth_estimate_method"] = (set(config_mod.VALID_AZIMUTH_ESTIMATE_METHODS), None, None)
+    fields["crt_detect_mode"] = (set(config_mod.VALID_CRT_DETECT_MODES), None, None)
+    fields["scanner_mains_vote"] = (set(config_mod.VALID_SCANNER_MAINS_VOTES), None, None)
     fields["apl_neural_model"] = (str, None, None)
     return fields
+
+
+def _choice_problem(name, value, choices):
+    """A choice outside the set; a bool is never one (False == 0 would pass cathar_dehum_freq's {'scanner', 0})."""
+    if value in choices and not isinstance(value, bool):
+        return None
+    return f"{name}: {value!r} is not one of {sorted(choices, key=str)}"
 
 
 def _problem(name, value, spec):
     kind, low, high = spec
     if isinstance(kind, set):
-        return None if value in kind else f"{name}: {value!r} is not one of {sorted(kind)}"
+        return _choice_problem(name, value, kind)
     if kind is bool:
         return None if isinstance(value, bool) else f"{name}: expected true/false, got {value!r}"
     if kind is str:
@@ -310,7 +360,9 @@ def resolved_config(variant_dir, python, extra_env=None):
     """CONFIG as a fresh interpreter launched in `variant_dir` resolves it."""
     code = "import json, modules.config as c; print(json.dumps(c.CONFIG, default=str))"
     env = {**os.environ, **(extra_env or {}), "PYTHONPATH": str(REPO), "PYTHONIOENCODING": "utf-8"}
-    result = subprocess.run([python, "-c", code], cwd=str(variant_dir), env=env, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        [python, "-c", code], cwd=str(variant_dir), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True
+    )
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
@@ -400,10 +452,33 @@ def run_variant(variant_dir, engine_spec, overrides, manifest, excerpts_dir, pyt
     reverted = assert_overrides_resolved(overrides, resolved)
     if reverted:
         raise SystemExit(f"{variant_dir.name}: the app did not honour the overrides: {reverted}")
-    excerpts = link_excerpts(excerpts_dir, variant_dir / "excerpts", manifest)
+    excerpts = pending_excerpts(link_excerpts(excerpts_dir, variant_dir / "excerpts", manifest), suffix)
     timing = _launch(variant_dir, excerpts, python, keep_work, extra_env)
     (variant_dir / TIMING_JSON).write_text(json.dumps(timing, indent=1), encoding="utf-8")
     return timing
+
+
+def pending_excerpts(excerpts, suffix):
+    """The excerpts whose restored output is not there yet, so a run stopped part-way resumes where it was."""
+    return [excerpt for excerpt in excerpts if not is_valid_video(output_path(excerpt, suffix))]
+
+
+def _arg_chars(parts):
+    """The characters `parts` take on a command line, each quoted and space-separated."""
+    return sum(len(part) + 3 for part in parts)
+
+
+def command_batches(prefix, paths, budget=COMMAND_LINE_BUDGET):
+    """`paths` split into runs whose command line (`prefix` plus the paths, each quoted) stays under `budget` characters.
+
+    A path too long to share a run gets one of its own; no paths give no run.
+    """
+    base, batches = _arg_chars(prefix), [[]]
+    for path in paths:
+        if batches[-1] and base + _arg_chars([*batches[-1], path]) > budget:
+            batches.append([])
+        batches[-1].append(path)
+    return batches if batches[-1] else []
 
 
 def _launch(variant_dir, excerpts, python, keep_work, extra_env=None):
@@ -411,17 +486,19 @@ def _launch(variant_dir, excerpts, python, keep_work, extra_env=None):
     if keep_work:
         env["AI_RESTORE_TEST_MODE"] = "1"
     started = time.time()
+    prefix = [python, str(REPO / "restore_audio_hybrid.py")]
     with open(variant_dir / "run.log", "w", encoding="utf-8") as log:
-        subprocess.run(
-            [python, str(REPO / "restore_audio_hybrid.py"), *(str(Path(e).resolve()) for e in excerpts)],
-            cwd=str(variant_dir),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            timeout=RUN_TIMEOUT_PER_EXCERPT_S * max(1, len(excerpts)),
-            check=False,
-        )
+        for batch in command_batches(prefix, [str(Path(e).resolve()) for e in excerpts], COMMAND_LINE_BUDGET):
+            subprocess.run(
+                [*prefix, *batch],
+                cwd=str(variant_dir),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                timeout=RUN_TIMEOUT_PER_EXCERPT_S * len(batch),
+                check=False,
+            )
     wall = time.time() - started
     return {"wall_s": wall, "n": len(excerpts), "s_per_excerpt": wall / max(1, len(excerpts))}
 
@@ -460,18 +537,27 @@ def score_variant(variant_dir, engine_spec, manifest, excerpts_dir, families, re
 def merge_families(stored, fresh, families, gates):
     """`stored` with the re-scored `families` replaced from `fresh` (rows, aggregates, file metrics), verdicts re-read.
 
-    A detector fix is then a re-score of one family, not of the four; the windows are the
-    same because source, output and window settings are.
+    A detector fix is then a re-score of one family, not of the four. The kept families'
+    readings stand on the fresh windows only when source, output and window settings are the
+    same and the pair is trimmed at the same lag (`lag_samples`): a pair the aligner now trims
+    elsewhere (a re-score after the 2026-10-11 aligner change, `scripts/pair_alignment.py`)
+    or that holds another number of windows is taken whole from `fresh`, so no document mixes
+    readings of two timelines under one `alignment` record.
     """
     prefixes = tuple(f"{family}." for family in families)
     for label, variant in fresh["variants"].items():
         old = stored["variants"].get(label)
-        if old is None or len(old["rows"]) != len(variant["rows"]):
-            stored["variants"][label] = variant
-        else:
+        if same_timeline(old, variant):
             _merge_variant(old, variant, prefixes, gates)
+        else:
+            stored["variants"][label] = variant
     stored["metrics"].update(fresh["metrics"])
     return stored
+
+
+def same_timeline(old, fresh):
+    """Whether a stored variant's rows sit on the fresh variant's windows: as many rows, trimmed at the same lag."""
+    return old is not None and len(old["rows"]) == len(fresh["rows"]) and old.get("lag_samples") == fresh.get("lag_samples")
 
 
 def _merge_variant(old, fresh, prefixes, gates):
@@ -483,6 +569,7 @@ def _merge_variant(old, fresh, prefixes, gates):
             old_row[side].update(keep(new_row[side]))
     old["aggregate"].update(keep(fresh["aggregate"]))
     old["file"], old["families"] = fresh["file"], {**old["families"], **fresh["families"]}
+    old["alignment"] = fresh.get("alignment")
     old["verdicts"] = gates_mod.evaluate_gates(old["aggregate"], gates, old.get("speaker_floor"))
     old["hard_failures"] = gates_mod.hard_failures(old["verdicts"])
     old["listener_flags"] = gates_mod.flag_failures(old["verdicts"])
@@ -561,17 +648,80 @@ def _ranks(values, direction):
     return ranks
 
 
+def _cluster_starts(values, tie):
+    """The lowest value of each tie bucket over sorted `values`: a value more than `tie` past its bucket's start opens one."""
+    starts = []
+    for value in values:
+        if not starts or value - starts[-1] > tie:
+            starts.append(value)
+    return starts
+
+
+def tie_buckets(distances, tie):
+    """Each distance's tie bucket (0 = best), None kept: a distance within `tie` of its bucket's lowest ranks with it.
+
+    Buckets anchored on the values themselves, not a fixed grid: on `round(d / tie)` the pair 8.00 / 8.20 at a tie of
+    0.65 straddled the 8.125 boundary and ranked apart, a sub-jitter difference made decisive.
+    """
+    starts = _cluster_starts(sorted(d for d in distances if d is not None), tie)
+    return [None if d is None else bisect.bisect_right(starts, d) - 1 for d in distances]
+
+
+def ranked_values(key, values, spec):
+    """`(values, direction, weight)` one ranking entry ranks on: a direction ("up" | "down") as it stands, weight 1;
+    a v3 reading spec as its two-sided distance, lower first (None ranks last), with its weight; with a `tie` (ear v4)
+    the distances' tie buckets (`tie_buckets`). A bad spec raises ValueError naming `key` (`reward.parse_grid`)."""
+    if not isinstance(spec, dict):
+        return values, spec, 1.0
+    reading = REWARD.parse_grid({key: spec})[key]
+    unit = dataclasses.replace(reading, weight=1.0)
+    distances = [unit.distance(value) for value in values]
+    if reading.tie > 0.0:
+        distances = tie_buckets(distances, reading.tie / reading.scale)
+    return distances, "down", reading.weight
+
+
+def _unread(values):
+    return all(value is None for value in values)
+
+
+def _entry_ranks(per_label, key, spec, skip_unread):
+    """`[(rank, weight)]` in label order for one ranking entry; nothing when `skip_unread` and no label read it."""
+    values = [metrics.get(key) for metrics in per_label.values()]
+    if skip_unread and _unread(values):
+        return []
+    ranked, direction, weight = ranked_values(key, values, spec)
+    return [(rank, weight) for rank in _ranks(ranked, direction)]
+
+
+def _rank_table(per_label, ranking, skip_unread):
+    """`{label: [(rank, weight), ...]}` over the ranking's entries for `{label: {key: value}}`."""
+    table = {label: [] for label in per_label}
+    for key, spec in ranking.items():
+        for label, ranked in zip(per_label, _entry_ranks(per_label, key, spec, skip_unread)):
+            table[label].append(ranked)
+    return table
+
+
+def _weighted_mean(ranked):
+    """The weight-averaged rank of `[(rank, weight)]`, None with nothing ranked."""
+    if not ranked:
+        return None
+    ranks, weights = zip(*ranked)
+    return float(np.average(ranks, weights=weights))
+
+
+def _medians(summary):
+    return {key: entry.get("median") for key, entry in summary["metrics"].items()}
+
+
 def rank_variants(summaries, ranking):
-    """`{variant: rank_score}` = mean rank over the ranked metrics (lower is better) for every variant; the veto is applied later."""
-    labels = list(summaries)
-    scores = {label: [] for label in labels}
-    for key, direction in ranking.items():
-        values = [summaries[label]["metrics"].get(key, {}).get("median") for label in labels]
-        if all(v is None for v in values):
-            continue
-        for label, rank in zip(labels, _ranks(values, direction)):
-            scores[label].append(rank)
-    return {label: float(np.mean(r)) if r else None for label, r in scores.items()}
+    """`{variant: rank_score}` = weighted mean rank over the ranked metrics (lower is better); the veto is applied later.
+
+    A metric no variant read is left out, so it cannot tie everyone; a variant with nothing ranked scores None.
+    """
+    table = _rank_table({label: _medians(summary) for label, summary in summaries.items()}, ranking, skip_unread=True)
+    return {label: _weighted_mean(ranked) for label, ranked in table.items()}
 
 
 def best_engine_per_tape(summaries, ranking):
@@ -590,13 +740,7 @@ def best_engine_per_tape(summaries, ranking):
 
 
 def _best_on_tape(per_label, ranking):
-    labels = list(per_label)
-    totals = {label: [] for label in labels}
-    for key, direction in ranking.items():
-        values = [per_label[label].get(key) for label in labels]
-        for label, rank in zip(labels, _ranks(values, direction)):
-            totals[label].append(rank)
-    scored = {label: float(np.mean(r)) for label, r in totals.items()}
+    scored = {label: _weighted_mean(ranked) for label, ranked in _rank_table(per_label, ranking, skip_unread=False).items()}
     best = min(scored, key=scored.get)
     return {"variant": best, "engine": best.split("__")[0], "rank_score": scored[best]}
 
@@ -854,7 +998,18 @@ def _pairs_for(variant_dir, label, manifest, gates=None):
     return pairs
 
 
-LISTEN_METRICS = ("mos.sigmos_col", "mos.sigmos_disc", "speech.cer", "dsp.hf_8k16k")
+# One pick per metric per variant; ear v3 adds the timbre (R1), the 's' (R2) and the pause residual (R4),
+# two-sided readings picked where they moved furthest either way.
+LISTEN_METRICS = (
+    "mos.sigmos_col",
+    "mos.sigmos_disc",
+    "speech.cer",
+    "dsp.hf_8k16k",
+    "dsp.balance_top_db",
+    "dsp.sib_abs_level_db",
+    "dsp.sib_texture_db",
+    "dsp.gap_hf_excess_db",
+)
 
 
 def _listen_variants(out_dir, grid, args):
@@ -906,7 +1061,7 @@ def _parse_args(argv=None):
     parser.add_argument("command", choices=("prepare", "run", "score", "report", "listen", "all"))
     parser.add_argument("--name", required=True)
     parser.add_argument("--tapes-dir", default=None)
-    parser.add_argument("--grid", type=Path, default=Path("scripts/tune_grids/tata_v1.yaml"))
+    parser.add_argument("--grid", type=Path, default=DEFAULT_GRID)
     parser.add_argument("--engines", nargs="*", default=None)
     parser.add_argument("--variants", nargs="*", default=None)
     parser.add_argument("--limit", type=int, default=0)

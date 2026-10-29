@@ -45,7 +45,7 @@ def _probe_duration(video_path):
     """Returns duration in minutes or None on failure."""
     cmd = [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)]
     try:
-        return float(subprocess.check_output(cmd, text=True, timeout=10).strip()) / 60.0
+        return float(subprocess.check_output(cmd, text=True, encoding="utf-8", errors="replace", timeout=10).strip()) / 60.0
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
         return None
 

@@ -1,3 +1,4 @@
+import importlib
 import os
 import platform
 import sys
@@ -224,8 +225,43 @@ def _get_interactive_files():
         return [], False
 
 
-def _get_input_files():
+def _windows_console(fd):
+    """True when the Windows handle behind `fd` is a console: GetConsoleMode succeeds on nothing else.
 
+    `msvcrt` exists on Windows only, so it is imported by name here: a static import fails the
+    Linux CI's pylint (E0401) though this function only runs on win32.
+    """
+    import ctypes
+
+    msvcrt = importlib.import_module("msvcrt")
+    mode = ctypes.c_uint32()
+    return bool(ctypes.windll.kernel32.GetConsoleMode(msvcrt.get_osfhandle(fd), ctypes.byref(mode)))
+
+
+def _is_terminal(stream):
+    """isatty, made strict on Windows, where the NUL device a detached stdin opens also reports a tty."""
+    if not stream.isatty():
+        return False
+    return _windows_console(stream.fileno()) if sys.platform == "win32" else True
+
+
+def stdin_is_console():
+    """True when a person can answer a prompt: stdin is an open terminal.
+
+    A batch launched with stdin detached (DEVNULL), piped or closed gets False, so no prompt
+    waits on it; a closed stream raises ValueError on isatty and counts as no console.
+    """
+    try:
+        return sys.stdin is not None and _is_terminal(sys.stdin)
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def _get_input_files():
+    """The files to restore: the command-line paths, or, at a console, the interactive prompt.
+
+    With no paths and no console nothing is asked: a prompt would wait on a pipe forever.
+    """
     files = []
     use_source_as_output = False
 
@@ -238,6 +274,8 @@ def _get_input_files():
             # Original logic handled iterdir slightly different but _scan_files_in_path is robust.
             found = _scan_files_in_path(path)
             files.extend(found)
+    elif not stdin_is_console():
+        print(">> No paths given and stdin is not a terminal: pass video files or folders as arguments.")
     else:
         files, use_source_as_output = _get_interactive_files()
 

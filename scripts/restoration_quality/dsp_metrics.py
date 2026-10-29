@@ -40,9 +40,37 @@ DROPOUT_DROP_DB = -10.0
 DROPOUT_MIN_FRAMES = 2
 # A frame carries programme when it sits within 6 dB of the source's loud level (p70).
 DROPOUT_PROGRAMME_SHARE = 0.5
+# A hole takes the 100-1000 Hz body with it; a 2 um treble lift costs that band 2.3-4.7 dB, a hole all of it.
+DROPOUT_BODY_HZ = (100.0, 1000.0)
+# The count reads 60 s at a time; the body band's zero-phase filter sees 0.5 s more either side.
+DROPOUT_CHUNK_S = 60.0
+DROPOUT_CONTEXT_S = 0.5
 WHISTLE_HZ = 15625.0
 WHISTLE_CORE_HZ = 30.0
 WHISTLE_NEIGHBOURHOOD_HZ = 500.0
+WHISTLE_NPERSEG = 32768
+# Hann's equivalent noise bandwidth in bins: a sine of mean square P puts P / (1.5 rate / N) in its bin.
+WHISTLE_ENBW_BINS = 1.5
+# The whistle reading's floor (2026-10-12): the neighbourhood is read no lower than the bin a sine
+# this far under the loud frames (>= p70) would fill, and the reading never goes under 0; before,
+# it was a ratio of nothing to nothing. The realistic-v2 oracle check failed it on 288 of 920
+# pairs: the fixtures' tape noise is notched at both line rates (`realistic_defects._without_tones`),
+# so every capture read -40..-52 dB (a hole, not a line) and the clean programme +2..+5, the
+# maximum of near-empty bins (the targets' neighbourhood sits a median 108 dB under their loud
+# frames per bin, p95 92.5 dB); the band-limited captures read +33. Of the IA hunt's 34 cathar
+# clips whose reading rose over 1 dB (8 over 3), 30 had the source's band over 80 dB under its
+# loud frames, and only two held a line at the line rate in both halves of the clip: et-el (a 23 dB
+# PAL line the scanner missed) and thevistagroup (a 16 dB NTSC line it read as PAL); elsewhere the
+# core's maximum sat at a random offset. Floored at 70-90 dB no oracle pair fails; at 80 dB the
+# hunt's cathar clips over 3 dB fall from 8 to 2 and APL's from 7 to 1 (ein-halleluja on both: a
+# polarity-inverted pair whose channel mean cancels the source; and full-size-render202202012106's
+# cathar output, its band 1-5 dB over the floor), and the six cathar_music_alpha 0.25 refusals
+# stand (m_vid-20220730-091707 carries a real line 37 dB under its loud frames, its hiss 68 dB
+# under, above the floor: +3.4..+3.7 dB). The planted lines keep reading: the whistle class
+# (-39 dB) +41 dB, the recorded whine spread by flutter (-57..-62 dB) +10..+21 dB. A line 80 dB
+# under the loud frames plays at -5 dB SPL at the critical level (75 dB SPL), 65 dB under
+# Terhardt's threshold at 15.6 kHz.
+WHISTLE_FLOOR_DB = 80.0
 LRA_WINDOW_S = 3.0
 LRA_HOP_S = 1.0
 LRA_ABSOLUTE_GATE = -70.0
@@ -185,6 +213,22 @@ def loud_band_ratios_db(source, output, rate, frame=4096):
     return {name: (_band_ratio_db(freqs, src_mean, band), _band_ratio_db(freqs, out_mean, band)) for name, band in HF_BANDS_HZ.items()}
 
 
+def programme_band_ratios_db(source, output, rate, bandwidth_hz):
+    """`loud_band_ratios_db`, with `(None, None)` for a band starting at or above the programme's bandwidth.
+
+    Above R0's programme bandwidth (`source_profile`, read on the loud frames) a band holds the
+    tape's hiss, not the voice, so its loud-frame ratio reads hiss removal as "air lost". On the
+    IA hunt re-scored on 2026-10-12, 43 of the 44 `auto_pure_linear` clips failing the 8-16 kHz
+    gate had a programme bandwidth under 8 kHz (median 3.6 kHz), and the oracle check's 102
+    failures of 920 clean-reference pairs came from the same reading. With no bandwidth known
+    (no profile) every band reads as before.
+    """
+    ratios = loud_band_ratios_db(source, output, rate)
+    if bandwidth_hz is None:
+        return ratios
+    return {name: ratios[name] if HF_BANDS_HZ[name][0] < bandwidth_hz else (None, None) for name in ratios}
+
+
 def framed_psd(mono, rate, frame):
     """Per non-overlapping frame: `(freqs, power (frames, bins), rms level (frames,))`, Hann-windowed rfft power."""
     count = len(mono) // frame
@@ -233,17 +277,68 @@ def _count_events(hits, refractory):
 
 
 def dropout_count(source, output, rate):
-    """New holes: runs of >= 2 frames (100 ms) where the output fell > 10 dB under a source frame that carried programme."""
+    """New holes: runs of >= 2 frames (20 ms) where the output fell > 10 dB under a source frame that carried programme.
+
+    Each frame's drop is read against the median drop of the programme frames (a hole is
+    local, a level offset is not), broadband and in the 100-1000 Hz body alike (a loss of the
+    treble alone is no hole). Read in 60 s chunks, so a whole tape needs no float64 copy.
+    """
     frame = int(DROPOUT_FRAME_S * rate)
-    src = frame_levels(source, frame)
-    out = frame_levels(output, frame)
-    count = min(len(src), len(out))
+    count = min(len(source), len(output)) // frame
     if count == 0:
         return 0
-    src, out = src[:count], out[:count]
-    drop = 20.0 * np.log10((out + 1e-9) / (src + 1e-9))
-    programme = src >= DROPOUT_PROGRAMME_SHARE * np.percentile(src, LOUD_PERCENTILE)
-    return _count_runs((drop < DROPOUT_DROP_DB) & programme, DROPOUT_MIN_FRAMES)
+    source, output = source[: count * frame], output[: count * frame]
+    src = chunk_levels(source, rate, frame)
+    programme = programme_frames(src)
+    broadband = recentred(drop_db(src, chunk_levels(output, rate, frame)), programme)
+    body = recentred(band_frame_drops_db(source, output, rate, frame), programme)
+    return _count_runs((broadband < DROPOUT_DROP_DB) & (body < DROPOUT_DROP_DB) & programme, DROPOUT_MIN_FRAMES)
+
+
+def programme_frames(levels):
+    """The frames that carry programme: within 6 dB of the loud level (half the p70 frame RMS)."""
+    return levels >= DROPOUT_PROGRAMME_SHARE * np.percentile(levels, LOUD_PERCENTILE)
+
+
+def drop_db(src, out):
+    """Per frame, the output's level under the source's, in dB (negative = quieter)."""
+    return 20.0 * np.log10((out + 1e-9) / (src + 1e-9))
+
+
+def recentred(drop, programme):
+    """`drop` less its median over the programme frames: what a gain match left over is not a hole."""
+    return drop - np.median(drop[programme]) if programme.any() else drop
+
+
+def band_frame_drops_db(source, output, rate, frame):
+    """Per frame, the output's 100-1000 Hz level under the source's, in dB (`drop_db` on the body band)."""
+    band = (DROPOUT_BODY_HZ[0], min(DROPOUT_BODY_HZ[1], 0.45 * rate))
+    sos = scipy.signal.butter(4, band, btype="bandpass", fs=rate, output="sos")
+    return drop_db(chunk_levels(source, rate, frame, sos), chunk_levels(output, rate, frame, sos))
+
+
+def chunk_levels(mono, rate, frame, sos=None):
+    """RMS of each whole `frame` of `mono` (through `sos` when given), read 60 s at a time: never a float64 copy of a tape."""
+    count = len(mono) // frame
+    step = max(1, int(DROPOUT_CHUNK_S * rate) // frame)
+    levels = np.zeros(count)
+    for first in range(0, count, step):
+        last = min(count, first + step)
+        levels[first:last] = _chunk_rms(mono, (first, last), frame, sos, int(DROPOUT_CONTEXT_S * rate))
+    return levels
+
+
+def _chunk_rms(mono, frames, frame, sos, context):
+    """Frame RMS over frames `first`..`last`; filtered zero-phase over `context` samples more either side, then trimmed."""
+    first, last = frames
+    pad = 0 if sos is None else context
+    lo, hi = max(0, first * frame - pad), min(len(mono), last * frame + pad)
+    data = np.asarray(mono[lo:hi], dtype=np.float64)
+    if sos is not None:
+        data = scipy.signal.sosfiltfilt(sos, data)
+    offset, size = first * frame - lo, (last - first) * frame
+    core = data[offset:][:size]
+    return np.sqrt(np.mean(core.reshape(last - first, frame) ** 2, axis=1))
 
 
 def _count_runs(mask, min_length):
@@ -255,13 +350,27 @@ def _count_runs(mask, min_length):
 
 
 def whistle_line_db(mono, rate, line_hz=WHISTLE_HZ):
-    """The CRT line whistle: peak within +-30 Hz of `line_hz` over the median of its +-500 Hz neighbourhood, in dB."""
-    if len(mono) < 32768 or line_hz >= rate / 2.0:
+    """The CRT line whistle: how far the peak within +-30 Hz of `line_hz` stands out, in dB, never under 0.
+
+    It stands over the median of its +-500 Hz neighbourhood, read no lower than
+    `whistle_floor_density` (`WHISTLE_FLOOR_DB`): a hole at the line reads 0, and so does a
+    near-empty band, whatever the ratio of its bins.
+    """
+    if len(mono) < WHISTLE_NPERSEG or line_hz >= rate / 2.0:
         return None
-    freqs, psd = scipy.signal.welch(np.asarray(mono, dtype=np.float64), rate, nperseg=32768)
+    data = np.asarray(mono, dtype=np.float64)
+    freqs, psd = scipy.signal.welch(data, rate, nperseg=WHISTLE_NPERSEG)
     core = np.abs(freqs - line_hz) <= WHISTLE_CORE_HZ
     around = (np.abs(freqs - line_hz) <= WHISTLE_NEIGHBOURHOOD_HZ) & ~core
-    return float(10.0 * np.log10((psd[core].max() + 1e-20) / (np.median(psd[around]) + 1e-20)))
+    reference = max(float(np.median(psd[around])), whistle_floor_density(data, rate))
+    return max(0.0, float(10.0 * np.log10((psd[core].max() + 1e-20) / (reference + 1e-20))))
+
+
+def whistle_floor_density(mono, rate):
+    """The Welch density one bin holds for a sine `WHISTLE_FLOOR_DB` under the loud frames' (>= p70) mean square."""
+    level = frame_levels(mono)
+    loud = level[level >= np.percentile(level, LOUD_PERCENTILE)]
+    return float(np.mean(loud**2)) * 10.0 ** (-WHISTLE_FLOOR_DB / 10.0) / (WHISTLE_ENBW_BINS * rate / WHISTLE_NPERSEG)
 
 
 def hum_excess_db(mono, rate, mains_hz=50.0):
@@ -298,6 +407,10 @@ def _power_mean_db(levels_db):
     return float(10.0 * np.log10(np.mean(10.0 ** (levels_db / 10.0))))
 
 
-def trade(source_wav, output_wav):
-    """The branch's arbiter, unchanged: noise removed and programme deviation (`scripts.measure_tradeoff.measure`)."""
-    return measure(str(source_wav), str(output_wav))
+def trade(source_wav, output_wav, align_method=None, align_prior_s=None):
+    """The branch's arbiter: noise removed (energy-averaged and per-frame median) and programme deviation.
+
+    `scripts.measure_tradeoff.measure`, aligned with `align_method` and `align_prior_s` (the
+    runner passes the pair's own, so both alignments agree).
+    """
+    return measure(str(source_wav), str(output_wav), align_method=align_method, align_prior_s=align_prior_s)

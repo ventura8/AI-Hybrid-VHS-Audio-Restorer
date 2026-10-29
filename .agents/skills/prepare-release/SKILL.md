@@ -186,60 +186,42 @@ Rules that the pins encode, and that a bump must respect:
 
 - `onnxruntime-gpu` is `~` (tilde) pinned; keep the operator, bump the number.
 
+- `nvidia-cublas` and `nvidia-cuda-nvrtc` repeat the versions torch's
+  cuda-toolkit requires, so the check above flags them `UPDATE` against PyPI;
+  that is not an update. After a torch bump, read the cuda-toolkit pin in the
+  new wheel's metadata (`Requires-Dist: cuda-toolkit[...]==X`) and set both
+  to the versions cuda-toolkit X requires; a stale pin fails `poetry lock`
+  in seconds and names them. Every platform-split pair keeps complementary
+  `sys_platform` markers (poetry-runtime-and-ci skill, "Markers That Keep the
+  Lock Fast").
+
 - A `pip-audit` finding with no fix version is still a finding: look the
   advisory up (`https://api.osv.dev/v1/vulns/<ID>`) for `last_affected`, and
   bump past it. Never add `--ignore-vuln` to the gate.
 
-Then relock, install, and let the gate prove the result. Never run a bare
-`poetry lock`: re-resolving from scratch across the torch
-multiple-constraint entries and the cu130 index has exceeded six hours (see
-the note above "Verify Poetry Lockfile" in `.github/workflows/ci.yml`). As
-of Poetry 2.4.3 a targeted `poetry update <pkg>` stalls at the same point
--- round 79 of its override loop, `Duplicate dependencies for torch` --
-even for one pure-Python package, so try it with a cap and fall back
-(the cap is Python's, so it behaves the same on macOS, which ships no
-`timeout`):
+Then relock, install, and let the gate prove the result. Poetry's own solver
+takes every bump, the ones that change the dependency graph (torch,
+onnxruntime, transformers) included: since v1.4.0 fixed the torch markers a
+lock takes seconds (poetry-runtime-and-ci skill, "Markers That Keep the Lock
+Fast"). Lock with the repository's Poetry, through the venv:
 
 ```bash
-# package names go after the "-" as ordinary arguments; sys.argv[1:] receives them
-POETRY_REQUESTS_TIMEOUT=900 .venv/bin/python - "accelerate" "tqdm" <<'PY'
-import subprocess, sys
-try:
-    subprocess.run([sys.executable, "-m", "poetry", "update", "--lock", *sys.argv[1:]], timeout=600, check=True)
-except subprocess.TimeoutExpired:
-    sys.exit("poetry update did not finish in 600 s: use the lock-patch fallback")
-PY
-```
-
-Every command in this skill is portable across the Linux and macOS shells
-the runner supports: Python or `git` does the editing, never GNU-only
-`sed -i`, `sort -V` or `timeout`.
-
-Fallback, for a bump whose dependency metadata is unchanged (compare
-`requires_dist` and `requires_python` between the two versions on
-`https://pypi.org/pypi/<pkg>/<ver>/json`; an extras-only change is applied
-by hand to `[package.extras]`): rewrite that package's `version` and
-`files` (filename + sha256 for every non-yanked file) in `poetry.lock`,
-then recompute the content-hash with Poetry's own API --
-`Factory().create_poetry(".").locker._get_content_hash()` -- into
-`[metadata]`. Verify with `poetry check --lock` and a hash-checked
-`poetry install --with dev,ml`. A bump that changes the dependency graph
-(torch, onnxruntime, transformers) is not eligible: defer it, keep its pin
-at the locked version, and say so in the release notes with the reason.
-
-```bash
+# after raising pins in pyproject.toml: picks them up, keeps the rest locked
+.venv/bin/python -m poetry lock
+# or every package to its newest allowed release
+.venv/bin/python -m poetry update --lock
 .venv/bin/python -m poetry check --lock
 .venv/bin/python -m poetry install --with dev,ml
 ```
 
-`scripts/refresh_lock.py` does the fallback mechanically for every package
-(the safe, metadata-identical pass by default; `--graph name==version` rebuilds
-a block whose dependency metadata changed and adds what it needs;
-`--add name==version:group` for a new direct dependency), recomputes the
-content-hash and writes `experiments/lock_refresh_report.json`; run it without
-`--apply` first and read what it deferred. The cu130 torch trio moves only as a set,
-and only when the cu130 index carries matching torch, torchvision and
-torchaudio wheels.
+A solve that runs past a minute means a marker rule was broken, not that the
+lock is slow: find the pair that was added or changed instead of waiting.
+The cu130 torch trio moves only as a set, and only when the cu130 index
+carries matching torch, torchvision and torchaudio wheels.
+
+Every command in this skill is portable across the Linux and macOS shells
+the runner supports: Python or `git` does the editing, never GNU-only
+`sed -i`, `sort -V` or `timeout`.
 
 CI pins: for each `uses:` in `.github/workflows/*.yml`, the line above it
 names the release; update both the SHA and the comment to the latest release
@@ -285,6 +267,20 @@ unstaged, tell the user what they are, and amend only the release paths.
 When the user asked for the release to be prepared, the amend itself is
 part of the job; confirm first only if the branch has more than one commit
 (squash or keep?).
+
+A squash of a long branch (v1.4.0: 215 commits, most already pushed to the
+draft PR) keeps the history locally and proves nothing was lost: run the
+gate on the final tree first, then
+`git branch backup/vX.Y.Z-history HEAD`, `git reset --soft origin/main`
+(only when `origin/main` is an ancestor of HEAD; otherwise merge it
+first), `git commit -F <message>`, and require
+`git diff backup/vX.Y.Z-history HEAD --stat` to print nothing. The push
+that follows rewrites the PR's history, so it is `--force-with-lease` and
+waits for the user's word. On a branch that long, step 3's commit bodies
+outgrow one context: a read-only subagent given the range, the draft and
+the two `modules/config.py` key tables found ten gaps in the v1.4.0 draft
+(a third security fix, a key listed as keeping v1.3.8's output that did
+not, stale defaults), each checked against the code before it went in.
 
 - Title: `vX.Y.Z: <primary theme in one line>` -- detailed, never the bare
   version; the PR takes the same title (AGENTS.md, "Pull Request
