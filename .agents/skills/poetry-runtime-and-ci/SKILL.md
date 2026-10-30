@@ -86,7 +86,8 @@ The rules that keep the solve at seconds:
   pins the lock carries two of each on Linux. Their marker is torch's own
   `platform_system == 'Linux'`; a `sys_platform` marker leaves phantom
   entries. They change only when torch's cuda-toolkit version does (torch
-  2.14.1+cu130 still requires 13.0.3), and a stale pin fails `poetry lock` in
+  2.14.1+cu130 requires 13.0.3; 2.15.0+cu132 would need 13.4.1.3 and
+  13.2.86 for cuda-toolkit 13.2.2), and a stale pin fails `poetry lock` in
   about 2 s with a message naming the version cuda-toolkit wants.
 - cuda-toolkit's own duplicate requirements still make 19 of the 22 override
   rounds. That is upstream metadata and costs a few seconds.

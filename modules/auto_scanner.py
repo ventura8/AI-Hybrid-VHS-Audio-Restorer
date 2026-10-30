@@ -156,6 +156,10 @@ def _estimate_tonality(mono_signal, sr):
 PROBE_FRAME = 1024
 PROBE_LOUD_PERCENTILE = 70.0
 PROBE_BAND_HZ = (300.0, 3400.0)
+# Frames whose levels are read at once: blocks**2 of the scanner's 240 s held 42 MB (issue #14).
+# Each frame's mean is its own row's sum, so the levels equal the whole-signal reading bit for
+# bit; the einsum form of the RMS does not (1.5e-8 on real tape, enough to cross the percentile).
+PROBE_LEVEL_ROWS = 2048
 
 
 def _estimate_tonal_persistence(mono_signal, sr):
@@ -196,15 +200,25 @@ def _probe_programme_similarity(mono_signal, sr):
 def _loudest_frames(mono_signal, frames):
     """The frames at or above the loud percentile, joined: the programme the metric reads."""
     blocks = mono_signal[: frames * PROBE_FRAME].reshape(frames, PROBE_FRAME)
-    levels = 20.0 * np.log10(np.sqrt(np.mean(blocks**2, axis=1)) + 1e-9)
+    rows = [slice(first, first + PROBE_LEVEL_ROWS) for first in range(0, frames, PROBE_LEVEL_ROWS)]
+    levels = np.concatenate([_frame_levels_db(blocks[part]) for part in rows])
     return blocks[levels >= np.percentile(levels, PROBE_LOUD_PERCENTILE)].reshape(-1)
 
 
-def _speech_band_shape(segment, sr):
-    """The segment's speech-band log spectrum with its mean removed."""
-    import scipy.signal
+def _frame_levels_db(blocks):
+    """Each frame's RMS level in dB."""
+    return 20.0 * np.log10(np.sqrt(np.mean(blocks**2, axis=1)) + 1e-9)
 
-    freqs, psd = scipy.signal.welch(segment, sr, nperseg=4096)
+
+def _speech_band_shape(segment, sr):
+    """The segment's speech-band log spectrum with its mean removed.
+
+    `lean_spectra.welch` equals `scipy.signal.welch` bit for bit; the loud frames of the
+    scanner's 240 s held 127 MB through scipy's.
+    """
+    from .lean_spectra import welch
+
+    freqs, psd = welch(segment, sr, 4096)
     band = (freqs >= PROBE_BAND_HZ[0]) & (freqs <= PROBE_BAND_HZ[1])
     spectrum = 10.0 * np.log10(psd[band] + 1e-20)
     return spectrum - spectrum.mean()

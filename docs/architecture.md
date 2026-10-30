@@ -25,6 +25,9 @@ has its own architecture page: `docs/ai_human_ear_architecture.md`.
   dynamic linker preparation.
 - `modules/auto_scanner.py`: acoustic profiling, tape speed drift detection, and
   restoration strategy selection.
+- `modules/lean_spectra.py`: `scipy.signal`'s stft and welch computed a block
+  of frames at a time, equal to scipy's bit for bit, for the scanner's
+  tonality and probe readings.
 - `modules/filters.py`: defect detectors and every FFmpeg DSP filter graph.
 - `modules/processing.py`: stage orchestration, stem separation, denoising,
   mastering, and container muxing.
@@ -404,6 +407,15 @@ what the noise probe would learn from, the noise floor and the mains notch
 with whether each is installed. `auto` is the
 only mode that acts on this decision; `auto_pure_linear` and `cathar` print
 it as advisory and run their own chain regardless.
+
+The profile reads at most 240 s of audio (four 60 s blocks of a long file).
+On that input the flatness reading peaked at 593 MB and the probe reading at
+140 MB through scipy's whole-signal transforms; `modules/lean_spectra.py`
+runs the same arithmetic a block of frames at a time and holds 48 MB and
+59 MB. Every routing number stays exactly what the thresholds were calibrated
+on: the loud-frame selection, the flatness and the probe correlation are
+equal bit for bit on the 136 corpus clips, the five cathar identity clips,
+81 one-minute local captures and the Tata tapes (issue #14).
 
 ## Mode: `multipass_auto`
 

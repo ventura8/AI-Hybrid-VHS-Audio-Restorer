@@ -429,6 +429,27 @@ audio alignment, or FFmpeg multiplexing.
      sung vocals sit in the speech band.
    - `evaluate_restoration_strategy`: Emits the models, parameters, sync method,
      and mix gains that the pipeline then actually applies.
+   - Profile memory (issue #14, v1.4.1): on the 240 s the analysis read
+     returns at most, `_estimate_tonality` peaked at 593 MB (tracemalloc)
+     and `_probe_programme_similarity` at 140 MB. scipy's legacy `stft` pads
+     a float32 signal with float64 zeros and windows it with a complex64
+     window, so it held a complex128 copy of every segment; `welch` held
+     every frame's spectrum. `modules/lean_spectra.py` runs the same
+     arithmetic per block of 256 frames and gives the reductions an array
+     laid out like scipy's (`Zxx[band]` C order; the welch periodogram C
+     order, averaged by scipy's own `mean`, whose pairwise sum would not
+     survive chunking), so the values are scipy's bit for bit: 48 MB and
+     59 MB. `_loudest_frames` reads levels 2048 rows at a time (each row's
+     mean is its own; `einsum` is not bit-identical). Checked old against
+     new on 136 IA clips, the five cathar identity clips, 81 local minutes
+     and the four Tata tapes, at block 256 and at block 7, plus the whole
+     profile dict: all equal. A scipy release that changes either code
+     path fails `tests/unit/test_lean_spectra.py`, which compares against
+     scipy itself. Keep the stft's block a multiple of the FFT vector width
+     (256; the tests use 8 and 64): pocketfft's vector and leftover-row
+     paths round differently on arm64, and macOS CI read a 7-frame block's
+     float64 rows off in the last bits while the Windows runs (block 7
+     included) were exact. The welch, one FFT per frame, takes any block.
 1. **`modules/sync.py`**:
    - `_align_stems`: Sub-sample audio synchronization.
    - Cross-correlation lag estimation for linear delay.

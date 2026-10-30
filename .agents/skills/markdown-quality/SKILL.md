@@ -54,10 +54,14 @@ poetry run pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
   the conversion). Normalise the touched files to LF (`sed -i 's/\r$//'`)
   before the check, and check them inside the repository, where mdformat
   reads its config (a copy elsewhere passed);
-  git stores LF either way. `Path.write_text` on Windows writes CRLF unless
-  it is given `newline="\n"`. (A Bash heredoc turned both escapes into
-  spaces the first time this was written: put backslashes in files with the
-  editor, not through a heredoc.)
+  git stores LF either way. Files the change never touched can be CRLF too
+  (20 in the main checkout on 2026-10-30, while a worktree had passed), so
+  before the gate normalise every tracked `.md` whose bytes hold `\r\n`
+  (read them as bytes in Python: a `grep -q $'\r'` loop in Git Bash reported
+  them all LF); `git diff` shows no change for them. `Path.write_text` on
+  Windows writes CRLF unless it is given `newline="\n"`. (A Bash heredoc
+  turned both escapes into spaces the first time this was written: put
+  backslashes in files with the editor, not through a heredoc.)
 - `mdformat` runs with `wrap = keep`: it joins a code span that was broken
   across lines but never reflows a paragraph, so a sentence inserted into
   a wrapped paragraph must be wrapped by hand to 80 columns, and a code span

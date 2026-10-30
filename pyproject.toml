@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "ai-hybrid-vhs-audio-restorer"
-version = "1.4.0"
+version = "1.4.1"
 description = "Hybrid AI VHS audio restoration pipeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -34,6 +34,15 @@ optional = true
 # Windows escaped it only because pip resolves torchaudio to a +cpu build there, whose CUDA
 # check is skipped. cu130 is the index that carries a matched set for all three.
 #
+# Held at the 2.14.1 set, macOS too (v1.4.1, 2026-10-30): torch 2.15.0 came with a matched
+# trio on cu132 only, and it moves auto_pure_linear's output (the neural stage; same input
+# twice gives the same bytes, so not noise): on the three identity clips the null against
+# 2.14.1 reads -53.7 to -58.8 dB under the loud frames and scripts/audibility_check.py
+# reads all three audible (up to 13 event frames, NMR up to 15.2 dB). It is adopted in a
+# change of its own, with the realistic-v2 and IA confirmation and a listening session a
+# changed output needs: source cu132, the nvidia pins 13.4.1.3 / 13.2.86 (cuda-toolkit
+# 13.2.2), and an APL identity reference re-based on it.
+#
 # The markers keep `poetry lock` to seconds; it used to run for hours (six in CI) and never
 # finish. Poetry re-solves the whole graph once per branch of a dependency listed twice, and
 # reads `sys_platform` and `platform_system` as unrelated variables. So every split pair here
@@ -46,28 +55,28 @@ optional = true
 # platform_system != "Darwin" with sys_platform == "darwin", where more dependencies split.
 torch = [
   { version = "2.14.1+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "^2.14.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "2.14.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 torchvision = [
   { version = "0.29.1+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "^0.29.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "0.29.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 torchaudio = [
   { version = "2.11.0+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "^2.11.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "2.11.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 audio-separator = [
-  { version = "^0.47.1", extras = [
+  { version = "^0.48.0", extras = [
     "gpu",
   ], markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "^0.47.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "^0.48.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 onnxruntime-gpu = { version = "~1.31.1", markers = "sys_platform == 'linux' or sys_platform == 'win32'" }
 onnxruntime = { version = "^1.31.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" }
 # torch's cuda-toolkit pins these two behind its cublas/nvrtc extras only, while
 # nvidia-cudnn-cu13 and nvidia-cublas ask for them unpinned: left alone, the solver's
 # leftover branch takes the newest release and the lock carries two of each on Linux.
-# They repeat torch's cuda-toolkit pins (13.0.3 for torch 2.13.0+cu130) and change only
+# They repeat torch's cuda-toolkit pins (13.0.3 for torch 2.14.1+cu130) and change only
 # when that cuda-toolkit version does; a stale pin fails `poetry lock` in seconds with a
 # message naming the version cuda-toolkit wants. The marker is torch's own
 # (`platform_system == "Linux"`); a `sys_platform` marker here leaves never-installed
@@ -95,7 +104,7 @@ silero-vad = "^6.2.3"
 # "audio-separator is required for stem separation/denoising".
 audioread = "^3.1.0"
 fastdtw = "^0.3.4"
-transformers = "^5.21.0"
+transformers = "^5.22.1"
 accelerate = "^1.15.0"
 omegaconf = "^2.4.0"
 rich = "^15.0.0"
@@ -105,14 +114,14 @@ matplotlib = "^3.11.2"
 tabulate = "^0.10.0"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^9.1.1"
+pytest = "^9.2.0"
 pytest-cov = "^7.1.0"
 coverage = "^7.17.0"
-flake8 = "^7.4.1"
+flake8 = "^7.5.0"
 ruff = "^0.17.3"
 pylint = "^4.1.3"
 radon = "^6.0.1"
-mypy = "^2.4.0"
+mypy = "^2.4.1"
 mdformat = "^1.0.0"
 pymarkdownlnt = "^0.9.41"
 isort = "^9.0.2"

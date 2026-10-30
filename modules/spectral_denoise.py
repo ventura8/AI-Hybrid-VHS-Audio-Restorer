@@ -37,6 +37,7 @@ from .config import (
     APL_USE_NATIVE_SUPPRESS,
 )
 from .filters import _read_audio_for_analysis, estimate_snr_margin_db
+from .lean_spectra import stft_band
 from .stage_names import stage_output
 from .utils import log_msg
 
@@ -206,10 +207,10 @@ def tonality_of_signal(mono_signal, sample_rate):
     Flatness is the geometric mean of the power spectrum over its arithmetic mean: near 1
     for noise, near 0 for a signal made of sustained peaks. Music sits low, and it is the
     material on which subtraction at the speech-tuned factor takes programme with the noise.
+    The band is read by blocks of frames (`lean_spectra.stft_band`), the values of
+    `scipy.signal.stft` bit for bit: the whole transform of the scanner's 240 s held 593 MB.
     """
-    freqs, _times, spectrum = scipy.signal.stft(mono_signal, sample_rate, nperseg=TONALITY_FRAME)
-    band = (freqs >= TONALITY_BAND_HZ[0]) & (freqs <= TONALITY_BAND_HZ[1])
-    power = np.abs(spectrum[band]) ** 2 + 1e-20
+    power = np.abs(stft_band(mono_signal, sample_rate, TONALITY_FRAME, TONALITY_BAND_HZ)) ** 2 + 1e-20
     flatness = np.exp(np.mean(np.log(power), axis=0)) / np.mean(power, axis=0)
     return float(np.median(flatness))
 

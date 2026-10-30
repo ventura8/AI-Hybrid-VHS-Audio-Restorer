@@ -315,6 +315,8 @@ jobs:
           echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
           echo "TAG=${TAG}" >> "$GITHUB_ENV"
 
+      # Only this tag's installers are published: a stale v1.1.0 .deb committed under
+      # release-assets/ (ignored since, but tracked) rode along on every release to v1.4.0.
       - name: Download platform release artifacts
         # actions/download-artifact@v8.0.2
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -342,7 +344,7 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
           body_path: docs/releases/v${{ env.VERSION }}_github_description.md
-          files: release-assets/*
+          files: release-assets/AI-Hybrid-VHS-Audio-Restorer-${{ env.TAG }}-*
           draft: false
           prerelease: false
 
@@ -354,6 +356,6 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
           generate_release_notes: true
-          files: release-assets/*
+          files: release-assets/AI-Hybrid-VHS-Audio-Restorer-${{ env.TAG }}-*
           draft: false
           prerelease: false
