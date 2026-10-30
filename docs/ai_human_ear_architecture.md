@@ -26,10 +26,11 @@ acceptance record in `docs/ear_v4_hiss.md`, ear v3's re-score in
 - **Never call dead air clean.** Silent pauses, an underwater "s" and dulled
   highs were all rejected by ear; hard guards keep a loop from winning by
   deleting programme.
-- **Know when a difference is inaudible**, so the user is asked only at a
-  plateau and only about something they can hear.
+- **Know when a difference is inaudible**, so an inaudible change ties and
+  an audible one goes to the ear's own confirmation; nobody is asked to
+  listen (2026-10-30).
 - **Keep the family tapes on this machine.** No cloud judge, no audio LLM;
-  the listening page serves on 127.0.0.1 only.
+  the listening page of sessions 0-3 served on 127.0.0.1 only.
 
 ## The Whole Path
 

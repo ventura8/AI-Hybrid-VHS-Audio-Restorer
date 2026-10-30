@@ -180,8 +180,9 @@ Rules that the pins encode, and that a bump must respect:
 
 - `torch`, `torchvision` and `torchaudio` are one matched set from the
   `pytorch-cu132` index (the comment above the pins says why). Bump them
-  together to the newest trio the index carries; per package, the newest
-  cp312 Linux wheel is:
+  together to the newest trio the index carries. For torch, the newest
+  cp312 Linux wheel is (torchvision and torchaudio: read their index pages,
+  whose cu132 wheels may carry a `py3-none` tag instead):
 
   ```bash
   curl -s https://download.pytorch.org/whl/cu132/torch/ | .venv/bin/python -c '
@@ -241,7 +242,8 @@ v1.4.2 adopted it on the ear's confirmation: 0 material trips on 235 IA
 clips, realistic-v2 +0.00 dB, every Tata reading within 0.08 dB. To isolate
 torch in such a check, swap only the trio from Poetry's wheel cache (the
 three cached wheels through `pip install --no-deps --force-reinstall`),
-render, and restore with `poetry install`. The driver supports cu132
+render, and restore with `poetry install --with dev,ml --no-root` (`ml` is an
+optional group, which a plain install skips). The driver supports cu132
 (`nvidia-smi` reads CUDA 13.5 on the RTX 5090 at driver 621.01).
 
 Every command in this skill is portable across the Linux and macOS shells

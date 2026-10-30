@@ -2916,9 +2916,9 @@ value; and a final carries every knob the loop touched, including ones an
 accepted switch made inert (the subtraction's factor, probe and native
 suppressor once `apl_enable_spectral_denoise` is off), so read the code
 before feeding a knob back and leave the inert ones at their shipped value.
-Before a default ships, it also gets one `artifacts/realistic-v2` and
-IA-corpus confirmation (AGENTS.md section 3), which with the Tata readings
-is the whole confirmation now.
+Before a default ships it gets the ear's whole confirmation: the Tata
+readings, one `artifacts/realistic-v2` run and one IA-corpus confirmation
+(AGENTS.md section 3), all three required.
 
 ## Confirming a change with the ear alone (2026-10-30)
 
