@@ -1,21 +1,55 @@
-"""The metric registry, per-window rows and the median/tail aggregation every family shares."""
+"""The metric registry, per-window rows and the median/tail aggregation every family shares.
+
+A metric's direction says where its bad tail points: "higher" is better (the tail is p10),
+"lower" is better (p90), "none" is displayed only (p90), and "two-sided" is a reading a
+listener hears as wrong either way, read as a distance from a neutral `target` (ear v3,
+principle 1). Its tail is whichever of p10 and p90 sits further from that target, and the
+listening set picks its windows by |delta - target|. The listener's own target (the reading
+of the file the user accepted) and the dead zone around it live in the tuning grids
+(`scripts/tune_grids/*_v3.yaml`), not here: a two-sided spec's `target` is only its neutral
+point, no change from the source (0) unless the reading says otherwise.
+
+Ear v3 families: `dsp` (per window), `file` (one reading per file: loudness, the gain ride
+and the sync of `file_metrics.py`, the time base of `timebase_metrics.py`) and `meta` (what the capture itself carries, the source
+profile of `source_profile.py`; source side only, displayed). Counts (clicks, dropouts) also
+report their worst window (`max`) and `p95` beside the median and tail, so one click in one
+window is not diluted by the median of the windows around it.
+
+Ear v4 adds the hiss readings (`dsp.hiss_*`): margins in dB over the audibility threshold at the
+critical playback level, lower is better, so their tail is the hissiest tenth of windows; the
+excess (max(0, margin) per side) is what the v4 grids rank, one-sided with target 0.
+"""
 
 from dataclasses import dataclass, field
 
 import numpy as np
 
 TAIL_PERCENTILE = 10.0
+EXTREME_PERCENTILE = 95.0
+HIGHER, LOWER, NONE, TWO_SIDED = "higher", "lower", "none", "two-sided"
+DIRECTIONS = (HIGHER, LOWER, NONE, TWO_SIDED)
+SPEECH_ROUTES = ("speech", "mixed")
+PROGRAMME_ROUTES = ("speech", "music", "mixed")
+ALL_ROUTES = ("speech", "music", "mixed", "silence")
+# The unit of the kurtosis readings (`dsp.lkr`, R4's and ear v4's island kurtosis).
+LOG_RATIO = "log-ratio"
 
 
 @dataclass(frozen=True)
 class MetricSpec:
-    """What a metric is, which family computes it, and which way is better ("higher" | "lower" | "none")."""
+    """What a metric is, which family computes it, and which way is better (one of `DIRECTIONS`).
+
+    `target` is the neutral point of a two-sided reading; `extremes` adds the worst window
+    (`max`) and the `p95` to a count's summaries.
+    """
 
     name: str
     family: str
     better: str
     unit: str = ""
-    routes: tuple = ("speech", "music", "mixed")
+    routes: tuple = PROGRAMME_ROUTES
+    target: float = 0.0
+    extremes: bool = False
 
 
 @dataclass
@@ -42,7 +76,7 @@ def _paired(source, name, value):
 
 @dataclass
 class ScoreCard:
-    """Everything scored for one output: its rows, file-level readings, aggregates and family status."""
+    """Everything scored for one output: its rows, file-level readings, aggregates, family status and run notes."""
 
     rows: list = field(default_factory=list)
     file: dict = field(default_factory=dict)
@@ -50,69 +84,172 @@ class ScoreCard:
     speaker_floor: float | None = None
     aggregate: dict = field(default_factory=dict)
     verdicts: list = field(default_factory=list)
+    meta: dict = field(default_factory=dict)
 
 
 METRICS = {
     spec.name: spec
     for spec in (
-        MetricSpec("dsp.residual_noise_db", "dsp", "lower", "dB", ("speech", "music", "mixed", "silence")),
-        MetricSpec("dsp.lkr", "dsp", "lower", "log-ratio", ("speech", "music", "mixed", "silence")),
-        MetricSpec("dsp.hf_4k8k", "dsp", "higher", "dB", ("speech", "mixed")),
-        MetricSpec("dsp.hf_8k16k", "dsp", "higher", "dB", ("speech", "mixed")),
-        MetricSpec("dsp.clicks_per_s", "dsp", "lower", "1/s", ("speech", "music", "mixed", "silence")),
-        MetricSpec("dsp.pause_pumping_db", "dsp", "lower", "dB", ("speech", "music", "mixed")),
-        MetricSpec("dsp.pause_tilt_db", "dsp", "lower", "dB", ("speech", "music", "mixed")),
-        MetricSpec("dsp.pause_tilt_abs_db", "dsp", "lower", "dB", ("speech", "music", "mixed")),
-        MetricSpec("dsp.dropouts", "dsp", "lower", "count", ("speech", "music", "mixed")),
-        MetricSpec("dsp.whistle_db", "dsp", "lower", "dB", ("speech", "music", "mixed", "silence")),
-        MetricSpec("dsp.hum_excess_db", "dsp", "lower", "dB", ("speech", "music", "mixed", "silence")),
+        MetricSpec("dsp.residual_noise_db", "dsp", LOWER, "dB", ALL_ROUTES),
+        MetricSpec("dsp.lkr", "dsp", LOWER, LOG_RATIO, ALL_ROUTES),
+        MetricSpec("dsp.hf_4k8k", "dsp", HIGHER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.hf_8k16k", "dsp", HIGHER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.clicks_per_s", "dsp", LOWER, "1/s", ALL_ROUTES, extremes=True),
+        MetricSpec("dsp.pause_pumping_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.pause_tilt_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.pause_tilt_abs_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.dropouts", "dsp", LOWER, "count", extremes=True),
+        MetricSpec("dsp.whistle_db", "dsp", LOWER, "dB", ALL_ROUTES),
+        MetricSpec("dsp.hum_excess_db", "dsp", LOWER, "dB", ALL_ROUTES),
         # Listener readings (scripts/restoration_quality/pause_metrics.py, sibilance.py, transient_metrics.py).
-        MetricSpec("dsp.gap_air_db", "dsp", "lower", "dB", ("speech", "mixed")),
-        MetricSpec("dsp.pause_depth_db", "dsp", "lower", "dB", ("speech", "mixed")),
-        MetricSpec("dsp.output_silent", "dsp", "lower", "", ("speech", "music", "mixed")),
-        MetricSpec("dsp.sib_centroid_hz", "dsp", "lower", "Hz", ("speech", "mixed")),
-        MetricSpec("dsp.sib_centroid_abs_hz", "dsp", "lower", "Hz", ("speech", "mixed")),
-        MetricSpec("dsp.sib_body_db", "dsp", "lower", "dB", ("speech", "mixed")),
-        MetricSpec("dsp.sib_level_db", "dsp", "lower", "dB", ("speech", "mixed")),
-        MetricSpec("dsp.attack_db", "dsp", "higher", "dB", ("music", "mixed")),
-        MetricSpec("dsp.onset_corr", "dsp", "higher", "", ("music", "mixed")),
-        MetricSpec("dsp.percussive_share_db", "dsp", "higher", "dB", ("music", "mixed")),
-        MetricSpec("dsp.zimtohrli_loud", "dsp", "lower", "", ("speech", "music", "mixed")),
-        MetricSpec("stems.si_sdr_db", "stems", "higher", "dB"),
-        MetricSpec("stems.lsd_db", "stems", "lower", "dB"),
-        MetricSpec("stems.octave_ratio_db", "stems", "higher", "dB"),
-        MetricSpec("stems.envelope_corr", "stems", "higher", ""),
-        MetricSpec("stems.has_background", "stems", "higher", ""),
-        MetricSpec("stems.mert_dist", "stems", "lower", ""),
-        MetricSpec("speech.hallucinated", "speech", "lower", "", ("speech", "mixed")),
-        MetricSpec("speech.ssl_dist", "speech", "lower", "", ("speech", "mixed")),
-        MetricSpec("speech.cer", "speech", "lower", "", ("speech", "mixed")),
-        MetricSpec("speech.wer", "speech", "lower", "", ("speech", "mixed")),
-        MetricSpec("speech.avg_logprob", "speech", "higher", "", ("speech", "mixed")),
-        MetricSpec("speech.no_speech_prob", "speech", "lower", "", ("speech", "mixed")),
-        MetricSpec("speech.speaker_cos", "speech", "higher", "", ("speech", "mixed")),
-        MetricSpec("speech.utmos", "speech", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_sig", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_col", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_disc", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_loud", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_noise", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_reverb", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.sigmos_ovrl", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.dnsmos_sig", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.dnsmos_bak", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.dnsmos_ovrl", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.dnsmos_p808", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.dnsmos_gap", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.scoreq_nr", "mos", "higher", "MOS", ("speech", "mixed")),
-        MetricSpec("mos.audiobox_pq", "mos", "higher", ""),
-        MetricSpec("mos.audiobox_pc", "mos", "higher", ""),
-        MetricSpec("mos.audiobox_ce", "mos", "higher", ""),
-        MetricSpec("mos.audiobox_cu", "mos", "higher", ""),
-        MetricSpec("file.lufs", "file", "none", "LUFS"),
-        MetricSpec("file.lra", "file", "none", "LU"),
-        MetricSpec("file.noise_removed_db", "file", "higher", "dB"),
-        MetricSpec("file.programme_deviation_db", "file", "lower", "dB"),
+        MetricSpec("dsp.gap_air_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.pause_depth_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.output_silent", "dsp", LOWER, ""),
+        MetricSpec("dsp.sib_centroid_hz", "dsp", LOWER, "Hz", SPEECH_ROUTES),
+        MetricSpec("dsp.sib_centroid_abs_hz", "dsp", LOWER, "Hz", SPEECH_ROUTES),
+        MetricSpec("dsp.sib_body_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.sib_level_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.attack_db", "dsp", HIGHER, "dB", ("music", "mixed")),
+        MetricSpec("dsp.onset_corr", "dsp", HIGHER, "", ("music", "mixed")),
+        MetricSpec("dsp.percussive_share_db", "dsp", HIGHER, "dB", ("music", "mixed")),
+        MetricSpec("dsp.zimtohrli_loud", "dsp", LOWER, ""),
+        # Ear v3, R1 (balance_metrics.py): the programme-cell spectral balance on every route
+        # (music takes its own grid). `balance_top_db` is presence or air, whichever moved
+        # further from the source: what the bright / dull flags read.
+        MetricSpec("dsp.balance_tilt_db_oct", "dsp", TWO_SIDED, "dB/oct"),
+        MetricSpec("dsp.balance_presence_db", "dsp", TWO_SIDED, "dB"),
+        MetricSpec("dsp.balance_air_db", "dsp", TWO_SIDED, "dB"),
+        MetricSpec("dsp.balance_body_db", "dsp", TWO_SIDED, "dB"),
+        MetricSpec("dsp.balance_top_db", "dsp", TWO_SIDED, "dB", SPEECH_ROUTES),
+        # R11 (lf_metrics.py): the programme's 40-200 Hz against its mids on the loud frames, the
+        # mains lines left out: a thinner bass on one side, low end (rumble) left on the other.
+        # Read on every programme route; built for round C3's music dewind cutoff and repair, in no grid yet.
+        MetricSpec("dsp.lf_programme_db", "dsp", TWO_SIDED, "dB"),
+        # R2 (sibilance.py): the level of the 's' after R1's gain match, not net of the plain
+        # frames, and the roughness of its spectrum (the round-one "distorted s").
+        MetricSpec("dsp.sib_abs_level_db", "dsp", TWO_SIDED, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.sib_texture_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        # R4 (pause_metrics.gap_residual_readings): the residual in the true pauses. The
+        # attenuation's neutral point is the source itself; the listener's own target comes
+        # from Session 0's sweep. `gap_pause_s` is the coverage the readings stand on.
+        MetricSpec("dsp.gap_atten_db", "dsp", TWO_SIDED, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.gap_slope_db_oct", "dsp", TWO_SIDED, "dB/oct", SPEECH_ROUTES),
+        MetricSpec("dsp.gap_spread_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.gap_hf_excess_db", "dsp", TWO_SIDED, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.gap_lsd_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.gap_mod_dist_db", "dsp", LOWER, "dB", SPEECH_ROUTES),
+        MetricSpec("dsp.gap_island_kurt", "dsp", LOWER, LOG_RATIO, SPEECH_ROUTES),
+        MetricSpec("dsp.gap_pause_s", "dsp", NONE, "s", SPEECH_ROUTES),
+        # Round 0 asked for pause depth on speech windows alone: on Vaccin 47 of 61 windows route mixed, and the
+        # mixed-route aggregate put the ranked-first known excerpts at 38-40 dB (speech windows 29-30). Ear v4's dead-air
+        # guard (G1) reads it.
+        MetricSpec("dsp.pause_depth_speech_db", "dsp", LOWER, "dB", ("speech",)),
+        # Ear v4 (hiss_programme.py, hiss_pause.py): the hiss heard under the programme and in the pauses at the critical
+        # playback level (each file's loud frames at 75 dB SPL). The margins are dB over the audibility threshold
+        # (LOWER: the tail is the hissiest tenth of windows); the excess is max(0, margin) per side, the one-sided form the
+        # v4 grids rank with target 0. The guards are paired against a zero source.
+        MetricSpec("dsp.hiss_prog_margin_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_excess_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_margin_all_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_excess_all_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_margin_hf_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_prog_audible_frac", "dsp", LOWER, ""),
+        MetricSpec("dsp.hiss_prog_removed_db", "dsp", NONE, "dB"),
+        MetricSpec("dsp.hiss_prog_removed_hf_db", "dsp", NONE, "dB"),
+        MetricSpec("dsp.hiss_pump_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_island_kurt", "dsp", LOWER, LOG_RATIO),
+        MetricSpec("dsp.hiss_prog_kept_hf_db", "dsp", HIGHER, "dB"),
+        # The soft programme kept (cells 6-18 dB over the floor, 1 kHz and up): what a suppressor takes from programme
+        # that stands only a little over the hiss, which the 18 dB cells of kept HF never see.
+        MetricSpec("dsp.hiss_prog_kept_soft_db", "dsp", HIGHER, "dB"),
+        MetricSpec("dsp.hiss_prog_active_s", "dsp", NONE, "s"),
+        MetricSpec("dsp.hiss_prog_bands", "dsp", NONE, "count"),
+        MetricSpec("dsp.hiss_prog_validated", "dsp", NONE, ""),
+        MetricSpec("dsp.hiss_pause_margin_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_pause_excess_db", "dsp", LOWER, "dB"),
+        MetricSpec("dsp.hiss_pause_onset_db", "dsp", HIGHER, "dB SPL"),
+        MetricSpec("dsp.hiss_pause_sone", "dsp", LOWER, "sone"),
+        MetricSpec("dsp.hiss_room_onset_db", "dsp", NONE, "dB SPL"),
+        MetricSpec("dsp.hiss_room_delta_db", "dsp", TWO_SIDED, "dB"),
+        MetricSpec("dsp.hiss_pause_s", "dsp", NONE, "s"),
+        MetricSpec("stems.si_sdr_db", "stems", HIGHER, "dB"),
+        MetricSpec("stems.lsd_db", "stems", LOWER, "dB"),
+        # Displayed only: the raw worst octave reads hiss removal as stripping (`stem_octave.py`).
+        MetricSpec("stems.octave_ratio_db", "stems", HIGHER, "dB"),
+        MetricSpec("stems.octave_programme_db", "stems", HIGHER, "dB"),
+        MetricSpec("stems.envelope_corr", "stems", HIGHER, ""),
+        MetricSpec("stems.has_background", "stems", HIGHER, ""),
+        MetricSpec("stems.mert_dist", "stems", LOWER, ""),
+        MetricSpec("speech.hallucinated", "speech", LOWER, "", SPEECH_ROUTES),
+        MetricSpec("speech.ssl_dist", "speech", LOWER, "", SPEECH_ROUTES),
+        MetricSpec("speech.cer", "speech", LOWER, "", SPEECH_ROUTES),
+        MetricSpec("speech.wer", "speech", LOWER, "", SPEECH_ROUTES),
+        MetricSpec("speech.avg_logprob", "speech", HIGHER, "", SPEECH_ROUTES),
+        MetricSpec("speech.no_speech_prob", "speech", LOWER, "", SPEECH_ROUTES),
+        MetricSpec("speech.speaker_cos", "speech", HIGHER, "", SPEECH_ROUTES),
+        MetricSpec("speech.utmos", "speech", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_sig", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_col", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_disc", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_loud", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_noise", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_reverb", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.sigmos_ovrl", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.dnsmos_sig", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.dnsmos_bak", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.dnsmos_ovrl", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.dnsmos_p808", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.dnsmos_gap", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.scoreq_nr", "mos", HIGHER, "MOS", SPEECH_ROUTES),
+        MetricSpec("mos.audiobox_pq", "mos", HIGHER, ""),
+        MetricSpec("mos.audiobox_pc", "mos", HIGHER, ""),
+        MetricSpec("mos.audiobox_ce", "mos", HIGHER, ""),
+        MetricSpec("mos.audiobox_cu", "mos", HIGHER, ""),
+        MetricSpec("file.lufs", "file", NONE, "LUFS"),
+        MetricSpec("file.lra", "file", NONE, "LU"),
+        MetricSpec("file.noise_removed_db", "file", HIGHER, "dB"),
+        # The same drop as the median of the quiet frames' own drops (measure_tradeoff.py): on
+        # SOTI the hottest 1 % of APL's quiet frames hold 34 % of their energy and own the
+        # pooled reading (-5.17 dB pooled, +3.00 median).
+        MetricSpec("file.noise_removed_median_db", "file", HIGHER, "dB"),
+        MetricSpec("file.programme_deviation_db", "file", LOWER, "dB"),
+        # The holes over the whole aligned pair (runner.dropout_entry): the window median of
+        # `dsp.dropouts` reads 0 wherever a long file holds a few (calibration v3).
+        MetricSpec("file.dropouts", "file", LOWER, "count"),
+        # R7 and the sync (file_metrics.py): the raw pair, once per file. The ride is shown,
+        # not flagged, until the loudnorm_ride degradation calibrates it (the accepted v2
+        # finals read up to 1.80 LU p95); the sync readings are gated in gates.py.
+        MetricSpec("file.gain_ride_lu", "file", LOWER, "LU"),
+        MetricSpec("file.gain_ride_std_lu", "file", LOWER, "LU"),
+        MetricSpec("file.gain_ride_deriv_lu", "file", LOWER, "LU/s"),
+        MetricSpec("file.sync_drift_ms", "file", LOWER, "ms"),
+        MetricSpec("file.sync_offset_ms", "file", LOWER, "ms"),
+        MetricSpec("file.sync_unmatched", "file", LOWER, "count"),
+        MetricSpec("file.sync_lag_start_ms", "file", NONE, "ms"),
+        MetricSpec("file.sync_lag_middle_ms", "file", NONE, "ms"),
+        MetricSpec("file.sync_lag_end_ms", "file", NONE, "ms"),
+        # R12 (timebase_metrics.py): the aligned pair's time base, once per file. Holds (the output
+        # frozen where the source plays) and rate jumps are gated in gates.py; the 40 ms plateaus
+        # and the speed error are shown; `tracked_share` is the coverage the track stands on.
+        MetricSpec("file.timebase_holds", "file", LOWER, "count"),
+        MetricSpec("file.timebase_holds_per_min", "file", LOWER, "1/min"),
+        MetricSpec("file.timebase_plateaus", "file", LOWER, "count"),
+        MetricSpec("file.timebase_rate_jumps", "file", LOWER, "count"),
+        MetricSpec("file.timebase_speed_dev_pct", "file", LOWER, "%"),
+        MetricSpec("file.timebase_tracked_share", "file", NONE, ""),
+        # R0 (source_profile.py): the capture's own profile, read once per source, displayed.
+        MetricSpec("meta.prog_bandwidth_hz", "meta", NONE, "Hz"),
+        MetricSpec("meta.brickwall_hz", "meta", NONE, "Hz"),
+        MetricSpec("meta.mains_hz", "meta", NONE, "Hz"),
+        MetricSpec("meta.mains_evidence_db", "meta", NONE, "dB"),
+        MetricSpec("meta.line_hz", "meta", NONE, "Hz"),
+        MetricSpec("meta.line_ppm", "meta", NONE, "ppm"),
+        MetricSpec("meta.line_sd_ppm", "meta", NONE, "ppm"),
+        # Ear v4: the hiss anchor's coverage (hiss_floor.source_anchor), read once per source, displayed.
+        MetricSpec("meta.hiss_anchor_pause_s", "meta", NONE, "s"),
+        MetricSpec("meta.hiss_anchor_validated", "meta", NONE, ""),
+        # The programme reading's anchor path (runner.ANCHOR_HOW_CODES): 1 pauses, 2 stationary (hiss_stationary), 0 none.
+        MetricSpec("meta.hiss_anchor_how", "meta", NONE, ""),
     )
 }
 
@@ -130,28 +267,43 @@ def _delta_values(rows, name):
     return np.array([row.delta()[name] for row in rows if name in row.delta()], dtype=np.float64)
 
 
-def summarise(values, better):
-    """Median plus the tail that points at the bad end: p10 when higher is better, p90 when lower is."""
+def summarise(values, better, target=0.0, extremes=False):
+    """Median plus the tail that points at the bad end; with `extremes`, the worst window (`max`) and the p95 too.
+
+    The tail is p10 when higher is better, p90 when lower is (or nothing is), and for a
+    two-sided reading whichever of the two sits further from `target`.
+    """
     if len(values) == 0:
         return None
-    tail = TAIL_PERCENTILE if better == "higher" else 100.0 - TAIL_PERCENTILE
-    return {"median": float(np.median(values)), "tail": float(np.percentile(values, tail)), "n": int(len(values))}
+    summary = {"median": float(np.median(values)), "tail": _tail(values, better, target), "n": int(len(values))}
+    if extremes:
+        summary.update({"max": float(np.max(values)), "p95": float(np.percentile(values, EXTREME_PERCENTILE))})
+    return summary
+
+
+def _tail(values, better, target):
+    low, high = (float(np.percentile(values, percentile)) for percentile in (TAIL_PERCENTILE, 100.0 - TAIL_PERCENTILE))
+    if better == TWO_SIDED:
+        return low if abs(low - target) > abs(high - target) else high
+    return low if better == HIGHER else high
 
 
 def aggregate(rows, specs=METRICS):
     """Per metric: source, output and delta summaries over the rows on the routes the metric applies to."""
     out = {}
     for name, spec in specs.items():
-        routed = [row for row in rows if row.route in spec.routes]
-        source, output, delta = _values(routed, "source", name), _values(routed, "output", name), _delta_values(routed, name)
-        if len(output) == 0:
-            continue
-        out[name] = {
-            "source": summarise(source, spec.better),
-            "output": summarise(output, spec.better),
-            "delta": summarise(delta, spec.better),
-        }
+        summaries = _metric_summaries([row for row in rows if row.route in spec.routes], name, spec)
+        if summaries:
+            out[name] = summaries
     return out
+
+
+def _metric_summaries(routed, name, spec):
+    """`{"source", "output", "delta"}` summaries of one metric over its routed rows, or None when no output reads it."""
+    sides = {"source": _values(routed, "source", name), "output": _values(routed, "output", name), "delta": _delta_values(routed, name)}
+    if len(sides["output"]) == 0:
+        return None
+    return {side: summarise(values, spec.better, spec.target, spec.extremes) for side, values in sides.items()}
 
 
 def paired_deltas(card):

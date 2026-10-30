@@ -236,7 +236,9 @@ Output naming is mode-specific:
 - **Local Temp Files**: Creates one hidden temporary folder (e.g.,
   `.temp_work_video_name`) next to your input file that holds every
   intermediate, the staged final render and library scratch, keeping your
-  project root and system temp clean. Auto-deletes on success.
+  project root and system temp clean. Auto-deletes on success. A folder or
+  link already at that name that leads elsewhere is refused and the file is
+  skipped, so a planted link cannot point the work at another folder.
 - **Windows-Ready**: Optimized for standard Windows terminals (cmd/PowerShell)
   with strict 80-column log formatting to prevent wrapping.
 
@@ -502,10 +504,11 @@ Pass `--help` (or `-h`) to `start.sh`, `start.bat`, or
 `restore_audio_hybrid.py` to print usage and exit without processing.
 
 A folder of tapes goes faster with `batch_jobs` in `config.yaml`: that many
-files restore at once, each in its own interpreter with its own log under
-`logs/`, and every file's output is the same bytes as when it runs alone. The
-cathar engine is single-threaded, so this is the only way it uses more cores;
-neural modes hold their models on the GPU once per job.
+files restore at once, each in its own interpreter with its own log under the
+application's `logs/` folder (beside `session_log.txt`, never the folder you
+launch from), and every file's output is the same bytes as when it runs
+alone. The cathar engine is single-threaded, so this is the only way it uses
+more cores; neural modes hold their models on the GPU once per job.
 
 ## Development & Testing
 

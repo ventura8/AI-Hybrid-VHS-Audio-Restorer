@@ -111,3 +111,7 @@ models/audiobox-aesthetics/*
 !models/audiobox-aesthetics/README.md
 models/utmos/*
 !models/utmos/README.md
+models/mert-v1-95m/*
+!models/mert-v1-95m/README.md
+models/scoreq/*
+!models/scoreq/README.md

@@ -61,13 +61,27 @@ def _metric_row(result, name, labels):
 
 def _status_lines(result):
     lines = ["## Families", ""]
-    for label, variant in result["variants"].items():
-        summary = ", ".join(f"{family}: {status}" for family, status in variant["families"].items())
-        verdict = "PASS" if variant["passed"] else "FAIL " + ", ".join(variant["hard_failures"])
-        flags = variant.get("listener_flags") or []
-        heard = f"; listener flags: {', '.join(flags)}" if flags else ""
-        lines.append(f"- **{label}** \u2014 {verdict}{heard}; lag {variant['lag_samples']} samples; {summary}")
+    lines.extend(variant_line(label, variant) for label, variant in result["variants"].items())
     return lines + [""]
+
+
+def variant_line(label, variant):
+    """One variant's status line: verdict, listener flags, lag and families."""
+    summary = ", ".join(f"{family}: {status}" for family, status in variant["families"].items())
+    verdict = "PASS" if variant["passed"] else "FAIL " + ", ".join(variant["hard_failures"])
+    flags = variant.get("listener_flags") or []
+    heard = f"; listener flags: {', '.join(flags)}" if flags else ""
+    return f"- **{label}** \u2014 {verdict}{heard}; {lag_text(variant)}; {summary}"
+
+
+def lag_text(variant):
+    """The variant's lag as the report states it: unknown when the aligner abstained, with the method that read it."""
+    alignment = variant.get("alignment") or {}
+    method = f" ({alignment['method']})" if alignment.get("method") else ""
+    if alignment.get("status") == "abstained":
+        return f"lag unknown{method}: {alignment.get('reason')}, trimmed at {variant['lag_samples']} samples"
+    inverted = ", inverted" if alignment.get("polarity") == -1 else ""
+    return f"lag {variant['lag_samples']} samples{method}{inverted}"
 
 
 def render_markdown(result, listen_index=None):

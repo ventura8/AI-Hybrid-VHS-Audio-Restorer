@@ -32,7 +32,7 @@ def test_get_input_files_interactive_empty(mock_input, tmp_path):
     # Simulate user pressing Enter without input, then folder scan finds nothing
     mock_input.side_effect = ["", ""]  # Empty triggers folder scan
 
-    with patch("sys.argv", ["script.py"]):
+    with patch("sys.argv", ["script.py"]), patch("modules.ui.stdin_is_console", return_value=True):
         empty_dir = tmp_path / "empty_input"
         empty_dir.mkdir()
         with patch.object(modules.ui, "INPUT_DIR", empty_dir):
@@ -62,7 +62,7 @@ def test_get_input_files_powershell_style(mock_input, tmp_path):
     ps_input = f"& '{str(video)}'"
     mock_input.return_value = ps_input
 
-    with patch("sys.argv", ["script.py"]):  # No args, trigger input
+    with patch("sys.argv", ["script.py"]), patch("modules.ui.stdin_is_console", return_value=True):  # No args, trigger input
         files, use_source = modules.ui._get_input_files()
         assert len(files) == 1
         assert files[0] == video
@@ -75,7 +75,7 @@ def test_get_input_files_recursive_glob(tmp_path):
     (d / "v1.mp4").write_text("v")
 
     with patch("modules.ui.INPUT_DIR", d):
-        with patch("sys.argv", ["script.py"]):
+        with patch("sys.argv", ["script.py"]), patch("modules.ui.stdin_is_console", return_value=True):
             with patch("modules.ui.input", side_effect=["", ""]):
                 files, skip = modules.ui._get_input_files()
                 assert len(files) == 1

@@ -3,13 +3,14 @@
 Zimtohrli (Google, Apache-2.0) is a psychoacoustic distance at 48 kHz built around the
 just-noticeable difference; it is read on the frames where the source is loud, because
 that is where a restoration's coloration is audible and where the noise floor is not.
-Its Python binding is imported lazily: the PyPI wheel `zimtohrli` is not pinned in
-`pyproject.toml` (it is uploaded by a project contributor from a renamed tree, not by
-the Google project's own release pipeline, and its compiled extension cannot be checked
-against the source), so the reading is recorded as unavailable until the binding is
-built from <https://github.com/google/zimtohrli> (`pip install git+...`, module
-`pyohrli`) or the wheel is installed on purpose. The distance is the number used, lower
-better; `mos_from_signals` is the same distance through a fixed MOS map.
+Its Python binding is imported lazily. The PyPI wheel `zimtohrli` is uploaded by a project
+contributor from a renamed tree, not by the Google project's own release pipeline, so it was
+installed only on purpose: the user approved it on 2026-10-08, and the ml group pins it exactly
+(`zimtohrli = 0.2.1.post1`, x86-64 only) so the reading never moves with a new upload. Where it
+is missing the reading is recorded as unavailable, unless the binding was built from
+<https://github.com/google/zimtohrli> (module `pyohrli`; never both, they ship the same
+`_pyohrli` extension). The distance is the number used, lower better; `mos_from_signals` is
+the same distance through a fixed MOS map.
 
 MERT-v1-95M (m-a-p, CC-BY-NC-4.0, research use) is a music encoder; one minus the
 cosine of the time-averaged layer-12 states of the source and the output is a distance

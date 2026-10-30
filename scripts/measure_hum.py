@@ -190,7 +190,7 @@ def measure(source_path, restored_path, mains_hz, band="hum"):
     """
     source, rate = _mono(source_path)
     restored, _rate = _mono(restored_path)
-    source, restored, _lag = _align(source, restored)
+    source, restored, _lag = _align(source, restored, rate)
     restored = _gain_matched(source, restored)
     if restored is None:
         return None

@@ -1,0 +1,5 @@
+# RNNoise models are plain ASCII, so Git for Windows (core.autocrlf true) checked them out
+# with CRLF line endings. Their bytes then missed the SHA-256 pins in modules/filters.py
+# (ARNNDN_MODEL_SHA256), and the first arnndn_speech run deleted the bundled model and
+# downloaded it again (offline: failed). They are data, never text.
+*.rnnn binary

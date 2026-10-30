@@ -78,9 +78,9 @@ $localFFmpegPath = "$VenvScripts\ffmpeg.exe"
 if (-not (Test-Path $localFFmpegPath)) {
     Write-Information "Local FFmpeg not found. Downloading full portable build..."
 
-    $url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip"
-    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip"
-    $expectedSha256 = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"
+    $url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip"
+    $urlFallback = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip"
+    $expectedSha256 = "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
     $zip = "$PSScriptRoot\ffmpeg.zip"
     $temp = "$PSScriptRoot\temp_ffmpeg"
 
@@ -132,10 +132,11 @@ else {
 Write-Information "`nStep 2b: Checking local Cathar audio restoration toolkit..."
 $localCatharPath = "$VenvScripts\cathar.exe"
 $cargoCatharPath = "$env:USERPROFILE\.cargo\bin\cathar.exe"
-# 0.7.6: the build both engines were tuned on in the listener round (docs/validation.md); its
-# vhs de-esser fix (vbasky/cathar#26) is upstream's version of the guard this app carries.
-$CatharExpectedVersion = "0.7.6"
-$CatharVersionPattern = "^cathar 0\.7\.6$"
+# 0.8.0 (2026-10-09): bit-identical to 0.7.6, the build both engines were tuned on, on every
+# stage this app calls (cathar identity 5/5, auto_pure_linear 3/3: experiments/cathar_ab_cathar080_c0,
+# experiments/apl_cathar_identity). 0.7.6's vhs de-esser fix (vbasky/cathar#26) is kept.
+$CatharExpectedVersion = "0.8.0"
+$CatharVersionPattern = "^cathar 0\.8\.0$"
 
 function Test-CatharExecutable {
     param([string]$Path)
@@ -194,7 +195,7 @@ if (-not (Test-CatharExecutable $localCatharPath)) {
         # dies on "LNK1104: cannot open file 'msvcrt.lib'" without the LIB paths a Developer
         # Command Prompt sets, and its GNU host dies on a missing MinGW dlltool.exe. A
         # checksum-verified download is the same approach used for FFmpeg above.
-        $CatharSha256 = "2761f54c27124086ddf92b9b14ba5bf89f675f2e80d1d354baf569d8697870f9"
+        $CatharSha256 = "6c85b9851b248c10223acc8bef21f59c1ae6cda480981ad030e4a730f0f1a603"
         $CatharAsset = "cathar-v$CatharExpectedVersion-x86_64-pc-windows-msvc.zip"
         $CatharUrl = "https://github.com/vbasky/cathar/releases/download/v$CatharExpectedVersion/$CatharAsset"
 

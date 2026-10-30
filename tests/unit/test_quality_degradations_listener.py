@@ -111,6 +111,50 @@ def test_hiss_in_pauses_adds_more_air_with_less_margin():
     assert air[0] < air[1] < air[2]
 
 
+def _attenuations(speech, outputs):
+    """R4's true-pause attenuation (output side; the source side is the identity) of each output."""
+    return [pause_metrics.gap_residual_readings(speech, out, RATE)["gap_atten_db"][1] for out in outputs]
+
+
+def test_hiss_in_pauses_lowers_the_true_pause_attenuation_with_the_margin():
+    """R4, the reading the calibration asserts: the true pauses lose attenuation as the margin shrinks."""
+    attenuation = _attenuations(_speech(), _hissed_outputs())
+    assert attenuation[0] > attenuation[1] > attenuation[2]
+
+
+@functools.lru_cache(maxsize=None)
+def _dense_speech(seconds=7.2, seed=7):
+    """Loud and soft vowels (0.8 s, 0.9 s at -14 dB), an 's' and one 0.45 s pause a 2.4 s cycle: the fixtures' layout.
+
+    Its p15-p40 frames, the ones gap_air reads, fall on the soft vowels, where the expander's
+    gain is open, as 60-71 % of them do on the realistic-v2 targets; only R4's true pauses
+    take the hiss.
+    """
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(seconds * RATE)) / RATE
+    phases = rng.uniform(0.0, 2 * np.pi, 30)
+    vowel = sum(np.sin(2 * np.pi * 160.0 * k * t + phases[k]) / k for k in range(1, 30))
+    cycle = t % 2.4
+    voiced = _smoothed(cycle < 0.8) + 0.2 * _smoothed((cycle >= 0.8) & (cycle < 1.7))
+    ess = 0.5 * _bandpassed(rng.standard_normal(len(t)), 4000.0, 10000.0) + 0.35 * _bandpassed(rng.standard_normal(len(t)), 1000.0, 4000.0)
+    return (0.1 * vowel * voiced + 0.1 * ess * _smoothed((cycle >= 1.75) & (cycle < 1.95)) + 1e-4 * rng.standard_normal(len(t))).astype(
+        np.float32
+    )
+
+
+def test_on_dense_speech_hiss_in_pauses_moves_r4_and_not_gap_air():
+    """Why gap_air is blind on this degradation: under 0.05 dB at every margin, while R4 falls about 10 dB a step."""
+    speech = _dense_speech()
+    noise = (1e-3 * np.random.default_rng(5).standard_normal(len(speech))).astype(np.float32)
+    outputs = [
+        deg.hiss_in_pauses(speech, noise, margin, RATE, np.random.default_rng(1)) for margin in deg.DEGRADATIONS["hiss_in_pauses"].levels
+    ]
+    readings = [pause_metrics.pause_readings(speech, out, RATE)["gap_air_db"] for out in outputs]
+    assert all(abs(output - source) < 0.05 for source, output in readings)
+    attenuation = _attenuations(speech, outputs)
+    assert all(high - low > 9.0 for high, low in zip(attenuation, attenuation[1:]))
+
+
 def _sib_shape(speech, out):
     readings = sibilance.sib_readings(speech, out, RATE)
     return readings["sib_centroid_hz"][1], readings["sib_body_db"][1]
@@ -125,6 +169,24 @@ def test_the_fricative_weight_is_zero_away_from_the_ess_bursts_and_one_inside_th
     weight = _fricative_weight()
     assert 0.7 < np.mean(weight == 0.0) < 0.98
     assert (weight >= 0.999).sum() > 0
+
+
+def test_the_fricative_weight_covers_every_frame_a_runner_window_reads():
+    """30 s whose halves carry different hiss floors: every 10 ms frame a 15 s window calls fricative is weighted over one half.
+
+    The whole-file mask, on whole-file percentiles, misses some of them: what the R2 readings read on their own windows.
+    """
+    voice = _speech(seconds=30.0)
+    floors = np.where(np.arange(len(voice)) < len(voice) // 2, 1e-4, 3e-3)
+    mono = (voice + floors * np.random.default_rng(1).standard_normal(len(voice))).astype(np.float32)
+    marked = np.zeros(len(mono), dtype=bool)
+    for window in deg.audio_io.windows(len(mono), RATE, deg.v3.RUNNER_WINDOW_S, deg.v3.RUNNER_HOP_S):
+        marked[window.slice_of(RATE)] |= sibilance.fricative_mask(mono[window.slice_of(RATE)], RATE)
+    frame = int(sibilance.FRAME_S * RATE)
+    centres = np.arange(len(mono) // frame) * frame + frame // 2
+    read = centres[marked[centres]]
+    assert np.any(~sibilance.fricative_mask(mono, RATE)[read])
+    assert np.all(deg.fricative_ramp(mono, RATE)[read] > 0.5)
 
 
 @pytest.mark.parametrize("generator", [deg.sibilants_thinned, deg.sibilants_dulled])
@@ -188,6 +250,16 @@ def test_transient_smear_softens_the_attack_with_the_span():
     music = _music()
     attacks = [transient_metrics.transient_readings(music, out, RATE)["attack_db"][1] for _smear_ms, out in _smeared_outputs()]
     assert transient_metrics.transient_readings(music, music, RATE)["attack_db"][1] > attacks[0] > attacks[1] > attacks[2]
+
+
+def test_transient_smear_lowers_the_paired_attack_at_every_level():
+    """Out minus source, paired on the source's onsets, is negative at every span and falls with it (calibration v3b's fix)."""
+    music = _music()
+    changes = []
+    for _smear_ms, out in _smeared_outputs():
+        source, output = transient_metrics.transient_readings(music, out, RATE)["attack_db"]
+        changes.append(output - source)
+    assert 0.0 > changes[0] > changes[1] > changes[2]
 
 
 def test_benign_music_identity_is_exact_and_starts_from_the_music_bed():

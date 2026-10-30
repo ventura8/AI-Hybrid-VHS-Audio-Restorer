@@ -8,6 +8,18 @@ that lets a rerun resume would otherwise take the fragment for the whole.
 While a video is processed, every temp-file API is pointed inside its work directory so
 library scratch leaves with the work directory rather than accumulating in the system
 temp.
+
+The work directory sits beside the tape, a path a folder of tapes can plant: shipped as a
+link (`.temp_work_<stem>` pointing at the user's home), the partial sweep walked the tree it
+points to and unlinked every `*.tmp*` and hidden `*.wav` there, and the stages wrote into
+it (security review, 2026-10-26). `open_work_dir` refuses a link or a non-directory at the
+path, the sweep never follows a link, and a stale partial that is a dangling link is
+removed rather than written through. A real work directory can carry links too: one named
+like a partial (`original.tmp.wav` pointing at a file the user owns) was skipped by the sweep
+and the extraction's `ffmpeg -y` wrote through it (security review of PR #21, 2026-10-29).
+The app makes no links, so the sweep removes every link it meets inside the work directory,
+the link itself and never what it points to, and a stage that writes its partial with ffmpeg
+removes a stale one first (`remove_stale`).
 """
 
 import contextlib
@@ -29,15 +41,50 @@ def partial_path(target):
     return target.with_name(f"{target.stem}{PARTIAL_MARKER}{target.suffix}")
 
 
-def _remove_if_exists(path):
-    if path.exists():
+class WorkDirRefused(OSError):
+    """A work directory's path holds a link or something other than a directory this run can own."""
+
+
+def is_link(path):
+    """Whether `path` is a symbolic link or a Windows directory junction: either leads out of the tree it sits in."""
+    path = Path(path)
+    return path.is_symlink() or path.is_junction()
+
+
+def open_work_dir(work_dir):
+    """Creates `work_dir`, or reopens one an earlier run left, and returns it; raises `WorkDirRefused` when the path is
+    a link or not a directory, before and after the mkdir, so nothing is swept or written inside a tree it leads to."""
+    work_dir = Path(work_dir)
+    if is_link(work_dir):
+        raise WorkDirRefused(f"{work_dir.name} is a link; nothing is written inside the tree it points to")
+    work_dir.mkdir(exist_ok=True)
+    if is_link(work_dir) or not work_dir.is_dir():
+        raise WorkDirRefused(f"{work_dir.name} is not a directory this run can own")
+    return work_dir
+
+
+def remove_stale(path):
+    """Removes `path`, a link included and a dangling one too: the next write would otherwise go through it."""
+    path = Path(path)
+    if is_link(path):
+        _remove_link(path)
+    elif path.exists():
         path.unlink()
+
+
+def _remove_link(path):
+    """Removes a link entry itself, never what it points to: a file link by unlink, a directory link or a junction by
+    rmdir where the platform refuses to unlink one (Windows)."""
+    try:
+        path.unlink()
+    except (IsADirectoryError, PermissionError):
+        os.rmdir(path)
 
 
 def _finish_partial(partial, target, completed):
     """Publishes a completed partial that was written; removes the partial of a failed stage."""
     if not completed:
-        _remove_if_exists(partial)
+        remove_stale(partial)
     elif partial.exists():
         publish(partial, target)
 
@@ -50,7 +97,7 @@ def atomic_target(target):
     """
     target = Path(target)
     partial = partial_path(target)
-    _remove_if_exists(partial)
+    remove_stale(partial)
     completed = False
     try:
         yield partial
@@ -98,32 +145,58 @@ def is_partial(path):
     return name.startswith(".") and name.endswith(".wav")
 
 
-def _unlink_partial(path, removed):
+def _remove_swept(path, removed, remove, what):
     try:
-        path.unlink()
+        remove(path)
         removed.append(path)
     except OSError as exc:
-        log_msg(f"    [Hygiene] Could not remove partial {path.name}: {exc}", is_error=True)
+        log_msg(f"    [Hygiene] Could not remove {what} {path.name}: {exc}", is_error=True)
 
 
-def _partials_under(work_dir):
-    """Every unpublished partial below a directory, or nothing when it does not exist."""
-    if not work_dir.is_dir():
-        return []
-    return [path for path in work_dir.rglob("*") if path.is_file() and is_partial(path)]
+def _real_dirs(root, names):
+    """The subdirectory names under `root` that are not links, so a walk stays inside the tree."""
+    return [name for name in names if not is_link(Path(root) / name)]
+
+
+def _swept_under(work_dir):
+    """`(partials, links)` below a directory, walked without following a link: every unpublished partial that is a
+    real file, and every link, whatever its name; nothing when the directory does not exist or is itself a link."""
+    if is_link(work_dir) or not work_dir.is_dir():
+        return [], []
+    partials, links = [], []
+    for root, dirs, files in os.walk(work_dir, followlinks=False):
+        links += _links_among(root, dirs + files)
+        dirs[:] = _real_dirs(root, dirs)
+        partials += _partial_files(root, files)
+    return partials, links
+
+
+def _links_among(root, names):
+    """The entries under `root` that are links: the app makes none, so each was planted."""
+    return [path for path in (Path(root) / name for name in names) if is_link(path)]
+
+
+def _partial_files(root, names):
+    """The files under `root` named as partials, links left out (the sweep removes those as links)."""
+    paths = [Path(root) / name for name in names]
+    return [path for path in paths if is_partial(path) and not is_link(path)]
 
 
 def sweep_partials(work_dir):
-    """Removes every unpublished partial under a work directory; returns the paths removed.
+    """Removes every unpublished partial and every link under a work directory; returns the paths removed.
 
     Run when a work directory is (re)opened, so a resumed restoration never globs a
-    fragment from the interrupted run as a finished stage output.
+    fragment from the interrupted run as a finished stage output, and no stage writes
+    through a link a folder of tapes planted inside it. A link is removed, never followed.
     """
     removed = []
-    for path in _partials_under(Path(work_dir)):
-        _unlink_partial(path, removed)
+    partials, links = _swept_under(Path(work_dir))
+    for path in partials:
+        _remove_swept(path, removed, Path.unlink, "partial")
+    for path in links:
+        _remove_swept(path, removed, _remove_link, "link")
     if removed:
-        log_msg(f"  [Hygiene] Removed {len(removed)} unfinished partial file(s) from the previous run.")
+        log_msg(f"  [Hygiene] Removed {len(removed)} unfinished partial file(s) or link(s) from the previous run.")
     return removed
 
 

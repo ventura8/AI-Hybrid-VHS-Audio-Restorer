@@ -37,17 +37,37 @@ indifferent to since it normalises its input, and the join doubles it back, so t
 sees the chunk's true level. Only a chunk that limits pays for that: the retry costs the
 fidelity of half-precision inference on a rescaled input, about -57 dB.
 
+An MDXC model (the shipped Mel-RoFormer denoiser, `apl_neural_model`) works differently and
+gets a grid of its own (`grid_for`). It denoises fixed windows of 8 s overlap-added every 2 s
+(88,200 samples at 44.1 kHz, read from the model's yaml by `denoise_model.mdxc_window`), each
+window on its own: there is no file-wide spectrogram maximum, so no anchor. Its chunks start
+on multiples of that step and carry a full window of true audio either side, so every window
+that touches a chunk's own range starts where the whole file's does and sees the same
+samples; the windows that see the chunk's cut edges only touch the context the join drops.
+What it does share with the whole file is the separator's input peak rule: the file is
+scaled down to 0.9 when its peak is above that, and a chunk on its own would be scaled by
+its own peak, or not at all. Each MDXC chunk is therefore written at the gain the whole file
+is fed at, computed as the separator computes it, so its peak sits at or below 0.9 and the
+chunk pass, at the full-scale limit, leaves it alone. The half-scale retry of a chunk the
+separator peak-limited on output does change the level such a model sees; it stays as the
+VR path has it, for a chunk whose denoised peak passed full scale.
+
+The chunk length rests on the VR separator's measured memory per hour (`HOST_GB_PER_HOUR`);
+the MDXC separator's has never been measured.
+
 Nothing here holds the file in memory: the split reads ranges, the join streams blocks and
 keeps only one overlap in hand.
 """
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import scipy.signal
 import soundfile as sf
 
+from . import denoise_model as _denoise_model
 from .config import NEURAL_CHUNK_SECONDS
 from .hygiene import atomic_target
 from .utils import is_valid_audio, log_msg
@@ -57,6 +77,11 @@ from .utils import is_valid_audio, log_msg
 CHUNK_OVERLAP_SECONDS = 2.0
 # The separator's host memory per hour of audio, measured on a 94-minute chunk (48 GB), and
 # the share of the machine a chunk may claim; the rest is the other stages and the user.
+# Measured with the VR model (UVR-DeNoise) only: the MDXC / RoFormer separator's memory per
+# hour has never been measured, so the chunk length it gets rests on the VR figure. Its
+# overlap-add buffers alone (result and counter, float32, two instruments by two channels)
+# are 32 bytes a sample, about 5 GB an hour of 44.1 kHz audio, by the library's own
+# estimate (_estimate_roformer_full_track_buffer_bytes); the rest is unmeasured.
 HOST_GB_PER_HOUR = 32.0
 HOST_SHARE = 0.5
 # Measured in containers on an 88-minute tape: fifteen-minute chunks pass at 16 GB and are
@@ -70,7 +95,6 @@ BLOCK_FRAMES = 1 << 16
 # and the one chunks are written with.
 WHOLE_FILE_PEAK = 0.9
 CHUNK_PEAK = 1.0
-CLEAN_STEM_TAG = "(No Noise)"
 # The input scale a peak-limited chunk is denoised again at, undone by the join.
 RETRY_GAIN = 0.5
 # The separator trims its output to a multiple of its hop, so a chunk comes back a few
@@ -81,8 +105,70 @@ MAX_SHORTFALL_SECONDS = 1.0
 # fall on the grid the whole file's would and the recurrent layer sees the same windows.
 # The shipped denoise models stride 192 spectrogram frames over a 1024-sample hop
 # (UVR-DeNoise-Lite) or a 480-sample hop across four bands (UVR-DeNoise); this is the
-# common multiple, 66.9 s at 44.1 kHz. Another model's grid is simply not matched.
+# common multiple, 66.9 s at 44.1 kHz. An MDXC model has a grid of its own (`grid_for`); a
+# model that is neither keeps this one, unmatched.
 PATCH_FRAMES = 192 * 15360
+
+
+@dataclass(frozen=True)
+class Grid:
+    """Where a model's inference windows fall, and what a chunk needs to see what the whole file saw.
+
+    `stride`: chunk starts and lengths are multiples of it. `context`: true audio either side
+    of a chunk's range, dropped at the join. `anchored`: a chunk is led in by the file's
+    loudest stride-long block (the VR models normalise their spectrogram by the file's
+    maximum). `peak_matched`: a chunk is written at the gain the separator feeds the whole
+    file at (the MDXC models peak-normalise their input). `tag`: added to the chunk
+    directory's name, so chunks cut to another grid are never reused.
+    """
+
+    stride: int
+    context: int
+    anchored: bool = True
+    peak_matched: bool = False
+    tag: str = ""
+
+
+def vr_grid():
+    """The VR models' grid: the patch stride, a stride of context and the loudest-block anchor."""
+    return Grid(PATCH_FRAMES, PATCH_FRAMES)
+
+
+def grid_for(model_name=None):
+    """The chunk grid for a denoise model: its overlap-add step for an MDXC model, the VR patch stride otherwise.
+
+    An MDXC chunk carries a whole window of context, rounded up to the step, either side:
+    every window touching its range then starts on the whole file's grid and lies inside the
+    chunk, and the chunk's own edge windows touch only the context.
+    """
+    window = _denoise_model.mdxc_window(model_name) if model_name else None
+    if window is None:
+        _warn_unmatched(model_name)
+        return vr_grid()
+    size, step = window
+    return Grid(step, -(-size // step) * step, anchored=False, peak_matched=True, tag=f"_mdxc{step}")
+
+
+def _warn_unmatched(model_name):
+    """Says so when an MDXC checkpoint has no usable yaml: its chunks then take the VR grid, which its windows miss."""
+    if _denoise_model.is_mdxc_checkpoint(model_name):
+        log_msg(
+            f"    [Warning] No usable config for {model_name} in the model store: its chunks take the VR grid,"
+            " so the join will not match its whole-file output.",
+            level="WARNING",
+        )
+
+
+def _grid_after_fetch(model_name, fetch_model=None):
+    """The model's grid, its files fetched first when its yaml is not in the store yet (a fresh store before the first load).
+
+    `fetch_model()` downloads the model's files the way its first load would; without it, or
+    when the fetch leaves no yaml, the grid falls back to the VR one (`_warn_unmatched`).
+    """
+    if fetch_model is not None and _denoise_model.config_missing(model_name):
+        log_msg(f"    [Neural] Fetching {model_name} before the chunks are cut: its chunk grid is read from its config.")
+        fetch_model()
+    return grid_for(model_name)
 
 
 # Where a container's memory limit is published (cgroup v2, then v1). psutil reports the
@@ -126,19 +212,26 @@ def resolved_chunk_seconds():
     return NEURAL_CHUNK_SECONDS if NEURAL_CHUNK_SECONDS > 0 else chunk_seconds_for_host()
 
 
-def plan(frames, rate, chunk_seconds=None, overlap_seconds=CHUNK_OVERLAP_SECONDS):
+def plan(frames, rate, chunk_seconds=None, overlap_seconds=CHUNK_OVERLAP_SECONDS, stride=None):
     """Frame ranges of equal chunks no longer than `chunk_seconds`, each overlapping the next.
 
-    Returns an empty list when the file fits in one chunk or when the chunk length would
-    not clear twice the overlap.
+    Every chunk starts on a multiple of `stride` (the VR patch stride by default). Returns an
+    empty list when the file fits in one chunk or when the chunk length would not clear
+    twice the overlap; whether a file is chunked does not depend on the stride.
     """
     chunk_seconds = resolved_chunk_seconds() if chunk_seconds is None else chunk_seconds
     limit, overlap = int(chunk_seconds * rate), int(overlap_seconds * rate)
     if limit <= 2 * overlap or frames <= limit:
         return []
-    core = math.ceil(frames / math.ceil(frames / (limit - overlap)))
-    core = -(-core // PATCH_FRAMES) * PATCH_FRAMES
+    core = _core_frames(frames, limit - overlap, stride)
     return [(start, min(frames, start + core + overlap)) for start in range(0, frames, core)]
+
+
+def _core_frames(frames, longest_core, stride=None):
+    """The frames between chunk starts: equal shares no longer than `longest_core`, rounded up to the stride."""
+    stride = PATCH_FRAMES if stride is None else stride
+    core = math.ceil(frames / math.ceil(frames / longest_core))
+    return -(-core // stride) * stride
 
 
 def duration_needs_chunking(source_wav, chunk_seconds=None):
@@ -186,14 +279,18 @@ def anchor_range(source, stride=None):
 JUNCTION_FADE_FRAMES = 1024
 
 
-def _copy_range(source, start, stop, out, fade_in=False, fade_out=False):
-    """Streams frames [start, stop) of an open file into an open output, optionally faded at either end."""
+def _copy_range(source, span, out, fades=(False, False), gain=1.0):
+    """Streams frames [start, stop) of an open file into an open output, faded at the (in, out) ends asked for, and scaled."""
+    (start, stop), (fade_in, fade_out) = span, fades
     source.seek(start)
     remaining = stop - start
     position = 0
     while remaining > 0:
         block = source.read(min(BLOCK_FRAMES, remaining), dtype="float32", always_2d=True)
-        block = _faded(block, position, stop - start, fade_in, fade_out)
+        # Scaled unconditionally: a float times exactly 1.0 is the same float in IEEE 754, so an
+        # unscaled range (the anchor, a chunk the whole file is not peak-matched for) keeps its
+        # samples bit for bit without a float equality test on the gain.
+        block = _faded(block, position, stop - start, fade_in, fade_out) * gain
         out.write(block)
         position += len(block)
         remaining -= len(block)
@@ -210,19 +307,20 @@ def _faded(block, position, total, fade_in, fade_out):
     return block * (0.5 - 0.5 * np.cos(np.pi * gain))[:, None]
 
 
-def _margins(anchor, start, stop, frames, stride):
+def _margins(anchor, start, stop, frames, context):
     """(lead, tail) frames around a chunk: the anchor when needed plus true context either side.
 
-    The context is one stride so the chunk still starts on the patch grid; it stops at the
-    file's ends, which the whole file shares.
+    The context is a multiple of the grid's stride so the chunk still starts on the grid; it
+    stops at the file's ends, which the whole file shares.
     """
-    before, after = min(stride, start), min(stride, frames - stop)
+    before, after = min(context, start), min(context, frames - stop)
     return _anchor_frames(anchor, start, stop) + before, after
 
 
-def _write_chunk(source, anchor, start, stop, target, stride):
-    """Writes one chunk with its anchor and context; returns the (lead, tail) frames the join drops."""
-    lead, tail = _margins(anchor, start, stop, source.frames, stride)
+def _write_chunk(source, anchor, span, target, context, gain=1.0):
+    """Writes one chunk with its anchor and context, scaled by `gain`; returns the (lead, tail) frames the join drops."""
+    start, stop = span
+    lead, tail = _margins(anchor, start, stop, source.frames, context)
     with (
         atomic_target(target) as partial,
         sf.SoundFile(str(partial), "w", samplerate=source.samplerate, channels=source.channels, subtype="FLOAT") as out,
@@ -230,40 +328,67 @@ def _write_chunk(source, anchor, start, stop, target, stride):
         anchored = bool(_anchor_frames(anchor, start, stop))
         before = lead - _anchor_frames(anchor, start, stop)
         if anchored:
-            _copy_range(source, anchor[0], anchor[1], out, fade_out=True)
+            _copy_range(source, anchor, out, fades=(False, True))
         # The fade-in belongs to the context, never to the chunk's own opening samples: the
         # first chunk has no context before it, so there the anchor alone is faded.
-        _copy_range(source, start - before, stop + tail, out, fade_in=anchored and before > 0)
+        _copy_range(source, (start - before, stop + tail), out, fades=(anchored and before > 0, False), gain=gain)
     return lead, tail
 
 
 def _anchor_frames(anchor, start, stop):
-    """Anchor frames a chunk carries: none when it already contains the anchor block."""
-    return 0 if start <= anchor[0] and anchor[1] <= stop else anchor[1] - anchor[0]
+    """Anchor frames a chunk carries: none without an anchor, or when it already contains the anchor block."""
+    if anchor is None or (start <= anchor[0] and anchor[1] <= stop):
+        return 0
+    return anchor[1] - anchor[0]
 
 
-def split(source_wav, chunk_dir, ranges):
+def whole_file_input_gain(source):
+    """The gain the separator feeds the whole file at: 0.9 over its peak when the peak is above 0.9, else 1.
+
+    Computed as spec_utils.normalize computes it (a float32 peak, the threshold divided by
+    it), so a chunk scaled by it holds the whole file's input samples bit for bit.
+    """
+    peak = np.float32(0.0)
+    source.seek(0)
+    for block in source.blocks(blocksize=BLOCK_FRAMES, dtype="float32", always_2d=True):
+        peak = max(peak, np.abs(block).max(initial=np.float32(0.0)))
+    return WHOLE_FILE_PEAK / peak if peak > WHOLE_FILE_PEAK else 1.0
+
+
+def _chunk_inputs(source, grid):
+    """(anchor, gain) the grid gives every chunk: the loudest block or None, and the input gain."""
+    anchor = anchor_range(source, grid.stride) if grid.anchored else None
+    return anchor, whole_file_input_gain(source) if grid.peak_matched else 1.0
+
+
+def _write_missing(source, paths, ranges, grid):
+    """Writes every chunk a previous run did not complete; returns the anchor the chunks carry, or None."""
+    anchor, gain = _chunk_inputs(source, grid)
+    for path, span in zip(paths, ranges):
+        if not is_valid_audio(path):
+            _write_chunk(source, anchor, span, path, grid.context, gain)
+    return anchor
+
+
+def split(source_wav, chunk_dir, ranges, grid=None):
     """Writes one WAV per range under `chunk_dir`, reusing a chunk a previous run completed.
 
-    Returns the chunk paths and, per chunk, the (lead, tail) frames the join drops.
+    Returns the chunk paths and, per chunk, the (lead, tail) frames the join drops. The
+    grid is the VR models' unless one is given (`grid_for`).
     """
+    grid = vr_grid() if grid is None else grid
     chunk_dir.mkdir(parents=True, exist_ok=True)
     paths = [chunk_dir / f"chunk_{index:04d}.wav" for index in range(len(ranges))]
-    stride = PATCH_FRAMES
     with sf.SoundFile(str(source_wav)) as source:
-        anchor = anchor_range(source, stride)
-        for path, (start, stop) in zip(paths, ranges):
-            if not is_valid_audio(path):
-                _write_chunk(source, anchor, start, stop, path, stride)
-        margins = [_margins(anchor, start, stop, source.frames, stride) for start, stop in ranges]
+        anchor = _write_missing(source, paths, ranges, grid)
+        margins = [_margins(anchor, start, stop, source.frames, grid.context) for start, stop in ranges]
     return paths, margins
 
 
-def clean_output_in(out_dir):
-    """The separator's clean stem in a chunk's output directory, or None."""
-    candidates = sorted(out_dir.glob("*.wav"), key=lambda path: path.name.lower())
-    clean = [path for path in candidates if CLEAN_STEM_TAG in path.name and is_valid_audio(path)]
-    return clean[0] if clean else None
+def clean_output_in(out_dir, model_name=None):
+    """The separator's clean stem in a chunk's output directory, or None (`denoise_model.clean_stem`)."""
+    valid = [path for path in out_dir.glob("*.wav") if is_valid_audio(path)]
+    return _denoise_model.clean_stem(valid, model_name)
 
 
 def _output_peak(path):
@@ -286,43 +411,47 @@ def _scaled_copy(source_wav, target, gain):
             out.write(block * gain)
 
 
-def _finished(out_dir):
+def _finished(out_dir, model_name=None):
     """A chunk's finished clean stem in `out_dir`, or None."""
-    return clean_output_in(out_dir) if out_dir.is_dir() else None
+    return clean_output_in(out_dir, model_name) if out_dir.is_dir() else None
 
 
-def _denoise_or_reuse(chunk_path, out_dir, label, denoise_chunk):
+def _denoise_or_reuse(chunk_path, out_dir, label, denoise_chunk, model_name=None):
     """The chunk's clean stem, from a previous run when it left one."""
-    produced = _finished(out_dir)
+    produced = _finished(out_dir, model_name)
     if produced is None:
         log_msg(f"    [Neural] Denoising chunk {label}...")
         produced = denoise_chunk(chunk_path, out_dir)
     return produced
 
 
-def _denoise_one(chunk_path, chunk_dir, index, count, denoise_chunk):
+def _denoise_one(chunk_path, chunk_dir, position, denoise_chunk, model_name=None):
     """One chunk's clean stem and the gain the join applies: 1, or 1/RETRY_GAIN after a retry.
 
-    A chunk the separator peak-limited is denoised again at half scale from a scaled copy
-    of the input; a retry a previous run finished is reused ahead of the first attempt.
+    `position` is (index, count). A chunk the separator peak-limited is denoised again at
+    half scale from a scaled copy of the input; a retry a previous run finished is reused
+    ahead of the first attempt.
     """
+    index, count = position
     retry_dir = chunk_dir / f"out_{index:04d}_retry"
-    retried = _finished(retry_dir)
+    retried = _finished(retry_dir, model_name)
     if retried is not None:
         return retried, 1.0 / RETRY_GAIN
-    produced = _denoise_or_reuse(chunk_path, chunk_dir / f"out_{index:04d}", f"{index + 1}/{count}", denoise_chunk)
+    produced = _denoise_or_reuse(chunk_path, chunk_dir / f"out_{index:04d}", f"{index + 1}/{count}", denoise_chunk, model_name)
     if _output_peak(produced) < CHUNK_PEAK - 1e-6:
         return produced, 1.0
     log_msg(f"    [Neural] Chunk {index + 1} was peak-limited by the separator; denoising it again at half scale.")
     scaled = chunk_dir / f"chunk_{index:04d}_retry.wav"
     if not is_valid_audio(scaled):
         _scaled_copy(chunk_path, scaled, RETRY_GAIN)
-    return _denoise_or_reuse(scaled, retry_dir, f"{index + 1}/{count} (retry)", denoise_chunk), 1.0 / RETRY_GAIN
+    retry_label = f"{index + 1}/{count} (retry)"
+    return _denoise_or_reuse(scaled, retry_dir, retry_label, denoise_chunk, model_name), 1.0 / RETRY_GAIN
 
 
-def _denoise_chunks(chunk_paths, chunk_dir, denoise_chunk):
+def _denoise_chunks(chunk_paths, chunk_dir, denoise_chunk, model_name=None):
     """Runs the denoiser over each chunk; returns the outputs in order and the gain the join applies to each."""
-    results = [_denoise_one(path, chunk_dir, index, len(chunk_paths), denoise_chunk) for index, path in enumerate(chunk_paths)]
+    count = len(chunk_paths)
+    results = [_denoise_one(path, chunk_dir, (index, count), denoise_chunk, model_name) for index, path in enumerate(chunk_paths)]
     return [produced for produced, _gain in results], [gain for _produced, gain in results]
 
 
@@ -434,19 +563,23 @@ def joined_name(input_wav, chunk_path, chunk_output):
     return Path(input_wav).stem + Path(chunk_output).name[suffix_at:]
 
 
-def run(input_wav, output_dir, denoise_chunk, chunk_seconds=None):
+def run(input_wav, output_dir, denoise_chunk, chunk_seconds=None, model_name=None, *, fetch_model=None):
     """Denoises a long file in overlapping chunks; returns the joined clean track.
 
     `denoise_chunk(chunk_wav, out_dir)` runs the separator on one chunk into `out_dir` and
-    returns its clean stem. Every chunk output is kept until the join is published, so an
+    returns its clean stem. `model_name` picks the chunk grid (`grid_for`) and the clean
+    stem a previous run left (`denoise_model.clean_stem`); `fetch_model()`, when given,
+    downloads an MDXC model's files before the chunks are cut if its yaml is not in the store
+    yet (`_grid_after_fetch`). Every chunk output is kept until the join is published, so an
     interrupted run resumes from the chunks it finished. The chunk directory is named after
-    the plan, so a changed setting never reuses chunks cut to another grid.
+    the plan and the grid, so a changed setting never reuses chunks cut to another grid.
     """
     input_wav, output_dir = Path(input_wav), Path(output_dir)
+    grid = _grid_after_fetch(model_name, fetch_model)
     with sf.SoundFile(str(input_wav)) as source:
-        ranges = plan(source.frames, source.samplerate, chunk_seconds)
-    chunk_dir = output_dir / f"chunks_{len(ranges)}x{ranges[0][1]}"
+        ranges = plan(source.frames, source.samplerate, chunk_seconds, stride=grid.stride)
+    chunk_dir = output_dir / f"chunks_{len(ranges)}x{ranges[0][1]}{grid.tag}"
     log_msg(f"    [Neural] Denoising in {len(ranges)} overlapping chunks: the track is longer than one pass holds.")
-    chunk_paths, margins = split(input_wav, chunk_dir, ranges)
-    outputs, gains = _denoise_chunks(chunk_paths, chunk_dir, denoise_chunk)
+    chunk_paths, margins = split(input_wav, chunk_dir, ranges, grid)
+    outputs, gains = _denoise_chunks(chunk_paths, chunk_dir, denoise_chunk, model_name)
     return join(outputs, ranges, output_dir / joined_name(input_wav, chunk_paths[0], outputs[0]), margins, gains)

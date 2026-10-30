@@ -4,6 +4,11 @@ The user is the final judge; the harness only points at where to listen. Picks a
 made per metric on the delta (output \u2212 source) in the metric's bad direction, and the
 same window is rendered from the source and from every scored output so the ear
 compares like with like.
+
+A two-sided reading (ear v3: the balance, the level of the 's', the shape of the pause
+residual) has no bad direction, so its picks are the windows where it moved furthest from
+its neutral target either way. File-level readings (the gain ride, the sync) have no window
+to cut; they stay in the card's file section.
 """
 
 from dataclasses import dataclass
@@ -12,9 +17,26 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from scripts.restoration_quality.scorecard import METRICS
+from scripts.restoration_quality.scorecard import HIGHER, METRICS, TWO_SIDED
 
-DEFAULT_PICK_METRICS = ("mos.sigmos_col", "mos.sigmos_disc", "speech.cer", "dsp.hf_8k16k", "dsp.lkr", "dsp.residual_noise_db")
+DEFAULT_PICK_METRICS = (
+    "mos.sigmos_col",
+    "mos.sigmos_disc",
+    "speech.cer",
+    "dsp.hf_8k16k",
+    "dsp.lkr",
+    "dsp.residual_noise_db",
+    # Ear v3: the timbre (R1), the 's' (R2) and the residual in the true pauses (R4).
+    "dsp.balance_top_db",
+    "dsp.balance_tilt_db_oct",
+    "dsp.sib_abs_level_db",
+    "dsp.sib_texture_db",
+    "dsp.gap_hf_excess_db",
+    "dsp.gap_mod_dist_db",
+    # Ear v4: the hiss heard under the programme and in the pauses (the windows where it is most audible).
+    "dsp.hiss_prog_margin_db",
+    "dsp.hiss_pause_margin_db",
+)
 
 
 @dataclass(frozen=True)
@@ -28,8 +50,11 @@ class Pick:
 
 
 def _badness(metric, value):
-    """Larger = worse, whatever the metric's direction."""
-    return -value if METRICS[metric].better == "higher" else value
+    """Larger = worse, whatever the metric's direction; a two-sided reading is worse the further it sits from its target."""
+    spec = METRICS[metric]
+    if spec.better == TWO_SIDED:
+        return abs(value - spec.target)
+    return -value if spec.better == HIGHER else value
 
 
 def select_worst(result, metric, count=3):
@@ -81,7 +106,7 @@ def render_from_files(picks, source_wav, outputs, out_dir, prefix=""):
     aligned = {}
     for label, path in outputs.items():
         output, _rate = audio_io.load_audio(audio_io.extract_wav(path, out_dir / "cache"))
-        aligned[label] = audio_io.align_pair(source, audio_io.to_mono(output))
+        aligned[label] = audio_io.align_pair(source, audio_io.to_mono(output), rate)
     lines = []
     for rank, pick in enumerate(picks, start=1):
         stem = f"{prefix}{pick.metric.replace('.', '_')}_{rank}"

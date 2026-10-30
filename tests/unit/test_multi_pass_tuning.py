@@ -20,14 +20,14 @@ def test_probe_duration_reads_ffprobe_container_metadata(monkeypatch, tmp_path):
     ]
     captured = []
 
-    def check_output(command, text, timeout=None):
-        captured.extend((command, text, timeout))
+    def check_output(command, text, encoding=None, errors=None, timeout=None):
+        captured.extend((command, text, encoding, errors, timeout))
         return "3720.0\n"
 
     monkeypatch.setattr(run_multi_pass_tuning.subprocess, "check_output", check_output)
 
     assert run_multi_pass_tuning._probe_duration(tape) == 62.0
-    assert captured == [expected, True, 10]
+    assert captured == [expected, True, "utf-8", "replace", 10]
 
 
 def test_collect_eligible_tapes_includes_window_boundaries(tmp_path, monkeypatch):

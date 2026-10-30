@@ -13,6 +13,9 @@ Core goals:
 - Keep the pipeline resilient and resumable across operating systems.
 - Run consistently in local and CI quality gates.
 
+The output-quality harness that judges every restoration (the "AI human ear")
+has its own architecture page: `docs/ai_human_ear_architecture.md`.
+
 ## Module Map
 
 - `restore_audio_hybrid.py`: entry point and batch orchestration.
@@ -178,6 +181,16 @@ A channel gap wider than 25 dB means a dead channel rather than a level
 mismatch, so the live side is mirrored to both rather than attenuating the only
 channel carrying audio. The azimuth delay is applied only when the two channels
 actually correlate, because a lag measured against a silent channel is noise.
+`azimuth_estimate_method` chooses where the lag is read: the first 0.74 s
+(`head`, the default) or a GCC-PHAT vote of the loudest spans (`spans`); see
+"Pre-Conditioning Azimuth Estimate" in `docs/configuration.md`. In the same
+way `crt_detect_mode` chooses where the CRT line is looked for, and so which
+mains family the hum notch may take: the first 0.74 s (`head`, the default)
+or the whole file's averaged spectrum (`welch`); see "CRT Line Search". The
+mains notches follow the scan's vote on the same first 0.74 s; with
+`scanner_mains_vote: confirmed` (`modules/mains_vote.py`) that notch is kept
+only where the whole scanned signal carries the hum; see "Pre-Conditioning
+Mains Vote" in `docs/configuration.md`.
 
 ## Shared Stage: Mastering and Mux
 
@@ -191,9 +204,12 @@ flowchart TD
     S2(["Aligned background stem"]) --> MIX
     MIX --> LN{"Loudness enabled?"}:::gate
     LN -->|yes| P1["Pass 1: measure programme loudness"]:::step
-    P1 --> P2["Pass 2: loudnorm with measured values<br/>linear, targets -16 LUFS"]:::step
+    P1 --> FB{"True peak alone rules out linear<br/>and loudnorm_linear_fallback is gain_limiter?"}:::gate
+    FB -->|no, the default| P2["Pass 2: loudnorm with measured values, -16 LUFS<br/>linear while ffmpeg's rule holds, else dynamic"]:::step
+    FB -->|yes| VOL["Pass 2: volume, one gain to -16 LUFS"]:::step
     P2 --> RS["aresample to 44.1 kHz<br/>loudnorm leaves the graph at 96 kHz"]:::step
-    RS --> LIM["True-peak limiter, -1.0 dBTP"]:::step
+    VOL --> RS
+    RS --> LIM["Sample-peak limiter<br/>alimiter, -1 dBFS"]:::step
     LN -->|no| ENC
     LIM --> ENC["Container-dependent encode<br/>AAC, MP2, or PCM"]:::step
     ENC --> MUX["Mux with -c:v copy"]:::step
@@ -205,11 +221,31 @@ flowchart TD
 If the measurement pass fails or returns an incomplete block, the pipeline logs
 a warning and falls back to single-pass normalization rather than aborting.
 
+Pass 2 asks loudnorm for its linear mode, which ffmpeg grants only while the
+true peak after the gain, the measured range and a set measurement allow it,
+and always on a programme under 3 s; otherwise loudnorm rides the gain. The
+limiter holds sample peaks, not true peaks. `docs/pipeline_logic.md`
+("Mastering chain") gives the rule, the peaks measured in each mode, and the
+`loudnorm_linear_fallback` key behind the `volume` branch.
+
 Single-track modes share this chain. They carry one processed stream instead of
 two stems, so the graph starts at `[1:a]` rather than an `amix`, but the
 measurement pass, resample, and limiter are the same code. The mastered stream is
 routed through a `filter_complex` label rather than `-af`, because the optional
-archival track is a second audio output that must not be normalized.
+archival track is a second audio output that must not be normalized. With it
+kept, the restored track is flagged default and the archival one cleared
+(`mastering.ARCHIVAL_DISPOSITION_ARGS`): ffmpeg copies the source stream's
+default flag to the archival copy, so MP4 and MOV used to open on the tape's
+own audio. AVI and MPEG-PS store no such flag, and a player takes their first
+audio stream, the restored one.
+
+Both mux commands take a plan from `modules/mux_format.py`, built from one
+ffprobe of the source: `-copyts` and `-itsoffset` place each restored input
+where the source's audio started against the video, and the resample goes to
+the rate the container keeps (44.1 kHz; MPEG-PS its source's). MPEG-PS and
+MPEG-TS take `-itsoffset` alone, against the earliest stream the command
+maps, so their demuxer still corrects timestamp jumps. An unreadable probe
+gives the command every earlier release ran.
 
 ## Mode: `auto_pure`
 
@@ -253,7 +289,7 @@ flowchart TD
     B --> N["Pass 6: noise-profile subtraction\n4 s probe, learned per-bin blend"]
     N --> D["Pass 7: UVR-DeNoise on the full mix"]
     D --> Y["Pass 8: shift or DTW alignment"]
-    Y --> M["Single-track EBU R128 mastering\ntrue-peak limiter and 44.1 kHz resample"]
+    Y --> M["Single-track EBU R128 mastering\n44.1 kHz resample and sample-peak limiter"]
     M --> O(["*_PureLinear_Cleaned\nvideo stream copied"])
 ```
 
@@ -263,10 +299,11 @@ background expander, or `amix` stage.
 
 ### Long captures
 
-Every UVR denoise call (Pass 7 here, and the stem denoisers of the two-stem
+Every neural denoise call (Pass 7 here, and the stem denoisers of the two-stem
 modes) goes through one runner. A track longer than the chunk length, which
 `neural_chunk_seconds` fixes or, at its default of 0, is sized from the
-machine's memory at the separator's measured 30 GB per hour, is denoised in
+machine's memory at the UVR separator's measured 30 GB per hour (the
+RoFormer's has never been measured and is sized the same way), is denoised in
 `modules/denoise_chunking.py`: equal chunks no longer than that, each
 starting on the models' patch stride, led in by the
 file's loudest block so the model normalises it as it would the whole file,
@@ -277,7 +314,14 @@ published atomically; each chunk's output is kept until then, so an
 interrupted run resumes from the chunks it finished. Measured on an 88-minute
 capture cut in three, the join matches the whole-file output on 99.97% of
 samples with the remainder at float rounding. Shorter tracks take the
-single-pass path unchanged.
+single-pass path unchanged. That is the UVR models' grid. The Mel-RoFormer
+this pass runs on speech is an MDXC model: its chunks start on its own 2 s
+overlap-add step, carry a full 8 s window of context either side, need no
+lead-in, and are written at the input gain the separator gives the whole
+file (`grid_for` in `modules/denoise_chunking.py`). Whole or chunked, the
+clean stem is picked by one rule, `(No Noise)` and then the model's
+training target, `(dry)`, never a residual (`modules/denoise_model.py`).
+See `docs/configuration.md`, "Long Captures".
 
 ## Mode: `auto`
 
