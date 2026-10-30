@@ -22,7 +22,9 @@ import scipy.fft
 import scipy.signal
 
 # Frames per block: 256 frames of 4096 samples hold 17 MB of windowed segments. A multiple of
-# any FFT vector width, so every frame takes the SIMD lane it takes in one whole-signal call.
+# any FFT vector width, so every frame takes the SIMD lane it takes in one whole-signal call:
+# pocketfft's vector and leftover-row paths round differently on arm64, where a 7-frame block
+# moved some frames' last bits (x86 reads them equal).
 BLOCK_FRAMES = 256
 WINDOW = "hann_periodic"
 

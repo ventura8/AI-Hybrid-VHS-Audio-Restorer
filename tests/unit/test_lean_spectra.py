@@ -1,9 +1,14 @@
 """The scanner's spectra by blocks of frames: scipy's values bit for bit, a fraction of its memory (issue #14).
 
 The routing thresholds were calibrated on the numbers `scipy.signal.stft` and `scipy.signal.welch`
-produce, so every comparison here is exact. A 7-frame block makes short signals cross many
+produce, so every comparison here is exact. An 8-frame block makes short signals cross many
 blocks, odd frame lengths take the odd-length branches, and the peaks are measured the way the
 issue measured them: tracemalloc on the 240 s the analysis read hands the scanner at most.
+
+The stft's blocks are multiples of the FFT's vector width, as the module's 256 is: pocketfft
+transforms rows in vectors and the leftover rows one at a time, and on arm64 the two paths round
+differently, so a 7-frame block moved some rows' last bits there (macOS CI, 2026-10-30) while
+x86 read them equal. The welch transforms one frame at a time and takes any block, 7 included.
 """
 
 import tracemalloc
@@ -50,7 +55,7 @@ def test_the_frame_count_is_scipy_s(length, nperseg):
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-@pytest.mark.parametrize("block", [7, 64])
+@pytest.mark.parametrize("block", [8, 64])
 def test_the_band_rows_equal_scipy_s_stft_across_blocks(dtype, block):
     signal = _programme(9.3, dtype=dtype)
     freqs, _times, spectrum = scipy.signal.stft(signal, 44100, nperseg=4096)
@@ -64,7 +69,7 @@ def test_the_band_rows_equal_scipy_s_stft_across_blocks(dtype, block):
 def test_an_odd_frame_takes_the_same_rows():
     signal = _programme(1.5, rate=8000, seed=4)
     freqs, _times, spectrum = scipy.signal.stft(signal, 8000, nperseg=255)
-    with patch.object(lean_spectra, "BLOCK_FRAMES", 5):
+    with patch.object(lean_spectra, "BLOCK_FRAMES", 8):
         produced = lean_spectra.stft_band(signal, 8000, 255, BAND_HZ)
     assert np.array_equal(produced, spectrum[(freqs >= BAND_HZ[0]) & (freqs <= BAND_HZ[1])])
 
@@ -73,7 +78,7 @@ def test_the_band_array_is_laid_out_like_scipy_s_boolean_index():
     """The flatness means sum along the bins; the same C layout makes them sum in the same order."""
     signal = _programme(9.3)
     freqs, _times, spectrum = scipy.signal.stft(signal, 44100, nperseg=4096)
-    with patch.object(lean_spectra, "BLOCK_FRAMES", 7):
+    with patch.object(lean_spectra, "BLOCK_FRAMES", 8):
         produced = lean_spectra.stft_band(signal, 44100, 4096, BAND_HZ)
     assert spectrum[(freqs >= BAND_HZ[0]) & (freqs <= BAND_HZ[1])].flags.c_contiguous
     assert produced.flags.c_contiguous
@@ -98,7 +103,7 @@ def test_welch_equals_scipy_s_across_blocks(dtype, nperseg, block):
     assert np.array_equal(produced, expected)
 
 
-@pytest.mark.parametrize("block", [7, 256])
+@pytest.mark.parametrize("block", [8, 256])
 def test_the_tonality_equals_the_whole_transform_s(block):
     signal = _programme(31.0, seed=3)
     with patch.object(lean_spectra, "BLOCK_FRAMES", block):

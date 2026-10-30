@@ -445,7 +445,11 @@ audio alignment, or FFmpeg multiplexing.
      and the four Tata tapes, at block 256 and at block 7, plus the whole
      profile dict: all equal. A scipy release that changes either code
      path fails `tests/unit/test_lean_spectra.py`, which compares against
-     scipy itself.
+     scipy itself. Keep the stft's block a multiple of the FFT vector width
+     (256; the tests use 8 and 64): pocketfft's vector and leftover-row
+     paths round differently on arm64, and macOS CI read a 7-frame block's
+     float64 rows off in the last bits while the Windows runs (block 7
+     included) were exact. The welch, one FFT per frame, takes any block.
 1. **`modules/sync.py`**:
    - `_align_stems`: Sub-sample audio synchronization.
    - Cross-correlation lag estimation for linear delay.
