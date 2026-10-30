@@ -101,5 +101,5 @@ def test_get_version_fallback_to_default():
 def test_module_version_exports():
     """Test that __version__ matches current pyproject.toml version."""
     get_version.cache_clear()
-    assert __version__ == "1.4.1"
-    assert modules.version.get_version() == "1.4.1"
+    assert __version__ == "1.4.2"
+    assert modules.version.get_version() == "1.4.2"

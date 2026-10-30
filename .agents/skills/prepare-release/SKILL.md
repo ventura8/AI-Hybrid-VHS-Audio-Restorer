@@ -22,7 +22,7 @@ builds the `.deb`/`.rpm`/`.pkg`/Windows installers. This skill pushes the
 branch and opens the PR; it never merges or tags, which stay with the user.
 
 After a release publishes, list its assets
-(`gh release view vX.Y.Z --json assets --jq '.assets[].name'`): exactly six,
+(`gh release view vX.Y.Z --json assets --jq '.assets[].name'`): exactly five,
 all named for the tag. Until v1.4.1 every release also carried
 `AI-Hybrid-VHS-Audio-Restorer-v1.1.0-linux.deb`, a file force-added under the
 ignored `release-assets/` in v1.1.0. The publish job checks out the tag,
@@ -179,15 +179,16 @@ PY
 Rules that the pins encode, and that a bump must respect:
 
 - `torch`, `torchvision` and `torchaudio` are one matched set from the
-  `pytorch-cu130` index (the comment above the pins says why). Bump them
-  together to the newest trio the index carries; per package, the newest
-  cp312 Linux wheel is:
+  `pytorch-cu132` index (the comment above the pins says why). Bump them
+  together to the newest trio the index carries. For torch, the newest
+  cp312 Linux wheel is (torchvision and torchaudio: read their index pages,
+  whose cu132 wheels may carry a `py3-none` tag instead):
 
   ```bash
-  curl -s https://download.pytorch.org/whl/cu130/torch/ | .venv/bin/python -c '
+  curl -s https://download.pytorch.org/whl/cu132/torch/ | .venv/bin/python -c '
   import re, sys
   from packaging.version import Version
-  print(max({Version(v) for v in re.findall(r"torch-([0-9.]+)\+cu130-cp312", sys.stdin.read())}))'
+  print(max({Version(v) for v in re.findall(r"torch-([0-9.]+)\+cu132-cp312", sys.stdin.read())}))'
   ```
 
   `torchaudio` no longer declares a torch pin, so its newest release is
@@ -226,24 +227,24 @@ Fast"). Lock with the repository's Poetry, through the venv:
 A solve that runs past a minute means a marker rule was broken, not that the
 lock is slow: find the pair that was added or changed instead of waiting.
 The torch trio moves only as a set, only when one CUDA index carries
-matching torch, torchvision and torchaudio wheels, and only when
-`experiments/apl_identity.py` keeps auto_pure_linear's output (cathar
-never loads torch). PyTorch stops building for an older CUDA line: the
-cu130 index ends at 2.14.1, and torch 2.15.0 came (2026-10-28) with a
-matched trio on cu132 only, so check the newer indexes (`cu132`, `cu133`)
-too before calling torch current. v1.4.1 tried it and held the 2.14.1
-set: 2.15.0+cu132 renders the same bytes run to run but moves APL's
-neural stage, the null against 2.14.1 at -53.7 to -58.8 dB under the
-loud frames with `scripts/audibility_check.py` reading all three
-identity clips audible (13 event frames, NMR 15.2 dB at most). Isolated
-by swapping only the trio back from Poetry's wheel cache, the three
-cached wheels through `pip install --no-deps --force-reinstall`: with
-2.14.1 the rest of the new lock rendered 3/3 identical. Adopting 2.15 is its
-own change: the cu132 source, `nvidia-cublas` 13.4.1.3 and
-`nvidia-cuda-nvrtc` 13.2.86 (cuda-toolkit 13.2.2), the realistic-v2 and
-IA confirmation and a listening session, then a re-based APL identity
-reference. The driver supports it (`nvidia-smi` reads CUDA 13.5 on the
-RTX 5090 at driver 621.01).
+matching torch, torchvision and torchaudio wheels. PyTorch stops building
+for an older CUDA line: the cu130 index ends at 2.14.1, and torch 2.15.0
+came (2026-10-28) with a matched trio on cu132 only, so check the newer
+indexes (`cu133`, ...) as well as the current one before calling torch
+current, and re-pin `nvidia-cublas` / `nvidia-cuda-nvrtc` from the new
+wheel's cuda-toolkit (13.4.1.3 and 13.2.86 for 13.2.2). When
+`experiments/apl_identity.py` reads the new torch DIFFERENT (cathar never
+loads torch), it is a change the ear confirms like a setting (the harness
+skill, "Confirming a change with the ear alone"), then the APL identity
+reference is re-based on it. torch 2.15.0 moved APL repeatably (identity
+clips' null -53.7 to -58.8 dB); v1.4.1 held it for a listening session, and
+v1.4.2 adopted it on the ear's confirmation: 0 material trips on 235 IA
+clips, realistic-v2 +0.00 dB, every Tata reading within 0.08 dB. To isolate
+torch in such a check, swap only the trio from Poetry's wheel cache (the
+three cached wheels through `pip install --no-deps --force-reinstall`),
+render, and restore with `poetry install --with dev,ml --no-root` (`ml` is an
+optional group, which a plain install skips). The driver supports cu132
+(`nvidia-smi` reads CUDA 13.5 on the RTX 5090 at driver 621.01).
 
 Every command in this skill is portable across the Linux and macOS shells
 the runner supports: Python or `git` does the editing, never GNU-only

@@ -543,7 +543,10 @@ audio alignment, or FFmpeg multiplexing.
   reference tag's run. Render a "before" run twice first: APL read 3/3 run to
   run on 2026-10-27, so a later mismatch is the change's. A dependency bump
   that reaches the neural stage (onnxruntime-gpu, audio-separator,
-  transformers) takes it. Re-based
+  transformers, torch) takes it. The reference is `v142_torch215` since
+  v1.4.2 (torch 2.15.0+cu132, rendered twice, 3/3 run to run); the torch
+  2.14 runs (`after_deps_20261027`, `v141_final`) stay for the record.
+  audio-separator 0.48.0 kept the bytes (3/3 with torch 2.14.1). Re-based
   on 2026-10-25 for cathar's lighter defaults (run `hang_probe_1f9d106`,
   previous reference `cathar_ab_head_before_hang_probe_1f9d106`): four
   clips change, and tugs keeps its bytes (its print sits 16.9 dB under the

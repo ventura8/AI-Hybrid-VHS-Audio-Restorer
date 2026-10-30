@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "ai-hybrid-vhs-audio-restorer"
-version = "1.4.1"
+version = "1.4.2"
 description = "Hybrid AI VHS audio restoration pipeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -32,38 +32,36 @@ optional = true
 #   "PyTorch has CUDA version 13.2 whereas TorchAudio has CUDA version 13.0"
 # That killed every mode invoking resemble-enhance (auto, multipass_auto, hybrid) on Linux.
 # Windows escaped it only because pip resolves torchaudio to a +cpu build there, whose CUDA
-# check is skipped. cu130 is the index that carries a matched set for all three.
+# check is skipped. One index carries a matched set for all three (cu132; see below).
 #
-# Held at the 2.14.1 set, macOS too (v1.4.1, 2026-10-30): torch 2.15.0 came with a matched
-# trio on cu132 only, and it moves auto_pure_linear's output (the neural stage; same input
-# twice gives the same bytes, so not noise): on the three identity clips the null against
-# 2.14.1 reads -53.7 to -58.8 dB under the loud frames and scripts/audibility_check.py
-# reads all three audible (up to 13 event frames, NMR up to 15.2 dB). It is adopted in a
-# change of its own, with the realistic-v2 and IA confirmation and a listening session a
-# changed output needs: source cu132, the nvidia pins 13.4.1.3 / 13.2.86 (cuda-toolkit
-# 13.2.2), and an APL identity reference re-based on it.
+# cu132 since v1.4.2: the cu130 index ends at torch 2.14.1, and 2.15.0 (2026-10-28) came with a matched
+# trio on cu132 only. It moves auto_pure_linear's neural stage by a hair, repeatably (the three identity clips'
+# null -53.7 to -58.8 dB, the Tata tapes' -65.7 to -79.8 dB), which the AI ear confirmed as no change: 0 material
+# v4 trips on 235 IA clips, realistic-v2's 92 fixtures +0.00 dB from their targets, every Tata reading within
+# 0.08 dB and no guard tripped (docs/releases/v1.4.2.md). v1.4.1 had held it for a listening session; since
+# 2026-10-30 the ear alone decides.
 #
 # The markers keep `poetry lock` to seconds; it used to run for hours (six in CI) and never
 # finish. Poetry re-solves the whole graph once per branch of a dependency listed twice, and
 # reads `sys_platform` and `platform_system` as unrelated variables. So every split pair here
 # (torch, torchvision, torchaudio, audio-separator, onnxruntime) uses `sys_platform`, as
 # audio-separator, cuda-toolkit and pandas do, and its two markers are exact complements:
-# "linux or win32" for the cu130/GPU builds, "not linux and not win32" (macOS) for PyPI.
+# "linux or win32" for the cu132/GPU builds, "not linux and not win32" (macOS) for PyPI.
 # A gap between them (the old "and implementation_name == 'cpython'") adds a third
 # "torch not required" branch that resolves PyPI torch 2.14 and a second CUDA stack; a
 # `platform_system` marker lets the solver explore platforms no machine reports, such as
 # platform_system != "Darwin" with sys_platform == "darwin", where more dependencies split.
 torch = [
-  { version = "2.14.1+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "2.14.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "2.15.0+cu132", source = "pytorch-cu132", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^2.15.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 torchvision = [
-  { version = "0.29.1+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "0.29.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "0.29.2+cu132", source = "pytorch-cu132", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^0.29.2", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 torchaudio = [
-  { version = "2.11.0+cu130", source = "pytorch-cu130", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
-  { version = "2.11.0", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
+  { version = "2.11.1+cu132", source = "pytorch-cu132", markers = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { version = "^2.11.1", markers = "sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 audio-separator = [
   { version = "^0.48.0", extras = [
@@ -76,13 +74,13 @@ onnxruntime = { version = "^1.31.1", markers = "sys_platform != 'linux' and sys_
 # torch's cuda-toolkit pins these two behind its cublas/nvrtc extras only, while
 # nvidia-cudnn-cu13 and nvidia-cublas ask for them unpinned: left alone, the solver's
 # leftover branch takes the newest release and the lock carries two of each on Linux.
-# They repeat torch's cuda-toolkit pins (13.0.3 for torch 2.14.1+cu130) and change only
+# They repeat torch's cuda-toolkit pins (13.2.2 for torch 2.15.0+cu132) and change only
 # when that cuda-toolkit version does; a stale pin fails `poetry lock` in seconds with a
 # message naming the version cuda-toolkit wants. The marker is torch's own
 # (`platform_system == "Linux"`); a `sys_platform` marker here leaves never-installed
 # phantom entries in the lock.
-nvidia-cublas = { version = "13.1.1.3", markers = "platform_system == 'Linux'" }
-nvidia-cuda-nvrtc = { version = "13.0.88", markers = "platform_system == 'Linux'" }
+nvidia-cublas = { version = "13.4.1.3", markers = "platform_system == 'Linux'" }
+nvidia-cuda-nvrtc = { version = "13.2.86", markers = "platform_system == 'Linux'" }
 librosa = "^1.0.0"
 # Output-quality harness (scripts/restoration_quality): ASR consistency and the Audiobox
 # Aesthetics predictor. Weights are fetched by scripts/download_quality_models.py.
@@ -133,12 +131,12 @@ genbadge = "^1.1.3"
 pip = ">=26.2.2"
 mdformat-frontmatter = "^2.2.0"
 # optuna: the ear v3 settings search baseline (approved 2026-10-08). Never an extra: [document] and
-# [optional] pull torch from PyPI beside the cu130 build.
+# [optional] pull torch from PyPI beside the cu132 build.
 optuna = "^5.0.0"
 
 [[tool.poetry.source]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 priority = "explicit"
 
 [tool.ruff]

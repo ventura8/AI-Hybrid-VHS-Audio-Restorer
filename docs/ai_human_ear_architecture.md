@@ -2,10 +2,11 @@
 
 The "AI human ear" is the output-quality harness: the code that listens to a
 restored track against its own source and says what a listener would say. It
-judges every restoration setting, drives the self-driving tuning loop, decides
-when the user is worth asking, and learns from every blind verdict. The user's
-ear decides; the AI ear predicts that decision, ranks candidates by it, and
-refuses to win by damaging the programme.
+judges every restoration setting, drives the self-driving tuning loop and,
+since 2026-10-30, decides alone: the user ended live listening ("no live
+listening from me!! we rely only on ai human ear!!!"). It is calibrated on
+the blind verdicts of sessions 0-3, ranks candidates by what the user
+accepted there, and refuses to win by damaging the programme.
 
 This page is the map. The rules and the measured facts behind every number
 live in the output-quality-harness skill
@@ -25,10 +26,11 @@ acceptance record in `docs/ear_v4_hiss.md`, ear v3's re-score in
 - **Never call dead air clean.** Silent pauses, an underwater "s" and dulled
   highs were all rejected by ear; hard guards keep a loop from winning by
   deleting programme.
-- **Know when a difference is inaudible**, so the user is asked only at a
-  plateau and only about something they can hear.
+- **Know when a difference is inaudible**, so an inaudible change ties and
+  an audible one goes to the ear's own confirmation; nobody is asked to
+  listen (2026-10-30).
 - **Keep the family tapes on this machine.** No cloud judge, no audio LLM;
-  the listening page serves on 127.0.0.1 only.
+  the listening page of sessions 0-3 served on 127.0.0.1 only.
 
 ## The Whole Path
 
@@ -57,9 +59,9 @@ flowchart TD
     GATES --> REPORT(["validate_restoration report"]):::io
     AGG --> JUDGE["Judging<br/>grid ranking, ties, constraints, vetoes"]:::step
     JUDGE --> LOOP["Self-driving loop<br/>autotune_restoration.py"]:::step
-    LOOP --> AUD{"Audibly different<br/>from what the user heard?<br/>auditory.py"}:::gate
-    AUD -->|yes, at a plateau| AB["Blind A/B block<br/>listen_ab.py on 127.0.0.1"]:::human
-    AB --> LEDGER[("Verdict ledger<br/>verdicts.jsonl")]:::human
+    LOOP --> AUD{"Audibly different<br/>from the shipped render?<br/>auditory.py"}:::gate
+    AUD -->|yes, at a plateau| CONF["Ear confirmation<br/>Tata readings, IA corpus, realistic-v2"]:::step
+    LEDGER[("Verdict ledger<br/>sessions 0-3")]:::human
     LEDGER --> CAL["Calibration, checks, preference head"]:::step
     CAL --> JUDGE
 ```
@@ -178,8 +180,9 @@ better. Two consequences:
 
 - The loop scores no candidate the model calls inaudible on every tape: it is
   a tie, never accepted.
-- The user is asked to listen only when the plateau is audible against what
-  they last heard.
+- An audible plateau goes on to the ear's confirmation; nobody listens
+  (2026-10-30). "Audible" alone decides nothing: torch 2.15's flagged
+  Gaudeamus5 frames moved no ranked reading past 0.08 dB.
 
 The model assumes the loud frames play at 65 dB SPL until a listener measures
 it. A threshold run (`listen_ab threshold`) writes
@@ -302,8 +305,8 @@ flowchart LR
     classDef human fill:#EADDFF,stroke:#4F378B,color:#21005D,rx:10,ry:10;
     classDef gate fill:#F9DEDC,stroke:#8C1D18,color:#410E0B,rx:6,ry:6;
 
-    P["Loop plateau<br/>on the Tata tapes"]:::step --> A{"Audible against<br/>what the user heard?"}:::gate
-    A -->|yes| L["Blind block"]:::human
+    P["Loop plateau<br/>on the Tata tapes"]:::step --> A{"Audible against<br/>the shipped render?"}:::gate
+    A -->|yes| L["Tata readings and guards<br/>at the calibrated level"]:::step
     L --> RV["realistic-v2<br/>distance to the clean target"]:::step
     RV --> IA["IA corpus confirmation<br/>constraint trips per clip"]:::step
     IA --> FB["Feed back as default,<br/>cathar identity 5/5"]:::step
