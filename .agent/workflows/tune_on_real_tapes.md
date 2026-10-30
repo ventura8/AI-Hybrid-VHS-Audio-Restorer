@@ -192,32 +192,27 @@ skill holds the readings, their status and the measured facts behind them.
    until the engine's pause floor stops refilling the pauses with tape hiss
    (`modules/pause_floor.py`, see the output-quality-harness skill, "Critical of
    hiss").
-1. Do not ask the user to listen while a round can still improve.
+1. Let the loop run while a round can still improve; nobody listens in
+   between (or after: the user ended live listening on 2026-10-30).
 
 ## Step 3: Confirm and hand over
 
 1. At the plateau, run the winners on the full tapes into
    `D:\Tata\New folder\variants\<tape>__<variant>`.
 
-1. Before asking, run `scripts/audibility_check.py` on each final against
-   what the user last heard on the same tape. Inaudible on every tape means
-   there is nothing to ask: the plateau ties the incumbent. Set
-   `AI_RESTORE_DATA_ROOTS=D:\Tata` for paths on that drive.
+1. Run `scripts/audibility_check.py` on each final against the shipped
+   render of the same tape. Inaudible on every tape means the plateau ties
+   the incumbent. Set `AI_RESTORE_DATA_ROOTS=D:\Tata` for paths on that
+   drive.
 
-1. Ask through the localhost-only listening tool, not by sending files
-   around, ABX first (24 trials; 17 right is p 0.032), then `pair` or
-   `blend` when the difference is heard:
-
-   ```text
-   python -m scripts.listen_ab abx --tape SLUG --stim A=PATH --stim B=PATH
-       --device DEVICE --volume VOLUME
-   ```
-
-   The cuts go where the noise-to-mask ratio says the two differ most, and
-   the answers land in the ledger. Record the playback device and volume in
-   every block: ear v4's hiss readings assume each file's loud frames at
-   75 dB SPL, and only a blind session at a recorded level can move that.
-   Send the scoreboard and name the windows the harness found.
+1. Confirm with the ear alone: no listening session (the user, 2026-10-30:
+   "no live listening from me!! we rely only on ai human ear!!!"). Score
+   the finals against the shipped renders on the Tata tapes at the
+   calibrated level, then on the IA corpus and realistic-v2 (the harness
+   skill, "Confirming a change with the ear alone"). An "audible" flag is
+   read, not obeyed: look at what the flagged frames hold. The verdict
+   ledger keeps sessions 0-3 as the ear's calibration; `listen_ab.py` is not
+   started for the user.
 
 1. Feed the accepted settings back: `config.yaml` and `modules/config.py`
    with the measured-effect comment, `docs/configuration.md`, and re-base the
@@ -228,10 +223,10 @@ skill holds the readings, their status and the measured facts behind them.
    `cathar_ab_head_before_<tag>`). Where the speech and music plateaus
    disagree on a shared key, add a music-profile key; a knob the final
    carries but an accepted switch made inert stays at its shipped value.
-   No default ships without a listening session and one
-   `artifacts/realistic-v2` plus IA-corpus confirmation (AGENTS.md
-   section 3). For the IA half, replay the plateau against the shipped
-   settings on the hunt's kept work folders, split the clips by what the
+   No default ships without the ear's confirmation: the Tata readings,
+   one `artifacts/realistic-v2` and one IA-corpus confirmation
+   (AGENTS.md section 3). For the IA half, replay the plateau against the
+   shipped settings on the hunt's kept work folders, split the clips by what the
    plateau does to them, attribute each trip by replaying every component
    alone, and count material trips beside the loop's
    (`python -m scripts.confirm_trips`; the harness skill, "Confirming a

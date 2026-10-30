@@ -471,29 +471,29 @@ modified (including during every CodeRabbit review wave):
    reduction, peak-to-noise ratio, CRT whistle elimination, and rumble
    suppression on physical audio data before finishing.
 
-### Judging Outputs: the Harness and the User's Ear
+### Judging Outputs: the AI Human Ear
 
 The output-quality harness (the "AI human ear", output-quality-harness
 skill; its architecture in `docs/ai_human_ear_architecture.md`) judges every
-restoration setting; the user's ear decides. Rules the user set, with their
-reasons:
+restoration setting and, since 2026-10-30, decides alone. Rules the user
+set, with their reasons:
 
-- Ask the user to listen only at a plateau, and only when the plateau is
-  audibly different from what they last heard: run
-  `scripts/audibility_check.py` first (the v3 sibilance loop's plateau
-  differed by -70..-100 dBFS and would have wasted a session).
-- Ask in short blind A/B batches (10-20 picks) through
-  `python -m scripts.listen_ab`, which serves the page on 127.0.0.1 only:
-  the family tapes never leave the machine, and no cloud or audio-LLM judge
-  is used. Every answer goes to the verdict ledger
-  (`assets/quality_calibration/verdicts.jsonl`); flags come only from the
-  user's own words. Every block records `--device` and `--volume`
-  (required since 2026-10-12) and plays at one speech level (-23 dBFS);
-  a one-button block reads "no signal", never "disengaged" (Session 0:
-  "I chose B every time because they all sounded the same"), and only a
-  missed catch trial reads "disengaged".
-- No default ships without a listening session and one
-  `artifacts/realistic-v2` plus IA-corpus confirmation.
+- No live listening (the user, 2026-10-30: "no live listening from me!! we
+  rely only on ai human ear!!!"). Never ask the user to listen and never
+  start `scripts.listen_ab` for them. Wherever these files say a stage or a
+  setting waits for a (blind) listening session, it now waits for the ear's
+  confirmation below. Sessions 0-3 in the verdict ledger
+  (`assets/quality_calibration/verdicts.jsonl`) stay the ground truth the
+  ear is calibrated against; how they ran is in the harness skill.
+- No default ships, and no dependency that moves the output lands, without
+  the ear's confirmation: on the Tata tapes `scripts/audibility_check.py`
+  first (an inaudible change is a tie) and then the v4 readings and guards
+  against the incumbent; one IA-corpus confirmation
+  (`scripts/confirm_trips.py`, material trips); and one
+  `artifacts/realistic-v2` run against each fixture's target. The audibility
+  check's "audible" does not decide alone: session 3 heard nothing in pairs
+  it flagged, and torch 2.15's flagged Gaudeamus5 frames moved no ranked
+  reading past 0.08 dB (v1.4.2).
 - Readings are ranked two-sided, as distance from what the user accepted;
   learned judges only veto. A reading that cannot see a percept (a
   whole-spectrum tilt cancels in every reading net of plain or loud frames)
@@ -578,8 +578,9 @@ reasons:
   family (Gaudeamus5's APL pause tail read 21.7 with the singing in, 13.1
   without). The two hiss flags'
   thresholds are the user's rule, which no calibration and no gates file moves
-  (`gates.USER_RULE_FIXED`). Only a blind session at a recorded device and
-  volume moves the 75 dB SPL level.
+  (`gates.USER_RULE_FIXED`). The 75 dB SPL level and the calibrated
+  listener's 86.8 stay as the sessions set them: with no more listening
+  (2026-10-30), nothing moves them.
 
 ______________________________________________________________________
 
@@ -689,10 +690,10 @@ The repository defines the following modular skills in `.agents/skills/`.
   installer validation and CUDA runtime provisioning.
 - [output-quality-harness](.agents/skills/output-quality-harness/SKILL.md):
   The "AI human ear": scoring an output like a listener, calibration, tuning
-  on real tapes, and the self-driving loop that asks the user only at its
-  plateau; ear v3's readings, the audibility check
-  (`scripts/audibility_check.py`), the verdict ledger and the listening tool
-  (`scripts/listen_ab.py`), the reward pieces
+  on real tapes, and the self-driving loop whose plateau the ear alone
+  confirms (no live listening since 2026-10-30); ear v3's readings, the
+  audibility check (`scripts/audibility_check.py`), the verdict ledger and
+  the listening tool of sessions 0-3 (`scripts/listen_ab.py`), the reward pieces
   (`scripts/reward_noise_floor.py`), the loop's judging resolution and its
   offline re-judge (`scripts/rejudge_autotune.py`), the variation pre-check
   that gates the settings policy (`scripts/variation_precheck.py`), the
@@ -735,8 +736,8 @@ Targeted workflow playbooks are maintained under `.agent/workflows/`:
   delinting and test fixing playbook.
 - [tune_on_real_tapes.md](.agent/workflows/tune_on_real_tapes.md): Measuring a
   listening complaint, letting the autotune loop refine, checking the
-  plateau is audible, asking through the listening tool and the verdict
-  ledger, confirming on full tapes and feeding winners back.
+  plateau is audible, confirming it with the ear on the Tata tapes, the IA
+  corpus and realistic-v2, and feeding winners back.
 - [sonarqube_findings.md](.agent/workflows/sonarqube_findings.md): Triage of a
   failed SonarQube Cloud check and fixing its findings at the source.
 
@@ -749,7 +750,7 @@ change that teaches something the code does not say is written into them in
 the same change, never left in a chat, a scratchpad or a personal memory:
 
 - A rule the user states ("never two restorations on one source path",
-  "ask me to listen only at the plateau") goes into `AGENTS.md` or the skill
+  "we rely only on ai human ear") goes into `AGENTS.md` or the skill
   that owns the topic, with the reason.
 - A measured fact that decided a default (a metric reading, a by-ear verdict,
   a corpus number) goes into the skill that owns the engine or the harness,

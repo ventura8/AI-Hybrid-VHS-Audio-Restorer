@@ -3,7 +3,8 @@ name: output-quality-harness
 description: >-
   Judge a restored output the way a listener would (the "AI human ear"),
   calibrate the judge, tune both engines on real tapes with it, and run the
-  self-driving tuning loop until it plateaus before asking the user to listen.
+  self-driving tuning loop until it plateaus; since 2026-10-30 the ear alone
+  confirms the plateau (no live listening).
 ---
 
 # Output-Quality Harness
@@ -15,8 +16,10 @@ measured facts.
 
 Use this skill whenever an output has to be judged, an engine setting has to
 be chosen, or the user asks to "fine-tune" cathar or `auto_pure_linear`. The
-harness is the arbiter; the user's ear is the final judge and is asked only
-once the loop cannot improve any further. `docs/validation.md` carries the
+harness is the arbiter and, since 2026-10-30, the final judge too: "no live
+listening from me!! we rely only on ai human ear!!!" (the user). Never ask
+for a listening session; confirm a plateau as "Confirming a change with the
+ear alone" below says. `docs/validation.md` carries the
 full description; this file is the operating manual.
 
 ## What the harness measures
@@ -2306,8 +2309,9 @@ layer owns what:
   an Optuna BO baseline; an anchored fine-tune of the Mel-RoFormer in the
   isolated `tools/msst/` venv; the judge is the preference head.
 - No generative engines, and no audio-LLM or cloud judge.
-- The user's ear is asked in short A/B batches (10-20 picks) through
-  `listen_ab.py`, and no default ships without a listening session.
+- No live listening since 2026-10-30: the ear's confirmation (Tata
+  readings, IA corpus, realistic-v2) replaces the listening session. Sessions
+  0-3 ran in short A/B batches (10-20 picks) through `listen_ab.py`.
 - Approved installs: cathar 0.8.0 (provisioned 2026-10-09, identical on
   every stage this app calls, the installers pin it); not provisioned yet:
   silero-vad, zimtohrli, optuna (dev group) and the `tools/msst/` venv.
@@ -2900,14 +2904,10 @@ allowlist and the invariants are in the audio-restoration-engine skill and
 `docs/configuration.md`, "Stage Cache".
 
 Only when both engines have plateaued: run
-`scripts/audibility_check.py` on each final against what the user last heard
-on the same tape, and do not ask when every tape reads inaudible (the v3
-sibilance plateau would have been a wasted session). Then produce the
-listening set (`experiments/tata_listen/build_listen_v2.py` copies each
-final's outputs beside their sources and writes an index with the settings
-diff and the harness readings), send the index, and ask the user, through
-`python -m scripts.listen_ab` (ABX first, 24 trials) so the answer lands in
-the ledger. Feed a winner back into
+`scripts/audibility_check.py` on each final against the shipped render of
+the same tape (an inaudible final is a tie, not a win), then confirm it with
+the ear alone ("Confirming a change with the ear alone"); the user no longer
+listens. Feed a winner back into
 `config.yaml` and `modules/config.py` with the measured-effect comment, then
 re-base the cathar identity reference (see the audio-restoration-engine
 skill). Two rules from the 2026-09-26 feed-back: a shared key the speech and
@@ -2917,7 +2917,35 @@ accepted switch made inert (the subtraction's factor, probe and native
 suppressor once `apl_enable_spectral_denoise` is off), so read the code
 before feeding a knob back and leave the inert ones at their shipped value.
 Before a default ships, it also gets one `artifacts/realistic-v2` and
-IA-corpus confirmation (AGENTS.md section 3) and a listening session.
+IA-corpus confirmation (AGENTS.md section 3), which with the Tata readings
+is the whole confirmation now.
+
+## Confirming a change with the ear alone (2026-10-30)
+
+The user stopped live listening: "no live listening from me!! we rely only
+on ai human ear!!!". A setting, or a dependency that moves the output,
+lands when the ear reads it as an improvement or as no change on three
+sets, each against the shipped render:
+
+1. The four Tata tapes: `scripts/audibility_check.py` (inaudible means a
+   tie), then `scripts/validate_restoration.py SOURCE S=... P=...` at the
+   calibrated level (`AI_RESTORE_LISTENER=user`) and `confirm_trips` on the
+   reports with `scripts/tune_grids/tata_v4.yaml`.
+1. The IA hunt: render the set (`tune_restoration.py prepare/run` with a
+   grid whose variant is the change), score each clip's pair
+   (`scratch_confirm/v10confirm/score_all.sh`), count material trips.
+1. realistic-v2: `reference_v10.py`, distance to each fixture's target.
+
+An "audible" from the check does not decide: it is one-sided, and session
+3 heard nothing in pairs it flagged. Read what the flagged frames hold. The
+torch 2.15 confirmation (v1.4.2) is the worked example: 3 interview tapes
+inaudible (null -73 to -80 dB), Gaudeamus5 flagged (54 event frames, single
+frames where 4-10 kHz differs by 12-15 dB SPL inside 72-84 dB SPL choir
+frames, the masked threshold there 1-4 dB SPL), yet no ranked reading moved
+past 0.08 dB on any tape, no guard tripped, 0 material trips on 235 IA
+clips and realistic-v2 +0.00 dB; adopted. Render the incumbent fresh, or
+prove a stored one current first: 8 of 8 control clips rendered today
+matched the stored IA baseline before it stood in for torch 2.14.
 
 ## Confirming a plateau on the IA corpus (2026-10-21)
 
