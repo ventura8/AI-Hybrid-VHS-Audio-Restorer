@@ -66,7 +66,7 @@ FILE_BLOCK_BYTES = 1 << 22
 VERSION_TIMEOUT_S = 30
 CACHE_ENV_VAR = "AI_RESTORE_STAGE_CACHE"
 # audio-separator loads every model, its `_config.yaml` and its parameter tables from this
-# folder when it is set, whatever folder the stage passes (separator.py in 0.47.1).
+# folder when it is set, whatever folder the stage passes (separator.py in 0.48.0).
 MODEL_DIR_ENV = "AUDIO_SEPARATOR_MODEL_DIR"
 
 # Read only after the cached point; each read site is checked by the allowlist test.

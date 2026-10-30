@@ -1,7 +1,7 @@
 """What a denoise model declares about its output: the stem that is clean, and the grid its inference windows fall on.
 
 The separator names every file it writes after a stem (`<input>_(<stem>)_<model>.wav`,
-common_separator.get_stem_output_path in audio-separator 0.47.1). The VR denoisers
+common_separator.get_stem_output_path in audio-separator 0.48.0). The VR denoisers
 (UVR-DeNoise, UVR-DeNoise-Lite) write '(No Noise)' and '(Noise)'; an MDXC model writes its
 training target and the residual, which for the shipped Mel-RoFormer denoiser
 (`apl_neural_model`) is '(dry)' and '(other)': the `training.target_instrument` of the
@@ -41,7 +41,7 @@ RESIDUAL_NAMES = ("noise", "other")
 # name may carry an earlier one (a background stem from a vocal split is '..._(other)_...').
 STEM_GROUP = re.compile(r"\(([^()]*)\)")
 # audio-separator loads every model and its yaml from this folder when it is set, whatever
-# folder the app passes (separator.py in 0.47.1); the stage cache key reads it the same way.
+# folder the app passes (separator.py in 0.48.0); the stage cache key reads it the same way.
 MODEL_DIR_ENV = "AUDIO_SEPARATOR_MODEL_DIR"
 # Beside the checkpoint: `<stem>_config.yaml` (the denoise RoFormers), `<stem>.yaml` (the BS-RoFormer).
 CONFIG_SUFFIXES = ("_config.yaml", ".yaml")
